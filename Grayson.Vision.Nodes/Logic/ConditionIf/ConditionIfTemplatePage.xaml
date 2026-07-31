@@ -1,0 +1,49 @@
+﻿<Page x:Class="Grayson.Vision.Nodes.Logic.ConditionIf.ConditionIfTemplatePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="clr-namespace:Grayson.Vision.Nodes.Logic.ConditionIf"
+      mc:Ignorable="d" Background="#1E1E1E">
+
+    <Page.Resources>
+        <ResourceDictionary>
+            <Style x:Key="NodeParamHeaderLabel" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="#AAAAAA"/>
+                <Setter Property="FontSize" Value="11"/>
+                <Setter Property="Margin" Value="0,6,0,2"/>
+            </Style>
+            <Style x:Key="NodeParamInputStyle" TargetType="TextBox">
+                <Setter Property="Background" Value="#2D2D30"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+                <Setter Property="BorderBrush" Value="#434346"/>
+                <Setter Property="Padding" Value="5,3"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <DataTemplate DataType="{x:Type local:ConditionIfParam}">
+                <StackPanel Margin="8">
+                    <RadioButton Content="直接使用 BoolIn 端口输入" IsChecked="{Binding UseInputPort}" Foreground="#FFFFFF" Margin="0,4"/>
+                    <RadioButton Content="使用数值比较模式 (ValueIn)" IsChecked="{Binding UseInputPort, Converter={StaticResource InverseBoolConverter}}" Foreground="#FFFFFF" Margin="0,4"/>
+
+                    <TextBlock Text="比较运算符:" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <ComboBox SelectedValue="{Binding Operator, UpdateSourceTrigger=PropertyChanged}" Margin="0,2">
+                        <local:CompareOp>Equal</local:CompareOp>
+                        <local:CompareOp>NotEqual</local:CompareOp>
+                        <local:CompareOp>Greater</local:CompareOp>
+                        <local:CompareOp>GreaterEqual</local:CompareOp>
+                        <local:CompareOp>Less</local:CompareOp>
+                        <local:CompareOp>LessEqual</local:CompareOp>
+                    </ComboBox>
+
+                    <TextBlock Text="比较目标值 (TargetValue):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding TargetValue, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
+                </StackPanel>
+            </DataTemplate>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid d:DataContext="{d:DesignInstance Type=local:ConditionIfParam, IsDesignTimeCreatable=True}">
+        <ContentControl Content="{Binding}"/>
+    </Grid>
+</Page>

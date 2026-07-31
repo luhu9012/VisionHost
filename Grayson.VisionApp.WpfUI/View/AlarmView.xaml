@@ -1,0 +1,133 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.AlarmView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             mc:Ignorable="d"
+             d:DesignHeight="850" d:DesignWidth="1200">
+
+    <UserControl.Resources>
+        <conv:AlarmLevelToBrushConverter x:Key="AlarmLevelToBrushConverter"/>
+        <conv:BoolToAcknowledgeConverter x:Key="BoolToAcknowledgeConverter"/>
+        <conv:BoolToAcknowledgeBrushConverter x:Key="BoolToAcknowledgeBrushConverter"/>
+    </UserControl.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 标题和操作 -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Text="⚠️ 报警日志" Style="{StaticResource TitleTextStyle}" VerticalAlignment="Center"/>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Content="✅ 确认全部"
+                        Command="{Binding AcknowledgeAllCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Width="auto" Margin="5,0"/>
+                <Button Content="🗑️ 清除历史"
+                        Command="{Binding ClearHistoryCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="auto" Margin="5,0"/>
+                <Button Content="📤 导出"
+                        Command="{Binding ExportCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="auto" Margin="5,0"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- 统计卡片 -->
+        <Grid Grid.Row="1" Margin="0,20,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <TextBlock Text="报警总数" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding TotalAlarms}" FontSize="36" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <TextBlock Text="严重报警" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding CriticalCount}" FontSize="36" FontWeight="Bold" Foreground="{StaticResource ErrorBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <TextBlock Text="错误报警" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding ErrorCount}" FontSize="36" FontWeight="Bold" Foreground="{StaticResource WarningBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="3" Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <TextBlock Text="警告报警" FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding WarningCount}" FontSize="36" FontWeight="Bold" Foreground="{StaticResource InfoBrush}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 报警列表 -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Margin="0,20,0,0">
+            <DataGrid ItemsSource="{Binding AlarmList}"
+                      SelectedItem="{Binding SelectedAlarm}"
+                      Style="{StaticResource ModernDataGridStyle}"
+                      RowHeight="50">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="时间" Binding="{Binding Time, StringFormat='yyyy-MM-dd HH:mm:ss'}" Width="160" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="等级" Width="100">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding Level, Converter={StaticResource AlarmLevelToBrushConverter}}"
+                                        CornerRadius="3" Padding="8,4">
+                                    <TextBlock Text="{Binding Level}" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="来源" Binding="{Binding Source}" Width="180" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="报警信息" Binding="{Binding Message}" Width="*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="确认人" Binding="{Binding AcknowledgedBy}" Width="100" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="状态" Width="100">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding IsAcknowledged, Converter={StaticResource BoolToAcknowledgeConverter}, FallbackValue='未确认'}"
+                                           Foreground="{Binding IsAcknowledged, Converter={StaticResource BoolToAcknowledgeBrushConverter}}"
+                                           FontWeight="Bold"
+                                           HorizontalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="操作" Width="100">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="确认"
+                                        Command="{Binding DataContext.AcknowledgeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource IconButtonStyle}"
+                                        FontSize="12"
+                                        IsEnabled="{Binding IsAcknowledged, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+    </Grid>
+</UserControl>

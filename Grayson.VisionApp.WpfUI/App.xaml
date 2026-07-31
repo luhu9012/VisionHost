@@ -1,0 +1,24 @@
+﻿<Application x:Class="Grayson.Vision.WpfUI.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Grayson.Vision.WpfUI"
+             xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             Startup="Application_Startup">
+    <Application.Resources>
+        <!-- 合并资源字典 -->
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 全局样式和颜色 -->
+                <ResourceDictionary Source="Resource/Styles/Colors.xaml"/>
+                <ResourceDictionary Source="Resource/Styles/GlobalStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- 注册转换器到全局资源 -->
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+            <converters:AlarmLevelToBrushConverter x:Key="AlarmLevelToBrushConverter"/>
+            <converters:DeviceStatusToBrushConverter x:Key="DeviceStatusToBrushConverter"/>
+            <converters:InspectionResultToBrushConverter x:Key="InspectionResultToBrushConverter"/>
+            <converters:NullToBoolConverter x:Key="NullToBoolConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

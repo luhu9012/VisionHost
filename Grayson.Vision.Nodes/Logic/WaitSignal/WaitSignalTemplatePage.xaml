@@ -1,0 +1,44 @@
+﻿<Page x:Class="Grayson.Vision.Nodes.Logic.WaitSignal.WaitSignalTemplatePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="clr-namespace:Grayson.Vision.Nodes.Logic.WaitSignal"
+      mc:Ignorable="d" Background="#1E1E1E">
+
+    <Page.Resources>
+        <ResourceDictionary>
+            <Style x:Key="NodeParamHeaderLabel" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="#AAAAAA"/>
+                <Setter Property="FontSize" Value="11"/>
+                <Setter Property="Margin" Value="0,6,0,2"/>
+            </Style>
+            <Style x:Key="NodeParamInputStyle" TargetType="TextBox">
+                <Setter Property="Background" Value="#2D2D30"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+                <Setter Property="BorderBrush" Value="#434346"/>
+                <Setter Property="Padding" Value="5,3"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <DataTemplate DataType="{x:Type local:WaitSignalParam}">
+                <StackPanel Margin="8">
+                    <TextBlock Text="信号标识 (SignalName):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding SignalName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
+
+                    <CheckBox Content="期待高电平/True 信号" IsChecked="{Binding TargetState}" Foreground="#FFFFFF" Margin="0,8,0,4"/>
+
+                    <TextBlock Text="超时时间 ms (TimeoutMs):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
+
+                    <TextBlock Text="轮询间隔 ms (CheckIntervalMs):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding CheckIntervalMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
+                </StackPanel>
+            </DataTemplate>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid d:DataContext="{d:DesignInstance Type=local:WaitSignalParam, IsDesignTimeCreatable=True}">
+        <ContentControl Content="{Binding}"/>
+    </Grid>
+</Page>

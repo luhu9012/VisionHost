@@ -1,0 +1,32 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# NuGet packages
+packages/
+*.nupkg
+!packages/build/
+!packages/repositories.config
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Keep required local SDK binary referenced by the project
+!Grayson.Vision.Host/bin/
+!Grayson.Vision.Host/bin/Debug/
+!Grayson.Vision.Host/bin/Debug/MvCamCtrl.Net.dll

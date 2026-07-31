@@ -1,0 +1,169 @@
+﻿<Page x:Class="Grayson.Vision.Nodes.DeviceIO.AcquireImage.AcquireImageTemplatePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="clr-namespace:Grayson.Vision.Nodes.DeviceIO.AcquireImage"
+      mc:Ignorable="d"
+      d:DesignHeight="400" d:DesignWidth="300"
+      Background="#1E1E1E">
+
+    <!-- 1. 资源定义 -->
+    <Page.Resources>
+        <ResourceDictionary>
+            <!-- 节点内部局部样式 -->
+            <Style x:Key="NodeParamHeaderLabel" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="#AAAAAA"/>
+                <Setter Property="FontSize" Value="11"/>
+                <Setter Property="Margin" Value="0,6,0,2"/>
+            </Style>
+
+            <Style x:Key="NodeParamInputStyle" TargetType="TextBox">
+                <Setter Property="Background" Value="#2D2D30"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+                <Setter Property="BorderBrush" Value="#434346"/>
+                <Setter Property="Padding" Value="5,3"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <Style x:Key="NodeParamComboBoxStyle" TargetType="ComboBox">
+                <Setter Property="Background" Value="#2D2D30"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+                <Setter Property="BorderBrush" Value="#434346"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="6,4"/>
+
+                <!-- 1. 强行指定下拉项容器样式（解决设计器渲染白色问题） -->
+                <Setter Property="ItemContainerStyle">
+                    <Setter.Value>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="Background" Value="#2D2D30"/>
+                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ComboBoxItem">
+                                        <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#3E3E42"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#007ACC"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </Setter.Value>
+                </Setter>
+
+                <!-- 2. 重写 ComboBox 控件本身的 ControlTemplate（彻底剔除 Windows 系统原生白框） -->
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBox">
+                            <Grid x:Name="MainGrid">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="20"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border x:Name="BackgroundBorder"
+                            Grid.ColumnSpan="2"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="2"/>
+
+                                <ContentPresenter Grid.Column="0"
+                                      Margin="{TemplateBinding Padding}"
+                                      HorizontalAlignment="Left"
+                                      VerticalAlignment="Center"
+                                      Content="{TemplateBinding SelectionBoxItem}"
+                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+
+                                <!-- 箭头指示器 -->
+                                <Path x:Name="ArrowPath"
+                          Grid.Column="1"
+                          Data="M 0 0 L 4 4 L 8 0 Z"
+                          Fill="#AAAAAA"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"/>
+
+                                <!-- 弹出下拉框 -->
+                                <Popup x:Name="PART_Popup"
+                           AllowsTransparency="True"
+                           IsOpen="{TemplateBinding IsDropDownOpen}"
+                           Placement="Bottom">
+                                    <Border x:Name="DropDownBorder"
+                                MinWidth="{Binding ActualWidth, ElementName=MainGrid}"
+                                MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                Background="#2D2D30"
+                                BorderBrush="#434346"
+                                BorderThickness="1">
+                                        <ScrollViewer x:Name="DropDownScrollViewer">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="BackgroundBorder" Property="Background" Value="#3E3E42"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 2. 隐式 DataTemplate：没有 x:Key，仅保留 DataType -->
+            <DataTemplate DataType="{x:Type local:AcquireImageParam}">
+                <StackPanel Margin="8">
+
+                    <!-- 相机别名/标识 -->
+                    <TextBlock Text="相机标识 (CameraAlias):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding CameraAlias, UpdateSourceTrigger=PropertyChanged}" 
+                             Style="{StaticResource NodeParamInputStyle}"/>
+
+                    <!-- 触发模式选择 -->
+                    <TextBlock Text="触发模式 (TriggerMode):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <ComboBox SelectedValue="{Binding TriggerMode, UpdateSourceTrigger=PropertyChanged}"
+                              SelectedValuePath="Tag"
+                              Style="{StaticResource NodeParamComboBoxStyle}">
+                        <ComboBoxItem Content="软触发 (Software)" Tag="Software"/>
+                        <ComboBoxItem Content="硬触发 (Hardware)" Tag="Hardware"/>
+                        <ComboBoxItem Content="连续采集 (Continuous)" Tag="Continuous"/>
+                    </ComboBox>
+
+                    <!-- 曝光时间 -->
+                    <TextBlock Text="曝光时间 μs (ExposureTime):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding ExposureTime, UpdateSourceTrigger=PropertyChanged}" 
+                             Style="{StaticResource NodeParamInputStyle}"/>
+
+                    <!-- 增益 -->
+                    <TextBlock Text="增益 Gain:" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding Gain, UpdateSourceTrigger=PropertyChanged}" 
+                             Style="{StaticResource NodeParamInputStyle}"/>
+
+                    <!-- 超时时间 -->
+                    <TextBlock Text="超时等待 ms (TimeoutMs):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}" 
+                             Style="{StaticResource NodeParamInputStyle}"/>
+
+                </StackPanel>
+            </DataTemplate>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <!-- 💡 3. 修正处的预览区域：移除 ContentTemplate="{StaticResource AcquireImageTemplate}" 即可！ -->
+    <Grid d:DataContext="{d:DesignInstance Type=local:AcquireImageParam, IsDesignTimeCreatable=True}">
+        <ContentControl Content="{Binding}"/>
+    </Grid>
+</Page>

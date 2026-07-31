@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{B0A7E029-998C-44A3-96F5-3F04214EEE32}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Grayson.Vision.Contracts</RootNamespace>
+    <AssemblyName>Grayson.Vision.Contracts</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="halcondotnet">
+      <HintPath>..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\halcondotnet.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Business\Attributes\NodePortAttribute.cs" />
+    <Compile Include="Business\BusinessUnitMetaAttribute.cs" />
+    <Compile Include="Business\Engine\Execution\ExecutionContext.cs" />
+    <Compile Include="Business\Engine\Execution\FlowExecutor.cs" />
+    <Compile Include="Business\Engine\Execution\FrameCycleContext.cs" />
+    <Compile Include="Business\Engine\Execution\NodeExecutionContext.cs" />
+    <Compile Include="Business\Enums\BusinessUnitType.cs" />
+    <Compile Include="Business\Enums\DeviceState.cs" />
+    <Compile Include="Business\Enums\NodeFlowEnums.cs" />
+    <Compile Include="Business\Factories\NodeFactory.cs" />
+    <Compile Include="Business\Flow\AtomicFlowNode.cs" />
+    <Compile Include="Business\Flow\ConditionFlowNode.cs" />
+    <Compile Include="Business\Flow\FlowNodeBase.cs" />
+    <Compile Include="Business\Flow\LoopFlowNode.cs" />
+    <Compile Include="Business\Flow\ParallelFlowNode.cs" />
+    <Compile Include="Business\IBusinessUnit.cs" />
+    <Compile Include="Business\ICompositeBusinessUnit.cs" />
+    <Compile Include="Business\INodeExecutor.cs" />
+    <Compile Include="Business\Models\CompositeFlowNode.cs" />
+    <Compile Include="Business\Models\FlowModels.cs" />
+    <Compile Include="Business\Models\FlowNode.cs" />
+    <Compile Include="Business\Models\FlowNodeBase.cs" />
+    <Compile Include="Business\Models\NodeRenderData.cs" />
+    <Compile Include="Business\Models\NodesParams.cs" />
+    <Compile Include="Business\Attributes\NodeAttribute.cs" />
+    <Compile Include="Business\NodeExecutionContext.cs" />
+    <Compile Include="Class1.cs" />
+    <Compile Include="Core\ContextDataKeys.cs" />
+    <Compile Include="Core\Message\IMessageBus.cs" />
+    <Compile Include="Core\Message\MessageBase.cs" />
+    <Compile Include="Core\Pose3D.cs" />
+    <Compile Include="Core\Result.cs" />
+    <Compile Include="Core\Runtime\IWorkflowRuntime.cs" />
+    <Compile Include="Core\VisionContext.cs" />
+    <Compile Include="Devices\ICamera.cs" />
+    <Compile Include="Devices\IDevice.cs" />
+    <Compile Include="Devices\IHardwarePlugin.cs" />
+    <Compile Include="Devices\IMotionController.cs" />
+    <Compile Include="Devices\IPlc.cs" />
+    <Compile Include="Devices\IRobot.cs" />
+    <Compile Include="Devices\DevicePluginAttribute.cs" />
+    <Compile Include="Permission\UserRole.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Recipe\IRecipeProvider.cs" />
+    <Compile Include="Recipe\RecipeRootModel.cs" />
+    <Compile Include="Recipe\StationConfigModel.cs" />
+    <Compile Include="Registry\BusinessUnitMeta.cs" />
+    <Compile Include="Registry\IBusinessUnitRegistry.cs" />
+    <Compile Include="VM\ViewModelBase.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Business\file1.md" />
+    <None Include="README.md" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

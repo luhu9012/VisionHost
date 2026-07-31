@@ -1,0 +1,202 @@
+﻿<UserControl x:Class="Grayson.Vision.WpfUI.View.DevicePoolView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             mc:Ignorable="d" d:DesignHeight="650" d:DesignWidth="1050">
+
+    <UserControl.Resources>
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+    </UserControl.Resources>
+
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="360"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ==================== 左侧：已配置硬件列表 ==================== -->
+        <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,6,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 列表顶部工具条 -->
+                <Grid Margin="0,0,0,12">
+                    <TextBlock Text="已配置硬件设备池" Style="{StaticResource SectionTitleTextStyle}" VerticalAlignment="Center"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="🔄" Command="{Binding RefreshCommand}" ToolTip="刷新设备列表" Style="{StaticResource IconButtonStyle}" Margin="0,0,4,0"/>
+                        <Button Content="🔍 扫描硬件" Command="{Binding ScanHardwareCommand}" Style="{StaticResource PrimaryButtonStyle}" Height="28" Padding="8,0" FontSize="12"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 设备卡片列表 -->
+                <ListBox Grid.Row="1" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
+         Background="Transparent" BorderThickness="0" 
+         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+         HorizontalContentAlignment="Stretch">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{StaticResource BackgroundLightBrush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,8"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 设备类别图标 -->
+                                    <TextBlock Text="{Binding CategoryIcon}" FontSize="22" VerticalAlignment="Center" Margin="0,0,12,0"/>
+
+                                    <!-- 设备标识、SN与品牌（添加了右边距 Margin="0,0,12,0"） -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <!-- 添加 TextTrimming="CharacterEllipsis" 和 ToolTip -->
+                                        <TextBlock Text="{Binding DeviceKey}" 
+                                   ToolTip="{Binding DeviceKey}"
+                                   TextTrimming="CharacterEllipsis" 
+                                   Foreground="{StaticResource TextPrimaryBrush}" 
+                                   FontWeight="Bold" 
+                                   FontSize="14"/>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                            <!-- 品牌名称也建议加上截断，防止品牌过长 -->
+                                            <TextBlock Text="{Binding BrandName}" 
+                                       ToolTip="{Binding BrandName}"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="120"
+                                       Foreground="{StaticResource TextSecondaryBrush}" 
+                                       FontSize="11" 
+                                       Margin="0,0,8,0"/>
+                                            <TextBlock Text="{Binding DeviceId, StringFormat='SN: {0}'}" 
+                                       ToolTip="{Binding DeviceId}"
+                                       TextTrimming="CharacterEllipsis"
+                                       Foreground="{StaticResource TextDisabledBrush}" 
+                                       FontSize="11"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- 在线状态指示灯 -->
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,6,0"/>
+                                        <Ellipse Width="10" Height="10">
+                                            <Ellipse.Style>
+                                                <Style TargetType="Ellipse">
+                                                    <Setter Property="Fill" Value="{StaticResource TextDisabledBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding State}" Value="Connected">
+                                                            <Setter Property="Fill" Value="{StaticResource SuccessBrush}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding State}" Value="Disconnected">
+                                                            <Setter Property="Fill" Value="{StaticResource ErrorBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Ellipse.Style>
+                                        </Ellipse>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <!-- 扫码/新增设备按钮 -->
+                <Button Grid.Row="2" Content="+ 扫描并添加在线硬件" Height="38" Margin="0,10,0,0"
+                        Command="{Binding AddDeviceCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            </Grid>
+        </Border>
+
+        <!-- ==================== 右侧：设备详细参数配置面板 ==================== -->
+        <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Margin="6,0,0,0">
+            <Grid>
+                <!-- 未选择设备时的占位提示 -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding SelectedDevice, Converter={StaticResource NullToVisibilityConverter}, ConverterParameter=Invert}">
+                    <TextBlock Text="🔌" FontSize="48" HorizontalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"/>
+                    <TextBlock Text="请在左侧列表中选择或点击“扫描硬件”添加物理设备" Style="{StaticResource FormLabelStyle}" Margin="0,10,0,0"/>
+                </StackPanel>
+
+                <!-- 已选择设备后的主面板 -->
+                <Grid Visibility="{Binding SelectedDevice, Converter={StaticResource NullToVisibilityConverter}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 1. 设备头信息区 -->
+                    <Border Grid.Row="0" Background="{StaticResource BackgroundLightBrush}" Padding="15,10" CornerRadius="4" Margin="0,0,0,15">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectedDevice.CategoryIcon}" FontSize="24" Margin="0,0,10,0"/>
+                                <TextBlock Text="{Binding SelectedDevice.DeviceKey}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="20" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SelectedDevice.BrandName, StringFormat=' ({0})'}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                            </StackPanel>
+
+                            <Button Content="🗑️ 移除设备" Command="{Binding DeleteDeviceCommand}" Style="{StaticResource DangerButtonStyle}" 
+                                    HorizontalAlignment="Right" Padding="10,5" FontSize="12"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 2. 通信与硬件参数配置区 -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <!-- 基础属性表单 -->
+                            <GroupBox Header="基础通用标识" Foreground="{StaticResource AccentLightBrush}" Margin="0,0,0,15" Padding="10">
+                                <UniformGrid Columns="2">
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="设备绑定 Key (逻辑引用名):" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.DeviceKey, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="硬件唯一标识 (SN / DeviceId):" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.DeviceId, Mode=OneWay}" IsReadOnly="True" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0" Opacity="0.7"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="硬件品牌 (Brand):" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.BrandName, Mode=OneWay}" IsReadOnly="True" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0" Opacity="0.7"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="设备类型 (Category):" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.Category, Mode=OneWay}" IsReadOnly="True" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0" Opacity="0.7"/>
+                                    </StackPanel>
+                                </UniformGrid>
+                            </GroupBox>
+
+                            <!-- 动态通信/控制参数 -->
+                            <GroupBox Header="通信与控制参数" Foreground="{StaticResource AccentLightBrush}" Padding="10">
+                                <UniformGrid Columns="2">
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="IP 地址 / 串口号:" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.IpAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="端口号 (Port):" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.Port, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="曝光时间 / 采样周期 (us):" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Text="{Binding SelectedDevice.ExposureTime, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Height="32" Margin="0,5,0,0"/>
+                                    </StackPanel>
+                                </UniformGrid>
+                            </GroupBox>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 3. 底部连接/断开控制栏 -->
+                    <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,15,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="⚡ 连接设备" Command="{Binding ConnectCommand}" Style="{StaticResource SuccessButtonStyle}" Width="120" Height="36" Margin="0,0,12,0"/>
+                            <Button Content="⏹ 断开连接" Command="{Binding DisconnectCommand}" Style="{StaticResource DangerButtonStyle}" Width="120" Height="36"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

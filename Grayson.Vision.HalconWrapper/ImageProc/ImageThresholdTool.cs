@@ -1,0 +1,74 @@
+﻿using System;
+using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Core;
+using HalconDotNet;
+
+namespace Grayson.Vision.HalconWrapper.ImageProc
+{
+    /// <summary>
+    /// 灰度阈值分割工具
+    /// 固定阈值、反阈值、动态自适应阈值，用于提取亮缺陷、暗缺陷、物料轮廓
+    /// </summary>
+    public static class ImageThresholdTool
+    {
+        /// <summary>
+        /// 固定灰度阈值分割：低于minGray、高于maxGray保留
+        /// 输出：满足灰度区间的Region区域
+        /// </summary>
+        public static Result<HObject> FixedThreshold(HObject grayImage, int minGray, int maxGray)
+        {
+            if (grayImage == null || !grayImage.IsInitialized())
+                return Result<HObject>.Fail("灰度图无效");
+            try
+            {
+                HObject regionOut;
+                HOperatorSet.Threshold(grayImage, out regionOut, minGray, maxGray);
+                return Result<HObject>.Ok(regionOut);
+            }
+            catch (Exception ex)
+            {
+                GlobalLogger.Error("固定阈值分割失败", ex, nameof(ImageThresholdTool));
+                return Result<HObject>.Fail("阈值分割异常", -1, ex);
+            }
+        }
+
+        /// <summary>
+        /// 自适应动态阈值（明暗不均匀工况必备）
+        /// 用局部均值做参考，亮于均值offset则检出
+        /// </summary>
+        /// <param name="maskSize">局部窗口尺寸</param>
+        /// <param name="offset">亮度偏移</param>
+        public static Result<HObject> AutoThreshold(HObject grayImage, int maskSize = 15, int offset = 5)
+        {
+            try
+            {
+                HObject regionOut;
+                HOperatorSet.DynThreshold(grayImage, grayImage, out regionOut, offset, "light");
+                return Result<HObject>.Ok(regionOut);
+            }
+            catch (Exception ex)
+            {
+                GlobalLogger.Error("动态阈值分割失败", ex, nameof(ImageThresholdTool));
+                return Result<HObject>.Fail("动态阈值异常", -1, ex);
+            }
+        }
+
+        /// <summary>
+        /// 区域筛选：按面积过滤小噪点，保留指定面积区间轮廓
+        /// </summary>
+        public static Result<HObject> SelectRegionByArea(HObject inputRegion, double areaMin, double areaMax)
+        {
+            try
+            {
+                HObject regionFiltered;
+                HOperatorSet.SelectShape(inputRegion, out regionFiltered, "area", "and", areaMin, areaMax);
+                return Result<HObject>.Ok(regionFiltered);
+            }
+            catch (Exception ex)
+            {
+                GlobalLogger.Error("区域面积筛选失败", ex, nameof(ImageThresholdTool));
+                return Result<HObject>.Fail("区域筛选异常", -1, ex);
+            }
+        }
+    }
+}

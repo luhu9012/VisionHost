@@ -21,6 +21,13 @@ namespace Grayson.Vision.Contracts.Business.Enums
         Exec,   // 控制流/执行流程端口（如：In, Out, OK, NG）
         Data    // 数据传递端口（如：Image, Region, Point, String, Double）
     }
+    public enum PortPosition
+    {
+        Top,    // 顶部主输入
+        Bottom, // 底部主输出
+        Left,   // 左侧扩展输入
+        Right   // 右侧扩展输出
+    }
 
     /// <summary>
     /// 端口连接类型枚举（对应连线逻辑）
@@ -33,6 +40,8 @@ namespace Grayson.Vision.Contracts.Business.Enums
         OutputFalse,    // 条件不满足 / NG 管道
         OutputError     // 异常通道
     }
+
+
 
     /// <summary>
     /// 工业视觉节点的 6 大核心业务分类

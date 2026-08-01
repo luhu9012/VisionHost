@@ -1,32 +1,68 @@
-# Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# Build outputs
-[Bb]in/
-[Oo]bj/
+# Visual Studio 编译输出
 [Dd]ebug/
 [Rr]elease/
-[Tt]est[Rr]esult*/
-[Bb]uild[Ll]og.*
+bin/
+obj/
+*.pdb
+*.cache
+*.ilk
+*.obj
+*.tlb
+*.tli
+*.tlh
+*.vcxproj.user
 
-# NuGet packages
+# VS 缓存配置
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.slnx
+
+# NuGet 本地包文件夹（packages.config保留，文件夹忽略）
 packages/
-*.nupkg
-!packages/build/
-!packages/repositories.config
 
-# Logs
+# WPF 自动生成资源中间文件（不用删源码resx）
+*Resources.Designer.cs.tmp
+
+# 日志、临时文件
 *.log
+*.tmp
+*.bak
+Logs/
+Temp/
 
-# OS files
-.DS_Store
+# 机器视觉本地素材（不上仓库）
+Images/
+Templates/
+CalibFiles/
+*.png
+*.jpg
+*.bmp
+*.tif
+*.hobj
+*.hvp
+
+# SDK、驱动、授权文件
+SDK/
+Lib/
+License/
+*.lic
+*.sn
+
+# 本地私有配置
+*.local.config
+appsettings.local.json
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*.sublime-project
+*.sublime-workspace
+
+# OS 文件
 Thumbs.db
-
-# Keep required local SDK binary referenced by the project
-!Grayson.Vision.Host/bin/
-!Grayson.Vision.Host/bin/Debug/
-!Grayson.Vision.Host/bin/Debug/MvCamCtrl.Net.dll
+.DS_Store
+desktop.ini

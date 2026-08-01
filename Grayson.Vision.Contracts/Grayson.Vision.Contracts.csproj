@@ -45,32 +45,19 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Business\Attributes\NodePortAttribute.cs" />
-    <Compile Include="Business\BusinessUnitMetaAttribute.cs" />
     <Compile Include="Business\Engine\Execution\ExecutionContext.cs" />
     <Compile Include="Business\Engine\Execution\FlowExecutor.cs" />
     <Compile Include="Business\Engine\Execution\FrameCycleContext.cs" />
     <Compile Include="Business\Engine\Execution\NodeExecutionContext.cs" />
-    <Compile Include="Business\Enums\BusinessUnitType.cs" />
     <Compile Include="Business\Enums\DeviceState.cs" />
     <Compile Include="Business\Enums\NodeFlowEnums.cs" />
     <Compile Include="Business\Factories\NodeFactory.cs" />
-    <Compile Include="Business\Flow\AtomicFlowNode.cs" />
-    <Compile Include="Business\Flow\ConditionFlowNode.cs" />
-    <Compile Include="Business\Flow\FlowNodeBase.cs" />
-    <Compile Include="Business\Flow\LoopFlowNode.cs" />
-    <Compile Include="Business\Flow\ParallelFlowNode.cs" />
-    <Compile Include="Business\IBusinessUnit.cs" />
-    <Compile Include="Business\ICompositeBusinessUnit.cs" />
-    <Compile Include="Business\INodeExecutor.cs" />
+    <Compile Include="Business\Engine\INodeExecutor.cs" />
     <Compile Include="Business\Models\CompositeFlowNode.cs" />
     <Compile Include="Business\Models\FlowModels.cs" />
     <Compile Include="Business\Models\FlowNode.cs" />
     <Compile Include="Business\Models\FlowNodeBase.cs" />
-    <Compile Include="Business\Models\NodeRenderData.cs" />
-    <Compile Include="Business\Models\NodesParams.cs" />
     <Compile Include="Business\Attributes\NodeAttribute.cs" />
-    <Compile Include="Business\NodeExecutionContext.cs" />
-    <Compile Include="Class1.cs" />
     <Compile Include="Core\ContextDataKeys.cs" />
     <Compile Include="Core\Message\IMessageBus.cs" />
     <Compile Include="Core\Message\MessageBase.cs" />
@@ -90,8 +77,6 @@
     <Compile Include="Recipe\IRecipeProvider.cs" />
     <Compile Include="Recipe\RecipeRootModel.cs" />
     <Compile Include="Recipe\StationConfigModel.cs" />
-    <Compile Include="Registry\BusinessUnitMeta.cs" />
-    <Compile Include="Registry\IBusinessUnitRegistry.cs" />
     <Compile Include="VM\ViewModelBase.cs" />
   </ItemGroup>
   <ItemGroup>

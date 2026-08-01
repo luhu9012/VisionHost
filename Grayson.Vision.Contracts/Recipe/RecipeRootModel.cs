@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using Grayson.Vision.Contracts.Business.Flow;
+using Grayson.Vision.Contracts.Business.Models;
 
 namespace Grayson.Vision.Contracts.Recipe
 {

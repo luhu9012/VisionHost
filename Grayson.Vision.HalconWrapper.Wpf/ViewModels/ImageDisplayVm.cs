@@ -1,14 +1,15 @@
-﻿using Grayson.Vision.Contracts.Imaging;
+﻿using Grayson.Vision.Contracts.Business.Engine.Execution;
+using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Imaging;
+using Grayson.Vision.Contracts.Logging;
 using Grayson.Vision.Contracts.ViewModels;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
-using Grayson.Vision.Contracts.Business.Engine.Execution;
-using Grayson.Vision.Contracts.Business.Models;
 
-namespace Grayson.Vison.FlowEdit.ViewModels
+namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
 {
     public class ImageDisplayVm : ViewModelBase
     {
@@ -22,6 +23,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _activeImageContext, value))
                 {
+                    LogBus.Info("ImageDisplay", $"ActiveImageContext 已更新 -> [{value?.NodeName ?? "Null"}]");
                     OnRequestRender?.Invoke(value);
                     UpdateImageInfo();
                 }
@@ -61,12 +63,16 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             SelectImageItemCmd = new RelayCommand<WpfImageRenderContext>(SelectImageItem);
 
             _engineContext.OnNodeExecuted += EngineContext_OnNodeExecuted;
+            LogBus.Debug("ImageDisplay", "ImageDisplayVm 初始化完成，已挂载 OnNodeExecuted 监听。");
         }
 
         private void EngineContext_OnNodeExecuted(object sender, FlowNodeBase node)
         {
+            if (node == null) return;
+            LogBus.Info("ImageDisplay", $"节点 [{node.DisplayName}] 执行完毕，开始检查图像输出...");
+
             // 确保回到 UI 线程更新
-            App.Current.Dispatcher.InvokeAsync(() =>
+            System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
             {
                 // 1. 从节点的 OutputPorts 寻找是否有图像类型的数据
                 var imagePort = node.OutputPorts?.FirstOrDefault(p =>
@@ -74,8 +80,16 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                 if (imagePort != null)
                 {
+                    LogBus.Info("ImageDisplay", $"找到节点 [{node.DisplayName}] 的图像端口 [{imagePort.PortName}] (类型:{imagePort.DataType})，开始转换...");
+
                     // 2. 组装 UI 渲染上下文
                     var renderImage = _renderService.WrapImage(imagePort.DataValue);
+                    if (renderImage == null)
+                    {
+                        LogBus.Warn("ImageDisplay", $"节点 [{node.DisplayName}] 图像包装失败 (WrapImage 返回 null)");
+                        return;
+                    }
+
                     var renderContext = new WpfImageRenderContext
                     {
                         NodeId = node.NodeId,
@@ -86,10 +100,16 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                     // 3. 更新历史列表及主图
                     ImageHistoryList.Add(renderContext);
+                    LogBus.Info("ImageDisplay", $"已追加历史图像列表，当前历史数量: {ImageHistoryList.Count}");
+
                     if (IsAutoSwitchEnabled)
                     {
                         SelectImageItem(renderContext);
                     }
+                }
+                else
+                {
+                    LogBus.Debug("ImageDisplay", $"节点 [{node.DisplayName}] 未检测到有效图像输出");
                 }
             });
         }
@@ -121,6 +141,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             foreach (var img in ImageHistoryList) img.IsSelected = false;
             item.IsSelected = true;
 
+            LogBus.Info("ImageDisplay", $"选择图像: [{item.NodeName}] (Width:{item.Image?.Width}, Height:{item.Image?.Height})");
             ActiveImageContext = item;
         }
 
@@ -170,6 +191,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         {
             if (ActiveImageContext != null)
             {
+                LogBus.Debug("ImageDisplay", $"手动请求刷新 ActiveImageContext: {ActiveImageContext.NodeName}");
                 OnRequestRender?.Invoke(ActiveImageContext);
             }
         }
@@ -180,6 +202,5 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         //    _engineContext.OnNodeExecuted -= EngineContext_OnNodeExecuted;
         //    base.Cleanup();
         //}
-
     }
 }

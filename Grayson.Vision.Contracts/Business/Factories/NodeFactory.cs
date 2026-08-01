@@ -144,6 +144,10 @@ namespace Grayson.Vision.Contracts.Business.Factories
         /// <param name="position">节点在画布上的坐标</param>
         /// <param name="overrideDisplayName">可选：自定义节点显示名称，不传则使用特性默认名称</param>
         /// <returns>画布可视化节点FlowNode</returns>
+        /// <summary>
+        /// 功能2：创建画布可视FlowNode节点对象
+        /// 每次调用都会生成全新独立节点实例，参数对象互不共享
+        /// </summary>
         public static FlowNode CreateNodeInstance(NodeType type, Point2D position, string overrideDisplayName = null)
         {
             EnsureInitialized();
@@ -157,6 +161,7 @@ namespace Grayson.Vision.Contracts.Business.Factories
             if (!_nodeRegistry.TryGetValue(type, out var regInfo))
             {
                 var fallback = new FlowNode(type, defaultDisplayName, NodeCategory.DeviceIO, position, defaultDescription);
+                fallback.Type = type; // 🌟 1. 给兜底节点赋值 NodeType
                 fallback.InputPorts.Add(new NodePort { PortName = "ExecIn", PortType = PortType.In, Category = PortCategory.Data });
                 fallback.OutputPorts.Add(new NodePort { PortName = "ExecOut", PortType = PortType.Out, Category = PortCategory.Data });
                 return fallback;
@@ -174,6 +179,27 @@ namespace Grayson.Vision.Contracts.Business.Factories
 
             // 实例化画布节点基础对象
             var node = new FlowNode(attr.Type, finalDisplayName, attr.Category, position, defaultDescription, paramInstance);
+
+            // =========================================================================
+            // 🌟 核心修复位置：在这里统一挂载 NodeType、ExecutorType 与 Executor 实例！
+            // =========================================================================
+            node.Type = type; // 1. 设置枚举 NodeType
+            node.ExecutorType = regInfo.ExecutorType; // 2. 挂载执行器 Type
+
+            // 3. 动态实例化执行器并赋值给 node.Executor 属性
+            if (regInfo.ExecutorType != null)
+            {
+                try
+                {
+                    node.Executor = Activator.CreateInstance(regInfo.ExecutorType) as INodeExecutor;
+                }
+                catch (Exception ex)
+                {
+                    // 异常兜底，记录或打印日志
+                    System.Diagnostics.Debug.WriteLine($"[NodeFactory] 实例化执行器 [{regInfo.ExecutorType.Name}] 失败: {ex.Message}");
+                }
+            }
+            // =========================================================================
 
             // 动态挂载输入输出端口
             if (_portRegistry.TryGetValue(type, out var portAttrs))
@@ -198,7 +224,6 @@ namespace Grayson.Vision.Contracts.Business.Factories
 
             return node;
         }
-
         /// <summary>
         /// 通过工具箱元数据快速创建画布节点
         /// 拖拽工具箱节点时直接调用，自动携带工具箱定义的显示名称

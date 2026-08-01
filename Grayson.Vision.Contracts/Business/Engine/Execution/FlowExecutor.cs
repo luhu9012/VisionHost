@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Logging;
 
 namespace Grayson.Vision.Contracts.Business.Engine.Execution
 {
@@ -42,12 +43,13 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
 
             State = ExecutionMode.Continuous;
             _cts = new CancellationTokenSource();
-            _context.Log($"▶ 流程 [{_process.ProcessName}] 开始连续运行...");
+            LogBus.Info("Engine", $"▶ 流程 [{_process.ProcessName}] 开始连续运行...");
 
             try
             {
                 // 每次运行重新计算拓扑执行链
                 var execChain = GetExecutableExecutionChain();
+                LogBus.Debug("Engine", $"拓扑排序完成，共解析出 {execChain.Count} 个执行节点。");
 
                 while (_currentStepIndex < execChain.Count && State == ExecutionMode.Continuous)
                 {
@@ -59,23 +61,27 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
                         bool success = await ExecuteNodeWithHandlingAsync(node, _cts.Token);
                         if (!success)
                         {
-                            _context.Log($"🛑 节点 [{node.DisplayName}] 执行中断，中止流程。");
+                            LogBus.Warn("Engine", $"🛑 节点 [{node.DisplayName}] 执行失败，中止流程。");
                             break;
                         }
+                    }
+                    else
+                    {
+                        LogBus.Debug("Engine", $"⏭ 节点 [{node.DisplayName}] 被禁用，自动跳过。");
                     }
 
                     _currentStepIndex++;
                 }
 
-                _context.Log($"✔ 流程 [{_process.ProcessName}] 执行完毕。");
+                LogBus.Info("Engine", $"✔ 流程 [{_process.ProcessName}] 执行完毕。");
             }
             catch (OperationCanceledException)
             {
-                _context.Log("⏹ 流程已被手动停止。");
+                LogBus.Info("Engine", "⏹ 流程已被手动停止。");
             }
             catch (Exception ex)
             {
-                _context.Log($"❌ 引擎致命错误: {ex.Message}");
+                LogBus.Error("Engine", $"❌ 引擎致命错误: {ex.Message}", ex);
             }
             finally
             {
@@ -89,12 +95,16 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         public async Task StepAsync()
         {
             var execChain = GetExecutableExecutionChain();
-            if (execChain.Count == 0) return;
+            if (execChain.Count == 0)
+            {
+                LogBus.Warn("Engine", "单步执行取消: 当前流程没有可执行节点。");
+                return;
+            }
 
             if (_currentStepIndex >= execChain.Count)
             {
                 _currentStepIndex = 0;
-                _context.Log("🔄 单步执行到达末尾，自动重置回起点。");
+                LogBus.Info("Engine", "🔄 单步执行到达末尾，自动重置回起点。");
             }
 
             State = ExecutionMode.Step;
@@ -105,14 +115,14 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
                 var node = execChain[_currentStepIndex];
                 if (node.Enable)
                 {
-                    _context.Log($"⏯ [单步 {_currentStepIndex + 1}/{execChain.Count}] 节点: {node.DisplayName}");
+                    LogBus.Info("Engine", $"⏯ [单步 {_currentStepIndex + 1}/{execChain.Count}] 准备执行节点: {node.DisplayName}");
                     await ExecuteNodeWithHandlingAsync(node, _cts.Token);
                     _currentStepIndex++;
                     break;
                 }
                 else
                 {
-                    _context.Log($"⏭ 跳过禁用节点: {node.DisplayName}");
+                    LogBus.Info("Engine", $"⏭ 跳过禁用节点: {node.DisplayName}");
                     _currentStepIndex++;
                 }
             }
@@ -127,37 +137,65 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         {
             node.IsRunning = true;
             _context.NotifyNodeExecuting(node);
+            LogBus.Debug("Engine", $"========== 开始执行节点 [{node.DisplayName}] (ID: {node.NodeId}) ==========");
 
             try
             {
                 // 1. 数据绑定：提取上游输入数据（沿着依赖连线拉取数据）
                 PrepareNodeInputs(node);
 
-                // 2. 模拟/调用实际节点业务逻辑
-                await Task.Delay(200, token); // 根据实际需要调整或调用 node.Execute(_context)
+                // 🌟 核心修复：构建节点的单次运行上下文，真正调用 ExecuteCoreAsync()
+                var nodeExecContext = new NodeExecutionContext(_context, new FrameCycleContext());
+
+                LogBus.Debug("Engine", $"正在触发节点 [{node.DisplayName}] 的核心业务逻辑 (ExecuteAsync)...");
+                // 🌟 方式 A：如果 node 本身实现了 INodeExecutor 或继承自 NodeExecutorBase
+                // 判断 node 的 Type 是否直接或间接实现了 INodeExecutor 接口
+                // 🌟 核心修改：判断 node.Executor 是否实现了 INodeExecutor
+                if (node.Executor is INodeExecutor executor)
+                {
+                    await executor.ExecuteAsync(node, nodeExecContext, token);
+                    LogBus.Info("Engine", $"节点 [{node.DisplayName}] 核心逻辑执行成功。");
+                }
+                else if (node.ExecutorType != null)
+                {
+                    // 如果挂载的是 Type，动态实例化
+                    var dynamicExecutor = Activator.CreateInstance(node.ExecutorType) as INodeExecutor;
+                    if (dynamicExecutor != null)
+                    {
+                        await dynamicExecutor.ExecuteAsync(node, nodeExecContext, token);
+                        LogBus.Info("Engine", $"节点 [{node.DisplayName}] 核心逻辑执行成功。");
+                    }
+                }
+                else
+                {
+                    LogBus.Warn("Engine", $"节点 [{node.DisplayName}] 未挂载有效的 INodeExecutor 执行器，跳过业务逻辑执行。");
+                }
+
 
                 // 3. 将节点的输出写回端口并向下游传播
                 PropagateNodeOutputs(node);
 
                 node.IsRunning = false;
                 _context.NotifyNodeExecuted(node);
+                LogBus.Debug("Engine", $"========== 节点 [{node.DisplayName}] 处理结束 ==========");
                 return true;
             }
             catch (OperationCanceledException)
             {
                 node.IsRunning = false;
+                LogBus.Warn("Engine", $"节点 [{node.DisplayName}] 执行被取消。");
                 throw;
             }
             catch (Exception ex)
             {
                 node.IsRunning = false;
-                _context.Log($"⚠️ 节点 [{node.DisplayName}] 运行时异常: {ex.Message}");
+                LogBus.Error("Engine", $"⚠️ 节点 [{node.DisplayName}] 运行时异常: {ex.Message}", ex);
 
                 // 触发事件总线处理异常
                 bool handled = _context.RaiseExecutionError(node, ex);
                 if (handled)
                 {
-                    _context.Log($"🛡️ 异常已被 TryCatch 节点接管处理。");
+                    LogBus.Info("Engine", $"🛡️ 异常已被 TryCatch 节点接管处理。");
                     return true;
                 }
                 return false;
@@ -169,8 +207,8 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         /// </summary>
         private void PrepareNodeInputs(FlowNodeBase node)
         {
-            // 🌟 核心修复：移除 Category == Exec / Data 的判断，直接通过 TargetNode 关联连线
-            var incomingConnections = _process.Connections.Where(c => c.TargetNode == node);
+            var incomingConnections = _process.Connections.Where(c => c.TargetNode == node).ToList();
+            LogBus.Debug("Engine", $"节点 [{node.DisplayName}] 正在准备输入数据，入站连线数: {incomingConnections.Count}");
 
             foreach (var conn in incomingConnections)
             {
@@ -181,23 +219,44 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
                 if (conn.SourcePort != null && conn.TargetPort != null)
                 {
                     conn.TargetPort.DataValue = conn.SourcePort.DataValue;
+                    LogBus.Debug("Engine", $"[输入绑定] 映射 {conn.SourceNode?.DisplayName}.{conn.SourcePort.PortName} -> {conn.TargetPort.PortName}，当前值: {conn.TargetPort.DataValue ?? "null"}");
                 }
             }
         }
+
 
         /// <summary>
         /// 传播节点输出数据
         /// </summary>
         private void PropagateNodeOutputs(FlowNodeBase node)
         {
-            // 🌟 核心修复：对节点的所有输出端口进行处理，不再过滤 PortCategory.Data
+            LogBus.Debug("Engine", $"正在推送节点 [{node.DisplayName}] 的输出端口数据，端口数: {node.OutputPorts?.Count ?? 0}");
+
+            if (node.OutputPorts == null) return;
+
             foreach (var port in node.OutputPorts)
             {
+                // 🌟【关键修复】：如果在算子内部没同步设置 port.DataValue，从 Context 尝试同步回填
                 if (port.DataValue == null)
                 {
-                    // 若节点业务中未显式设置 DataValue，则填充模拟数据以供测试
-                    port.DataValue = $"Data_{node.DisplayName}_{DateTime.Now:ss}";
+                    var cachedVal = _context.GetPortValue(port.PortId);
+                    if (cachedVal != null)
+                    {
+                        port.DataValue = cachedVal;
+                    }
                 }
+
+                // 再次检查校验
+                if (port.DataValue == null)
+                {
+                    LogBus.Warn("Engine", $"节点 [{node.DisplayName}] 输出端口 [{port.PortName}] 的 DataValue 为 null！");
+                }
+                else
+                {
+                    LogBus.Debug("Engine", $"[输出广播] 端口 [{port.PortName}] 数据已就绪 (类型: {port.DataValue.GetType().Name})");
+                }
+
+                // 确保 Context 字典中包含了该端口值
                 _context.SetPortValue(port.PortId, port.DataValue);
             }
         }
@@ -248,6 +307,7 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             // 兜底校验：如果流程图存在死循环/环形连线导致部分节点入度无法归零，将未处理节点强制拼接到末尾
             if (resultChain.Count < nodes.Count)
             {
+                LogBus.Warn("Engine", "流程中检测到可能的环形依赖，部分未排序节点将强制追加至末尾。");
                 foreach (var node in nodes)
                 {
                     if (!resultChain.Contains(node))
@@ -265,11 +325,13 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             _cts?.Cancel();
             State = ExecutionMode.Stopped;
             foreach (var n in _process.Nodes) n.IsRunning = false;
+            LogBus.Info("Engine", "引擎已停止。");
         }
 
         public void ResetIndex()
         {
             _currentStepIndex = 0;
+            LogBus.Debug("Engine", "执行索引已重置。");
         }
     }
 }

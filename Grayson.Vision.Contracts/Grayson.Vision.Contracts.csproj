@@ -84,6 +84,8 @@
     <Compile Include="Devices\IDevice.cs" />
     <Compile Include="Devices\IHardwarePlugin.cs" />
     <Compile Include="Devices\IPlc.cs" />
+    <Compile Include="Logging\FileLogSink.cs" />
+    <Compile Include="Logging\LogBus.cs" />
     <Compile Include="Permission\UserRole.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\IFlowLayoutService.cs" />

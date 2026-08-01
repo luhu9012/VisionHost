@@ -14,6 +14,7 @@ using Grayson.Vision.WpfUI.Service;
 using Grayson.Vision.WpfUI.View;
 using Grayson.Vision.WpfUI.ViewModel;
 using Grayson.VisionApp.WpfUI.View;
+using Grayson.Vision.Contracts.Logging;
 
 namespace Grayson.Vision.WpfUI
 {
@@ -31,11 +32,41 @@ namespace Grayson.Vision.WpfUI
         private IAuthenticationService _authService;
 
         /// <summary>
+        /// 全局文件日志服务实例，负责将 LogBus 日志落盘到本地磁盘
+        /// </summary>
+        private FileLogSink _fileLogSink;
+
+        /// <summary>
         /// 应用程序启动入口事件，程序打开时第一个执行的方法
         /// 类比前端main.ts入口函数，统一完成全局初始化工作
         /// </summary>
         private void Application_Startup(object sender, StartupEventArgs e)
         {
+            // 1. 初始化文件日志服务
+            _fileLogSink = new FileLogSink();
+
+#if DEBUG
+            // 【VS 开发环境】：
+            // 不需要开启 FileLogSink（或者只输出到默认 Debug/Logs 目录）
+            // 所有 LogBus.Info/Error 都会直接显示在 VS 的 "输出(Output)" 窗口中！
+
+            // 如果开发时也想顺便写本地日志，取消下面这句注释即可：
+            // _fileLogSink.Enable(); 
+#else
+            // 【生产打包环境】：
+            // 1. 可以从 App.config / appsettings.json 读取生产环境配置的磁盘路径
+            string customPath = ConfigurationManager.AppSettings["LogPath"]; 
+            
+            if (!string.IsNullOrEmpty(customPath))
+            {
+                _fileLogSink.SetDirectory(customPath); // 例如 "D:\FactoryData\Logs"
+            }
+
+            // 2. 生产环境开启落盘
+            _fileLogSink.Enable();
+#endif
+
+          
             // 1. 初始化账号认证服务（当前使用Mock模拟登录服务，可替换为数据库/网络登录实现）
             _authService = new MockAuthenticationService();
 
@@ -49,6 +80,7 @@ namespace Grayson.Vision.WpfUI
             DevicePoolManager.Instance.AutoLoadAllPlugins();
             // 3. 程序启动默认弹出登录窗口，登录校验通过后再加载主业务界面
             ShowLoginWindow();
+            LogBus.Info("System", "应用程序启动完成！");
         }
 
         /// <summary>
@@ -142,7 +174,7 @@ namespace Grayson.Vision.WpfUI
         /// <param name="navigationService">页面导航管理器</param>
         private void RegisterPages(NavigationService navigationService)
         {
-  
+
             // 报警记录页面
             navigationService.RegisterPage(PageType.Alarm, () => new AlarmView());
             // 流程编辑页面
@@ -156,7 +188,7 @@ namespace Grayson.Vision.WpfUI
             //设备池页面 
             navigationService.RegisterPage(PageType.DevicePool, () => new DevicePoolView());
             // 硬件控制台页面  
-            navigationService.RegisterPage(PageType.HardwareConsole, () => new HardwareConsoleView());  
+            navigationService.RegisterPage(PageType.HardwareConsole, () => new HardwareConsoleView());
             // 用户权限管理页面
             navigationService.RegisterPage(PageType.UserManage, () => new UserManageView());
 

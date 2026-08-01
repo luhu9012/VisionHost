@@ -51,6 +51,7 @@
       <DependentUpon>HalconImageDisplayHost.xaml</DependentUpon>
     </Compile>
     <Compile Include="Imaging\\WpfImageRenderContext.cs" xmlns="" />
+    <Compile Include="ViewModels\ImageDisplayVm.cs" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="Controls\HalconImageDisplayHost.xaml">

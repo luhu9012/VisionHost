@@ -1,9 +1,11 @@
-using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
+using Grayson.Vision.Contracts.Logging;
+using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Factories;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
 using Grayson.Vison.FlowEdit.Helpers;
 using Grayson.Vison.FlowEdit.Services;
 using System;
@@ -50,7 +52,6 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _selectedNode, value))
                 {
-                    // 当选择的节点变化时，手动刷新删除命令的 CanExecute 状态
                     DeleteNodeCmd?.RaiseCanExecuteChanged();
                 }
             }
@@ -67,7 +68,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _showDataPorts, value))
                 {
-                    AddLog(value ? "已开启【数据端口】显示" : "已隐藏【数据端口】，仅保留控制流端口");
+                    LogBus.Info("UI", value ? "已开启【数据端口】显示" : "已隐藏【数据端口】，仅保留控制流端口");
                 }
             }
         }
@@ -77,10 +78,10 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         private readonly RecipeManager _recipeManager;
         private FlowExecutor _executor;
 
-        // 3. UI 交互事件 (如 View 层画布自动平移/跟焦)
+        // 3. UI 交互事件
         public event Action<FlowNodeBase> OnNodeExecuting;
 
-        // 4. 命令属性 (需要手动触发 RaiseCanExecuteChanged 的声明为具体强类型)
+        // 4. 命令属性
         public RelayCommand DeleteNodeCmd { get; }
         public RelayCommand<ConnectionModel> DeleteConnectionCmd { get; }
         public ICommand SaveRecipeCmd { get; }
@@ -102,21 +103,23 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         public FlowVm()
         {
+            // 必须最先初始化 LogBus 订阅，防止遗漏启动日志
+            InitLogBusSubscription();
+
             // 初始化事件与服务上下文
             Context = new ExecutionContext();
-            Context.OnLogProduced += (s, log) => AddLog(log);
             Context.OnNodeExecuting += (s, node) => OnNodeExecuting?.Invoke(node);
             Context.OnExecutionError += OnGlobalExecutionError;
 
             // 初始化图像显示 VM
             ImageDisplayVm = new ImageDisplayVm(Context, new Grayson.Vision.HalconWrapper.Wpf.Imaging.HalconImageRenderService());
 
-            // 自动加载当前运行目录及 Debug 目录下的 Nodes DLL 插件
+            // 自动加载插件
             string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
-            new NodePluginLoader().LoadPlugins(pluginDir, AddLog);
+            new NodePluginLoader().LoadPlugins(pluginDir);
 
             _recipeManager = new RecipeManager(new WpfDialogService());
-            _recipeManager.LoadCompositeRecipeTemplates(ToolBox, AddLog);
+            _recipeManager.LoadCompositeRecipeTemplates(ToolBox);
 
             // 初始化工具箱与主配方
             InitFullToolBox();
@@ -131,37 +134,66 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             RunContinuousCmd = new RelayCommand(async () => await _executor.RunContinuousAsync());
             StepRunCmd = new RelayCommand(async () => await _executor.StepAsync());
             StopRunCmd = new RelayCommand(() => _executor.Stop());
-            PauseRunCmd = new RelayCommand(() => AddLog("暂停流程"));
+            PauseRunCmd = new RelayCommand(() => LogBus.Info("Engine", "暂停流程"));
 
             DeleteNodeCmd = new RelayCommand(DeleteSelectedNode, () => SelectedNode != null);
             DeleteConnectionCmd = new RelayCommand<ConnectionModel>(DeleteConnection);
-            SaveRecipeCmd = new RelayCommand(() => AddLog("配方参数已成功保存！"));
+            SaveRecipeCmd = new RelayCommand(() => LogBus.Info("Recipe", "配方参数已成功保存！"));
             ImportRecipeCmd = new RelayCommand(ImportRecipe);
-            ExportRecipeCmd = new RelayCommand(() => _recipeManager.ExportRecipe(RootProcess, AddLog));
+            ExportRecipeCmd = new RelayCommand(() => _recipeManager.ExportRecipe(RootProcess));
             NavigateToProcessCmd = new RelayCommand<FlowProcessModel>(NavigateToProcess);
             AutoLayoutCmd = new RelayCommand(AutoLayout);
             SaveCurrentPipelineAsRecipeCommand = new RelayCommand(OnSaveCurrentPipelineAsRecipe);
             ClearCanvasCommand = new RelayCommand(() => ClearCanvas(false));
             ToggleShowDataPortsCommand = new RelayCommand(() => ShowDataPorts = !ShowDataPorts);
             OpenNodePropertyCommand = new RelayCommand<FlowNodeBase>(OnNodeDoubleClicked);
+
+            LogBus.Info("System", "FlowVm 初始化完成。");
         }
+
+        #region 日志通信总线与 UI 防爆机制
+        private void InitLogBusSubscription()
+        {
+            const int MAX_UI_LOG_COUNT = 500; // UI 最大显示条数，超过自动裁切，防止内存溢出
+
+            LogBus.OnLogProduced += entry =>
+            {
+                // 只将 Info 及以上级别的日志呈现到 UI，Debug 级别可在文件/VS输出窗口查看
+                if (entry.Level < LogLevel.Info) return;
+                // 可选：按分类过滤（例如只关注流程、节点和 Halcon 显示）
+                //if (entry.Category != "Engine" && entry.Category != "Halcon" && entry.Category != "Node") return;
+
+                string formattedMsg = $"[{entry.Timestamp:HH:mm:ss}] [{entry.Category}] {entry.Message}";
+
+                // 线程安全切回 UI 线程更新 ObservableCollection
+                Application.Current?.Dispatcher.InvokeAsync(() =>
+                {
+                    ExecutionLogs.Insert(0, formattedMsg);
+
+                    // 防爆限制
+                    while (ExecutionLogs.Count > MAX_UI_LOG_COUNT)
+                    {
+                        ExecutionLogs.RemoveAt(ExecutionLogs.Count - 1);
+                    }
+                });
+            };
+        }
+        #endregion
 
         #region 点击节点属性弹框
         public void OnNodeDoubleClicked(FlowNodeBase node)
         {
             if (node == null) return;
 
-            // 1. 如果是复合节点，保持原样下挖
             if (node is CompositeFlowNode compositeNode)
             {
                 DrillDownCompositeNode(compositeNode);
             }
-            // 2. 如果是普通节点，弹出参数模型与 XAML 配置窗口
             else
             {
                 var win = new Grayson.Vison.FlowEdit.Views.NodePropertyWindow
                 {
-                    DataContext = node, // 将节点的 Model / ParameterModel 绑定至弹窗
+                    DataContext = node,
                     Owner = Application.Current?.MainWindow
                 };
                 win.ShowDialog();
@@ -176,10 +208,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (tryCatchNode != null)
             {
                 e.Handled = true;
-                AddLog($"捕获到节点 [{e.Node.DisplayName}] 的异常: {e.Exception.Message}");
+                LogBus.Warn("Engine", $"捕获到节点 [{e.Node.DisplayName}] 的异常: {e.Exception.Message}");
             }
             else
             {
+                LogBus.Error("Engine", $"节点 [{e.Node.DisplayName}] 抛出未处理异常", e.Exception);
                 MessageBox.Show($"节点 [{e.Node.DisplayName}] 抛出未处理异常:\n{e.Exception.Message}",
                                 "流程错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -192,18 +225,6 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
 
         public void ResetStepProgress() => _executor?.ResetIndex();
-        public void AddLog(string log)
-        {
-            var logMsg = $"[{DateTime.Now:HH:mm:ss}] {log}";
-            if (Application.Current?.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
-            {
-                Application.Current.Dispatcher.InvokeAsync(() => ExecutionLogs.Insert(0, logMsg));
-            }
-            else
-            {
-                ExecutionLogs.Insert(0, logMsg);
-            }
-        }
         #endregion
 
         #region 配方、模板与下钻交互
@@ -213,7 +234,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             string recipeName = PromptDialog.Show("保存为复合模板", "请输入要导出的配方名称：", defaultName);
             if (string.IsNullOrWhiteSpace(recipeName)) return;
 
-            _recipeManager.SavePipelineAsRecipe(CurrentProcess, recipeName.Trim(), ToolBox, AddLog);
+            _recipeManager.SavePipelineAsRecipe(CurrentProcess, recipeName.Trim(), ToolBox);
         }
 
         public void DrillDownCompositeNode(CompositeFlowNode compositeNode)
@@ -225,13 +246,13 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                 SelectedNode = null;
                 ResetStepProgress();
-                AddLog($"已经下钻进入子流程: [{CurrentProcess.ProcessName}]");
+                LogBus.Info("Flow", $"已经下钻进入子流程: [{CurrentProcess.ProcessName}]");
             }
         }
 
         private void ImportRecipe()
         {
-            var imported = _recipeManager.ImportRecipe(AddLog);
+            var imported = _recipeManager.ImportRecipe();
             if (imported != null)
             {
                 RootProcess = imported;
@@ -268,16 +289,15 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                     CurrentProcess.Nodes.Add(compositeNode);
                     SelectedNode = compositeNode;
-                    AddLog($"成功实例化复合节点: {compositeNode.DisplayName}");
+                    LogBus.Info("Flow", $"成功实例化复合节点: {compositeNode.DisplayName}");
                     return;
                 }
             }
 
-            // 2. 普通节点统统交给底层 NodeFactory 构建！
             var node = NodeFactory.CreateFromMeta(meta, pos);
             CurrentProcess.Nodes.Add(node);
             SelectedNode = node;
-            AddLog($"新增节点: {node.DisplayName}");
+            LogBus.Info("Flow", $"新增节点: {node.DisplayName}");
         }
         #endregion
 
@@ -296,7 +316,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             CurrentProcess.Nodes.Clear();
             SelectedNode = null;
             ResetStepProgress();
-            AddLog($"画布 [{CurrentProcess.ProcessName}] 已清空。");
+            LogBus.Info("Flow", $"画布 [{CurrentProcess.ProcessName}] 已清空。");
         }
 
         public void AddConnection(FlowNodeBase source, NodePort sourcePort, FlowNodeBase target, NodePort targetPort)
@@ -306,7 +326,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             var connection = new ConnectionModel(source, sourcePort, target, targetPort);
             CurrentProcess.Connections.Add(connection);
-            AddLog($"建立连线: {source.DisplayName} [{sourcePort.PortName}] -> {target.DisplayName} [{targetPort.PortName}]");
+            LogBus.Info("Flow", $"建立连线: {source.DisplayName} [{sourcePort.PortName}] -> {target.DisplayName} [{targetPort.PortName}]");
         }
 
         private void DeleteSelectedNode()
@@ -318,7 +338,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     CurrentProcess.Connections.RemoveAt(i);
             }
             CurrentProcess.Nodes.Remove(SelectedNode);
-            AddLog($"删除节点: {SelectedNode.DisplayName}");
+            LogBus.Info("Flow", $"删除节点: {SelectedNode.DisplayName}");
             SelectedNode = null;
         }
 
@@ -327,7 +347,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (conn != null && CurrentProcess.Connections.Contains(conn))
             {
                 CurrentProcess.Connections.Remove(conn);
-                AddLog("删除了连线");
+                LogBus.Info("Flow", "删除了连线");
             }
         }
 
@@ -379,8 +399,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             var layerGroups = nodes.GroupBy(n => layers[n]).OrderBy(g => g.Key).ToList();
 
-            double startY = 80, gapY = 160; // 层级控制 Y 轴
-            double startX = 200, gapX = 200; // 同一层节点控制 X 轴
+            double startY = 80, gapY = 160;
+            double startX = 200, gapX = 200;
 
             foreach (var group in layerGroups)
             {
@@ -392,28 +412,21 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 for (int i = 0; i < nodeList.Count; i++)
                 {
                     var node = nodeList[i];
-                    // Y 随着 DAG 层级递增（上到下）
                     node.PosY = startY + layerIndex * gapY;
-                    // X 轴同一层平铺
                     node.PosX = Math.Max(50, layerStartX + i * gapX);
                 }
             }
 
             foreach (var conn in connections) conn.UpdatePoints();
-            AddLog("已完成自上而下的智能拓扑重排。");
+            LogBus.Info("Flow", "已完成自上而下的智能拓扑重排。");
         }
         #endregion
 
         #region 工具箱初始化与元数据绑定
-
-        /// <summary>
-        /// 动态构建工具箱 (优先根据扫描到的 DLL 自动推导 ToolBox) 初始化完整流程工具箱，加载插件节点并按分类分组
-        /// </summary>
         private void InitFullToolBox()
         {
             ToolBox.Clear();
 
-            // 1. 直接从 Contracts 的 NodeFactory 拿所有注册好的元数据！
             var metas = NodeFactory.GenerateToolboxMetas();
             foreach (var meta in metas)
             {
@@ -421,15 +434,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 ToolBox.Add(meta);
             }
 
-            // 2. UI 视图分组更新
             ToolBoxGrouped = CollectionViewSource.GetDefaultView(ToolBox);
             ToolBoxGrouped.GroupDescriptions.Clear();
             ToolBoxGrouped.GroupDescriptions.Add(new PropertyGroupDescription("CategoryName"));
         }
 
-        /// <summary>
-        /// 从 NodeMetaRegistry 统一提取分类显示名称
-        /// </summary>
         private string GetCategoryDisplayName(NodeCategory category)
         {
             var info = NodeMetaRegistry.Get(category);
@@ -440,7 +449,6 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             return "其他节点";
         }
-
         #endregion
     }
 

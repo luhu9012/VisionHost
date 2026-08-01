@@ -3,12 +3,13 @@
 // 说 明: 基于 Halcon 的图像渲染服务实现。
 //===================================================================================
 
+using Grayson.Vision.Contracts.Imaging;
+using Grayson.Vision.Contracts.Logging;
+using HalconDotNet;
 using System;
 using System.Collections.Generic;
-using System.Windows.Media.Imaging;
-using Grayson.Vision.Contracts.Imaging;
-using HalconDotNet;
 using System.IO;
+using System.Windows.Media.Imaging;
 
 namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
 {
@@ -17,17 +18,114 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
     /// </summary>
     public class HalconImageRenderService : IImageRenderService
     {
-        /// <summary>
-        /// 将原生图像对象包装为渲染图像句柄
-        /// </summary>
         public IRenderImage WrapImage(object nativeImage)
         {
-            return new HalconRenderImage(nativeImage as HImage);
+            if (nativeImage == null)
+            {
+                LogBus.Warn("Halcon", "WrapImage 接收到的数据为 null");
+                return null;
+            }
+            LogBus.Debug("Halcon", $"正在包装图像，数据类型: {nativeImage.GetType().Name}");
+            HImage hImage = null;
+
+            try
+            {
+                // 1. 如果已经是 HImage
+                if (nativeImage is HImage img)
+                {
+                    hImage = img;
+                }
+                // 2. 如果是文件路径 string
+                else if (nativeImage is string filePath && File.Exists(filePath))
+                {
+                    LogBus.Debug("Halcon", $"通过路径加载 HImage: {filePath}");
+                    hImage = new HImage(filePath);
+                }
+                // 3. 如果是 Bitmap
+                else if (nativeImage is System.Drawing.Bitmap bitmap)
+                {
+                    LogBus.Debug("Halcon", "通过 Bitmap 锁内存转换 HImage...");
+                    hImage = ConvertBitmapToHImage(bitmap);
+                }
+
+                if (hImage == null || !hImage.IsInitialized())
+                {
+                    LogBus.Error("Halcon", $"图像包装失败，未能成功构建 Halcon HImage 实例 (数据类型: {nativeImage.GetType().Name})");
+                    return null;
+                }
+
+                hImage.GetImageSize(out int w, out int h);
+                LogBus.Info("Halcon", $"HImage 包装成功: 尺寸 [{w} x {h}]");
+
+                return new HalconRenderImage(hImage);
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("Halcon", $"WrapImage 抛出异常: {ex.Message}", ex);
+                return null;
+            }
         }
 
-        /// <summary>
-        /// 将 HImage 转换为 WPF BitmapSource
-        /// </summary>
+        private HImage ConvertBitmapToHImage(System.Drawing.Bitmap bitmap)
+        {
+            if (bitmap == null) return null;
+
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+            System.Drawing.Imaging.BitmapData bmpData = null;
+
+            try
+            {
+                var rect = new System.Drawing.Rectangle(0, 0, width, height);
+                bmpData = bitmap.LockBits(rect, System.Drawing.Imaging.ImageLockMode.ReadOnly, bitmap.PixelFormat);
+
+                HImage hImage = new HImage();
+
+                if (bitmap.PixelFormat == System.Drawing.Imaging.PixelFormat.Format8bppIndexed)
+                {
+                    hImage.GenImage1("byte", width, height, bmpData.Scan0);
+                }
+                else if (bitmap.PixelFormat == System.Drawing.Imaging.PixelFormat.Format24bppRgb)
+                {
+                    hImage.GenImageInterleaved(bmpData.Scan0, "bgr", width, height, -1, "byte", width, height, 0, 0, -1, 0);
+                }
+                else
+                {
+                    using (var rgbBitmap = new System.Drawing.Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format24bppRgb))
+                    {
+                        using (var g = System.Drawing.Graphics.FromImage(rgbBitmap))
+                        {
+                            g.DrawImage(bitmap, 0, 0, width, height);
+                        }
+                        var rgbRect = new System.Drawing.Rectangle(0, 0, width, height);
+                        var rgbData = rgbBitmap.LockBits(rgbRect, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                        try
+                        {
+                            hImage.GenImageInterleaved(rgbData.Scan0, "bgr", width, height, -1, "byte", width, height, 0, 0, -1, 0);
+                        }
+                        finally
+                        {
+                            rgbBitmap.UnlockBits(rgbData);
+                        }
+                    }
+                }
+
+                return hImage;
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("Halcon", $"Bitmap 转 HImage 异常: {ex.Message}", ex);
+                return null;
+            }
+            finally
+            {
+                if (bmpData != null)
+                {
+                    bitmap.UnlockBits(bmpData);
+                }
+            }
+        }
+
         public BitmapSource ConvertToBitmapSource(IRenderImage image)
         {
             var halconImage = (image as HalconRenderImage)?.HImage;
@@ -35,14 +133,9 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
                 return null;
 
             HOperatorSet.DumpWindowImage(out HObject dumpObj, new HWindow { });
-            // 简化：将 HImage 通过 Halcon 的 HOperatorSet 转换并使用 WriteIcon / 内存流加载
-            // 实际实现可能需根据项目已有 Halcon 转换工具补充
             return null;
         }
 
-        /// <summary>
-        /// 生成 WPF 缩略图
-        /// </summary>
         public BitmapSource CreateThumbnail(IRenderImage image)
         {
             var halconImage = (image as HalconRenderImage)?.HImage;
@@ -61,15 +154,17 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
                 bitmap.Freeze();
                 return bitmap;
             }
+            catch (Exception ex)
+            {
+                LogBus.Warn("Halcon", $"创建缩略图失败: {ex.Message}");
+                return null;
+            }
             finally
             {
                 try { File.Delete(tempFile); } catch { }
             }
         }
 
-        /// <summary>
-        /// 查询指定像素信息
-        /// </summary>
         public string GetPixelInfo(IRenderImage image, int x, int y)
         {
             var halconImage = (image as HalconRenderImage)?.HImage;
@@ -91,9 +186,6 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
             }
         }
 
-        /// <summary>
-        /// 包装原生区域/XLD 为叠加图元
-        /// </summary>
         public ImageOverlay WrapOverlay(OverlayKind kind, object nativeHandle, string color = "red")
         {
             return new ImageOverlay
@@ -109,14 +201,24 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
         /// </summary>
         public void RenderToWindow(object windowHandle, IRenderImage image, IEnumerable<ImageOverlay> overlays)
         {
-            if (!(windowHandle is HWindow hWindow)) return;
+            if (!(windowHandle is HWindow hWindow))
+            {
+                LogBus.Warn("Halcon", "RenderToWindow 失败: windowHandle 不是有效的 HWindow 实例");
+                return;
+            }
 
             var halconImage = (image as HalconRenderImage)?.HImage;
             hWindow.ClearWindow();
 
             if (halconImage != null && halconImage.IsInitialized())
             {
+                // 🌟 执行绘制
                 hWindow.DispObj(halconImage);
+                LogBus.Debug("Halcon", $"图像已成功 DispObj 到 HWindow (尺寸: {image.Width}x{image.Height})");
+            }
+            else
+            {
+                LogBus.Warn("Halcon", "DispObj 跳过: HImage 为 null 或未初始化");
             }
 
             if (overlays == null) return;
@@ -141,13 +243,22 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
         }
 
         /// <summary>
-        /// 让窗口自适应图像
+        /// 让窗口视口适应图像全图尺寸
         /// </summary>
         public void FitImageToWindow(object windowHandle, IRenderImage image)
         {
             if (windowHandle is HWindow hWindow && (image as HalconRenderImage)?.HImage is HImage hImage && hImage.IsInitialized())
             {
-                HOperatorSet.SetPart(hWindow, 0, 0, image.Height - 1, image.Width - 1);
+                try
+                {
+                    // 🌟 关键修复：显式设定 Halcon Window 视口为全图边界
+                    HOperatorSet.SetPart(hWindow, 0, 0, image.Height - 1, image.Width - 1);
+                    LogBus.Debug("Halcon", $"[FitImageToWindow] 视口区域重置为: [0, 0, {image.Height - 1}, {image.Width - 1}]");
+                }
+                catch (Exception ex)
+                {
+                    LogBus.Warn("Halcon", $"SetPart 设置视口失败: {ex.Message}");
+                }
             }
         }
     }

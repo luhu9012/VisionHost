@@ -106,5 +106,15 @@ namespace Grayson.Vision.Contracts.Business.Models
             }
         }
 
+        /// <summary>
+        /// 节点的执行器实例 (实现 INodeExecutor)
+        /// </summary>
+        public INodeExecutor Executor { get; set; }
+
+        /// <summary>
+        /// 或者保存执行器的 Type (便于延迟加载)
+        /// </summary>
+        public Type ExecutorType { get; set; }
+
     }
 }

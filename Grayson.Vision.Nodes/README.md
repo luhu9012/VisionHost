@@ -47,7 +47,7 @@ Grayson.Vison.FlowEdit / Grayson.VisionApp.WpfUI (宿主平台)
 ```text
 Grayson.Vision.Nodes/
 ├── All/                              # 所有节点分类
-│   ├── DeviceIO/                     # 设备 IO 类节点 (如相机采集、PLC读写)
+│   ├── ImageInput/                     # 设备 IO 类节点 (如相机采集、PLC读写)
 │   │   └── AcquireImage/             # 相机采集示例
 │   │       ├── AcquireImageParam.cs
 │   │       ├── AcquireImageExecutor.cs

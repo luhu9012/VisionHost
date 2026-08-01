@@ -1,5 +1,6 @@
 using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Services;
+using Grayson.Vision.Contracts.Logging;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -32,7 +33,7 @@ namespace Grayson.Vison.FlowEdit.Services
         /// <summary>
         /// 扫描 /Recipes/ 目录，将 .json 导出为复合积木注入工具箱
         /// </summary>
-        public void LoadCompositeRecipeTemplates(ObservableCollection<UnitMeta> toolBox, Action<string> logAction)
+        public void LoadCompositeRecipeTemplates(ObservableCollection<UnitMeta> toolBox)
         {
             try
             {
@@ -53,16 +54,15 @@ namespace Grayson.Vison.FlowEdit.Services
                         Description = file
                     });
                 }
-
-                logAction?.Invoke($"?? 已加载 {files.Length} 个复合流程模板到工具箱。");
+                LogBus.Debug("RecipeManager", $"已加载 {files.Length} 个复合流程模板到工具箱。");
             }
             catch (Exception ex)
             {
-                logAction?.Invoke($"?? 扫描 Recipes 目录失败: {ex.Message}");
+                LogBus.Error("RecipeManager", $"扫描 Recipes 目录失败: {ex.Message}", ex);
             }
         }
 
-        public void SavePipelineAsRecipe(FlowProcessModel currentProcess, string recipeName, ObservableCollection<UnitMeta> toolBox, Action<string> logAction)
+        public void SavePipelineAsRecipe(FlowProcessModel currentProcess, string recipeName, ObservableCollection<UnitMeta> toolBox)
         {
             if (string.IsNullOrWhiteSpace(recipeName) || currentProcess == null) return;
 
@@ -72,22 +72,22 @@ namespace Grayson.Vison.FlowEdit.Services
             string json = JsonConvert.SerializeObject(currentProcess, settings);
             File.WriteAllText(filePath, json);
 
-            logAction?.Invoke($"?? 当前流程已保存为模板: {filePath}");
-            LoadCompositeRecipeTemplates(toolBox, logAction);
+            LogBus.Info("RecipeManager", $"?? 当前流程已保存为模板: {filePath}");
+            LoadCompositeRecipeTemplates(toolBox);
         }
 
-        public void ExportRecipe(FlowProcessModel rootProcess, Action<string> logAction)
+        public void ExportRecipe(FlowProcessModel rootProcess)
         {
             var fileName = _fileDialogService?.ShowSaveFileDialog("Recipe File (*.json)|*.json", "VisionStationRecipe.json");
             if (!string.IsNullOrEmpty(fileName))
             {
                 string json = JsonConvert.SerializeObject(rootProcess, Formatting.Indented, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto });
                 File.WriteAllText(fileName, json);
-                logAction?.Invoke($"閰嶆柟鎴愬姛瀵煎嚭鑷? {fileName}");
+                LogBus.Info("RecipeManager", $"导出成功: {fileName}");
             }
         }
 
-        public FlowProcessModel ImportRecipe(Action<string> logAction)
+        public FlowProcessModel ImportRecipe()
         {
             var fileName = _fileDialogService?.ShowOpenFileDialog("Recipe File (*.json)|*.json");
             if (!string.IsNullOrEmpty(fileName))
@@ -96,7 +96,7 @@ namespace Grayson.Vison.FlowEdit.Services
                 var process = JsonConvert.DeserializeObject<FlowProcessModel>(json, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto });
                 if (process != null)
                 {
-                    logAction?.Invoke($"鎴愬姛瀵煎叆閰嶆柟鏂囦欢: {fileName}");
+                    LogBus.Info("RecipeManager", $"导入成功: {fileName}");
                     return process;
                 }
             }

@@ -22,6 +22,7 @@
             <cvts:HexToBrushConv x:Key="HexToBrushConv"/>
             <cvts:ConnectionThicknessConv x:Key="ConnectionThicknessConv"/>
             <cvts:ConnectionDashConv x:Key="ConnectionDashConv"/>
+            <cvts:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -397,7 +398,10 @@
                 </Grid.RowDefinitions>
 
                 <!-- 1. 图像展示区 -->
-                <halconHost:HalconImageDisplayHost DataContext="{Binding ImageDisplayVm}"/>
+                <halconHost:HalconImageDisplayHost 
+                DataContext="{Binding ImageDisplayVm}"
+                RenderContext="{Binding ActiveImageContext}" />
+ 
 
                 <!-- 2. 缩略图列表 -->
                 <Border Grid.Row="1" Background="#181818" BorderBrush="#3F3F46" BorderThickness="0 1 0 0">

@@ -90,6 +90,7 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             return defaultValue;
         }
 
+
         /// <summary>
         /// 将计算结果输出到当前节点的指定输出端口
         /// </summary>
@@ -98,7 +99,11 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             var port = node.OutputPorts?.FirstOrDefault(p => p.PortName.Equals(portName, StringComparison.OrdinalIgnoreCase));
             if (port != null)
             {
+                // 1. 写入全局/局部端口值缓存字典
                 EngineContext.SetPortValue(port.PortId, value);
+
+                // 🌟【关键修复】：同步赋值给 FlowNode 内部 NodePort 的 DataValue，供 UI/引擎广播读取
+                port.DataValue = value;
             }
         }
         #endregion

@@ -88,7 +88,6 @@
     <Compile Include="Services\LayoutService.cs" />
     <Compile Include="Services\NodePluginLoader.cs" />
     <Compile Include="ViewModels\FlowVm.cs" />
-    <Compile Include="ViewModels\ImageDisplayVm.cs" />
     <Compile Include="Views\FlowEditView.xaml.cs">
       <DependentUpon>FlowEditView.xaml</DependentUpon>
     </Compile>
@@ -142,6 +141,7 @@
     </None>
     <None Include="READE.md" />
     <None Include="todo1.md" />
+    <None Include="节点-宿主-视图窗口通信案例.md" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

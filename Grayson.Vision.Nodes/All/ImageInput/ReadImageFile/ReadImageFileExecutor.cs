@@ -19,13 +19,33 @@ namespace Grayson.Vision.Nodes.All.ImageInput.ReadImageFile
         protected override async Task ExecuteCoreAsync(FlowNodeBase node, ReadImageFileParam param, NodeExecutionContext context, CancellationToken token)
         {
             string targetPath = param.IsBatchFolder ? param.FolderPath : param.FilePath;
-            context.Log($"[图像读取] 加载图像文件: {targetPath}...");
+            context.Log($"[图像读取] 开始读取路径: {targetPath}...");
 
             await Task.Yield();
 
-            string imageHandle = $"HImage_File_{Path.GetFileName(targetPath)}_{DateTime.Now:HHmmss.fff}";
-            context.SetOutputValue(node, PORT_OUT_IMAGE, imageHandle);
-            context.Log($"[图像读取] 读取成功: {imageHandle}");
+            if (!string.IsNullOrWhiteSpace(targetPath) && File.Exists(targetPath))
+            {
+                // 🌟 修复：直接将真实文件的路径作为输出，让 WrapImage 能成功 new HImage(filePath)
+                context.SetOutputValue(node, PORT_OUT_IMAGE, targetPath);
+                context.Log($"[图像读取] 读取成功: {Path.GetFileName(targetPath)}");
+            }
+            else
+            {
+                // 如果是文件夹模式，取文件夹内的第一张图片
+                if (param.IsBatchFolder && Directory.Exists(targetPath))
+                {
+                    var files = Directory.GetFiles(targetPath, "*.*", SearchOption.TopDirectoryOnly);
+                    if (files.Length > 0)
+                    {
+                        context.SetOutputValue(node, PORT_OUT_IMAGE, files[0]);
+                        context.Log($"[图像读取] 批处理文件夹加载成功: {Path.GetFileName(files[0])}");
+                        return;
+                    }
+                }
+
+                context.SetOutputValue(node, PORT_OUT_IMAGE, null);
+                context.Log($"⚠️ [图像读取] 路径无效或文件不存在: '{targetPath}'");
+            }
         }
     }
 }

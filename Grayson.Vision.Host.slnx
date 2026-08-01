@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Grayson.Vision.Common/Grayson.Vision.Common.csproj" Id="97de4abb-3947-454b-b27f-28d43e73ae55" />
   <Project Path="Grayson.Vision.Contracts/Grayson.Vision.Contracts.csproj" Id="b0a7e029-998c-44a3-96f5-3f04214eee32" />
+  <Project Path="Grayson.Vision.HalconWrapper.Wpf/Grayson.Vision.HalconWrapper.Wpf.csproj" Id="7a6b5c44-8d7e-4f2a-9b1c-3d8e4f5a6b7c" />
   <Project Path="Grayson.Vision.HalconWrapper/Grayson.Vision.HalconWrapper.csproj" Id="ecc73133-c99e-43f3-9206-1edc2cbda74a" />
   <Project Path="Grayson.Vision.Nodes/Grayson.Vision.Nodes.csproj" Id="5a281c6b-1822-4435-aa21-e42f1a0d02f7" />
   <Project Path="Grayson.VisionApp.WpfUI/Grayson.Vision.WpfUI.csproj" Id="a161af53-5187-4451-9f5d-cb3327f68d67" />

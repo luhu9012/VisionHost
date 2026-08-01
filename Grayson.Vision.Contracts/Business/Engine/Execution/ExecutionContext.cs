@@ -1,5 +1,6 @@
 ﻿using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Logging; // 引入 LogBus 命名空间
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
@@ -33,13 +34,35 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         // 节点输出端口数据缓存: PortId -> Value
         private readonly ConcurrentDictionary<string, object> _portValueCache = new ConcurrentDictionary<string, object>();
 
-        // 事件总线
+        // 核心流程控制事件总线 (纯控制流，不再包含日志事件)
         public event EventHandler<FlowNodeBase> OnNodeExecuting;
         public event EventHandler<FlowNodeBase> OnNodeExecuted;
         public event EventHandler<NodeExecutionErrorEventArgs> OnExecutionError;
-        public event EventHandler<string> OnLogProduced;
 
-        public void Log(string message) => OnLogProduced?.Invoke(this, $"[{DateTime.Now:HH:mm:ss.fff}] {message}");
+        #region 日志扩展封装 (统一对接 LogBus)
+        /// <summary>
+        /// 向 LogBus 投递执行引擎日志 (默认 Category 为 Engine)
+        /// </summary>
+        public void Log(string message)
+        {
+            LogBus.Info("Engine", message);
+        }
+
+        public void LogDebug(string message)
+        {
+            LogBus.Debug("Engine", message);
+        }
+
+        public void LogWarn(string message)
+        {
+            LogBus.Warn("Engine", message);
+        }
+
+        public void LogError(string message, Exception ex = null)
+        {
+            LogBus.Error("Engine", message, ex);
+        }
+        #endregion
 
         public void NotifyNodeExecuting(FlowNodeBase node) => OnNodeExecuting?.Invoke(this, node);
         public void NotifyNodeExecuted(FlowNodeBase node) => OnNodeExecuted?.Invoke(this, node);
@@ -47,6 +70,10 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         public bool RaiseExecutionError(FlowNodeBase node, Exception ex)
         {
             var args = new NodeExecutionErrorEventArgs(node, ex);
+
+            // 记录到 LogBus
+            LogError($"节点 [{node?.DisplayName ?? "Unknown"}] 执行出现异常: {ex.Message}", ex);
+
             OnExecutionError?.Invoke(this, args);
             return args.Handled;
         }
@@ -83,6 +110,9 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             {
                 targetPort.DataValue = val;
             }
+
+            // 调试模式下，打印数据流转细节，对排查数据没传过去的 bug 极有帮助！
+            LogDebug($"[数据传递] {conn.SourceNode?.DisplayName}.{conn.SourcePortId} -> {conn.TargetNode?.DisplayName}.{conn.TargetPortId} (值: {val ?? "null"})");
         }
         #endregion
     }

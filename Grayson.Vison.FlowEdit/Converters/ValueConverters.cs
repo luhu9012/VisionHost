@@ -1,14 +1,18 @@
-using Grayson.Vision.Contracts.Business.Enums;
+ï»¿using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vison.FlowEdit.Helpers;
 using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Markup;
 using System.Windows.Media;
-using Grayson.Vision.Contracts.Business.Models;
+using System.Windows.Media.Effects;
 
 namespace Grayson.Vison.FlowEdit.Converters
 {
+    #region åŸºç¡€æŠ½è±¡ Converter
+
     public abstract class BaseConverter : MarkupExtension, IValueConverter
     {
         public override object ProvideValue(IServiceProvider serviceProvider) => this;
@@ -23,6 +27,83 @@ namespace Grayson.Vison.FlowEdit.Converters
         public virtual object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
+    #endregion
+
+    #region æ ¸å¿ƒï¼šä¸‡èƒ½åˆ†ç±»ä¸èŠ‚ç‚¹å…ƒæ•°æ® Converter
+
+    /// <summary>
+    /// ä¸‡èƒ½åˆ†ç±»ä¸èŠ‚ç‚¹ UI å…ƒæ•°æ®è½¬æ¢å™¨
+    /// é€šè¿‡ Parameter (icon, shortname, desc, brush, hex) æå–å¯¹åº”å±æ€§
+    /// </summary>
+    public class CategoryMetaConverter : BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value == null) return GetDefaultValue(parameter);
+
+            NodeMetaInfo info = null;
+
+            if (value is FlowNodeBase node)
+            {
+                info = NodeMetaRegistry.Get(node.Type);
+                if (info == null || info.ShortName == "é€šç”¨")
+                {
+                    info = NodeMetaRegistry.Get(node.Category);
+                }
+            }
+            else if (value is NodeCategory category)
+            {
+                info = NodeMetaRegistry.Get(category);
+            }
+            else if (value is NodeType nodeType)
+            {
+                info = NodeMetaRegistry.Get(nodeType);
+            }
+            else
+            {
+                info = NodeMetaRegistry.Resolve(value);
+            }
+
+            if (info == null) return GetDefaultValue(parameter);
+
+            string param = parameter?.ToString()?.ToLower();
+
+            switch (param)
+            {
+                case "emoji":
+                case "icon":
+                    return info.Emoji;
+
+                case "shortname":
+                    return info.ShortName;
+
+                case "desc":
+                case "description":
+                    return info.Description;
+
+                case "hex":
+                case "colorhex":
+                    return info.ColorHex;
+
+                case "brush":
+                default:
+                    return info.Brush;
+            }
+        }
+
+        private object GetDefaultValue(object parameter)
+        {
+            string param = parameter?.ToString()?.ToLower();
+            if (param == "emoji" || param == "icon") return "âš™ï¸";
+            if (param == "shortname" || param == "desc" || param == "description") return "é€šç”¨";
+            return NodeMetaRegistry.Get(NodeCategory.DeviceIO).Brush;
+        }
+    }
+
+    #endregion
+
+    #region è§†å›¾å¸ƒå±€ä¸æ§ä»¶è½¬æ¢å™¨
+
     public class ConditionOutputVisibilityConv : BaseConverter
     {
         public override object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is FlowNode ? Visibility.Visible : Visibility.Collapsed;
@@ -33,22 +114,6 @@ namespace Grayson.Vison.FlowEdit.Converters
         public override object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is FlowNode ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    public class NodeColorConv : BaseConverter
-    {
-        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (!(value is NodeCategory k)) return new SolidColorBrush(Color.FromRgb(45, 45, 48));
-            switch (k)
-            {
-                case NodeCategory.DeviceIO: return new SolidColorBrush(Color.FromRgb(0, 122, 204));
-                case NodeCategory.Logic: return new SolidColorBrush(Color.FromRgb(46, 139, 87));
-                case NodeCategory.Vision: return new SolidColorBrush(Color.FromRgb(218, 124, 6));
-                case NodeCategory.CompositeEx: return new SolidColorBrush(Color.FromRgb(155, 89, 182));
-                default: return new SolidColorBrush(Color.FromRgb(45, 45, 48));
-            }
-        }
-    }
-
     public class NodeBorderConv : BaseMultiConverter
     {
         public override object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
@@ -57,8 +122,8 @@ namespace Grayson.Vison.FlowEdit.Converters
             var node = values[0] as FlowNodeBase;
             var sel = values[1] as FlowNodeBase;
 
-            if (node != null && node.IsRunning) return Brushes.SpringGreen; // Ö´ĞĞ¶¯»­¸ßÁÁ
-            if (node != null && node == sel) return Brushes.Gold; // Ñ¡ÖĞ¸ßÁÁ
+            if (node != null && node.IsRunning) return Brushes.SpringGreen;
+            if (node != null && node == sel) return Brushes.Gold;
             return Brushes.Transparent;
         }
     }
@@ -74,19 +139,17 @@ namespace Grayson.Vison.FlowEdit.Converters
             var geometry = new PathGeometry();
             var figure = new PathFigure { StartPoint = new Point(startX, startY), IsClosed = false };
 
-            // ´ÓÉÏµ½ÏÂµÄ²¼¾Ö£º¿ØÖÆµãÔÚ Y Öá·½ÏòÀ­Éì
             double controlOffset = Math.Max(30, Math.Abs(endY - startY) / 2);
-            Point p1 = new Point(startX, startY + controlOffset); // ÍùÏÂÑÓÉì
-            Point p2 = new Point(endX, endY - controlOffset);   // ´ÓÉÏ·½ÒıÈë
+            Point p1 = new Point(startX, startY + controlOffset);
+            Point p2 = new Point(endX, endY - controlOffset);
             Point endPoint = new Point(endX, endY);
 
             figure.Segments.Add(new BezierSegment(p1, p2, endPoint, true));
             geometry.Figures.Add(figure);
 
-            // ?? »æÖÆÄ©¶Ë¼ıÍ·
             double angle = Math.Atan2(endY - p2.Y, endX - p2.X);
             double arrowLength = 7.0;
-            double arrowAngle = Math.PI / 6; // 30¶È½Ç
+            double arrowAngle = Math.PI / 6;
 
             Point arrowP1 = new Point(endX - arrowLength * Math.Cos(angle - arrowAngle), endY - arrowLength * Math.Sin(angle - arrowAngle));
             Point arrowP2 = new Point(endX - arrowLength * Math.Cos(angle + arrowAngle), endY - arrowLength * Math.Sin(angle + arrowAngle));
@@ -113,29 +176,23 @@ namespace Grayson.Vison.FlowEdit.Converters
         public override object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>
-    /// ¸ù¾İ PortCategory ¿ØÖÆ¶ËµãÍâ¹ÛÑùÊ½£º
-    /// Data -> ·½¿é/ÁâĞÎ/Èı½ÇĞÎ (CornerRadius=2)
-    /// Exec -> Ô²ĞÎ (CornerRadius=6)
-    /// </summary>
     public class PortCategoryToCornerRadiusConv : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is PortCategory category && category == PortCategory.Exec)
+            if (value is PortCategory category && category != PortCategory.Data)
             {
-                return new CornerRadius(6);     // ´¿Ô²ĞÎ (Êı¾İÁ÷)
+                return new CornerRadius(6);
             }
-           
-            return new CornerRadius(1); // ·½ĞÎ/Î¢Ô²½Ç (¿ØÖÆÁ÷)
+            return new CornerRadius(1);
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
-    public class HexToBrushConv : IValueConverter
+    public class HexToBrushConv : BaseConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is string hex && !string.IsNullOrWhiteSpace(hex))
             {
@@ -148,174 +205,20 @@ namespace Grayson.Vison.FlowEdit.Converters
             }
             return Brushes.DodgerBlue;
         }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
-    /// <summary>
-    /// ¸ù¾İÁ¬ÏßÀàĞÍ (ConnectionCategory) ¾ö¶¨Ïß¿í£ºExec ´ÖÏß(3.5)£¬Data Ï¸Ïß(1.8)
-    /// </summary>
-    /// <summary>
-    /// ¸ù¾İÁ¬ÏßÀàĞÍ (PortCategory) ¾ö¶¨Ïß¿í£ºExec ´ÖÏß(3.5)£¬Data Ï¸Ïß(1.8)
-    /// </summary>
     public class ConnectionThicknessConv : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return 3.5;
-            //if (value is PortCategory cat && cat == PortCategory.Exec)
-            //    return 3.5;
-            //return 1.8;
-        }
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => 3.5;
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
-    /// <summary>
-    /// ¸ù¾İÁ¬ÏßÀàĞÍ (PortCategory) ¾ö¶¨ĞéÏßÑùÊ½£ºExec ÊµÏß(null)£¬Data ĞéÏß("2 2")
-    /// </summary>
     public class ConnectionDashConv : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return null; // ÊµÏß
-            //if (value is PortCategory cat && cat == PortCategory.Exec)
-            //    return null; // ÊµÏß
-            //return new DoubleCollection { 2, 2 }; // µãĞéÏß
-        }
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => null;
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
-    /// <summary>
-    /// ½«·ÖÀàÃû³Æ»ò NodeCategory Ã¶¾Ù×ª»»Îª¶ÔÓ¦µÄ Emoji Í¼±ê£¨ÓÃÓÚ VisionMaster ¼«¼ò²à±ßÀ¸£©
-    /// </summary>
-    public class CategoryToIconConverter : BaseConverter
-    {
-        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value == null) return "??";
-
-            string name = value.ToString();
-
-            // 1. ´¦Àí NodeCategory Ã¶¾Ù
-            if (value is NodeCategory category)
-            {
-                switch (category)
-                {
-                    case NodeCategory.DeviceIO: return "??";
-                    case NodeCategory.Vision: return "???";
-                    case NodeCategory.Logic: return "??";
-                    case NodeCategory.DataProcess: return "??";
-                    case NodeCategory.SystemMES: return "??";
-                    case NodeCategory.CompositeEx: return "??";
-                    default: return "??";
-                }
-            }
-
-            // 2. ´¦ÀíÒÑÆ´½ÓÁË´ø Emoji µÄ×éÃû (ÀıÈç "?? Éè±¸Óë IO ¿ØÖÆÀà")
-            if (name.Contains("Éè±¸") || name.Contains("IO")) return "??";
-            if (name.Contains("Halcon") || name.Contains("ÊÓ¾õ")) return "???";
-            if (name.Contains("Âß¼­") || name.Contains("¿ØÖÆ")) return "??";
-            if (name.Contains("Êı¾İ´¦Àí") || name.Contains("×ª»»")) return "??";
-            if (name.Contains("Éú²ú") || name.Contains("MES")) return "??";
-            if (name.Contains("¸´ºÏ") || name.Contains("Òì³£")) return "??";
-
-            return "??";
-        }
-    }
-    /// <summary>
-    /// ¸ù¾İ NodeCategory Ã¶¾Ù¡¢·ÖÀàÃû³Æ»ò FlowNodeBase ÊµÌå£¬Í³Ò»·µ»ØÆ¥ÅäµÄÖ÷ÌâÉ«»­Ë¢
-    /// </summary>
-    public class CategoryToBrushConverter : BaseConverter
-    {
-        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            NodeCategory? category = null;
-
-            if (value is FlowNodeBase node)
-            {
-                category = node.Category;
-            }
-            else if (value is NodeCategory cat)
-            {
-                category = cat;
-            }
-            else if (value is string name)
-            {
-                if (name.Contains("Éè±¸") || name.Contains("IO") || name.Contains("DeviceIO")) category = NodeCategory.DeviceIO;
-                else if (name.Contains("Halcon") || name.Contains("ÊÓ¾õ") || name.Contains("Vision")) category = NodeCategory.Vision;
-                else if (name.Contains("Âß¼­") || name.Contains("¿ØÖÆ") || name.Contains("Logic")) category = NodeCategory.Logic;
-                else if (name.Contains("Êı¾İ´¦Àí") || name.Contains("×ª»»") || name.Contains("DataProcess")) category = NodeCategory.DataProcess;
-                else if (name.Contains("Éú²ú") || name.Contains("MES") || name.Contains("SystemMES")) category = NodeCategory.SystemMES;
-                else if (name.Contains("¸´ºÏ") || name.Contains("Òì³£") || name.Contains("CompositeEx")) category = NodeCategory.CompositeEx;
-            }
-
-            if (category.HasValue)
-            {
-                switch (category.Value)
-                {
-                    case NodeCategory.DeviceIO: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#007ACC")); // ¾­µäÀ¶
-                    case NodeCategory.Vision: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DA7C06"));   // ÊÓ¾õ³È
-                    case NodeCategory.Logic: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E8B57"));    // Âß¼­ÂÌ
-                    case NodeCategory.DataProcess: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#16A085")); // ÇàÂÌ
-                    case NodeCategory.SystemMES: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D35400"));  // ×Øºì
-                    case NodeCategory.CompositeEx: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9B59B6"));// ¸´ºÏ×Ï
-                }
-            }
-
-            return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#434346"));
-        }
-    }
-    /// <summary>
-    /// ½«·ÖÀàÃû³Æ»ò NodeCategory Ã¶¾ÙÌáÈ¡/½ØÈ¡Îª 2~4 ¸ö×ÖµÄ¼«¼ò¶ÌÃû³Æ£¨ÓÃÓÚÍ¼±êÏÂ·½µÄÎ¢ĞÍÎÄ±¾£©
-    /// </summary>
-    public class CategoryToShortNameConverter : BaseConverter
-    {
-        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value == null) return "ÆäËû";
-
-            string name = value.ToString();
-
-            // 1. ´¦Àí NodeCategory Ã¶¾Ù
-            if (value is NodeCategory category)
-            {
-                switch (category)
-                {
-                    case NodeCategory.DeviceIO: return "Éè±¸IO";
-                    case NodeCategory.Vision: return "ÊÓ¾õËã·¨";
-                    case NodeCategory.Logic: return "Âß¼­¿ØÖÆ";
-                    case NodeCategory.DataProcess: return "Êı¾İ´¦Àí";
-                    case NodeCategory.SystemMES: return "Éú²úMES";
-                    case NodeCategory.CompositeEx: return "¸´ºÏÒì³£";
-                    default: return "ÆäËû";
-                }
-            }
-
-            // 2. ´¦Àí°üº¬ÍêÕûÎÄ×ÖµÄ×éÃû (ÌáÈ¡¹Ø¼ü¶ÌÓï)
-            if (name.Contains("Éè±¸") || name.Contains("IO")) return "Éè±¸IO";
-            if (name.Contains("Halcon") || name.Contains("ÊÓ¾õ")) return "ÊÓ¾õËã·¨";
-            if (name.Contains("Âß¼­")) return "Âß¼­¿ØÖÆ";
-            if (name.Contains("Êı¾İ´¦Àí") || name.Contains("×ª»»")) return "Êı¾İ´¦Àí";
-            if (name.Contains("Éú²ú") || name.Contains("MES")) return "Éú²úMES";
-            if (name.Contains("¸´ºÏ") || name.Contains("Òì³£")) return "¸´ºÏÒì³£";
-
-            // 3. ºó±¸ÇåÏ´Âß¼­£ºÈ¥³ı Emoji ²¢½ØÈ¡Ç° 4 ¸ö×Ö·û
-            string cleanName = name.Replace("??", "")
-                                   .Replace("???", "")
-                                   .Replace("??", "")
-                                   .Replace("??", "")
-                                   .Replace("??", "")
-                                   .Replace("??", "")
-                                   .Trim();
-
-            return cleanName.Length > 4 ? cleanName.Substring(0, 4) : cleanName;
-        }
-    }
-
-    /// <summary>
-    /// ²¼¶ûÖµ×ª»­Ë¢×ª»»Æ÷£¨³£ÓÃÓÚ Selected Ñ¡ÖĞ×´Ì¬µÄ¸ßÁÁ±ß¿òÇĞ»»£©
-    /// Ö§³ÖÔÚ XAML ÖĞÖ±½ÓÉèÖÃ SelectedBrush / NormalBrush »òÊ¹ÓÃÄ¬ÈÏÖµ
-    /// </summary>
     public class BoolToBrushConverter : BaseConverter
     {
         public Brush SelectedBrush { get; set; } = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#007ACC"));
@@ -324,19 +227,127 @@ namespace Grayson.Vison.FlowEdit.Converters
         public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             bool isTrue = false;
-
-            if (value is bool b)
-            {
-                isTrue = b;
-            }
-            else if (value != null && bool.TryParse(value.ToString(), out bool parsed))
-            {
-                isTrue = parsed;
-            }
+            if (value is bool b) isTrue = b;
+            else if (value != null && bool.TryParse(value.ToString(), out bool parsed)) isTrue = parsed;
 
             return isTrue ? SelectedBrush : NormalBrush;
         }
     }
 
+    #endregion
 
+    #region ä» NodeControl åˆå¹¶çš„æ§ä»¶çº§ç‰¹æ•ˆä¸ç«¯ç‚¹è½¬æ¢å™¨
+
+    /// <summary>
+    /// å½“èŠ‚ç‚¹æ‰§è¡Œæ—¶ï¼Œç”Ÿæˆå‘å…‰/é˜´å½±ç‰¹æ•ˆ
+    /// </summary>
+    public class RunningGlowEffectConv : BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool isRunning && isRunning)
+            {
+                return new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#00FF66"),
+                    BlurRadius = 16,
+                    ShadowDepth = 0,
+                    Opacity = 0.95
+                };
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// ç«¯å£ä¸­å¿ƒç‚¹ Y è½´åæ ‡åç§»è½¬æ¢å™¨
+    /// </summary>
+    public class OffsetYConverter : BaseConverter
+    {
+        public double Offset { get; set; }
+
+        public OffsetYConverter() { }
+        public OffsetYConverter(double offset) { Offset = offset; }
+
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            double offsetToUse = Offset;
+            if (parameter != null && double.TryParse(parameter.ToString(), out double pOffset))
+            {
+                offsetToUse = pOffset;
+            }
+
+            if (value is double y) return y + offsetToUse;
+            if (value is int iy) return iy + offsetToUse;
+            return offsetToUse;
+        }
+    }
+
+    /// <summary>
+    /// æ§åˆ¶ç«¯ç‚¹ç”¨çº¯åœ† (CornerRadius=5)ï¼Œæ•°æ®ç«¯ç‚¹ç”¨å°æ–¹å— (CornerRadius=1)
+    /// </summary>
+    public class PortShapeConv : BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is PortCategory cat && cat != PortCategory.Data)
+            {
+                return new CornerRadius(5); // çº¯åœ†å½¢
+            }
+            return new CornerRadius(1);     // å°æ–¹å—
+        }
+    }
+
+    /// <summary>
+    /// æ§åˆ¶ç«¯ç‚¹ 10pxï¼Œæ•°æ®ç«¯ç‚¹æ›´å°ä¸€ç‚¹ (8px)
+    /// </summary>
+    public class PortSizeConv : BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is PortCategory cat && cat != PortCategory.Data)
+            {
+                return 10.0; // æ§åˆ¶ç«¯ç‚¹å°ºå¯¸å¤§ä¸€ç‚¹
+            }
+            return 8.0;  // æ•°æ®ç«¯ç‚¹å°ºå¯¸å°ä¸€ç‚¹
+        }
+    }
+
+    /// <summary>
+    /// æ ¹æ®ç«¯å£ç±»åˆ« (Category) ä¸å…¨å±€å¼€å…³ (ShowDataPorts) å†³å®šç«¯å£ç«¯ç‚¹æ˜¯å¦æ˜¾ç¤º
+    /// </summary>
+    public class PortVisibilityConv : BaseMultiConverter
+    {
+        public override object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (values.Length >= 2 && values[0] is PortCategory category && values[1] is bool showDataPorts)
+            {
+                if (category != PortCategory.Data)
+                {
+                    return Visibility.Visible;
+                }
+
+                return showDataPorts ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            return Visibility.Visible;
+        }
+    }
+
+    /// <summary>
+    /// æ§åˆ¶ Exec ç«¯å£éšè—/è¿‡æ»¤
+    /// </summary>
+    public class ExecPortHiddenConv : BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is PortCategory cat && cat != PortCategory.Data)
+            {
+                return Visibility.Collapsed; // å®Œå…¨éšè— Exec ç«¯å£
+            }
+            return Visibility.Visible;
+        }
+    }
+
+    #endregion
 }

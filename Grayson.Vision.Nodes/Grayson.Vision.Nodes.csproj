@@ -45,62 +45,25 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="All\ImageInput\ImageChannel\ImageChannelExecutor.cs" />
+    <Compile Include="All\ImageInput\ImageChannel\ImageChannelParam.cs" />
+    <Compile Include="All\ImageInput\ImageChannel\ImageChannelTemplateView.xaml.cs">
+      <DependentUpon>ImageChannelTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\ImageInput\ReadImageFile\ReadImageFileExecutor.cs" />
+    <Compile Include="All\ImageInput\ReadImageFile\ReadImageFileParam.cs" />
+    <Compile Include="All\ImageInput\ReadImageFile\ReadImageFileTemplateView.xaml.cs">
+      <DependentUpon>ReadImageFileTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Class1.cs" />
-    <Compile Include="DeviceIO\AcquireImage\AcquireImageExecutor.cs" />
-    <Compile Include="DeviceIO\AcquireImage\AcquireImageParam.cs" />
-    <Compile Include="DeviceIO\AcquireImage\AcquireImageTemplatePage.xaml.cs">
-      <DependentUpon>AcquireImageTemplatePage.xaml</DependentUpon>
+    <Compile Include="Common\NodeExecutorBase.cs" />
+    <Compile Include="Common\ParamBase.cs" />
+    <Compile Include="All\ImageInput\AcquireImage\AcquireImageExecutor.cs" />
+    <Compile Include="All\ImageInput\AcquireImage\AcquireImageParam.cs" />
+    <Compile Include="All\ImageInput\AcquireImage\AcquireImageTemplateView.xaml.cs">
+      <DependentUpon>AcquireImageTemplateView.xaml</DependentUpon>
     </Compile>
-    <Compile Include="DeviceIO\AxisMove\AxisMoveExecutor.cs" />
-    <Compile Include="DeviceIO\AxisMove\AxisMoveParam.cs" />
-    <Compile Include="DeviceIO\AxisMove\AxisMoveTemplatePage.xaml.cs">
-      <DependentUpon>AxisMoveTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="DeviceIO\DigitalOutput\DigitalOutputExecutor.cs" />
-    <Compile Include="DeviceIO\DigitalOutput\DigitalOutputParam.cs" />
-    <Compile Include="DeviceIO\DigitalOutput\DigitalOutputTemplatePage.xaml.cs">
-      <DependentUpon>DigitalOutputTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="DeviceIO\LightControl\LightControlExecutor.cs" />
-    <Compile Include="DeviceIO\LightControl\LightControlParam.cs" />
-    <Compile Include="DeviceIO\LightControl\LightControlTemplatePage.xaml.cs">
-      <DependentUpon>LightControlTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="DeviceIO\PlcReadWrite\PlcReadWriteExecutor.cs" />
-    <Compile Include="DeviceIO\PlcReadWrite\PlcReadWriteParam.cs" />
-    <Compile Include="DeviceIO\PlcReadWrite\PlcReadWriteTemplatePage.xaml.cs">
-      <DependentUpon>PlcReadWriteTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Logic\ConditionIf\ConditionIfExecutor.cs" />
-    <Compile Include="Logic\ConditionIf\ConditionIfParam.cs" />
-    <Compile Include="Logic\ConditionIf\ConditionIfTemplatePage.xaml.cs">
-      <DependentUpon>ConditionIfTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Logic\Delay\DelayExecutor.cs" />
-    <Compile Include="Logic\Delay\DelayParam.cs" />
-    <Compile Include="Logic\Delay\DelayTemplatePage.xaml.cs">
-      <DependentUpon>DelayTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Logic\ForLoop\ForLoopExecutor.cs" />
-    <Compile Include="Logic\ForLoop\ForLoopParam.cs" />
-    <Compile Include="Logic\ForLoop\ForLoopTemplatePage.xaml.cs">
-      <DependentUpon>ForLoopTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Logic\Merge\MergeExecutor.cs" />
-    <Compile Include="Logic\Merge\MergeParam.cs" />
-    <Compile Include="Logic\Merge\MergeTemplatePage.xaml.cs">
-      <DependentUpon>MergeTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Logic\SwitchCase\SwitchCaseExecutor.cs" />
-    <Compile Include="Logic\SwitchCase\SwitchCaseParam.cs" />
-    <Compile Include="Logic\SwitchCase\SwitchCaseTemplatePage.xaml.cs">
-      <DependentUpon>SwitchCaseTemplatePage.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Logic\WaitSignal\WaitSignalExecutor.cs" />
-    <Compile Include="Logic\WaitSignal\WaitSignalParam.cs" />
-    <Compile Include="Logic\WaitSignal\WaitSignalTemplatePage.xaml.cs">
-      <DependentUpon>WaitSignalTemplatePage.xaml</DependentUpon>
-    </Compile>
+    <Compile Include="Converters\InverseBoolConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -110,57 +73,35 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="CompositeEx\" />
-    <Folder Include="DataProcess\" />
-    <Folder Include="SystemMES\" />
-    <Folder Include="Vision\" />
+    <Folder Include="All\CalibrationLocation\" />
+    <Folder Include="All\CompositeGroup\" />
+    <Folder Include="All\DataStorage\" />
+    <Folder Include="All\DeviceIO\" />
+    <Folder Include="All\FlowControl\" />
+    <Folder Include="All\Identification\" />
+    <Folder Include="All\ImagePreprocess\" />
+    <Folder Include="All\MathLogic\" />
+    <Folder Include="All\Measurement2D\" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="file1.md" />
+    <None Include="README.md" />
     <None Include="参数传递.md" />
-    <None Include="READE.md" />
   </ItemGroup>
   <ItemGroup>
-    <Page Include="DeviceIO\AcquireImage\AcquireImageTemplatePage.xaml">
+    <Page Include="All\ImageInput\AcquireImage\AcquireImageTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="DeviceIO\AxisMove\AxisMoveTemplatePage.xaml">
+    <Page Include="All\ImageInput\ImageChannel\ImageChannelTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="DeviceIO\DigitalOutput\DigitalOutputTemplatePage.xaml">
+    <Page Include="All\ImageInput\ReadImageFile\ReadImageFileTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="DeviceIO\LightControl\LightControlTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="DeviceIO\PlcReadWrite\PlcReadWriteTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Logic\ConditionIf\ConditionIfTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Logic\Delay\DelayTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Logic\ForLoop\ForLoopTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Logic\Merge\MergeTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Logic\SwitchCase\SwitchCaseTemplatePage.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Logic\WaitSignal\WaitSignalTemplatePage.xaml">
+    <Page Include="Themes\Generic.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

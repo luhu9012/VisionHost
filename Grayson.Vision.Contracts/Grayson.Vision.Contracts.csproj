@@ -62,12 +62,14 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Business\Attributes\NodeFieldMetaAttribute.cs" />
     <Compile Include="Business\Attributes\NodePortAttribute.cs" />
     <Compile Include="Business\Engine\Execution\ExecutionContext.cs" />
     <Compile Include="Business\Engine\Execution\FlowExecutor.cs" />
     <Compile Include="Business\Engine\Execution\FrameCycleContext.cs" />
     <Compile Include="Business\Engine\Execution\NodeExecutionContext.cs" />
     <Compile Include="Business\Enums\DeviceState.cs" />
+    <Compile Include="Business\Helpers\EnumExtensions.cs" />
     <Compile Include="Business\Enums\NodeFlowEnums.cs" />
     <Compile Include="Business\Factories\NodeFactory.cs" />
     <Compile Include="Business\Engine\INodeExecutor.cs" />
@@ -98,5 +100,6 @@
   <ItemGroup>
     <None Include="README.md" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

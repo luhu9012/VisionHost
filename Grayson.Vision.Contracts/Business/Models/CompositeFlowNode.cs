@@ -27,7 +27,7 @@ namespace Grayson.Vision.Contracts.Business.Models
 
         public CompositeFlowNode()
         {
-            Category = NodeCategory.CompositeEx;
+            Category = NodeCategory.CompositeGroup;
             Type = NodeType.CompositeFlow;
             DisplayName = "📦 复合配方节点";
             Description = "双击可进入内部子流程展开编排。";

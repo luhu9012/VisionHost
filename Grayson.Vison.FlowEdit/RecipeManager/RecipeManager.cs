@@ -36,7 +36,7 @@ namespace Grayson.Vison.FlowEdit.Services
         {
             try
             {
-                var existingComposites = toolBox.Where(x => x.Category == NodeCategory.CompositeEx && x.NodeId.StartsWith("RECIPE_")).ToList();
+                var existingComposites = toolBox.Where(x => x.Category == NodeCategory.CompositeGroup && x.NodeId.StartsWith("RECIPE_")).ToList();
                 foreach (var item in existingComposites) toolBox.Remove(item);
 
                 var files = Directory.GetFiles(_recipesFolderPath, "*.json");
@@ -47,8 +47,8 @@ namespace Grayson.Vison.FlowEdit.Services
                     {
                         NodeId = $"RECIPE_{fileName}",
                         DisplayName = $"?? {fileName}",
-                        CategoryName = UnitMeta.GetEnumDescription(NodeCategory.CompositeEx),
-                        Category = NodeCategory.CompositeEx,
+                        CategoryName = UnitMeta.GetEnumDescription(NodeCategory.CompositeGroup),
+                        Category = NodeCategory.CompositeGroup,
                         Type = NodeType.CompositeFlow,
                         Description = file
                     });

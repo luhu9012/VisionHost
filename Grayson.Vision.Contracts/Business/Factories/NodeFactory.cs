@@ -2,6 +2,8 @@
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Business.Helpers;
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -102,22 +104,35 @@ namespace Grayson.Vision.Contracts.Business.Factories
 
         /// <summary>
         /// 功能1：生成工具箱节点元数据集合
-        /// 供给WPF工具箱界面绑定使用，展示所有可拖拽节点
+        /// 💡 重构：从 NodeType 枚举上的反射特性动态解析 DisplayName、Description、Icon
         /// </summary>
-        /// <returns>所有节点UI元数据列表UnitMeta</returns>
         public static List<UnitMeta> GenerateToolboxMetas()
         {
-            // 确保工厂已完成程序集扫描初始化
             EnsureInitialized();
-            // 将缓存注册表转换为UI工具箱专用实体
-            return _nodeRegistry.Select(kvp => new UnitMeta
+
+            return _nodeRegistry.Select(kvp =>
             {
-                NodeId = kvp.Key.ToString(),
-                Type = kvp.Value.Attribute.Type,
-                Category = kvp.Value.Attribute.Category,
-                DisplayName = kvp.Value.Attribute.DisplayName,
-                Description = kvp.Value.Attribute.Description,
-                Icon = kvp.Value.Attribute.Icon
+                var nodeType = kvp.Key;
+                var attr = kvp.Value.Attribute;
+
+                // 1. 通过反射从 NodeType 枚举字段提取 UI 信息
+                string displayName = nodeType.GetDescription(); // 从 [Description] 获取
+
+                // 如果定义了 NodeFieldMetaAttribute (例如存储 Icon 和 Detailed Description)
+                var metaAttr = nodeType.GetAttribute<NodeFieldMetaAttribute>();
+                string description = metaAttr?.Description ?? displayName;
+                string shortName = metaAttr?.ShortName ?? displayName;
+                string icon = metaAttr?.Emoji ?? "🧩";
+
+                return new UnitMeta
+                {
+                    NodeId = nodeType.ToString(),
+                    Type = nodeType,
+                    Category = attr.Category,
+                    DisplayName = shortName,
+                    Description = description,
+                    Icon = icon
+                };
             }).ToList();
         }
 
@@ -133,29 +148,34 @@ namespace Grayson.Vision.Contracts.Business.Factories
         {
             EnsureInitialized();
 
+            // 提取枚举定义上的默认 DisplayName 和 Description
+            string defaultDisplayName = type.GetDescription();
+            var metaAttr = type.GetAttribute<NodeFieldMetaAttribute>();
+            string defaultDescription = metaAttr?.Description ?? defaultDisplayName;
+
             // 缓存中找不到对应节点类型，返回兜底默认节点
             if (!_nodeRegistry.TryGetValue(type, out var regInfo))
             {
-                // 兜底节点自带标准执行输入/输出端口，保证流程连线不会报错
-                var fallback = new FlowNode(type, type.ToString(), NodeCategory.DeviceIO, position);
-                fallback.InputPorts.Add(new NodePort { PortName = "ExecIn", PortType = PortType.In, Category = PortCategory.Exec });
-                fallback.OutputPorts.Add(new NodePort { PortName = "ExecOut", PortType = PortType.Out, Category = PortCategory.Exec });
+                var fallback = new FlowNode(type, defaultDisplayName, NodeCategory.DeviceIO, position, defaultDescription);
+                fallback.InputPorts.Add(new NodePort { PortName = "ExecIn", PortType = PortType.In, Category = PortCategory.Data });
+                fallback.OutputPorts.Add(new NodePort { PortName = "ExecOut", PortType = PortType.Out, Category = PortCategory.Data });
                 return fallback;
             }
 
             var attr = regInfo.Attribute;
 
-            // 关键逻辑：每个节点独立实例化参数配置对象，多节点之间参数互不干扰
+            // 独立实例化参数配置对象
             object paramInstance = regInfo.ParamType != null
                 ? Activator.CreateInstance(regInfo.ParamType)
                 : null;
 
-            // 优先使用自定义名称，无自定义则取特性定义的展示名
-            string displayName = !string.IsNullOrEmpty(overrideDisplayName) ? overrideDisplayName : attr.DisplayName;
-            // 实例化画布节点基础对象
-            var node = new FlowNode(attr.Type, displayName, attr.Category, position, attr.Description, paramInstance);
+            // 优先使用外部传入的覆盖名称，其次取枚举上的默认展示名
+            string finalDisplayName = !string.IsNullOrEmpty(overrideDisplayName) ? overrideDisplayName : defaultDisplayName;
 
-            // 从端口缓存读取配置，动态生成输入输出端口挂载到节点
+            // 实例化画布节点基础对象
+            var node = new FlowNode(attr.Type, finalDisplayName, attr.Category, position, defaultDescription, paramInstance);
+
+            // 动态挂载输入输出端口
             if (_portRegistry.TryGetValue(type, out var portAttrs))
             {
                 foreach (var pAttr in portAttrs)
@@ -169,7 +189,6 @@ namespace Grayson.Vision.Contracts.Business.Factories
                         ColorHex = pAttr.ColorHex
                     };
 
-                    // 根据端口类型区分添加到输入/输出集合
                     if (pAttr.PortType == PortType.In)
                         node.InputPorts.Add(port);
                     else

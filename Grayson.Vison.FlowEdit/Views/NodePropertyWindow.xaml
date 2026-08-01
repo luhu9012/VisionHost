@@ -3,9 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:cvts="clr-namespace:Grayson.Vison.FlowEdit.Converters"
         Title="{Binding DisplayName, StringFormat='⚙️ 节点属性设置 - {0}'}" 
-        Height="650" Width="480" 
+        Height="620" Width="520" 
         WindowStartupLocation="CenterOwner"
-        Background="#1E1E1E" Foreground="White">
+        ResizeMode="CanResizeWithGrip"
+        Background="#181818" Foreground="White">
 
     <Window.Resources>
         <ResourceDictionary>
@@ -16,106 +17,102 @@
 
     <Grid Margin="12">
         <Grid.RowDefinitions>
+            <!-- 1. 节点基础属性 Header -->
+            <RowDefinition Height="Auto"/>
+            <!-- 2. 核心内容区 (动态参数模板/TabControl) -->
             <RowDefinition Height="*"/>
+            <!-- 3. 端口数据实时调试 (可折叠) -->
+            <RowDefinition Height="Auto"/>
+            <!-- 4. 底部控制栏 -->
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Grid.Row="0">
-            <StackPanel Margin="0,0,8,0">
-                <!-- 1. 基础信息卡片 -->
-                <UniformGrid Columns="2" Margin="0 0 0 6">
-                    <CheckBox Content="启用节点 (Enable)" IsChecked="{Binding Enable}" Foreground="White" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding Type, StringFormat='类型: {0}'}" Foreground="#888" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                </UniformGrid>
+        <!-- 1. 基础信息卡片 -->
+        <Border Grid.Row="0" Background="#252526" CornerRadius="4" Padding="10" Margin="0 0 0 10">
+            <StackPanel>
+                <Grid Margin="0 0 0 6">
+                    <CheckBox Content="启用节点 (Enable)" IsChecked="{Binding Enable}" Foreground="White" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Type, StringFormat='类型: {0}'}" Foreground="#00A896" FontWeight="SemiBold" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
 
-                <TextBlock Text="DisplayName (节点名称):" Foreground="#AAA" FontSize="10" Margin="0 4 0 0"/>
-                <TextBox Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Background="#252526" Foreground="White" BorderBrush="#555" Margin="0 2 0 6" Padding="4"/>
-
-                <!-- 2. 中文指南卡片 -->
-                <Border Background="#252526" CornerRadius="4" Padding="8" Margin="0 4 0 6" BorderBrush="#333" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="💡 节点说明:" Foreground="#E67E22" FontWeight="Bold" FontSize="11"/>
-                        <TextBlock Text="{Binding Description}" Foreground="#DDD" FontSize="11" TextWrapping="Wrap" Margin="0 2 0 4"/>
-
-                        <TextBlock Text="📖 使用指南:" Foreground="#3498DB" FontWeight="Bold" FontSize="11"/>
-                        <TextBlock Text="{Binding UsageGuide}" Foreground="#AAA" FontSize="10" TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- 3. 动态参数配置区 (节点的 XAML 参数模板会自动渲染在这里) -->
-                <GroupBox Header="⚙️ 业务参数配置" Foreground="#007ACC" BorderBrush="#3F3F46" Margin="0 6">
-                    <ContentControl Content="{Binding ParameterModel}" Margin="6"/>
-                </GroupBox>
-
-                <!-- 4. 端口数据实时调试监控 -->
-                <Expander Header="🔌 端口数据监控与调试" IsExpanded="True" Foreground="#AAA" Margin="0 4 0 0">
-                    <StackPanel Margin="0,4,0,0">
-                        <TextBlock Text="📥 输入端 (Inputs):" Foreground="#AAA" FontSize="10" FontWeight="Bold"/>
-                        <ItemsControl ItemsSource="{Binding InputPorts}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0 2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="12"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="7" Height="7" 
-                                                Background="{Binding ColorHex, Converter={StaticResource HexToBrushConv}}" 
-                                                CornerRadius="{Binding Category, Converter={StaticResource PortCategoryToCornerRadiusConv}}" 
-                                                VerticalAlignment="Center"/>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4 0 0 0">
-                                            <TextBlock Text="{Binding PortName}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding DataType, StringFormat=' ({0})'}" Foreground="#777" FontSize="9" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="2" 
-                                                   Text="{Binding DataValue, StringFormat='[{0}]'}" 
-                                                   Foreground="#2ECC71" FontSize="10" 
-                                                   HorizontalAlignment="Right" 
-                                                   TextTrimming="CharacterEllipsis" 
-                                                   ToolTip="{Binding DataValue}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <Separator Background="#333" Margin="0 4"/>
-
-                        <TextBlock Text="📤 输出端 (Outputs):" Foreground="#AAA" FontSize="10" FontWeight="Bold"/>
-                        <ItemsControl ItemsSource="{Binding OutputPorts}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0 2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="12"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="7" Height="7" 
-                                                Background="{Binding ColorHex, Converter={StaticResource HexToBrushConv}}" 
-                                                CornerRadius="{Binding Category, Converter={StaticResource PortCategoryToCornerRadiusConv}}" 
-                                                VerticalAlignment="Center"/>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4 0 0 0">
-                                            <TextBlock Text="{Binding PortName}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding DataType, StringFormat=' ({0})'}" Foreground="#777" FontSize="9" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="2" 
-                                                   Text="{Binding DataValue, StringFormat='[{0}]'}" 
-                                                   Foreground="#E67E22" FontSize="10" 
-                                                   HorizontalAlignment="Right" 
-                                                   TextTrimming="CharacterEllipsis" 
-                                                   ToolTip="{Binding DataValue}"/>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Expander>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="节点名称: " Foreground="#AAA" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Background="#1E1E1E" Foreground="White" BorderBrush="#3F3F46" Padding="4 2"/>
+                </Grid>
             </StackPanel>
-        </ScrollViewer>
+        </Border>
 
-        <!-- 底部确定按钮 -->
-        <Button Grid.Row="1" Content="确定" Width="80" Height="28" HorizontalAlignment="Right" Margin="0 10 0 0"
-                Background="#007ACC" Foreground="White" BorderThickness="0" Click="BtnOk_Click"/>
+        <!-- 2. 动态参数配置区 (Grayson.Vision.Nodes 中开发的 XAML 模板自动渲染到这里) -->
+        <!-- 复杂的节点会在自己的 ParamView 内内置 TabControl；简单节点则是纯表单 -->
+        <Border Grid.Row="1" Background="#252526" CornerRadius="4" Padding="8" BorderBrush="#3F3F46" BorderThickness="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ContentControl Content="{Binding ParameterModel}"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- 3. 端口数据实时调试监控 (默认折叠，需要调试时展开) -->
+        <Expander Grid.Row="2" Header="🔌 端口数据实时调试" IsExpanded="False" Foreground="#AAA" Margin="0 8 0 0">
+            <Border Background="#252526" Padding="8" CornerRadius="4" Margin="0 4 0 0">
+                <StackPanel>
+                    <TextBlock Text="📥 输入端口 (Inputs):" Foreground="#AAA" FontSize="10" FontWeight="Bold"/>
+                    <ItemsControl ItemsSource="{Binding InputPorts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0 2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="7" Height="7" Background="{Binding ColorHex, Converter={StaticResource HexToBrushConv}}" CornerRadius="{Binding Category, Converter={StaticResource PortCategoryToCornerRadiusConv}}" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4 0 0 0">
+                                        <TextBlock Text="{Binding PortName}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding DataType, StringFormat=' ({0})'}" Foreground="#777" FontSize="9" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding DataValue, StringFormat='[{0}]'}" Foreground="#02C39A" FontSize="10" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" ToolTip="{Binding DataValue}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Separator Background="#3F3F46" Margin="0 6"/>
+
+                    <TextBlock Text="📤 输出端口 (Outputs):" Foreground="#AAA" FontSize="10" FontWeight="Bold"/>
+                    <ItemsControl ItemsSource="{Binding OutputPorts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0 2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="7" Height="7" Background="{Binding ColorHex, Converter={StaticResource HexToBrushConv}}" CornerRadius="{Binding Category, Converter={StaticResource PortCategoryToCornerRadiusConv}}" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4 0 0 0">
+                                        <TextBlock Text="{Binding PortName}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding DataType, StringFormat=' ({0})'}" Foreground="#777" FontSize="9" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding DataValue, StringFormat='[{0}]'}" Foreground="#D97706" FontSize="10" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" ToolTip="{Binding DataValue}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </Expander>
+
+        <!-- 4. 底部按钮栏 -->
+        <DockPanel Grid.Row="3" Margin="0 10 0 0">
+            <Button Content="▶ 单步运行该节点" Command="{Binding TestRunNodeCmd}" Background="#02C39A" Foreground="White" Padding="10 4" BorderThickness="0" DockPanel.Dock="Left" ToolTip="执行当前节点并刷新主界面右侧图像"/>
+
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                <Button Content="确定" Width="75" Height="28" Background="#2563EB" Foreground="White" BorderThickness="0" Margin="0 0 8 0" Click="BtnOk_Click"/>
+                <Button Content="取消" Width="75" Height="28" Background="#3F4246" Foreground="White" BorderThickness="0" IsCancel="True"/>
+            </StackPanel>
+        </DockPanel>
     </Grid>
 </Window>

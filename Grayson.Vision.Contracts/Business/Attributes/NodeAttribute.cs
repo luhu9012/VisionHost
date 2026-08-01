@@ -24,15 +24,6 @@ namespace Grayson.Vision.Contracts.Business.Attributes
         /// </summary>
         public NodeCategory Category { get; }
 
-        /// <summary>
-        /// 节点在 UI 工具箱和画布上显示的默认名称（如 "🔍 模板匹配"）
-        /// </summary>
-        public string DisplayName { get; }
-
-        /// <summary>
-        /// 节点功能描述，用于属性面板提示或 Tooltip
-        /// </summary>
-        public string Description { get; }
 
         /// <summary>
         /// 节点绑定的参数模型 Type（如 typeof(TemplateMatchParam)）
@@ -40,25 +31,17 @@ namespace Grayson.Vision.Contracts.Business.Attributes
         /// </summary>
         public Type ParameterType { get; }
 
-        /// <summary>
-        /// 节点图标路径或 Material/FontAwesome 矢量图标 Key（可选，用于 UI 渲染）
-        /// </summary>
-        public string Icon { get; set; }
+
 
         public NodeAttribute(
             NodeType type,
             NodeCategory category,
-            string displayName,
-            string description = "",
-            Type parameterType = null,
-            string icon= "")
+            Type parameterType = null
+            )
         {
             Type = type;
             Category = category;
-            DisplayName = displayName;
-            Description = description;
             ParameterType = parameterType;
-            Icon = icon;
         }
     }
 }

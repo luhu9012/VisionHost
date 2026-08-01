@@ -11,7 +11,10 @@
 
     <UserControl.Resources>
         <ResourceDictionary>
-            <!-- 转换器定义 -->
+            <!-- 通用元数据转换器 -->
+            <cvts:CategoryMetaConverter x:Key="CategoryMetaConverter"/>
+
+            <!-- 其它布局与视觉转换器 -->
             <cvts:BezierPathConverter x:Key="BezierPathConverter"/>
             <cvts:NullToCollapsed x:Key="NullToCollapsed"/>
             <cvts:NullToVisible x:Key="NullToVisible"/>
@@ -19,20 +22,6 @@
             <cvts:HexToBrushConv x:Key="HexToBrushConv"/>
             <cvts:ConnectionThicknessConv x:Key="ConnectionThicknessConv"/>
             <cvts:ConnectionDashConv x:Key="ConnectionDashConv"/>
-            <cvts:CategoryToIconConverter x:Key="CategoryToIconConverter"/>
-            <cvts:CategoryToShortNameConverter x:Key="CategoryToShortNameConverter"/>
-            <cvts:CategoryToBrushConverter x:Key="CategoryToBrushConverter"/>
-
-
-            <!--<ResourceDictionary.MergedDictionaries>
-
-                -->
-            <!-- 引入独立拆分出的参数模板文件 -->
-            <!--
-                <ResourceDictionary Source="pack://application:,,,/Grayson.Vison.FlowEdit;component/Themes/NodeParamTemplates.xaml"/>
-            </ResourceDictionary.MergedDictionaries>-->
-
-
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -119,6 +108,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- 左侧：极简分类图标栏 -->
+            <!-- 左侧：极简分类图标栏 -->
             <Border Grid.Column="0" BorderBrush="#3F3F46" BorderThickness="0 0 1 0" Background="#181818" Panel.ZIndex="10">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl x:Name="ToolBoxCategories" ItemsSource="{Binding ToolBoxGrouped.Groups}">
@@ -129,20 +119,25 @@
                                     <Border x:Name="IconBorder" Margin="3" CornerRadius="6" Background="#252526">
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <!-- 分类专属主题色微型圆角徽章包裹 -->
+                                            <!-- 💡 修改点 1：把 Name 改为 Items[0].Category -->
                                             <Border Width="26" Height="26" CornerRadius="13" 
-                                        Background="{Binding Name, Converter={StaticResource CategoryToBrushConverter}}"
+                                        Background="{Binding Items[0].Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Brush}"
                                         VerticalAlignment="Center" HorizontalAlignment="Center">
-                                                <TextBlock Text="{Binding Name, Converter={cvts:CategoryToIconConverter}}" 
+
+                                                <!-- 💡 修改点 2：把 Name 改为 Items[0].Category -->
+                                                <TextBlock Text="{Binding Items[0].Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Icon}" 
                                                FontFamily="Segoe UI Emoji" 
                                                FontSize="13" Foreground="White"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
 
-                                            <TextBlock Text="{Binding Name, Converter={cvts:CategoryToShortNameConverter}}" 
+                                            <!-- 💡 修改点 3：把 Name 改为 Items[0].Category -->
+                                            <TextBlock Text="{Binding Items[0].Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=ShortName}" 
                                            Foreground="#BBB" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
+
                                 <DataTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter TargetName="IconBorder" Property="Background" Value="#3E3E42"/>
@@ -153,7 +148,6 @@
                     </ItemsControl>
                 </ScrollViewer>
             </Border>
-
             <!-- 2. 展开的二级节点 Drawer -->
             <Border x:Name="DrawerPanel" Grid.Column="0" Grid.ColumnSpan="2" Width="220" HorizontalAlignment="Left" Margin="48,0,0,0"
         Background="#252526" BorderBrush="#3F3F46" BorderThickness="0 0 1 0" Visibility="Collapsed" Panel.ZIndex="99">
@@ -170,8 +164,8 @@
                     BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="CloseDrawer_Click" ToolTip="收起侧边栏"/>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Border Width="10" Height="10" CornerRadius="5" 
-                        Background="{Binding Text, ElementName=TxtCurrentCategoryTitle, Converter={StaticResource CategoryToBrushConverter}}" 
-                        Margin="0,0,6,0"/>
+        Background="{Binding Text, ElementName=TxtCurrentCategoryTitle, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Brush}" 
+        Margin="0,0,6,0"/>
                             <TextBlock x:Name="TxtCurrentCategoryTitle" Text="视觉算法" FontWeight="Bold" Foreground="#F1F1F1" FontSize="13" VerticalAlignment="Center"/>
                         </StackPanel>
                     </DockPanel>
@@ -209,9 +203,9 @@
 
                                                 <!-- 1. 左侧对应画布颜色的高亮指示条 -->
                                                 <Border Grid.Column="0" 
-                                    Background="{Binding Category, Converter={StaticResource CategoryToBrushConverter}}" 
-                                    CornerRadius="2" 
-                                    Margin="0,2,4,2"/>
+        Background="{Binding Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Brush}" 
+        CornerRadius="2" 
+        Margin="0,2,4,2"/>
 
                                                 <!-- 2. 拖拽手柄图标 -->
                                                 <TextBlock Grid.Column="1" 
@@ -223,8 +217,8 @@
 
                                                 <!-- 3. 节点自带图标 (使用分类对应的专属主题色作为背景徽章) -->
                                                 <Border Grid.Column="2" Width="24" Height="24" CornerRadius="5" 
-                                    Background="{Binding Category, Converter={StaticResource CategoryToBrushConverter}}" 
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2,0,4,0">
+        Background="{Binding Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Brush}" 
+        HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2,0,4,0">
                                                     <TextBlock Text="{Binding Icon}" 
                                            FontFamily="Segoe UI Emoji" 
                                            FontSize="12" Foreground="White"
@@ -249,7 +243,7 @@
                                                 <!-- 5. 右侧加号提示符 (匹配主题色) -->
                                                 <TextBlock Grid.Column="4" 
                                        Text="+" 
-                                       Foreground="{Binding Category, Converter={StaticResource CategoryToBrushConverter}}" 
+                                      Foreground="{Binding Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Brush}"
                                        FontSize="15" 
                                        FontWeight="Bold" 
                                        VerticalAlignment="Center" 
@@ -263,7 +257,7 @@
                                     <DataTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter TargetName="NodeItemBorder" Property="Background" Value="#38383C"/>
-                                            <Setter TargetName="NodeItemBorder" Property="BorderBrush" Value="{Binding Category, Converter={StaticResource CategoryToBrushConverter}}"/>
+                                            <Setter TargetName="NodeItemBorder" Property="BorderBrush" Value="{Binding Category, Converter={StaticResource CategoryMetaConverter}, ConverterParameter=Brush}"/>
                                         </Trigger>
                                     </DataTemplate.Triggers>
                                 </DataTemplate>
@@ -272,7 +266,7 @@
                     </ScrollViewer>
                 </Grid>
             </Border>
-            
+
             <!-- 中间：画布 -->
             <Border Grid.Column="1" BorderThickness="1" BorderBrush="#3F3F46" Margin="4" ClipToBounds="True">
                 <ScrollViewer x:Name="FlowScrollViewer" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" Focusable="False">
@@ -300,18 +294,18 @@
 
                     <!-- 找到 FlowCanvas 节点，修正 MouseEvents 绑定 -->
                     <Canvas x:Name="FlowCanvas" 
-        Width="5000" Height="5000" 
-        Background="Transparent" 
-        AllowDrop="True" 
-        Drop="Canvas_Drop" 
-        DragOver="Canvas_DragOver" 
-        MouseMove="FlowCanvas_MouseMove" 
-        MouseLeftButtonDown="FlowCanvas_MouseLeftButtonDown" 
-        PreviewMouseLeftButtonUp="FlowCanvas_PreviewMouseLeftButtonUp"  
-        MouseRightButtonDown="FlowCanvas_MouseRightButtonDown" 
-        MouseRightButtonUp="FlowCanvas_MouseRightButtonUp" 
-        PreviewMouseWheel="FlowCanvas_PreviewMouseWheel" 
-        PreviewMouseRightButtonDown="FlowCanvas_PreviewMouseRightButtonDown">
+                    Width="5000" Height="5000" 
+                    Background="Transparent" 
+                    AllowDrop="True" 
+                    Drop="Canvas_Drop" 
+                    DragOver="Canvas_DragOver" 
+                    MouseMove="FlowCanvas_MouseMove" 
+                    MouseLeftButtonDown="FlowCanvas_MouseLeftButtonDown" 
+                    PreviewMouseLeftButtonUp="FlowCanvas_PreviewMouseLeftButtonUp"  
+                    MouseRightButtonDown="FlowCanvas_MouseRightButtonDown" 
+                    MouseRightButtonUp="FlowCanvas_MouseRightButtonUp" 
+                    PreviewMouseWheel="FlowCanvas_PreviewMouseWheel" 
+                    PreviewMouseRightButtonDown="FlowCanvas_PreviewMouseRightButtonDown">
                         <Grid x:Name="ContentGrid">
                             <Grid.LayoutTransform>
                                 <ScaleTransform x:Name="CanvasScale" ScaleX="1" ScaleY="1"/>
@@ -354,9 +348,9 @@
                             </ItemsControl>
                             <!-- 拖拽连线 -->
                             <Path x:Name="TempPath" 
-      Stroke="Orange" 
-      StrokeThickness="2" 
-      Visibility="Collapsed">
+                              Stroke="Orange" 
+                              StrokeThickness="2" 
+                              Visibility="Collapsed">
                                 <Path.Data>
                                     <PathGeometry>
                                         <PathFigure x:Name="TempFigure">

@@ -129,7 +129,7 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             }
 
             // 默认兜底逻辑：若算子未明确指定，则自动选取第一个控制流输出端口
-            var defaultExecPort = node.OutputPorts?.FirstOrDefault(p => p.Category == PortCategory.Exec);
+            var defaultExecPort = node.OutputPorts?.FirstOrDefault(p => p.Category == PortCategory.Data);
             return defaultExecPort?.PortName;
         }
 

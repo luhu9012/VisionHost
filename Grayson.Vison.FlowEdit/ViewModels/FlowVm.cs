@@ -4,6 +4,7 @@ using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Factories;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vison.FlowEdit.Helpers;
 using Grayson.Vison.FlowEdit.Services;
 using System;
 using System.Collections.Generic;
@@ -18,10 +19,9 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 
-
 namespace Grayson.Vison.FlowEdit.ViewModels
 {
-    public class FlowVm : ViewModelBase                                                                                                                             
+    public class FlowVm : ViewModelBase
     {
         // 1. 数据模型与 Observable 集合
         public FlowProcessModel RootProcess { get; set; } = new FlowProcessModel { ProcessName = "主工作流" };
@@ -43,7 +43,6 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
 
         private FlowNodeBase _selectedNode;
-        //public FlowNodeBase SelectedNode { get => _selectedNode; set => Set(ref _selectedNode, value); }
         public FlowNodeBase SelectedNode
         {
             get => _selectedNode;
@@ -95,13 +94,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public ICommand AutoLayoutCmd { get; }
         public ICommand SaveCurrentPipelineAsRecipeCommand { get; }
         public ICommand ClearCanvasCommand { get; }
-     
+
         public ICommand ToggleShowDataPortsCommand { get; }
         public ICommand OpenNodePropertyCommand { get; }
 
-        public ImageDisplayVm ImageDisplayVm { get; set; } 
-
-
+        public ImageDisplayVm ImageDisplayVm { get; set; }
 
         public FlowVm()
         {
@@ -111,22 +108,16 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             Context.OnNodeExecuting += (s, node) => OnNodeExecuting?.Invoke(node);
             Context.OnExecutionError += OnGlobalExecutionError;
 
-
             // 初始化图像显示 VM
             ImageDisplayVm = new ImageDisplayVm(Context, new Grayson.Vision.HalconWrapper.Wpf.Imaging.HalconImageRenderService());
 
-
-
-            // 加载 Mock 预置全流程 Demo 配方
-            //BuildCleanDemoProcessMock();
-
-
-            // ?? 1. 自动加载当前运行目录及 Debug 目录下的 Nodes DLL 插件
+            // 自动加载当前运行目录及 Debug 目录下的 Nodes DLL 插件
             string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
             new NodePluginLoader().LoadPlugins(pluginDir, AddLog);
 
             _recipeManager = new RecipeManager(new WpfDialogService());
             _recipeManager.LoadCompositeRecipeTemplates(ToolBox, AddLog);
+
             // 初始化工具箱与主配方
             InitFullToolBox();
 
@@ -140,11 +131,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             RunContinuousCmd = new RelayCommand(async () => await _executor.RunContinuousAsync());
             StepRunCmd = new RelayCommand(async () => await _executor.StepAsync());
             StopRunCmd = new RelayCommand(() => _executor.Stop());
-            PauseRunCmd = new RelayCommand(() => AddLog("? 流程暂停"));
+            PauseRunCmd = new RelayCommand(() => AddLog("暂停流程"));
 
             DeleteNodeCmd = new RelayCommand(DeleteSelectedNode, () => SelectedNode != null);
             DeleteConnectionCmd = new RelayCommand<ConnectionModel>(DeleteConnection);
-            SaveRecipeCmd = new RelayCommand(() => AddLog("?? 配方参数已成功保存！"));
+            SaveRecipeCmd = new RelayCommand(() => AddLog("配方参数已成功保存！"));
             ImportRecipeCmd = new RelayCommand(ImportRecipe);
             ExportRecipeCmd = new RelayCommand(() => _recipeManager.ExportRecipe(RootProcess, AddLog));
             NavigateToProcessCmd = new RelayCommand<FlowProcessModel>(NavigateToProcess);
@@ -153,10 +144,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             ClearCanvasCommand = new RelayCommand(() => ClearCanvas(false));
             ToggleShowDataPortsCommand = new RelayCommand(() => ShowDataPorts = !ShowDataPorts);
             OpenNodePropertyCommand = new RelayCommand<FlowNodeBase>(OnNodeDoubleClicked);
-
-           
-
         }
+
         #region 点击节点属性弹框
         public void OnNodeDoubleClicked(FlowNodeBase node)
         {
@@ -187,7 +176,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (tryCatchNode != null)
             {
                 e.Handled = true;
-                AddLog($"?? 捕获到节点 [{e.Node.DisplayName}] 的异常: {e.Exception.Message}");
+                AddLog($"捕获到节点 [{e.Node.DisplayName}] 的异常: {e.Exception.Message}");
             }
             else
             {
@@ -236,7 +225,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                 SelectedNode = null;
                 ResetStepProgress();
-                AddLog($"?? 已经下钻进入子流程: [{CurrentProcess.ProcessName}]");
+                AddLog($"已经下钻进入子流程: [{CurrentProcess.ProcessName}]");
             }
         }
 
@@ -251,7 +240,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 CurrentProcess = RootProcess;
             }
         }
-        // 在 FlowVm.cs 中添加此方法重载，消除 View 层的报错
+
         public void AddNodeFromTemplate(UnitMeta meta, Point2D position)
         {
             AddNodeFromMeta(meta, position);
@@ -270,7 +259,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                     var compositeNode = new CompositeFlowNode
                     {
-                        DisplayName = meta.DisplayName.Replace("?? ", ""),
+                        DisplayName = meta.DisplayName.Replace("复合: ", ""),
                         PosX = pos.X,
                         PosY = pos.Y,
                         RecipeFilePath = jsonFilePath,
@@ -307,19 +296,13 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             CurrentProcess.Nodes.Clear();
             SelectedNode = null;
             ResetStepProgress();
-            AddLog($"?? 画布 [{CurrentProcess.ProcessName}] 已清空。");
+            AddLog($"画布 [{CurrentProcess.ProcessName}] 已清空。");
         }
 
         public void AddConnection(FlowNodeBase source, NodePort sourcePort, FlowNodeBase target, NodePort targetPort)
         {
             if (source == null || target == null || source == target || sourcePort == null || targetPort == null) return;
             if (sourcePort.PortType == targetPort.PortType) return;
-
-            //if (sourcePort.Category != targetPort.Category)
-            //{
-            //    AddLog($"?? 连线失败：不能将 [{sourcePort.Category}] 端口与 [{targetPort.Category}] 端口相连。");
-            //    return;
-            //}
 
             var connection = new ConnectionModel(source, sourcePort, target, targetPort);
             CurrentProcess.Connections.Add(connection);
@@ -396,7 +379,6 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             var layerGroups = nodes.GroupBy(n => layers[n]).OrderBy(g => g.Key).ToList();
 
-            // ?? 核心修改：改为自上而下的纵向排列参数
             double startY = 80, gapY = 160; // 层级控制 Y 轴
             double startX = 200, gapX = 200; // 同一层节点控制 X 轴
 
@@ -418,13 +400,14 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             }
 
             foreach (var conn in connections) conn.UpdatePoints();
-            AddLog("? 已完成自上而下的智能拓扑重排。");
+            AddLog("已完成自上而下的智能拓扑重排。");
         }
         #endregion
-        #region 
+
+        #region 工具箱初始化与元数据绑定
 
         /// <summary>
-        /// 动态构建工具箱 (优先根据扫描到的 DLL 自动推导 ToolBox) 初始化完整流程工具箱，加载插件节点并按分类分组，适配C#7.3语法
+        /// 动态构建工具箱 (优先根据扫描到的 DLL 自动推导 ToolBox) 初始化完整流程工具箱，加载插件节点并按分类分组
         /// </summary>
         private void InitFullToolBox()
         {
@@ -443,21 +426,22 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             ToolBoxGrouped.GroupDescriptions.Clear();
             ToolBoxGrouped.GroupDescriptions.Add(new PropertyGroupDescription("CategoryName"));
         }
+
+        /// <summary>
+        /// 从 NodeMetaRegistry 统一提取分类显示名称
+        /// </summary>
         private string GetCategoryDisplayName(NodeCategory category)
         {
-            switch (category)
+            var info = NodeMetaRegistry.Get(category);
+            if (info != null)
             {
-                case NodeCategory.DeviceIO: return "?? 设备与 IO 控制类";
-                case NodeCategory.Vision: return "??? Halcon 算法与视觉处理类";
-                case NodeCategory.Logic: return "?? 逻辑控制与数据流类";
-                case NodeCategory.DataProcess: return "?? 数据处理与转换类";
-                case NodeCategory.SystemMES: return "?? 生产与数据对接类";
-                case NodeCategory.CompositeEx: return "?? 复合子流程与异常处理类";
-                default: return "其他节点";
+                return $"{info.Emoji} {info.ShortName}";
             }
+
+            return "其他节点";
         }
+
         #endregion
-       
     }
 
     #region 简易 Prompt 弹窗辅助类
@@ -496,5 +480,4 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
     }
     #endregion
-
 }

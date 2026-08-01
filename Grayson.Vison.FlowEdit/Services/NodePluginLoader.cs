@@ -76,7 +76,7 @@ namespace Grayson.Vison.FlowEdit.Services
                 NodeFactory.RegisterExecutorType(type);
                 // 获取节点展示名称，输出注册成功日志
                 NodeAttribute nodeAttr = type.GetCustomAttribute<NodeAttribute>();
-                logAction?.Invoke($"🧩 成功注册节点算子: [{nodeAttr.DisplayName}] ({type.Name})");
+                logAction?.Invoke($"🧩 成功注册节点算子: [{nodeAttr.Type}] ({type.Name})");
             }
         }
 
@@ -111,7 +111,7 @@ namespace Grayson.Vison.FlowEdit.Services
                             string resourcePath = entry.Key.ToString();
 
                             // 只匹配节点模板文件
-                            if (resourcePath.EndsWith("templatepage.baml") || resourcePath.EndsWith("template.baml"))
+                            if (resourcePath.EndsWith("view.baml") || resourcePath.EndsWith("template.baml"))
                             {
                                 // 将编译后的baml后缀还原为原始xaml路径，用于构造WPF资源Uri
                                 string xamlPath = resourcePath.Replace(".baml", ".xaml");

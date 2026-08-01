@@ -22,7 +22,7 @@ namespace Grayson.Vision.Contracts.Business.Attributes
         public NodePortAttribute(
             string portName,
             PortType portType,
-            PortCategory category = PortCategory.Exec,
+            PortCategory category = PortCategory.Data,
             string dataType = "object",
             string colorHex = "#007ACC")
         {

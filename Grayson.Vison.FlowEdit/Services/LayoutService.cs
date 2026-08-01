@@ -1,13 +1,12 @@
-﻿using System;
+﻿using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Services;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Windows;
-using Grayson.Vision.Contracts.Business.Models;
-
 
 namespace Grayson.Vison.FlowEdit.Services
 {
-    public class LayoutService
+    public class LayoutService : IFlowLayoutService
     {
         /// <summary>
         /// 智能 S 型 (蛇形) 折叠拓扑排布算法：避免横向拉得太长

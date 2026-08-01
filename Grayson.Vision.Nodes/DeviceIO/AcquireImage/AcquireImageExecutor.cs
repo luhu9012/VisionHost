@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.DeviceIO.AcquireImage
     [Node(
         type: NodeType.AcquireImage,
         category: NodeCategory.DeviceIO,
-        displayName: "ç›¸æœºé‡‡é›†",
-        description: "è§¦å‘ç¡¬ä»¶ç›¸æœºé‡‡å›¾æˆ–ä»è½¯è§¦å‘æºè·å–å›¾åƒ",
+        displayName: "Ïà»ú²É¼¯",
+        description: "´¥·¢Ó²¼şÏà»ú²ÉÍ¼»ò´ÓÈí´¥·¢Ô´»ñÈ¡Í¼Ïñ",
         parameterType: typeof(AcquireImageParam)
-        ,icon: "ğŸ“·"
+        ,icon: "??"
     )]
     //[NodePort("ExecIn", PortType.In, PortCategory.Exec)]
     //[NodePort("ExecOut", PortType.Out, PortCategory.Exec)]
@@ -23,65 +24,65 @@ namespace Grayson.Vision.Nodes.DeviceIO.AcquireImage
     {
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
-            // 1. è·å–å¹¶æ ¡éªŒå‚æ•°æ¨¡å‹
+            // 1. »ñÈ¡²¢Ğ£Ñé²ÎÊıÄ£ĞÍ
             var param = node.ParameterModel as AcquireImageParam;
             if (param == null)
             {
-                throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] æœªæ­£ç¡®é…ç½® AcquireImageParam å‚æ•°å¯¹è±¡ã€‚");
+                throw new InvalidOperationException($"½Úµã [{node.DisplayName}] Î´ÕıÈ·ÅäÖÃ AcquireImageParam ²ÎÊı¶ÔÏó¡£");
             }
 
             if (string.IsNullOrWhiteSpace(param.CameraAlias))
             {
-                throw new ArgumentException($"èŠ‚ç‚¹ [{node.DisplayName}] çš„ç›¸æœºæ ‡è¯† (CameraAlias) ä¸èƒ½ä¸ºç©ºï¼");
+                throw new ArgumentException($"½Úµã [{node.DisplayName}] µÄÏà»ú±êÊ¶ (CameraAlias) ²»ÄÜÎª¿Õ£¡");
             }
 
-            context.Log($"ğŸ“· [ç›¸æœºé‡‡é›†] å¼€å§‹å¤„ç†... (ç›¸æœº: {param.CameraAlias}, æ¨¡å¼: {param.TriggerMode}, æ›å…‰: {param.ExposureTime}Î¼s)");
+            context.Log($"?? [Ïà»ú²É¼¯] ¿ªÊ¼´¦Àí... (Ïà»ú: {param.CameraAlias}, Ä£Ê½: {param.TriggerMode}, ÆØ¹â: {param.ExposureTime}¦Ìs)");
 
-            // 2. ä»ä¸Šä¸‹æ–‡/ç¡¬ä»¶ç®¡ç†æ€»çº¿è·å–ç»‘å®šçš„ç›¸æœºè®¾å¤‡æ¥å£ (ä¾‹å¦‚ ICameraDevice)
-            // ğŸ’¡ æ¶æ„å»ºè®®ï¼šcontext æä¾› GetHardware<T> æˆ– Services å®¹å™¨
+            // 2. ´ÓÉÏÏÂÎÄ/Ó²¼ş¹ÜÀí×ÜÏß»ñÈ¡°ó¶¨µÄÏà»úÉè±¸½Ó¿Ú (ÀıÈç ICameraDevice)
+            // ?? ¼Ü¹¹½¨Òé£ºcontext Ìá¹© GetHardware<T> »ò Services ÈİÆ÷
             /* 
             var cameraService = context.GetService<ICameraService>();
             var camera = cameraService?.GetCamera(param.CameraAlias);
             if (camera == null || !camera.IsConnected)
             {
-                throw new Exception($"æœªæ‰¾åˆ°æŒ‡å®šçš„ç›¸æœºå¯¹è±¡æˆ–ç›¸æœºæœªè¿æ¥: [{param.CameraAlias}]");
+                throw new Exception($"Î´ÕÒµ½Ö¸¶¨µÄÏà»ú¶ÔÏó»òÏà»úÎ´Á¬½Ó: [{param.CameraAlias}]");
             }
 
-            // 3. åŠ¨æ€åº”ç”¨å‚æ•° (æ›å…‰ã€å¢ç›Šã€è§¦å‘æ¨¡å¼)
+            // 3. ¶¯Ì¬Ó¦ÓÃ²ÎÊı (ÆØ¹â¡¢ÔöÒæ¡¢´¥·¢Ä£Ê½)
             await camera.SetExposureTimeAsync(param.ExposureTime);
             await camera.SetGainAsync(param.Gain);
             await camera.SetTriggerModeAsync(param.TriggerMode);
 
-            // 4. æ‰§è¡Œé‡‡å›¾æ“ä½œ
+            // 4. Ö´ĞĞ²ÉÍ¼²Ù×÷
             object rawImage = null;
             if (param.TriggerMode == "Software")
             {
-                // è½¯è§¦å‘é‡‡å›¾
+                // Èí´¥·¢²ÉÍ¼
                 rawImage = await camera.SoftwareTriggerAndGrabAsync(param.TimeoutMs, token);
             }
             else
             {
-                // ç¡¬è§¦å‘ / è¿ç»­é‡‡é›†ï¼šç­‰å¾…å¤–è§¦å‘ä¿¡å·å›¾åƒå›è°ƒ
+                // Ó²´¥·¢ / Á¬Ğø²É¼¯£ºµÈ´ıÍâ´¥·¢ĞÅºÅÍ¼Ïñ»Øµ÷
                 rawImage = await camera.WaitForNextFrameAsync(param.TimeoutMs, token);
             }
             */
 
-            // ==================== æ¨¡æ‹Ÿç¡¬ä»¶é€»è¾‘ (Demo é˜¶æ®µ) ====================
-            await Task.Delay(100, token); // æ¨¡æ‹Ÿç¡¬ä»¶ä¼ è¾“å»¶æ—¶
+            // ==================== Ä£ÄâÓ²¼şÂß¼­ (Demo ½×¶Î) ====================
+            await Task.Delay(100, token); // Ä£ÄâÓ²¼ş´«ÊäÑÓÊ±
 
-            // æ¨¡æ‹Ÿæ„é€ ç”Ÿäº§å›¾åƒæ•°æ®å¥æŸ„/å¯¹è±¡ (å¯ä¸º Halcon HImage, OpenCV Mat, æˆ–è€…æ˜¯ Bitmap/Byte[])
+            // Ä£Äâ¹¹ÔìÉú²úÍ¼ÏñÊı¾İ¾ä±ú/¶ÔÏó (¿ÉÎª Halcon HImage, OpenCV Mat, »òÕßÊÇ Bitmap/Byte[])
             string mockImage = $"HImage_Handle_{param.CameraAlias}_{DateTime.Now:HHmmss.fff}";
             // =================================================================
 
             if (mockImage == null)
             {
-                throw new TimeoutException($"ç›¸æœº [{param.CameraAlias}] åœ¨ç­‰å¾… {param.TimeoutMs}ms åé‡‡å›¾è¶…æ—¶ï¼");
+                throw new TimeoutException($"Ïà»ú [{param.CameraAlias}] ÔÚµÈ´ı {param.TimeoutMs}ms ºó²ÉÍ¼³¬Ê±£¡");
             }
 
-            // 5. å°†é‡‡å›¾ç»“æœè¾“å‡ºåˆ° "Image" Data æ•°æ®ç«¯å£ï¼Œä¾›ä¸‹æ¸¸ç®—æ³•èŠ‚ç‚¹ï¼ˆå¦‚æ¨¡æ¿åŒ¹é…ã€ç¼ºé™·æ£€æµ‹ï¼‰è¯»å–
+            // 5. ½«²ÉÍ¼½á¹ûÊä³öµ½ "Image" Data Êı¾İ¶Ë¿Ú£¬¹©ÏÂÓÎËã·¨½Úµã£¨ÈçÄ£°åÆ¥Åä¡¢È±Ïİ¼ì²â£©¶ÁÈ¡
             context.SetOutputValue(node, "Image", mockImage);
 
-            context.Log($"âœ” [ç›¸æœºé‡‡é›†] é‡‡å›¾æˆåŠŸï¼Œè¾“å‡ºå›¾åƒå¥æŸ„: {mockImage}");
+            context.Log($"? [Ïà»ú²É¼¯] ²ÉÍ¼³É¹¦£¬Êä³öÍ¼Ïñ¾ä±ú: {mockImage}");
         }
     }
 }

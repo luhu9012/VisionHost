@@ -1,4 +1,5 @@
-﻿using Grayson.Vision.Contracts.Business.Models;
+﻿using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business.Models;
 using System;
 using System.Collections.Concurrent;
 using System.Linq;

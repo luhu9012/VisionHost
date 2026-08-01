@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.DeviceIO.AxisMove
     [Node(
         type: NodeType.AxisMove,
         category: NodeCategory.DeviceIO,
-        displayName: "è¿åŠ¨è½´ç§»åŠ¨",
-        description: "æ§åˆ¶ä¼ºæœ/æ­¥è¿›è½´ç§»åŠ¨è‡³æŒ‡å®šåæ ‡",
+        displayName: "ÔË¶¯ÖáÒÆ¶¯",
+        description: "¿ØÖÆËÅ·ş/²½½øÖáÒÆ¶¯ÖÁÖ¸¶¨×ø±ê",
         parameterType: typeof(AxisMoveParam)
-         , icon: "ğŸšš"
+         , icon: "??"
     )]
     //[NodePort("ExecIn", PortType.In, PortCategory.Exec)]
     //[NodePort("ExecOut", PortType.Out, PortCategory.Exec)]
@@ -25,19 +26,19 @@ namespace Grayson.Vision.Nodes.DeviceIO.AxisMove
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as AxisMoveParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°ç¼ºå¤±ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÈ±Ê§¡£");
 
             double targetPos = param.TargetPosition;
             double? inputPos = context.GetInputValue<double?>(node, "PositionIn");
             if (inputPos.HasValue) targetPos = inputPos.Value;
 
-            string modeStr = param.IsRelative ? "ç›¸å¯¹" : "ç»å¯¹";
-            context.Log($"ğŸšš [è½´å®šä½å¼€å§‹] è½´: {param.AxisName}, æ¨¡å¼: {modeStr}, ç›®æ ‡ä½ç½®: {targetPos} mm, é€Ÿåº¦: {param.Speed}");
+            string modeStr = param.IsRelative ? "Ïà¶Ô" : "¾ø¶Ô";
+            context.Log($"?? [Öá¶¨Î»¿ªÊ¼] Öá: {param.AxisName}, Ä£Ê½: {modeStr}, Ä¿±êÎ»ÖÃ: {targetPos} mm, ËÙ¶È: {param.Speed}");
 
-            await Task.Delay(200, token); // æ¨¡æ‹Ÿè¿åŠ¨æ§åˆ¶å®šä½è¿‡ç¨‹
+            await Task.Delay(200, token); // Ä£ÄâÔË¶¯¿ØÖÆ¶¨Î»¹ı³Ì
 
             context.SetOutputValue(node, "ActualPos", targetPos);
-            context.Log($"âœ” [è½´å®šä½å®Œæˆ] è½´ {param.AxisName} å·²åˆ°è¾¾ä½ç½® {targetPos}");
+            context.Log($"? [Öá¶¨Î»Íê³É] Öá {param.AxisName} ÒÑµ½´ïÎ»ÖÃ {targetPos}");
         }
     }
 }

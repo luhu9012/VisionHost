@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Models;
 
 namespace Grayson.Vision.Contracts.Business.Engine.Execution

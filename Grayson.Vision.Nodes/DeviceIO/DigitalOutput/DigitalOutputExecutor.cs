@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.DeviceIO.DigitalOutput
     [Node(
         type: NodeType.DigitalOutput,
         category: NodeCategory.DeviceIO,
-        displayName: "æ•°å­— IO è¾“å‡º",
-        description: "æ§åˆ¶æ°”ç¼¸ã€ç”µç£é˜€ã€èœ‚é¸£å™¨ç­‰ DO ä¿¡å·",
+        displayName: "Êı×Ö IO Êä³ö",
+        description: "¿ØÖÆÆø¸×¡¢µç´Å·§¡¢·äÃùÆ÷µÈ DO ĞÅºÅ",
         parameterType: typeof(DigitalOutputParam)
-         , icon: "ğŸš¨"
+         , icon: "??"
     )]
     //[NodePort("ExecIn", PortType.In, PortCategory.Exec)]
     //[NodePort("ExecOut", PortType.Out, PortCategory.Exec)]
@@ -24,7 +25,7 @@ namespace Grayson.Vision.Nodes.DeviceIO.DigitalOutput
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as DigitalOutputParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°ç¼ºå¤±ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÈ±Ê§¡£");
 
             bool targetVal = param.OutputValue;
             bool? signalIn = context.GetInputValue<bool?>(node, "SignalIn");
@@ -32,13 +33,13 @@ namespace Grayson.Vision.Nodes.DeviceIO.DigitalOutput
 
             if (param.IsPulse)
             {
-                context.Log($"ğŸš¨ [IO è„‰å†²è§¦å‘] DO æ¿å¡: {param.IoCardAlias}, é€šé“: {param.Channel}, è„‰å†²æ—¶é•¿: {param.PulseDurationMs}ms");
+                context.Log($"?? [IO Âö³å´¥·¢] DO °å¿¨: {param.IoCardAlias}, Í¨µÀ: {param.Channel}, Âö³åÊ±³¤: {param.PulseDurationMs}ms");
                 await Task.Delay(param.PulseDurationMs, token);
-                context.Log($"âœ” [IO è„‰å†²å®Œæˆ] é€šé“ {param.Channel} å·²å½’ä½");
+                context.Log($"? [IO Âö³åÍê³É] Í¨µÀ {param.Channel} ÒÑ¹éÎ»");
             }
             else
             {
-                context.Log($"ğŸš¨ [IO ç”µå¹³çŠ¶æ€] DO æ¿å¡: {param.IoCardAlias}, é€šé“: {param.Channel} <- {targetVal}");
+                context.Log($"?? [IO µçÆ½×´Ì¬] DO °å¿¨: {param.IoCardAlias}, Í¨µÀ: {param.Channel} <- {targetVal}");
                 await Task.Delay(20, token);
             }
         }

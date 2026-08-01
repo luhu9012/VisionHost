@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.Logic.SwitchCase
     [Node(
         type: NodeType.SwitchCase,
         category: NodeCategory.Logic,
-        displayName: "å¤šè·¯åˆ†æ”¯",
-        description: "æ ¹æ®æ•´å‹/å­—ç¬¦ä¸²å˜é‡åˆ†å‘å¤šæ¡çº¿è·¯",
+        displayName: "¶àÂ··ÖÖ§",
+        description: "¸ù¾İÕûĞÍ/×Ö·û´®±äÁ¿·Ö·¢¶àÌõÏßÂ·",
         parameterType: typeof(SwitchCaseParam)
-        , icon: "ğŸ”€"
+        , icon: "??"
     )]
     //[NodePort("ExecIn", PortType.In, PortCategory.Data)]
     [NodePort("Case_0", PortType.Out, PortCategory.Data)]
@@ -26,13 +27,13 @@ namespace Grayson.Vision.Nodes.Logic.SwitchCase
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as SwitchCaseParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°æœªé…ç½®ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÎ´ÅäÖÃ¡£");
 
             string selector = context.GetInputValue<string>(node, "SelectIn") ?? param.SelectorKey;
 
-            context.Log($"ğŸ”€ [Switch é€‰æ‹©] å½“å‰åŒ¹é…é”®: '{selector}'");
+            context.Log($"?? [Switch Ñ¡Ôñ] µ±Ç°Æ¥Åä¼ü: '{selector}'");
 
-            // æ ¹æ®SelectoråŒ¹é…ç«¯å£ï¼Œæ‰¾ä¸åˆ°åˆ™èµ° Default
+            // ¸ù¾İSelectorÆ¥Åä¶Ë¿Ú£¬ÕÒ²»µ½Ôò×ß Default
             if (selector == "Type_A")
                 context.SetActiveNextPort(node, "Case_0");
             else if (selector == "Type_B")

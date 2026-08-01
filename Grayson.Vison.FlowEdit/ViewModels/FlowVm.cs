@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business.Attributes;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Factories;
 using Grayson.Vision.Contracts.Business.Models;
@@ -22,8 +23,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 {
     public class FlowVm : ViewModelBase                                                                                                                             
     {
-        // 1. æ•°æ®æ¨¡å‹ä¸ Observable é›†åˆ
-        public FlowProcessModel RootProcess { get; set; } = new FlowProcessModel { ProcessName = "ä¸»å·¥ä½œæµ" };
+        // 1. Êı¾İÄ£ĞÍÓë Observable ¼¯ºÏ
+        public FlowProcessModel RootProcess { get; set; } = new FlowProcessModel { ProcessName = "Ö÷¹¤×÷Á÷" };
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
         public ObservableCollection<string> ExecutionLogs { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<FlowProcessModel> Breadcrumbs { get; set; } = new ObservableCollection<FlowProcessModel>();
@@ -50,7 +51,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _selectedNode, value))
                 {
-                    // å½“é€‰æ‹©çš„èŠ‚ç‚¹å˜åŒ–æ—¶ï¼Œæ‰‹åŠ¨åˆ·æ–°åˆ é™¤å‘½ä»¤çš„ CanExecute çŠ¶æ€
+                    // µ±Ñ¡ÔñµÄ½Úµã±ä»¯Ê±£¬ÊÖ¶¯Ë¢ĞÂÉ¾³ıÃüÁîµÄ CanExecute ×´Ì¬
                     DeleteNodeCmd?.RaiseCanExecuteChanged();
                 }
             }
@@ -67,20 +68,20 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _showDataPorts, value))
                 {
-                    AddLog(value ? "å·²å¼€å¯ã€æ•°æ®ç«¯å£ã€‘æ˜¾ç¤º" : "å·²éšè—ã€æ•°æ®ç«¯å£ã€‘ï¼Œä»…ä¿ç•™æ§åˆ¶æµç«¯å£");
+                    AddLog(value ? "ÒÑ¿ªÆô¡¾Êı¾İ¶Ë¿Ú¡¿ÏÔÊ¾" : "ÒÑÒş²Ø¡¾Êı¾İ¶Ë¿Ú¡¿£¬½ö±£Áô¿ØÖÆÁ÷¶Ë¿Ú");
                 }
             }
         }
 
-        // 2. è§£è€¦å¼•ç”¨çš„å†…éƒ¨æœåŠ¡ä¸å¼•æ“
+        // 2. ½âñîÒıÓÃµÄÄÚ²¿·şÎñÓëÒıÇæ
         public ExecutionContext Context { get; }
         private readonly RecipeManager _recipeManager;
         private FlowExecutor _executor;
 
-        // 3. UI äº¤äº’äº‹ä»¶ (å¦‚ View å±‚ç”»å¸ƒè‡ªåŠ¨å¹³ç§»/è·Ÿç„¦)
+        // 3. UI ½»»¥ÊÂ¼ş (Èç View ²ã»­²¼×Ô¶¯Æ½ÒÆ/¸ú½¹)
         public event Action<FlowNodeBase> OnNodeExecuting;
 
-        // 4. å‘½ä»¤å±æ€§ (éœ€è¦æ‰‹åŠ¨è§¦å‘ RaiseCanExecuteChanged çš„å£°æ˜ä¸ºå…·ä½“å¼ºç±»å‹)
+        // 4. ÃüÁîÊôĞÔ (ĞèÒªÊÖ¶¯´¥·¢ RaiseCanExecuteChanged µÄÉùÃ÷Îª¾ßÌåÇ¿ÀàĞÍ)
         public RelayCommand DeleteNodeCmd { get; }
         public RelayCommand<ConnectionModel> DeleteConnectionCmd { get; }
         public ICommand SaveRecipeCmd { get; }
@@ -104,46 +105,46 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         public FlowVm()
         {
-            // åˆå§‹åŒ–äº‹ä»¶ä¸æœåŠ¡ä¸Šä¸‹æ–‡
+            // ³õÊ¼»¯ÊÂ¼şÓë·şÎñÉÏÏÂÎÄ
             Context = new ExecutionContext();
             Context.OnLogProduced += (s, log) => AddLog(log);
             Context.OnNodeExecuting += (s, node) => OnNodeExecuting?.Invoke(node);
             Context.OnExecutionError += OnGlobalExecutionError;
 
 
-            // åˆå§‹åŒ–å›¾åƒæ˜¾ç¤º VM
-            ImageDisplayVm = new ImageDisplayVm(Context);
+            // ³õÊ¼»¯Í¼ÏñÏÔÊ¾ VM
+            ImageDisplayVm = new ImageDisplayVm(Context, new Grayson.Vision.HalconWrapper.Wpf.Imaging.HalconImageRenderService());
 
 
 
-            // åŠ è½½ Mock é¢„ç½®å…¨æµç¨‹ Demo é…æ–¹
+            // ¼ÓÔØ Mock Ô¤ÖÃÈ«Á÷³Ì Demo Åä·½
             //BuildCleanDemoProcessMock();
 
 
-            // ğŸ’¡ 1. è‡ªåŠ¨åŠ è½½å½“å‰è¿è¡Œç›®å½•åŠ Debug ç›®å½•ä¸‹çš„ Nodes DLL æ’ä»¶
+            // ?? 1. ×Ô¶¯¼ÓÔØµ±Ç°ÔËĞĞÄ¿Â¼¼° Debug Ä¿Â¼ÏÂµÄ Nodes DLL ²å¼ş
             string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
-            NodePluginLoader.LoadPlugins(pluginDir, AddLog);
+            new NodePluginLoader().LoadPlugins(pluginDir, AddLog);
 
-            _recipeManager = new RecipeManager();
+            _recipeManager = new RecipeManager(new WpfDialogService());
             _recipeManager.LoadCompositeRecipeTemplates(ToolBox, AddLog);
-            // åˆå§‹åŒ–å·¥å…·ç®±ä¸ä¸»é…æ–¹
+            // ³õÊ¼»¯¹¤¾ßÏäÓëÖ÷Åä·½
             InitFullToolBox();
 
             Breadcrumbs.Add(RootProcess);
             CurrentProcess = RootProcess;
 
-            // ç»‘å®šæ‰§è¡Œå¼•æ“
+            // °ó¶¨Ö´ĞĞÒıÇæ
             _executor = new FlowExecutor(CurrentProcess, Context);
 
-            // Command è·¯ç”±ç»‘å®š
+            // Command Â·ÓÉ°ó¶¨
             RunContinuousCmd = new RelayCommand(async () => await _executor.RunContinuousAsync());
             StepRunCmd = new RelayCommand(async () => await _executor.StepAsync());
             StopRunCmd = new RelayCommand(() => _executor.Stop());
-            PauseRunCmd = new RelayCommand(() => AddLog("â¸ æµç¨‹æš‚åœ"));
+            PauseRunCmd = new RelayCommand(() => AddLog("? Á÷³ÌÔİÍ£"));
 
             DeleteNodeCmd = new RelayCommand(DeleteSelectedNode, () => SelectedNode != null);
             DeleteConnectionCmd = new RelayCommand<ConnectionModel>(DeleteConnection);
-            SaveRecipeCmd = new RelayCommand(() => AddLog("ğŸ’¾ é…æ–¹å‚æ•°å·²æˆåŠŸä¿å­˜ï¼"));
+            SaveRecipeCmd = new RelayCommand(() => AddLog("?? Åä·½²ÎÊıÒÑ³É¹¦±£´æ£¡"));
             ImportRecipeCmd = new RelayCommand(ImportRecipe);
             ExportRecipeCmd = new RelayCommand(() => _recipeManager.ExportRecipe(RootProcess, AddLog));
             NavigateToProcessCmd = new RelayCommand<FlowProcessModel>(NavigateToProcess);
@@ -156,22 +157,22 @@ namespace Grayson.Vison.FlowEdit.ViewModels
            
 
         }
-        #region ç‚¹å‡»èŠ‚ç‚¹å±æ€§å¼¹æ¡†
+        #region µã»÷½ÚµãÊôĞÔµ¯¿ò
         public void OnNodeDoubleClicked(FlowNodeBase node)
         {
             if (node == null) return;
 
-            // 1. å¦‚æœæ˜¯å¤åˆèŠ‚ç‚¹ï¼Œä¿æŒåŸæ ·ä¸‹æŒ–
+            // 1. Èç¹ûÊÇ¸´ºÏ½Úµã£¬±£³ÖÔ­ÑùÏÂÍÚ
             if (node is CompositeFlowNode compositeNode)
             {
                 DrillDownCompositeNode(compositeNode);
             }
-            // 2. å¦‚æœæ˜¯æ™®é€šèŠ‚ç‚¹ï¼Œå¼¹å‡ºå‚æ•°æ¨¡å‹ä¸ XAML é…ç½®çª—å£
+            // 2. Èç¹ûÊÇÆÕÍ¨½Úµã£¬µ¯³ö²ÎÊıÄ£ĞÍÓë XAML ÅäÖÃ´°¿Ú
             else
             {
                 var win = new Grayson.Vison.FlowEdit.Views.NodePropertyWindow
                 {
-                    DataContext = node, // å°†èŠ‚ç‚¹çš„ Model / ParameterModel ç»‘å®šè‡³å¼¹çª—
+                    DataContext = node, // ½«½ÚµãµÄ Model / ParameterModel °ó¶¨ÖÁµ¯´°
                     Owner = Application.Current?.MainWindow
                 };
                 win.ShowDialog();
@@ -179,19 +180,19 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
         #endregion
 
-        #region äº‹ä»¶æ€»çº¿ä¸åˆ‡æ¢æµç¨‹å…³è”
+        #region ÊÂ¼ş×ÜÏßÓëÇĞ»»Á÷³Ì¹ØÁª
         private void OnGlobalExecutionError(object sender, NodeExecutionErrorEventArgs e)
         {
             var tryCatchNode = CurrentProcess.Nodes.FirstOrDefault(n => n.Type == NodeType.TryCatch && n.Enable);
             if (tryCatchNode != null)
             {
                 e.Handled = true;
-                AddLog($"ğŸš¨ æ•è·åˆ°èŠ‚ç‚¹ [{e.Node.DisplayName}] çš„å¼‚å¸¸: {e.Exception.Message}");
+                AddLog($"?? ²¶»ñµ½½Úµã [{e.Node.DisplayName}] µÄÒì³£: {e.Exception.Message}");
             }
             else
             {
-                MessageBox.Show($"èŠ‚ç‚¹ [{e.Node.DisplayName}] æŠ›å‡ºæœªå¤„ç†å¼‚å¸¸:\n{e.Exception.Message}",
-                                "æµç¨‹é”™è¯¯", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"½Úµã [{e.Node.DisplayName}] Å×³öÎ´´¦ÀíÒì³£:\n{e.Exception.Message}",
+                                "Á÷³Ì´íÎó", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -216,11 +217,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
         #endregion
 
-        #region é…æ–¹ã€æ¨¡æ¿ä¸ä¸‹é’»äº¤äº’
+        #region Åä·½¡¢Ä£°åÓëÏÂ×ê½»»¥
         private void OnSaveCurrentPipelineAsRecipe()
         {
-            string defaultName = CurrentProcess?.ProcessName ?? "æ–°å¤åˆé…æ–¹";
-            string recipeName = PromptDialog.Show("ä¿å­˜ä¸ºå¤åˆæ¨¡æ¿", "è¯·è¾“å…¥è¦å¯¼å‡ºçš„é…æ–¹åç§°ï¼š", defaultName);
+            string defaultName = CurrentProcess?.ProcessName ?? "ĞÂ¸´ºÏÅä·½";
+            string recipeName = PromptDialog.Show("±£´æÎª¸´ºÏÄ£°å", "ÇëÊäÈëÒªµ¼³öµÄÅä·½Ãû³Æ£º", defaultName);
             if (string.IsNullOrWhiteSpace(recipeName)) return;
 
             _recipeManager.SavePipelineAsRecipe(CurrentProcess, recipeName.Trim(), ToolBox, AddLog);
@@ -235,7 +236,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                 SelectedNode = null;
                 ResetStepProgress();
-                AddLog($"ğŸ” å·²ç»ä¸‹é’»è¿›å…¥å­æµç¨‹: [{CurrentProcess.ProcessName}]");
+                AddLog($"?? ÒÑ¾­ÏÂ×ê½øÈë×ÓÁ÷³Ì: [{CurrentProcess.ProcessName}]");
             }
         }
 
@@ -250,7 +251,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 CurrentProcess = RootProcess;
             }
         }
-        // åœ¨ FlowVm.cs ä¸­æ·»åŠ æ­¤æ–¹æ³•é‡è½½ï¼Œæ¶ˆé™¤ View å±‚çš„æŠ¥é”™
+        // ÔÚ FlowVm.cs ÖĞÌí¼Ó´Ë·½·¨ÖØÔØ£¬Ïû³ı View ²ãµÄ±¨´í
         public void AddNodeFromTemplate(UnitMeta meta, Point2D position)
         {
             AddNodeFromMeta(meta, position);
@@ -269,7 +270,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                     var compositeNode = new CompositeFlowNode
                     {
-                        DisplayName = meta.DisplayName.Replace("ğŸ“¦ ", ""),
+                        DisplayName = meta.DisplayName.Replace("?? ", ""),
                         PosX = pos.X,
                         PosY = pos.Y,
                         RecipeFilePath = jsonFilePath,
@@ -278,27 +279,27 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                     CurrentProcess.Nodes.Add(compositeNode);
                     SelectedNode = compositeNode;
-                    AddLog($"æˆåŠŸå®ä¾‹åŒ–å¤åˆèŠ‚ç‚¹: {compositeNode.DisplayName}");
+                    AddLog($"³É¹¦ÊµÀı»¯¸´ºÏ½Úµã: {compositeNode.DisplayName}");
                     return;
                 }
             }
 
-            // 2. æ™®é€šèŠ‚ç‚¹ç»Ÿç»Ÿäº¤ç»™åº•å±‚ NodeFactory æ„å»ºï¼
+            // 2. ÆÕÍ¨½ÚµãÍ³Í³½»¸øµ×²ã NodeFactory ¹¹½¨£¡
             var node = NodeFactory.CreateFromMeta(meta, pos);
             CurrentProcess.Nodes.Add(node);
             SelectedNode = node;
-            AddLog($"æ–°å¢èŠ‚ç‚¹: {node.DisplayName}");
+            AddLog($"ĞÂÔö½Úµã: {node.DisplayName}");
         }
         #endregion
 
-        #region ç”»å¸ƒæ“ä½œä¸è¿çº¿æ§åˆ¶
+        #region »­²¼²Ù×÷ÓëÁ¬Ïß¿ØÖÆ
         public void ClearCanvas(bool showConfirm = true)
         {
             if (CurrentProcess == null || (CurrentProcess.Nodes.Count == 0 && CurrentProcess.Connections.Count == 0)) return;
 
             if (showConfirm)
             {
-                var res = MessageBox.Show("ç¡®å®šè¦æ¸…ç©ºå½“å‰ç”»å¸ƒä¸Šçš„æ‰€æœ‰èŠ‚ç‚¹å’Œè¿çº¿å—ï¼Ÿ", "æç¤º", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                var res = MessageBox.Show("È·¶¨ÒªÇå¿Õµ±Ç°»­²¼ÉÏµÄËùÓĞ½ÚµãºÍÁ¬ÏßÂğ£¿", "ÌáÊ¾", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (res != MessageBoxResult.Yes) return;
             }
 
@@ -306,7 +307,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             CurrentProcess.Nodes.Clear();
             SelectedNode = null;
             ResetStepProgress();
-            AddLog($"ğŸ§¹ ç”»å¸ƒ [{CurrentProcess.ProcessName}] å·²æ¸…ç©ºã€‚");
+            AddLog($"?? »­²¼ [{CurrentProcess.ProcessName}] ÒÑÇå¿Õ¡£");
         }
 
         public void AddConnection(FlowNodeBase source, NodePort sourcePort, FlowNodeBase target, NodePort targetPort)
@@ -316,13 +317,13 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             //if (sourcePort.Category != targetPort.Category)
             //{
-            //    AddLog($"âš ï¸ è¿çº¿å¤±è´¥ï¼šä¸èƒ½å°† [{sourcePort.Category}] ç«¯å£ä¸ [{targetPort.Category}] ç«¯å£ç›¸è¿ã€‚");
+            //    AddLog($"?? Á¬ÏßÊ§°Ü£º²»ÄÜ½« [{sourcePort.Category}] ¶Ë¿ÚÓë [{targetPort.Category}] ¶Ë¿ÚÏàÁ¬¡£");
             //    return;
             //}
 
             var connection = new ConnectionModel(source, sourcePort, target, targetPort);
             CurrentProcess.Connections.Add(connection);
-            AddLog($"å»ºç«‹è¿çº¿: {source.DisplayName} [{sourcePort.PortName}] -> {target.DisplayName} [{targetPort.PortName}]");
+            AddLog($"½¨Á¢Á¬Ïß: {source.DisplayName} [{sourcePort.PortName}] -> {target.DisplayName} [{targetPort.PortName}]");
         }
 
         private void DeleteSelectedNode()
@@ -334,7 +335,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     CurrentProcess.Connections.RemoveAt(i);
             }
             CurrentProcess.Nodes.Remove(SelectedNode);
-            AddLog($"åˆ é™¤èŠ‚ç‚¹: {SelectedNode.DisplayName}");
+            AddLog($"É¾³ı½Úµã: {SelectedNode.DisplayName}");
             SelectedNode = null;
         }
 
@@ -343,7 +344,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (conn != null && CurrentProcess.Connections.Contains(conn))
             {
                 CurrentProcess.Connections.Remove(conn);
-                AddLog("åˆ é™¤äº†è¿çº¿");
+                AddLog("É¾³ıÁËÁ¬Ïß");
             }
         }
 
@@ -360,7 +361,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
         #endregion
 
-        #region DAG æ™ºèƒ½æ‹“æ‰‘é‡æ’
+        #region DAG ÖÇÄÜÍØÆËÖØÅÅ
         private void AutoLayout()
         {
             if (CurrentProcess == null || CurrentProcess.Nodes.Count == 0) return;
@@ -395,9 +396,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             var layerGroups = nodes.GroupBy(n => layers[n]).OrderBy(g => g.Key).ToList();
 
-            // ğŸŒŸ æ ¸å¿ƒä¿®æ”¹ï¼šæ”¹ä¸ºè‡ªä¸Šè€Œä¸‹çš„çºµå‘æ’åˆ—å‚æ•°
-            double startY = 80, gapY = 160; // å±‚çº§æ§åˆ¶ Y è½´
-            double startX = 200, gapX = 200; // åŒä¸€å±‚èŠ‚ç‚¹æ§åˆ¶ X è½´
+            // ?? ºËĞÄĞŞ¸Ä£º¸ÄÎª×ÔÉÏ¶øÏÂµÄ×İÏòÅÅÁĞ²ÎÊı
+            double startY = 80, gapY = 160; // ²ã¼¶¿ØÖÆ Y Öá
+            double startX = 200, gapX = 200; // Í¬Ò»²ã½Úµã¿ØÖÆ X Öá
 
             foreach (var group in layerGroups)
             {
@@ -409,27 +410,27 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 for (int i = 0; i < nodeList.Count; i++)
                 {
                     var node = nodeList[i];
-                    // Y éšç€ DAG å±‚çº§é€’å¢ï¼ˆä¸Šåˆ°ä¸‹ï¼‰
+                    // Y Ëæ×Å DAG ²ã¼¶µİÔö£¨ÉÏµ½ÏÂ£©
                     node.PosY = startY + layerIndex * gapY;
-                    // X è½´åŒä¸€å±‚å¹³é“º
+                    // X ÖáÍ¬Ò»²ãÆ½ÆÌ
                     node.PosX = Math.Max(50, layerStartX + i * gapX);
                 }
             }
 
             foreach (var conn in connections) conn.UpdatePoints();
-            AddLog("âœ¨ å·²å®Œæˆè‡ªä¸Šè€Œä¸‹çš„æ™ºèƒ½æ‹“æ‰‘é‡æ’ã€‚");
+            AddLog("? ÒÑÍê³É×ÔÉÏ¶øÏÂµÄÖÇÄÜÍØÆËÖØÅÅ¡£");
         }
         #endregion
         #region 
 
         /// <summary>
-        /// åŠ¨æ€æ„å»ºå·¥å…·ç®± (ä¼˜å…ˆæ ¹æ®æ‰«æåˆ°çš„ DLL è‡ªåŠ¨æ¨å¯¼ ToolBox) åˆå§‹åŒ–å®Œæ•´æµç¨‹å·¥å…·ç®±ï¼ŒåŠ è½½æ’ä»¶èŠ‚ç‚¹å¹¶æŒ‰åˆ†ç±»åˆ†ç»„ï¼Œé€‚é…C#7.3è¯­æ³•
+        /// ¶¯Ì¬¹¹½¨¹¤¾ßÏä (ÓÅÏÈ¸ù¾İÉ¨Ãèµ½µÄ DLL ×Ô¶¯ÍÆµ¼ ToolBox) ³õÊ¼»¯ÍêÕûÁ÷³Ì¹¤¾ßÏä£¬¼ÓÔØ²å¼ş½Úµã²¢°´·ÖÀà·Ö×é£¬ÊÊÅäC#7.3Óï·¨
         /// </summary>
         private void InitFullToolBox()
         {
             ToolBox.Clear();
 
-            // 1. ç›´æ¥ä» Contracts çš„ NodeFactory æ‹¿æ‰€æœ‰æ³¨å†Œå¥½çš„å…ƒæ•°æ®ï¼
+            // 1. Ö±½Ó´Ó Contracts µÄ NodeFactory ÄÃËùÓĞ×¢²áºÃµÄÔªÊı¾İ£¡
             var metas = NodeFactory.GenerateToolboxMetas();
             foreach (var meta in metas)
             {
@@ -437,7 +438,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 ToolBox.Add(meta);
             }
 
-            // 2. UI è§†å›¾åˆ†ç»„æ›´æ–°
+            // 2. UI ÊÓÍ¼·Ö×é¸üĞÂ
             ToolBoxGrouped = CollectionViewSource.GetDefaultView(ToolBox);
             ToolBoxGrouped.GroupDescriptions.Clear();
             ToolBoxGrouped.GroupDescriptions.Add(new PropertyGroupDescription("CategoryName"));
@@ -446,20 +447,20 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         {
             switch (category)
             {
-                case NodeCategory.DeviceIO: return "âš™ï¸ è®¾å¤‡ä¸ IO æ§åˆ¶ç±»";
-                case NodeCategory.Vision: return "ğŸ‘ï¸ Halcon ç®—æ³•ä¸è§†è§‰å¤„ç†ç±»";
-                case NodeCategory.Logic: return "ğŸ§  é€»è¾‘æ§åˆ¶ä¸æ•°æ®æµç±»";
-                case NodeCategory.DataProcess: return "ğŸ“Š æ•°æ®å¤„ç†ä¸è½¬æ¢ç±»";
-                case NodeCategory.SystemMES: return "ğŸ­ ç”Ÿäº§ä¸æ•°æ®å¯¹æ¥ç±»";
-                case NodeCategory.CompositeEx: return "ğŸ›‘ å¤åˆå­æµç¨‹ä¸å¼‚å¸¸å¤„ç†ç±»";
-                default: return "å…¶ä»–èŠ‚ç‚¹";
+                case NodeCategory.DeviceIO: return "?? Éè±¸Óë IO ¿ØÖÆÀà";
+                case NodeCategory.Vision: return "??? Halcon Ëã·¨ÓëÊÓ¾õ´¦ÀíÀà";
+                case NodeCategory.Logic: return "?? Âß¼­¿ØÖÆÓëÊı¾İÁ÷Àà";
+                case NodeCategory.DataProcess: return "?? Êı¾İ´¦ÀíÓë×ª»»Àà";
+                case NodeCategory.SystemMES: return "?? Éú²úÓëÊı¾İ¶Ô½ÓÀà";
+                case NodeCategory.CompositeEx: return "?? ¸´ºÏ×ÓÁ÷³ÌÓëÒì³£´¦ÀíÀà";
+                default: return "ÆäËû½Úµã";
             }
         }
         #endregion
        
     }
 
-    #region ç®€æ˜“ Prompt å¼¹çª—è¾…åŠ©ç±»
+    #region ¼òÒ× Prompt µ¯´°¸¨ÖúÀà
     public static class PromptDialog
     {
         public static string Show(string title, string prompt, string defaultValue = "")
@@ -482,8 +483,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             stack.Children.Add(txtInput);
 
             var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
-            var btnOk = new Button { Content = "ç¡®å®š", Width = 70, Height = 26, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = "å–æ¶ˆ", Width = 70, Height = 26, IsCancel = true };
+            var btnOk = new Button { Content = "È·¶¨", Width = 70, Height = 26, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+            var btnCancel = new Button { Content = "È¡Ïû", Width = 70, Height = 26, IsCancel = true };
 
             btnOk.Click += (s, e) => { win.DialogResult = true; };
             btnPanel.Children.Add(btnOk);

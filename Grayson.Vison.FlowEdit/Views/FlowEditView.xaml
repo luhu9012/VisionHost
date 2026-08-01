@@ -6,7 +6,8 @@
              xmlns:models="clr-namespace:Grayson.Vision.Contracts.Business.Models;assembly=Grayson.Vision.Contracts"
              xmlns:controls="clr-namespace:Grayson.Vison.FlowEdit.Controls"
              xmlns:view ="clr-namespace:Grayson.Vison.FlowEdit.Views"
-             xmlns:cvts="clr-namespace:Grayson.Vison.FlowEdit.Converters">
+             xmlns:cvts="clr-namespace:Grayson.Vison.FlowEdit.Converters"
+             xmlns:halconHost="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf">
 
     <UserControl.Resources>
         <ResourceDictionary>
@@ -393,18 +394,37 @@
             <!-- 右侧综合面板 -->
             <Grid Grid.Column="2" Margin="2">
                 <Grid.RowDefinitions>
-                    <!-- 上区：图像区域 (大图 + 缩略图列表) -->
-                    <RowDefinition Height="3*"/>
-                    <!--<GridSplitter Height="3" HorizontalAlignment="Stretch" Background="#3F3F46"/>-->
+                    <!-- 上区：图像区域 (大图) -->
+                    <RowDefinition Height="*"/>
+                    <!-- 缩略图列表 -->
+                    <RowDefinition Height="80"/>
                     <!-- 下区：数据监视与日志 -->
                     <RowDefinition Height="2*"/>
                 </Grid.RowDefinitions>
 
                 <!-- 1. 图像展示区 -->
-                <view:ImageDisplayControl DataContext="{Binding ImageDisplayVm}"/>
+                <halconHost:HalconImageDisplayHost DataContext="{Binding ImageDisplayVm}"/>
 
-                <!-- 2. 下区：日志与数据监控Tab页 -->
-                <TabControl Grid.Row="1" Background="#252526" BorderBrush="#3F3F46" Margin="2">
+                <!-- 2. 缩略图列表 -->
+                <Border Grid.Row="1" Background="#181818" BorderBrush="#3F3F46" BorderThickness="0 1 0 0">
+                    <ListBox ItemsSource="{Binding ImageDisplayVm.ImageHistoryList}" SelectedItem="{Binding ImageDisplayVm.ActiveImageContext}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{Binding IsSelected, Converter={StaticResource BoolToBrushConverter}}" BorderThickness="2" Margin="2" Width="64" Height="64" Background="#222">
+                                    <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
+                <!-- 3. 下区：日志与数据监控Tab页 -->
+                <TabControl Grid.Row="2" Background="#252526" BorderBrush="#3F3F46" Margin="2">
                     <TabItem Header="运行日志 (Console)" Foreground="#AAA">
                         <ListBox x:Name="LogListBox" ItemsSource="{Binding ExecutionLogs}" 
                      Background="#111" Foreground="#00FF66" FontFamily="Consolas" FontSize="11" 

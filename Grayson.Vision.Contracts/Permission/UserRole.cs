@@ -4,10 +4,12 @@
     public enum UserRole
     {
         /// <summary>操作员：仅可切换已有配方，不能编辑流程、参数</summary>
-        Operator,
+        Operator = 1,
+
         /// <summary>工程师：可编辑流程、调参、标定，不可修改账号权限</summary>
-        Engineer,
+        Engineer = 2,
+
         /// <summary>管理员：全功能开放，权限、硬件配置均可修改</summary>
-        Admin
+        Administrator = 3
     }
 }

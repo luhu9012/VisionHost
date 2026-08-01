@@ -1,4 +1,5 @@
-﻿using Grayson.Vision.Contracts.ViewModels;
+﻿using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.ViewModels;
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -7,39 +8,18 @@ using System.Reflection;
 
 namespace Grayson.Vision.Contracts.Business.Models
 {
-    // 画布内节点的端口类型枚举
-    public enum PortType
+    public class Point2D
     {
-        In,     // 输入端口
-        Out     // 输出端口
-    }
-    /// <summary>
-    /// 端口物理类型：控制流端口 (Exec) 还是 数据流端口 (Data)
-    /// </summary>
-    public enum PortCategory
-    {
-        Exec,   // 控制流/执行流程端口（如：In, Out, OK, NG）
-        Data    // 数据传递端口（如：Image, Region, Point, String, Double）
-    }
-    public enum PortPosition
-    {
-        Top,    // 顶部主输入
-        Bottom, // 底部主输出
-        Left,   // 左侧扩展输入
-        Right   // 右侧扩展输出
+        public double X { get; set; }
+        public double Y { get; set; }
+        public Point2D() { }
+        public Point2D(double x, double y)
+        {
+            X = x;
+            Y = y;
+        }
     }
 
-    /// <summary>
-    /// 端口连接类型枚举（对应连线逻辑）
-    /// </summary>
-    public enum ConnectorType
-    {
-        Input,          // 默认输入
-        OutputDefault,  // 默认单线输出
-        OutputTrue,     // 条件满足 / OK 管道
-        OutputFalse,    // 条件不满足 / NG 管道
-        OutputError     // 异常通道
-    }
     // 端口模型：节点上每个端口的定义
 
     public class NodePort : ViewModelBase

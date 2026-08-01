@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,14 +12,14 @@ namespace Grayson.Vision.Nodes.Logic.ForLoop
     [Node(
         type: NodeType.ForLoop,
         category: NodeCategory.Logic,
-        displayName: "å¾ªç¯æ§åˆ¶",
-        description: "ç”¨äºå¤šç›®æ ‡/é˜µåˆ—äº§å“çš„éå†å¤„ç†ï¼Œæ”¯æŒè¿­ä»£çŠ¶æ€è¾“å‡ºä¸Breakæ‰“æ–­",
+        displayName: "Ñ­»·¿ØÖÆ",
+        description: "ÓÃÓÚ¶àÄ¿±ê/ÕóÁĞ²úÆ·µÄ±éÀú´¦Àí£¬Ö§³Öµü´ú×´Ì¬Êä³öÓëBreak´ò¶Ï",
         parameterType: typeof(ForLoopParam)
-          , icon: "ğŸ”"
+          , icon: "??"
     )]
     [NodePort("ExecIn", PortType.In, PortCategory.Data)]
-    [NodePort("LoopBody", PortType.Out, PortCategory.Data)]  // æ¯è½®å¾ªç¯è§¦å‘
-    [NodePort("Completed", PortType.Out, PortCategory.Data)] // å¾ªç¯ç»“æŸè§¦å‘
+    [NodePort("LoopBody", PortType.Out, PortCategory.Data)]  // Ã¿ÂÖÑ­»·´¥·¢
+    [NodePort("Completed", PortType.Out, PortCategory.Data)] // Ñ­»·½áÊø´¥·¢
     [NodePort("CountIn", PortType.In, PortCategory.Data, dataType: "Integer", colorHex: "#F1C40F")]
     [NodePort("Index", PortType.Out, PortCategory.Data, dataType: "Integer", colorHex: "#F1C40F")]
     [NodePort("IsLast", PortType.Out, PortCategory.Data, dataType: "Boolean", colorHex: "#2ECC71")]
@@ -27,19 +28,19 @@ namespace Grayson.Vision.Nodes.Logic.ForLoop
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as ForLoopParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°æœªé…ç½®ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÎ´ÅäÖÃ¡£");
 
             int totalCount = param.Count;
             int? inputCount = context.GetInputValue<int?>(node, "CountIn");
             if (inputCount.HasValue && inputCount.Value > 0) totalCount = inputCount.Value;
 
-            // è·å–å½“å‰è¿­ä»£çŠ¶æ€
+            // »ñÈ¡µ±Ç°µü´ú×´Ì¬
             int currentIdx = context.GetState<int>(node, "CurrentIndex", param.StartIndex);
             bool isBreak = context.GetState<bool>(node, "IsBreakRequested", false);
 
             int endIdx = param.StartIndex + totalCount;
 
-            // æ£€æŸ¥æ˜¯å¦è¢«æ‰“æ–­æˆ–å·²è¾¾åˆ°å¾ªç¯ä¸Šé™
+            // ¼ì²éÊÇ·ñ±»´ò¶Ï»òÒÑ´ïµ½Ñ­»·ÉÏÏŞ
             if (!isBreak && currentIdx < endIdx)
             {
                 bool isLastItem = (currentIdx + param.Step >= endIdx);
@@ -47,21 +48,21 @@ namespace Grayson.Vision.Nodes.Logic.ForLoop
                 context.SetOutputValue(node, "Index", currentIdx);
                 context.SetOutputValue(node, "IsLast", isLastItem);
 
-                context.Log($"ğŸ”„ [ForLoop è¿­ä»£] Index: {currentIdx} / {endIdx - 1} {(isLastItem ? "(æœ€åä¸€è½®)" : "")}");
+                context.Log($"?? [ForLoop µü´ú] Index: {currentIdx} / {endIdx - 1} {(isLastItem ? "(×îºóÒ»ÂÖ)" : "")}");
 
-                // æ¿€æ´» LoopBody åˆ†æ”¯
+                // ¼¤»î LoopBody ·ÖÖ§
                 context.SetActiveNextPort(node, "LoopBody");
 
-                // ç´¯åŠ  Indexï¼Œä¿ç•™çŠ¶æ€ä¾›ä¸‹ä¸€æ¬¡è°ƒåº¦è¯„ä¼°
+                // ÀÛ¼Ó Index£¬±£Áô×´Ì¬¹©ÏÂÒ»´Îµ÷¶ÈÆÀ¹À
                 context.SetState(node, "CurrentIndex", currentIdx + param.Step);
             }
             else
             {
-                // å¾ªç¯å®Œæˆæˆ–è¢« Breakï¼Œé‡ç½®å†…éƒ¨çŠ¶æ€å¹¶èµ° Completed åˆ†æ”¯
+                // Ñ­»·Íê³É»ò±» Break£¬ÖØÖÃÄÚ²¿×´Ì¬²¢×ß Completed ·ÖÖ§
                 context.SetState(node, "CurrentIndex", param.StartIndex);
                 context.SetState(node, "IsBreakRequested", false);
 
-                context.Log(isBreak ? $"â¹ï¸ [ForLoop å¼ºè¡Œä¸­æ–­(Break)]" : $"âœ” [ForLoop å¾ªç¯å®Œæˆ]");
+                context.Log(isBreak ? $"?? [ForLoop Ç¿ĞĞÖĞ¶Ï(Break)]" : $"? [ForLoop Ñ­»·Íê³É]");
                 context.SetActiveNextPort(node, "Completed");
             }
 

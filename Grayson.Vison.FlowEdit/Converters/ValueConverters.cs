@@ -1,4 +1,5 @@
-ï»¿using System;
+using Grayson.Vision.Contracts.Business.Enums;
+using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
@@ -56,8 +57,8 @@ namespace Grayson.Vison.FlowEdit.Converters
             var node = values[0] as FlowNodeBase;
             var sel = values[1] as FlowNodeBase;
 
-            if (node != null && node.IsRunning) return Brushes.SpringGreen; // æ‰§è¡ŒåŠ¨ç”»é«˜äº®
-            if (node != null && node == sel) return Brushes.Gold; // é€‰ä¸­é«˜äº®
+            if (node != null && node.IsRunning) return Brushes.SpringGreen; // Ö´ĞĞ¶¯»­¸ßÁÁ
+            if (node != null && node == sel) return Brushes.Gold; // Ñ¡ÖĞ¸ßÁÁ
             return Brushes.Transparent;
         }
     }
@@ -73,19 +74,19 @@ namespace Grayson.Vison.FlowEdit.Converters
             var geometry = new PathGeometry();
             var figure = new PathFigure { StartPoint = new Point(startX, startY), IsClosed = false };
 
-            // ä»ä¸Šåˆ°ä¸‹çš„å¸ƒå±€ï¼šæ§åˆ¶ç‚¹åœ¨ Y è½´æ–¹å‘æ‹‰ä¼¸
+            // ´ÓÉÏµ½ÏÂµÄ²¼¾Ö£º¿ØÖÆµãÔÚ Y Öá·½ÏòÀ­Éì
             double controlOffset = Math.Max(30, Math.Abs(endY - startY) / 2);
-            Point p1 = new Point(startX, startY + controlOffset); // å¾€ä¸‹å»¶ä¼¸
-            Point p2 = new Point(endX, endY - controlOffset);   // ä»ä¸Šæ–¹å¼•å…¥
+            Point p1 = new Point(startX, startY + controlOffset); // ÍùÏÂÑÓÉì
+            Point p2 = new Point(endX, endY - controlOffset);   // ´ÓÉÏ·½ÒıÈë
             Point endPoint = new Point(endX, endY);
 
             figure.Segments.Add(new BezierSegment(p1, p2, endPoint, true));
             geometry.Figures.Add(figure);
 
-            // ğŸŒŸ ç»˜åˆ¶æœ«ç«¯ç®­å¤´
+            // ?? »æÖÆÄ©¶Ë¼ıÍ·
             double angle = Math.Atan2(endY - p2.Y, endX - p2.X);
             double arrowLength = 7.0;
-            double arrowAngle = Math.PI / 6; // 30åº¦è§’
+            double arrowAngle = Math.PI / 6; // 30¶È½Ç
 
             Point arrowP1 = new Point(endX - arrowLength * Math.Cos(angle - arrowAngle), endY - arrowLength * Math.Sin(angle - arrowAngle));
             Point arrowP2 = new Point(endX - arrowLength * Math.Cos(angle + arrowAngle), endY - arrowLength * Math.Sin(angle + arrowAngle));
@@ -113,9 +114,9 @@ namespace Grayson.Vison.FlowEdit.Converters
     }
 
     /// <summary>
-    /// æ ¹æ® PortCategory æ§åˆ¶ç«¯ç‚¹å¤–è§‚æ ·å¼ï¼š
-    /// Data -> æ–¹å—/è±å½¢/ä¸‰è§’å½¢ (CornerRadius=2)
-    /// Exec -> åœ†å½¢ (CornerRadius=6)
+    /// ¸ù¾İ PortCategory ¿ØÖÆ¶ËµãÍâ¹ÛÑùÊ½£º
+    /// Data -> ·½¿é/ÁâĞÎ/Èı½ÇĞÎ (CornerRadius=2)
+    /// Exec -> Ô²ĞÎ (CornerRadius=6)
     /// </summary>
     public class PortCategoryToCornerRadiusConv : IValueConverter
     {
@@ -123,10 +124,10 @@ namespace Grayson.Vison.FlowEdit.Converters
         {
             if (value is PortCategory category && category == PortCategory.Exec)
             {
-                return new CornerRadius(6);     // çº¯åœ†å½¢ (æ•°æ®æµ)
+                return new CornerRadius(6);     // ´¿Ô²ĞÎ (Êı¾İÁ÷)
             }
            
-            return new CornerRadius(1); // æ–¹å½¢/å¾®åœ†è§’ (æ§åˆ¶æµ)
+            return new CornerRadius(1); // ·½ĞÎ/Î¢Ô²½Ç (¿ØÖÆÁ÷)
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
@@ -152,10 +153,10 @@ namespace Grayson.Vison.FlowEdit.Converters
     }
 
     /// <summary>
-    /// æ ¹æ®è¿çº¿ç±»å‹ (ConnectionCategory) å†³å®šçº¿å®½ï¼šExec ç²—çº¿(3.5)ï¼ŒData ç»†çº¿(1.8)
+    /// ¸ù¾İÁ¬ÏßÀàĞÍ (ConnectionCategory) ¾ö¶¨Ïß¿í£ºExec ´ÖÏß(3.5)£¬Data Ï¸Ïß(1.8)
     /// </summary>
     /// <summary>
-    /// æ ¹æ®è¿çº¿ç±»å‹ (PortCategory) å†³å®šçº¿å®½ï¼šExec ç²—çº¿(3.5)ï¼ŒData ç»†çº¿(1.8)
+    /// ¸ù¾İÁ¬ÏßÀàĞÍ (PortCategory) ¾ö¶¨Ïß¿í£ºExec ´ÖÏß(3.5)£¬Data Ï¸Ïß(1.8)
     /// </summary>
     public class ConnectionThicknessConv : IValueConverter
     {
@@ -170,59 +171,59 @@ namespace Grayson.Vison.FlowEdit.Converters
     }
 
     /// <summary>
-    /// æ ¹æ®è¿çº¿ç±»å‹ (PortCategory) å†³å®šè™šçº¿æ ·å¼ï¼šExec å®çº¿(null)ï¼ŒData è™šçº¿("2 2")
+    /// ¸ù¾İÁ¬ÏßÀàĞÍ (PortCategory) ¾ö¶¨ĞéÏßÑùÊ½£ºExec ÊµÏß(null)£¬Data ĞéÏß("2 2")
     /// </summary>
     public class ConnectionDashConv : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            return null; // å®çº¿
+            return null; // ÊµÏß
             //if (value is PortCategory cat && cat == PortCategory.Exec)
-            //    return null; // å®çº¿
-            //return new DoubleCollection { 2, 2 }; // ç‚¹è™šçº¿
+            //    return null; // ÊµÏß
+            //return new DoubleCollection { 2, 2 }; // µãĞéÏß
         }
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
     /// <summary>
-    /// å°†åˆ†ç±»åç§°æˆ– NodeCategory æšä¸¾è½¬æ¢ä¸ºå¯¹åº”çš„ Emoji å›¾æ ‡ï¼ˆç”¨äº VisionMaster æç®€ä¾§è¾¹æ ï¼‰
+    /// ½«·ÖÀàÃû³Æ»ò NodeCategory Ã¶¾Ù×ª»»Îª¶ÔÓ¦µÄ Emoji Í¼±ê£¨ÓÃÓÚ VisionMaster ¼«¼ò²à±ßÀ¸£©
     /// </summary>
     public class CategoryToIconConverter : BaseConverter
     {
         public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value == null) return "ğŸ“Œ";
+            if (value == null) return "??";
 
             string name = value.ToString();
 
-            // 1. å¤„ç† NodeCategory æšä¸¾
+            // 1. ´¦Àí NodeCategory Ã¶¾Ù
             if (value is NodeCategory category)
             {
                 switch (category)
                 {
-                    case NodeCategory.DeviceIO: return "âš™ï¸";
-                    case NodeCategory.Vision: return "ğŸ‘ï¸";
-                    case NodeCategory.Logic: return "ğŸ§ ";
-                    case NodeCategory.DataProcess: return "ğŸ“Š";
-                    case NodeCategory.SystemMES: return "ğŸ­";
-                    case NodeCategory.CompositeEx: return "ğŸ›‘";
-                    default: return "ğŸ“¦";
+                    case NodeCategory.DeviceIO: return "??";
+                    case NodeCategory.Vision: return "???";
+                    case NodeCategory.Logic: return "??";
+                    case NodeCategory.DataProcess: return "??";
+                    case NodeCategory.SystemMES: return "??";
+                    case NodeCategory.CompositeEx: return "??";
+                    default: return "??";
                 }
             }
 
-            // 2. å¤„ç†å·²æ‹¼æ¥äº†å¸¦ Emoji çš„ç»„å (ä¾‹å¦‚ "âš™ï¸ è®¾å¤‡ä¸ IO æ§åˆ¶ç±»")
-            if (name.Contains("è®¾å¤‡") || name.Contains("IO")) return "âš™ï¸";
-            if (name.Contains("Halcon") || name.Contains("è§†è§‰")) return "ğŸ‘ï¸";
-            if (name.Contains("é€»è¾‘") || name.Contains("æ§åˆ¶")) return "ğŸ§ ";
-            if (name.Contains("æ•°æ®å¤„ç†") || name.Contains("è½¬æ¢")) return "ğŸ“Š";
-            if (name.Contains("ç”Ÿäº§") || name.Contains("MES")) return "ğŸ­";
-            if (name.Contains("å¤åˆ") || name.Contains("å¼‚å¸¸")) return "ğŸ›‘";
+            // 2. ´¦ÀíÒÑÆ´½ÓÁË´ø Emoji µÄ×éÃû (ÀıÈç "?? Éè±¸Óë IO ¿ØÖÆÀà")
+            if (name.Contains("Éè±¸") || name.Contains("IO")) return "??";
+            if (name.Contains("Halcon") || name.Contains("ÊÓ¾õ")) return "???";
+            if (name.Contains("Âß¼­") || name.Contains("¿ØÖÆ")) return "??";
+            if (name.Contains("Êı¾İ´¦Àí") || name.Contains("×ª»»")) return "??";
+            if (name.Contains("Éú²ú") || name.Contains("MES")) return "??";
+            if (name.Contains("¸´ºÏ") || name.Contains("Òì³£")) return "??";
 
-            return "ğŸ“¦";
+            return "??";
         }
     }
     /// <summary>
-    /// æ ¹æ® NodeCategory æšä¸¾ã€åˆ†ç±»åç§°æˆ– FlowNodeBase å®ä½“ï¼Œç»Ÿä¸€è¿”å›åŒ¹é…çš„ä¸»é¢˜è‰²ç”»åˆ·
+    /// ¸ù¾İ NodeCategory Ã¶¾Ù¡¢·ÖÀàÃû³Æ»ò FlowNodeBase ÊµÌå£¬Í³Ò»·µ»ØÆ¥ÅäµÄÖ÷ÌâÉ«»­Ë¢
     /// </summary>
     public class CategoryToBrushConverter : BaseConverter
     {
@@ -240,24 +241,24 @@ namespace Grayson.Vison.FlowEdit.Converters
             }
             else if (value is string name)
             {
-                if (name.Contains("è®¾å¤‡") || name.Contains("IO") || name.Contains("DeviceIO")) category = NodeCategory.DeviceIO;
-                else if (name.Contains("Halcon") || name.Contains("è§†è§‰") || name.Contains("Vision")) category = NodeCategory.Vision;
-                else if (name.Contains("é€»è¾‘") || name.Contains("æ§åˆ¶") || name.Contains("Logic")) category = NodeCategory.Logic;
-                else if (name.Contains("æ•°æ®å¤„ç†") || name.Contains("è½¬æ¢") || name.Contains("DataProcess")) category = NodeCategory.DataProcess;
-                else if (name.Contains("ç”Ÿäº§") || name.Contains("MES") || name.Contains("SystemMES")) category = NodeCategory.SystemMES;
-                else if (name.Contains("å¤åˆ") || name.Contains("å¼‚å¸¸") || name.Contains("CompositeEx")) category = NodeCategory.CompositeEx;
+                if (name.Contains("Éè±¸") || name.Contains("IO") || name.Contains("DeviceIO")) category = NodeCategory.DeviceIO;
+                else if (name.Contains("Halcon") || name.Contains("ÊÓ¾õ") || name.Contains("Vision")) category = NodeCategory.Vision;
+                else if (name.Contains("Âß¼­") || name.Contains("¿ØÖÆ") || name.Contains("Logic")) category = NodeCategory.Logic;
+                else if (name.Contains("Êı¾İ´¦Àí") || name.Contains("×ª»»") || name.Contains("DataProcess")) category = NodeCategory.DataProcess;
+                else if (name.Contains("Éú²ú") || name.Contains("MES") || name.Contains("SystemMES")) category = NodeCategory.SystemMES;
+                else if (name.Contains("¸´ºÏ") || name.Contains("Òì³£") || name.Contains("CompositeEx")) category = NodeCategory.CompositeEx;
             }
 
             if (category.HasValue)
             {
                 switch (category.Value)
                 {
-                    case NodeCategory.DeviceIO: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#007ACC")); // ç»å…¸è“
-                    case NodeCategory.Vision: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DA7C06"));   // è§†è§‰æ©™
-                    case NodeCategory.Logic: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E8B57"));    // é€»è¾‘ç»¿
-                    case NodeCategory.DataProcess: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#16A085")); // é’ç»¿
-                    case NodeCategory.SystemMES: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D35400"));  // æ£•çº¢
-                    case NodeCategory.CompositeEx: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9B59B6"));// å¤åˆç´«
+                    case NodeCategory.DeviceIO: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#007ACC")); // ¾­µäÀ¶
+                    case NodeCategory.Vision: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DA7C06"));   // ÊÓ¾õ³È
+                    case NodeCategory.Logic: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2E8B57"));    // Âß¼­ÂÌ
+                    case NodeCategory.DataProcess: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#16A085")); // ÇàÂÌ
+                    case NodeCategory.SystemMES: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D35400"));  // ×Øºì
+                    case NodeCategory.CompositeEx: return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#9B59B6"));// ¸´ºÏ×Ï
                 }
             }
 
@@ -265,46 +266,46 @@ namespace Grayson.Vison.FlowEdit.Converters
         }
     }
     /// <summary>
-    /// å°†åˆ†ç±»åç§°æˆ– NodeCategory æšä¸¾æå–/æˆªå–ä¸º 2~4 ä¸ªå­—çš„æç®€çŸ­åç§°ï¼ˆç”¨äºå›¾æ ‡ä¸‹æ–¹çš„å¾®å‹æ–‡æœ¬ï¼‰
+    /// ½«·ÖÀàÃû³Æ»ò NodeCategory Ã¶¾ÙÌáÈ¡/½ØÈ¡Îª 2~4 ¸ö×ÖµÄ¼«¼ò¶ÌÃû³Æ£¨ÓÃÓÚÍ¼±êÏÂ·½µÄÎ¢ĞÍÎÄ±¾£©
     /// </summary>
     public class CategoryToShortNameConverter : BaseConverter
     {
         public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value == null) return "å…¶ä»–";
+            if (value == null) return "ÆäËû";
 
             string name = value.ToString();
 
-            // 1. å¤„ç† NodeCategory æšä¸¾
+            // 1. ´¦Àí NodeCategory Ã¶¾Ù
             if (value is NodeCategory category)
             {
                 switch (category)
                 {
-                    case NodeCategory.DeviceIO: return "è®¾å¤‡IO";
-                    case NodeCategory.Vision: return "è§†è§‰ç®—æ³•";
-                    case NodeCategory.Logic: return "é€»è¾‘æ§åˆ¶";
-                    case NodeCategory.DataProcess: return "æ•°æ®å¤„ç†";
-                    case NodeCategory.SystemMES: return "ç”Ÿäº§MES";
-                    case NodeCategory.CompositeEx: return "å¤åˆå¼‚å¸¸";
-                    default: return "å…¶ä»–";
+                    case NodeCategory.DeviceIO: return "Éè±¸IO";
+                    case NodeCategory.Vision: return "ÊÓ¾õËã·¨";
+                    case NodeCategory.Logic: return "Âß¼­¿ØÖÆ";
+                    case NodeCategory.DataProcess: return "Êı¾İ´¦Àí";
+                    case NodeCategory.SystemMES: return "Éú²úMES";
+                    case NodeCategory.CompositeEx: return "¸´ºÏÒì³£";
+                    default: return "ÆäËû";
                 }
             }
 
-            // 2. å¤„ç†åŒ…å«å®Œæ•´æ–‡å­—çš„ç»„å (æå–å…³é”®çŸ­è¯­)
-            if (name.Contains("è®¾å¤‡") || name.Contains("IO")) return "è®¾å¤‡IO";
-            if (name.Contains("Halcon") || name.Contains("è§†è§‰")) return "è§†è§‰ç®—æ³•";
-            if (name.Contains("é€»è¾‘")) return "é€»è¾‘æ§åˆ¶";
-            if (name.Contains("æ•°æ®å¤„ç†") || name.Contains("è½¬æ¢")) return "æ•°æ®å¤„ç†";
-            if (name.Contains("ç”Ÿäº§") || name.Contains("MES")) return "ç”Ÿäº§MES";
-            if (name.Contains("å¤åˆ") || name.Contains("å¼‚å¸¸")) return "å¤åˆå¼‚å¸¸";
+            // 2. ´¦Àí°üº¬ÍêÕûÎÄ×ÖµÄ×éÃû (ÌáÈ¡¹Ø¼ü¶ÌÓï)
+            if (name.Contains("Éè±¸") || name.Contains("IO")) return "Éè±¸IO";
+            if (name.Contains("Halcon") || name.Contains("ÊÓ¾õ")) return "ÊÓ¾õËã·¨";
+            if (name.Contains("Âß¼­")) return "Âß¼­¿ØÖÆ";
+            if (name.Contains("Êı¾İ´¦Àí") || name.Contains("×ª»»")) return "Êı¾İ´¦Àí";
+            if (name.Contains("Éú²ú") || name.Contains("MES")) return "Éú²úMES";
+            if (name.Contains("¸´ºÏ") || name.Contains("Òì³£")) return "¸´ºÏÒì³£";
 
-            // 3. åå¤‡æ¸…æ´—é€»è¾‘ï¼šå»é™¤ Emoji å¹¶æˆªå–å‰ 4 ä¸ªå­—ç¬¦
-            string cleanName = name.Replace("âš™ï¸", "")
-                                   .Replace("ğŸ‘ï¸", "")
-                                   .Replace("ğŸ§ ", "")
-                                   .Replace("ğŸ“Š", "")
-                                   .Replace("ğŸ­", "")
-                                   .Replace("ğŸ›‘", "")
+            // 3. ºó±¸ÇåÏ´Âß¼­£ºÈ¥³ı Emoji ²¢½ØÈ¡Ç° 4 ¸ö×Ö·û
+            string cleanName = name.Replace("??", "")
+                                   .Replace("???", "")
+                                   .Replace("??", "")
+                                   .Replace("??", "")
+                                   .Replace("??", "")
+                                   .Replace("??", "")
                                    .Trim();
 
             return cleanName.Length > 4 ? cleanName.Substring(0, 4) : cleanName;
@@ -312,8 +313,8 @@ namespace Grayson.Vison.FlowEdit.Converters
     }
 
     /// <summary>
-    /// å¸ƒå°”å€¼è½¬ç”»åˆ·è½¬æ¢å™¨ï¼ˆå¸¸ç”¨äº Selected é€‰ä¸­çŠ¶æ€çš„é«˜äº®è¾¹æ¡†åˆ‡æ¢ï¼‰
-    /// æ”¯æŒåœ¨ XAML ä¸­ç›´æ¥è®¾ç½® SelectedBrush / NormalBrush æˆ–ä½¿ç”¨é»˜è®¤å€¼
+    /// ²¼¶ûÖµ×ª»­Ë¢×ª»»Æ÷£¨³£ÓÃÓÚ Selected Ñ¡ÖĞ×´Ì¬µÄ¸ßÁÁ±ß¿òÇĞ»»£©
+    /// Ö§³ÖÔÚ XAML ÖĞÖ±½ÓÉèÖÃ SelectedBrush / NormalBrush »òÊ¹ÓÃÄ¬ÈÏÖµ
     /// </summary>
     public class BoolToBrushConverter : BaseConverter
     {

@@ -1,25 +1,21 @@
-﻿using Grayson.Vision.Contracts.ViewModels;
-using Grayson.Vison.FlowEdit.Services; // 包含 EventBus
+﻿using Grayson.Vision.Contracts.Imaging;
+using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
 using System.Windows.Input;
-using Grayson.Vison.FlowEdit.Model;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
-using HalconDotNet;
 
 namespace Grayson.Vison.FlowEdit.ViewModels
 {
     public class ImageDisplayVm : ViewModelBase
     {
+        public ObservableCollection<WpfImageRenderContext> ImageHistoryList { get; set; } = new ObservableCollection<WpfImageRenderContext>();
 
-        public ObservableCollection<HalconRenderContext> ImageHistoryList { get; set; } = new ObservableCollection<HalconRenderContext>();
-
-        private HalconRenderContext _activeImageContext;
-        public HalconRenderContext ActiveImageContext
+        private WpfImageRenderContext _activeImageContext;
+        public WpfImageRenderContext ActiveImageContext
         {
             get => _activeImageContext;
             set
@@ -46,30 +42,25 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             set => Set(ref _selectedImageInfo, value);
         }
 
-        public Action<HalconRenderContext> OnRequestRender;
+        public Action<ImageRenderContext> OnRequestRender;
 
         public ICommand PreviousImageCmd { get; }
         public ICommand NextImageCmd { get; }
         public ICommand SelectImageItemCmd { get; }
 
         private readonly ExecutionContext _engineContext;
+        private readonly HalconImageRenderService _renderService;
 
-        public ImageDisplayVm(ExecutionContext engineContext)
+        public ImageDisplayVm(ExecutionContext engineContext, HalconImageRenderService renderService)
         {
+            _engineContext = engineContext ?? throw new ArgumentNullException(nameof(engineContext));
+            _renderService = renderService ?? throw new ArgumentNullException(nameof(renderService));
+
             PreviousImageCmd = new RelayCommand(SelectPreviousImage);
             NextImageCmd = new RelayCommand(SelectNextImage);
-            SelectImageItemCmd = new RelayCommand<HalconRenderContext>(SelectImageItem);
+            SelectImageItemCmd = new RelayCommand<WpfImageRenderContext>(SelectImageItem);
 
-
-            _engineContext = engineContext ?? throw new ArgumentNullException(nameof(engineContext));
-
-            // 订阅节点执行完成事件
             _engineContext.OnNodeExecuted += EngineContext_OnNodeExecuted;
-
-     
-
-            // 2. 订阅“节点参数修改”事件 -> 实时刷新图像 TODO
-            //EventBus.Instance.Subscribe<NodeParamChangedEvent>(OnNodeParamChanged);
         }
 
         private void EngineContext_OnNodeExecuted(object sender, FlowNodeBase node)
@@ -83,17 +74,18 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                 if (imagePort != null)
                 {
-                    // 2. 组装 UI 渲染上下文 (HalconRenderContext 定义在 UI 层即可)
-                    var renderContext = new HalconRenderContext
+                    // 2. 组装 UI 渲染上下文
+                    var renderImage = _renderService.WrapImage(imagePort.DataValue);
+                    var renderContext = new WpfImageRenderContext
                     {
                         NodeId = node.NodeId,
                         NodeName = node.DisplayName,
-                        Image = imagePort.DataValue as HalconDotNet.HImage // 转换为 Halcon 对象
+                        Image = renderImage,
+                        Thumbnail = _renderService.CreateThumbnail(renderImage)
                     };
 
                     // 3. 更新历史列表及主图
-                    //UpdateOrAddHistory(renderContext);
-
+                    ImageHistoryList.Add(renderContext);
                     if (IsAutoSwitchEnabled)
                     {
                         SelectImageItem(renderContext);
@@ -122,7 +114,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         //    return Task.CompletedTask;
         //}
 
-        public void SelectImageItem(HalconRenderContext item)
+        public void SelectImageItem(WpfImageRenderContext item)
         {
             if (item == null) return;
 
@@ -157,11 +149,10 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (ActiveImageContext?.Image == null) return;
             try
             {
-                ActiveImageContext.Image.GetImageSize(out int w, out int h);
-                if (x >= 0 && x < w && y >= 0 && y < h)
+                if (x >= 0 && x < ActiveImageContext.Image.Width && y >= 0 && y < ActiveImageContext.Image.Height)
                 {
-                    HTuple g = ActiveImageContext.Image.GetGrayval(y, x);
-                    SelectedImageInfo = $"[{ActiveImageContext.NodeName}]  X:{x}, Y:{y} | Gray:{g}";
+                    var pixelInfo = _renderService.GetPixelInfo(ActiveImageContext.Image, x, y);
+                    SelectedImageInfo = $"[{ActiveImageContext.NodeName}]  X:{x}, Y:{y} | {pixelInfo}";
                 }
             }
             catch { }

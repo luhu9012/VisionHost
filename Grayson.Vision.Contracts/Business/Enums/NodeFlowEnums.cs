@@ -94,6 +94,7 @@ namespace Grayson.Vision.Contracts.Business.Enums
         ForLoop,            // 循环控制
         Delay,              // 延时等待
         WaitSignal,         // 状态信号等待
+        Merge,              // 数据汇聚/合并
 
         // --- 4. 数据处理与转换类 ---
         OffsetMath,         // 坐标计算/偏移

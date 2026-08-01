@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -12,23 +13,23 @@ namespace Grayson.Vision.Nodes.Logic.WaitSignal
     [Node(
         type: NodeType.WaitSignal,
         category: NodeCategory.Logic,
-        displayName: "çŠ¶æ€ä¿¡å·ç­‰å¾…",
-        description: "é˜»å¡ç­‰å¾…å¤–éƒ¨ IO/PLC æˆ–ç³»ç»Ÿå…¨å±€è§¦å‘ä¿¡å·",
+        displayName: "×´Ì¬ĞÅºÅµÈ´ı",
+        description: "×èÈûµÈ´ıÍâ²¿ IO/PLC »òÏµÍ³È«¾Ö´¥·¢ĞÅºÅ",
         parameterType: typeof(WaitSignalParam)
-        , icon: "â³"
+        , icon: "?"
     )]
     [NodePort("ExecIn", PortType.In, PortCategory.Data)]
     [NodePort("ExecOut", PortType.Out, PortCategory.Data)]
-    [NodePort("TimeoutExec", PortType.Out, PortCategory.Data)] // è¶…æ—¶æœªç­‰åˆ°ä¿¡å·æ—¶èµ°æ­¤åˆ†æ”¯
+    [NodePort("TimeoutExec", PortType.Out, PortCategory.Data)] // ³¬Ê±Î´µÈµ½ĞÅºÅÊ±×ß´Ë·ÖÖ§
     [NodePort("SignalState", PortType.Out, PortCategory.Data, dataType: "Boolean", colorHex: "#2ECC71")]
     public class WaitSignalExecutor : INodeExecutor
     {
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as WaitSignalParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°æœªé…ç½®ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÎ´ÅäÖÃ¡£");
 
-            context.Log($"â³ [ç­‰å¾…ä¿¡å·] ç›‘å¬ä¿¡å·: {param.SignalName}, æœŸå¾…çŠ¶æ€: {param.TargetState}, è¶…æ—¶è®¾å®š: {param.TimeoutMs}ms");
+            context.Log($"? [µÈ´ıĞÅºÅ] ¼àÌıĞÅºÅ: {param.SignalName}, ÆÚ´ı×´Ì¬: {param.TargetState}, ³¬Ê±Éè¶¨: {param.TimeoutMs}ms");
 
             var sw = Stopwatch.StartNew();
             bool isSuccess = false;
@@ -37,9 +38,9 @@ namespace Grayson.Vision.Nodes.Logic.WaitSignal
             {
                 token.ThrowIfCancellationRequested();
 
-                // ğŸ’¡ æ¶æ„å»ºè®®ï¼šä» Context çš„å…¨å±€å…±äº«å†…å­˜/IOæ€»çº¿ä¸­æŸ¥è¯¢ä¿¡å·çŠ¶æ€
+                // ?? ¼Ü¹¹½¨Òé£º´Ó Context µÄÈ«¾Ö¹²ÏíÄÚ´æ/IO×ÜÏßÖĞ²éÑ¯ĞÅºÅ×´Ì¬
                 // bool currentSignal = context.GetGlobalSignal(param.SignalName);
-                bool currentSignal = true; // (Demo é˜¶æ®µæ¨¡æ‹Ÿä¿¡å·åˆ°è¾¾)
+                bool currentSignal = true; // (Demo ½×¶ÎÄ£ÄâĞÅºÅµ½´ï)
 
                 if (currentSignal == param.TargetState)
                 {
@@ -54,12 +55,12 @@ namespace Grayson.Vision.Nodes.Logic.WaitSignal
 
             if (isSuccess)
             {
-                context.Log($"âœ” [ä¿¡å·ç­‰åˆ°äº†] è€—æ—¶: {sw.ElapsedMilliseconds} ms");
+                context.Log($"? [ĞÅºÅµÈµ½ÁË] ºÄÊ±: {sw.ElapsedMilliseconds} ms");
                 context.SetActiveNextPort(node, "ExecOut");
             }
             else
             {
-                context.Log($"âš ï¸ [ç­‰å¾…ä¿¡å·è¶…æ—¶] è¶…è¿‡ {param.TimeoutMs} ms æœªæ¥æ”¶åˆ°é¢„æœŸçš„ [{param.SignalName}] ä¿¡å·");
+                context.Log($"?? [µÈ´ıĞÅºÅ³¬Ê±] ³¬¹ı {param.TimeoutMs} ms Î´½ÓÊÕµ½Ô¤ÆÚµÄ [{param.SignalName}] ĞÅºÅ");
                 context.SetActiveNextPort(node, "TimeoutExec");
             }
         }

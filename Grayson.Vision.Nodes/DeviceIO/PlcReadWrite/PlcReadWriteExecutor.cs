@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.DeviceIO.PlcReadWrite
     [Node(
         type: NodeType.PlcReadWrite,
         category: NodeCategory.DeviceIO,
-        displayName: " PLC è¯»å†™",
-        description: "è¯»å–æˆ–å†™å…¥ PLC å¯„å­˜å™¨ DB/M ç‚¹",
+        displayName: " PLC ¶ÁĞ´",
+        description: "¶ÁÈ¡»òĞ´Èë PLC ¼Ä´æÆ÷ DB/M µã",
         parameterType: typeof(PlcReadWriteParam)
-          , icon: "ğŸ”Œ"
+          , icon: "??"
     )]
     //[NodePort("ExecIn", PortType.In, PortCategory.Exec)]
     //[NodePort("ExecOut", PortType.Out, PortCategory.Exec)]
@@ -25,26 +26,26 @@ namespace Grayson.Vision.Nodes.DeviceIO.PlcReadWrite
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as PlcReadWriteParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] æœªæ­£ç¡®é…ç½® PlcReadWriteParam å‚æ•°ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] Î´ÕıÈ·ÅäÖÃ PlcReadWriteParam ²ÎÊı¡£");
 
-            context.Log($"ğŸ”Œ [PLC è¯»å†™] æ“ä½œ: {param.Operation}, åœ°å€: {param.DbAddress}, PLC: {param.PlcAlias}");
+            context.Log($"?? [PLC ¶ÁĞ´] ²Ù×÷: {param.Operation}, µØÖ·: {param.DbAddress}, PLC: {param.PlcAlias}");
 
-            await Task.Delay(50, token); // æ¨¡æ‹Ÿ PLC é€šè®¯å»¶æ—¶
+            await Task.Delay(50, token); // Ä£Äâ PLC Í¨Ñ¶ÑÓÊ±
 
             if (param.Operation == PlcOpType.Read)
             {
-                // æ¨¡æ‹Ÿè¯»å–åˆ°çš„ PLC æ•°æ®
+                // Ä£Äâ¶ÁÈ¡µ½µÄ PLC Êı¾İ
                 object readVal = 123.456;
                 context.SetOutputValue(node, "DataOut", readVal);
-                context.Log($"âœ” [PLC è¯»å–æˆåŠŸ] åœ°å€ {param.DbAddress} -> {readVal}");
+                context.Log($"? [PLC ¶ÁÈ¡³É¹¦] µØÖ· {param.DbAddress} -> {readVal}");
             }
             else
             {
-                // å¦‚æœæ•°æ®ç«¯å£æœ‰ä¸Šæ¸¸ä¼ å€¼ï¼Œä¼˜å…ˆä½¿ç”¨ä¸Šæ¸¸å€¼ï¼Œå¦åˆ™ä½¿ç”¨é™æ€é…ç½®å‚æ•°
+                // Èç¹ûÊı¾İ¶Ë¿ÚÓĞÉÏÓÎ´«Öµ£¬ÓÅÏÈÊ¹ÓÃÉÏÓÎÖµ£¬·ñÔòÊ¹ÓÃ¾²Ì¬ÅäÖÃ²ÎÊı
                 object inputVal = context.GetInputValue<object>(node, "DataIn");
                 string finalVal = inputVal != null ? inputVal.ToString() : param.WriteValue;
 
-                context.Log($"âœ” [PLC å†™å…¥æˆåŠŸ] åœ°å€ {param.DbAddress} <- {finalVal}");
+                context.Log($"? [PLC Ğ´Èë³É¹¦] µØÖ· {param.DbAddress} <- {finalVal}");
             }
         }
     }

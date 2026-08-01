@@ -1,38 +1,43 @@
-﻿using Microsoft.Win32;
+﻿using Grayson.Vision.Contracts.Services;
+using Microsoft.Win32;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using static Grayson.Vison.FlowEdit.ViewModels.FlowVm;
 
 namespace Grayson.Vison.FlowEdit.Services
 {
-    public interface IDialogService
+    // 默认 WPF 实现，同时实现消息对话框与文件对话框契约
+    public class WpfDialogService : IDialogService, IFileDialogService
     {
-        bool ShowConfirm(string title, string message);
-        void ShowError(string title, string message);
-        string ShowPrompt(string title, string prompt, string defaultValue = "");
-        string SaveFileDialog(string filter, string defaultName);
-        string OpenFileDialog(string filter);
-    }
+        public void ShowInfo(string message, string title = "提示")
+            => MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
 
-    // 默认 WPF 实现
-    public class WpfDialogService : IDialogService
-    {
-        public bool ShowConfirm(string title, string message)
-            => MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        public void ShowWarning(string message, string title = "警告")
+            => MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
 
-        public void ShowError(string title, string message)
+        public void ShowError(string message, string title = "错误")
             => MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
 
-        public string ShowPrompt(string title, string prompt, string defaultValue = "")
-            => PromptDialog.Show(title, prompt, defaultValue); // 移入 UI 层文件夹
+        public bool ShowConfirm(string message, string title = "确认")
+            => MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
-        public string SaveFileDialog(string filter, string defaultName)
+        public string ShowInputDialog(string message, string title = "输入", string defaultValue = "")
+            => PromptDialog.Show(title, message, defaultValue);
+
+        public Task ShowWaitingDialog(string message, Task operation)
+        {
+            // 当前为简易实现：直接等待任务完成，后续可扩展为真实等待对话框
+            return operation;
+        }
+
+        public string ShowSaveFileDialog(string filter, string defaultName = "")
         {
             var sfd = new SaveFileDialog { Filter = filter, FileName = defaultName };
             return sfd.ShowDialog() == true ? sfd.FileName : null;
         }
 
-        public string OpenFileDialog(string filter)
+        public string ShowOpenFileDialog(string filter)
         {
             var ofd = new OpenFileDialog { Filter = filter };
             return ofd.ShowDialog() == true ? ofd.FileName : null;

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Business.Enums;
 
 namespace Grayson.Vision.Contracts.Business.Attributes
 {

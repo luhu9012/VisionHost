@@ -1,97 +1,14 @@
-﻿using Grayson.Vision.Contracts.ViewModels;
+﻿using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Grayson.Vision.Contracts.Business.Models
 {
-    public class Point2D
-    {
-        public double X { get; set; }
-        public double Y { get; set; }
-        public Point2D() { }
-        public Point2D(double x, double y)
-        {
-            X = x;
-            Y = y;
-        }
-    }
-
-    /// <summary>
-    /// 工业视觉节点的 6 大核心业务分类
-    /// </summary>
-    public enum NodeCategory
-    {
-        [Description("⚙️ 设备与 IO 控制类")]
-        DeviceIO,
-
-        [Description("👁️ Halcon 算法与视觉处理类")]
-        Vision,
-
-        [Description("🧠 逻辑控制与数据流类")]
-        Logic,
-
-        [Description("📊 数据处理与转换类")]
-        DataProcess,
-
-        [Description("🏭 生产与数据对接类")]
-        SystemMES,
-
-        [Description("🛑 复合子流程与异常处理类")]
-        CompositeEx
-    }
-
-
-
-
-    /// <summary>
-    /// 23 种全量具体节点类型枚举
-    /// </summary>
-    public enum NodeType
-    {
-        // --- 1. 设备与 IO 控制类 ---
-        AcquireImage,       // 相机采集
-        PlcReadWrite,       // PLC 读写
-        AxisMove,           // 运动轴移动
-        DigitalOutput,      // 数字 IO 输出
-        LightControl,       // 光照控制
-
-        // --- 2. Halcon 算法与视觉处理类 ---
-        TemplateMatch,      // 模板匹配
-        Calib2D,            // 九点标定/手眼标定
-        Measurement,        // 几何测量
-        DefectDetect,       // 缺陷检测
-        ReadBarcode,        // 条码/二维码识别
-        DlInference,        // 深度学习推理
-
-        // --- 3. 逻辑控制与数据流类 ---
-        ConditionIf,        // 条件分支 (If/Else)
-        SwitchCase,         // 多路分支
-        ForLoop,            // 循环控制
-        Delay,              // 延时等待
-        WaitSignal,         // 状态信号等待
-        Merge,              // 数据汇聚/合并
-
-        // --- 4. 数据处理与转换类 ---
-        OffsetMath,         // 坐标计算/偏移
-        ScriptMath,         // 公式计算
-        VarMapper,          // 变量映射
-        StringFormat,       // 字符串格式化
-
-        // --- 5. 生产与数据对接类 ---
-        MesReport,          // MES 上报
-        SaveData,           // 数据存盘
-        SaveImage,          // 图像保存
-
-        // --- 6. 复合子流程与异常处理类 ---
-        CompositeFlow,      // 子流程节点
-        TryCatch,           // 异常捕获
-        TerminateFlow       // 流程终止
-    }
     /// <summary>
     /// 所有流程节点的基类
     /// </summary>

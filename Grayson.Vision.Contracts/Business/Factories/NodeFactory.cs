@@ -1,5 +1,6 @@
 ﻿// 业务特性、数据模型命名空间引用
 using Grayson.Vision.Contracts.Business.Attributes;
+using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Models;
 using System;
 using System.Collections.Generic;

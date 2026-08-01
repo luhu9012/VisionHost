@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,13 +12,13 @@ namespace Grayson.Vision.Nodes.Logic.ConditionIf
     [Node(
         type: NodeType.ConditionIf,
         category: NodeCategory.Logic,
-        displayName: "æ¡ä»¶åˆ†æ”¯",
-        description: "åŸºäºå¸ƒå°”è¡¨è¾¾å¼æˆ–æ¯”è¾ƒç»“æœå†³å®šæ§åˆ¶æµåˆ†æ”¯",
+        displayName: "Ìõ¼ş·ÖÖ§",
+        description: "»ùÓÚ²¼¶û±í´ïÊ½»ò±È½Ï½á¹û¾ö¶¨¿ØÖÆÁ÷·ÖÖ§",
         parameterType: typeof(ConditionIfParam)
-          , icon: "ğŸ”€"
+          , icon: "??"
     )]
     [NodePort("ExecIn", PortType.In, PortCategory.Data)]
-    // ğŸ’¡ æ ¸å¿ƒè®¾è®¡ï¼šæ˜¾å¼æ‹†åˆ†ä¸º True å’Œ False ä¸¤ä¸ªæ§åˆ¶åˆ†æ”¯
+    // ?? ºËĞÄÉè¼Æ£ºÏÔÊ½²ğ·ÖÎª True ºÍ False Á½¸ö¿ØÖÆ·ÖÖ§
     [NodePort("TrueOut", PortType.Out, PortCategory.Data)]
     [NodePort("FalseOut", PortType.Out, PortCategory.Data)]
     [NodePort("BoolIn", PortType.In, PortCategory.Data, dataType: "Boolean", colorHex: "#2ECC71")]
@@ -27,19 +28,19 @@ namespace Grayson.Vision.Nodes.Logic.ConditionIf
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as ConditionIfParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°æœªé…ç½®ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÎ´ÅäÖÃ¡£");
 
             bool result = false;
 
             if (param.UseInputPort)
             {
-                // æ–¹å¼ Aï¼šç›´æ¥è¯»å– BoolIn è¾“å…¥
+                // ·½Ê½ A£ºÖ±½Ó¶ÁÈ¡ BoolIn ÊäÈë
                 bool? boolVal = context.GetInputValue<bool?>(node, "BoolIn");
                 result = boolVal ?? false;
             }
             else
             {
-                // æ–¹å¼ Bï¼šæ•°å€¼æ¯”è¾ƒ
+                // ·½Ê½ B£ºÊıÖµ±È½Ï
                 double? val = context.GetInputValue<double?>(node, "ValueIn");
                 double actualVal = val ?? 0.0;
 
@@ -54,9 +55,9 @@ namespace Grayson.Vision.Nodes.Logic.ConditionIf
                 }
             }
 
-            context.Log($"ğŸ”€ [If åˆ†æ”¯åˆ¤æ–­] ç»“æœ: ã€{result}ã€‘");
+            context.Log($"?? [If ·ÖÖ§ÅĞ¶Ï] ½á¹û: ¡¾{result}¡¿");
 
-            // ğŸ’¡ å‘ŠçŸ¥æ‰§è¡Œå¼•æ“ä¸‹ä¸€èŠ‚ç‚¹æ¿€æ´»å“ªä¸ªåˆ†æ”¯ç«¯å£
+            // ?? ¸æÖªÖ´ĞĞÒıÇæÏÂÒ»½Úµã¼¤»îÄÄ¸ö·ÖÖ§¶Ë¿Ú
             context.SetActiveNextPort(node, result ? "TrueExec" : "FalseExec");
             await Task.CompletedTask;
         }

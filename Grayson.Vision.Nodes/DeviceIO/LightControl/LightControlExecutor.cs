@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.DeviceIO.LightControl
     [Node(
         type: NodeType.LightControl,
         category: NodeCategory.DeviceIO,
-        displayName: " å…‰ç…§æ§åˆ¶",
-        description: "è°ƒæ§å…‰æºæ§åˆ¶å™¨é€šé“äº®åº¦",
+        displayName: " ¹âÕÕ¿ØÖÆ",
+        description: "µ÷¿Ø¹âÔ´¿ØÖÆÆ÷Í¨µÀÁÁ¶È",
         parameterType: typeof(LightControlParam)
-         , icon: "ğŸ’¡"
+         , icon: "??"
     )]
     //[NodePort("ExecIn", PortType.In, PortCategory.Exec)]
     //[NodePort("ExecOut", PortType.Out, PortCategory.Exec)]
@@ -24,17 +25,17 @@ namespace Grayson.Vision.Nodes.DeviceIO.LightControl
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as LightControlParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°ç¼ºå¤±ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÈ±Ê§¡£");
 
             int brightness = param.Brightness;
             int? inputBrightness = context.GetInputValue<int?>(node, "BrightnessIn");
             if (inputBrightness.HasValue) brightness = inputBrightness.Value;
 
-            context.Log($"ğŸ’¡ [å…‰æºæ§åˆ¶] æ§åˆ¶å™¨: {param.ControllerAlias}, é€šé“: {param.Channel}, å¼€å…³: {param.TurnOn}, äº®åº¦: {brightness}");
+            context.Log($"?? [¹âÔ´¿ØÖÆ] ¿ØÖÆÆ÷: {param.ControllerAlias}, Í¨µÀ: {param.Channel}, ¿ª¹Ø: {param.TurnOn}, ÁÁ¶È: {brightness}");
 
-            await Task.Delay(30, token); // æ¨¡æ‹Ÿä¸²å£/ç½‘å£è°ƒå…‰æŒ‡ä»¤å»¶è¿Ÿ
+            await Task.Delay(30, token); // Ä£Äâ´®¿Ú/Íø¿Úµ÷¹âÖ¸ÁîÑÓ³Ù
 
-            context.Log($"âœ” [å…‰æºæ§åˆ¶æˆåŠŸ] é€šé“ {param.Channel} è®¾å®šäº®åº¦ä¸º {brightness}");
+            context.Log($"? [¹âÔ´¿ØÖÆ³É¹¦] Í¨µÀ {param.Channel} Éè¶¨ÁÁ¶ÈÎª {brightness}");
         }
     }
 }

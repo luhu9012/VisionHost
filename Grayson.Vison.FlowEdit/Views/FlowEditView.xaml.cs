@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Contracts.ViewModels;
 using Grayson.Vison.FlowEdit.ViewModels;
 using System;
@@ -15,13 +16,12 @@ namespace Grayson.Vison.FlowEdit.Views
 {
 
     /// <summary>
-    /// FlowEditView.xaml çš„äº¤äº’é€»è¾‘ï¼ˆåŒ…å«è¿çº¿æ‹–æ‹½ä¸ç”»å¸ƒå¹³ç§»/ç¼©æ”¾ï¼‰
+    /// FlowEditView.xaml µÄ½»»¥Âß¼­£¨°üº¬Á¬ÏßÍÏ×§Óë»­²¼Æ½ÒÆ/Ëõ·Å£©
     /// </summary>
     public partial class FlowEditView : UserControl
     {
         private FlowNodeBase _connectingSourceNode;
         private NodePort _connectingSourcePort;
-        private ConnectorType _connectingSourceType;
 
         private Point _panStart;
         private bool _isPanning;
@@ -31,34 +31,34 @@ namespace Grayson.Vison.FlowEdit.Views
         public FlowEditView()
         {
             InitializeComponent();
-            // ç›‘å¬ DataContext å˜æ›´å¹¶è®¢é˜… OnNodeExecuting äº‹ä»¶
+            // ¼àÌı DataContext ±ä¸ü²¢¶©ÔÄ OnNodeExecuting ÊÂ¼ş
             this.DataContextChanged += FlowEditView_DataContextChanged;
 
 
-            // ğŸŒŸ å…¨å±€é¼ æ ‡æŒ‰ä¸‹ç›‘å¬ï¼šç‚¹å‡»æŠ½å±‰å¤–éƒ¨æ—¶è‡ªåŠ¨æ”¶èµ·
+            // ?? È«¾ÖÊó±ê°´ÏÂ¼àÌı£ºµã»÷³éÌëÍâ²¿Ê±×Ô¶¯ÊÕÆğ
             this.PreviewMouseDown += FlowEditView_PreviewMouseDown;
         }
         /// <summary>
-        /// è‡ªåŠ¨å°† ScrollViewer å¹³ç§»ï¼Œä½¿å½“å‰æ­£åœ¨æ‰§è¡Œçš„èŠ‚ç‚¹å¹³æ»‘å±…ä¸­
+        /// ×Ô¶¯½« ScrollViewer Æ½ÒÆ£¬Ê¹µ±Ç°ÕıÔÚÖ´ĞĞµÄ½ÚµãÆ½»¬¾ÓÖĞ
         /// </summary>
         private void ScrollToNode(FlowNodeBase node)
         {
             if (node == null) return;
 
-            // è®¡ç®—èŠ‚ç‚¹åœ¨ ContentGrid ä¸­çš„ç¼©æ”¾åç‰©ç†åæ ‡
+            // ¼ÆËã½ÚµãÔÚ ContentGrid ÖĞµÄËõ·ÅºóÎïÀí×ø±ê
             double scale = CanvasScale.ScaleX;
-            double targetX = (node.PosX + 80) * scale;  // èŠ‚ç‚¹ä¸­å¿ƒ X (æŒ‰å®½åº¦160è®¡ç®—)
-            double targetY = (node.PosY + 40) * scale;  // èŠ‚ç‚¹ä¸­å¿ƒ Y (æŒ‰é«˜åº¦80è®¡ç®—)
+            double targetX = (node.PosX + 80) * scale;  // ½ÚµãÖĞĞÄ X (°´¿í¶È160¼ÆËã)
+            double targetY = (node.PosY + 40) * scale;  // ½ÚµãÖĞĞÄ Y (°´¸ß¶È80¼ÆËã)
 
-            // è§†å›¾çª—å£å°ºå¯¸
+            // ÊÓÍ¼´°¿Ú³ß´ç
             double viewportWidth = FlowScrollViewer.ViewportWidth;
             double viewportHeight = FlowScrollViewer.ViewportHeight;
 
-            // è®¡ç®—è®©èŠ‚ç‚¹å¤„äºç”»å¸ƒè§†é‡æ­£ä¸­å¤®æ‰€éœ€çš„ Offset
+            // ¼ÆËãÈÃ½Úµã´¦ÓÚ»­²¼ÊÓÒ°ÕıÖĞÑëËùĞèµÄ Offset
             double offsetX = targetX - (viewportWidth / 2);
             double offsetY = targetY - (viewportHeight / 2);
 
-            // æ»šåŠ¨å¹³ç§»
+            // ¹ö¶¯Æ½ÒÆ
             FlowScrollViewer.ScrollToHorizontalOffset(Math.Max(0, offsetX));
             FlowScrollViewer.ScrollToVerticalOffset(Math.Max(0, offsetY));
         }
@@ -74,8 +74,8 @@ namespace Grayson.Vison.FlowEdit.Views
                 newVm.OnNodeExecuting += ScrollToNode;
             }
         }
-        #region è§£å†³å·¥å…·ç®±æ‹–æ‹½ä¸åŒå‡»ä¸ç”Ÿæ•ˆ
-        // 1. è®°å½•æŒ‰ä¸‹é¼ æ ‡çš„èµ·å§‹ä½ç½®
+        #region ½â¾ö¹¤¾ßÏäÍÏ×§ÓëË«»÷²»ÉúĞ§
+        // 1. ¼ÇÂ¼°´ÏÂÊó±êµÄÆğÊ¼Î»ÖÃ
         private void ToolItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ClickCount == 2)
@@ -85,7 +85,7 @@ namespace Grayson.Vison.FlowEdit.Views
                     if (DataContext is FlowVm vm)
                     {
                         vm.AddNodeFromTemplate(meta, new Point2D(300, 200));
-                        CloseDrawer(); // ğŸŒŸ åŒå‡»å®Œæˆåè‡ªåŠ¨æ”¶èµ·æŠ½å±‰
+                        CloseDrawer(); // ?? Ë«»÷Íê³Éºó×Ô¶¯ÊÕÆğ³éÌë
                         e.Handled = true;
                         return;
                     }
@@ -94,7 +94,7 @@ namespace Grayson.Vison.FlowEdit.Views
             _dragStartPoint = e.GetPosition(null);
         }
 
-        // 2. é¼ æ ‡ç§»åŠ¨æ—¶æ£€æµ‹å¹¶è§¦å‘æ‹–æ‹½ï¼ˆä¸éœ€è¦å…ˆé€‰ä¸­ï¼ï¼‰
+        // 2. Êó±êÒÆ¶¯Ê±¼ì²â²¢´¥·¢ÍÏ×§£¨²»ĞèÒªÏÈÑ¡ÖĞ£¡£©
         private void ToolItem_PreviewMouseMove(object sender, MouseEventArgs e)
         {
             if (e.LeftButton == MouseButtonState.Pressed)
@@ -108,7 +108,7 @@ namespace Grayson.Vison.FlowEdit.Views
                     if (sender is FrameworkElement element && element.DataContext is UnitMeta meta)
                     {
                         DataObject dragData = new DataObject(meta);
-                        CloseDrawer(); // ğŸŒŸ æ‹–æ‹½æ‹–å‡ºæŠ½å±‰çš„ç¬é—´è‡ªåŠ¨æ”¶èµ·æŠ½å±‰ï¼Œæ–¹ä¾¿æ”¾ç½®åˆ°ç”»å¸ƒ
+                        CloseDrawer(); // ?? ÍÏ×§ÍÏ³ö³éÌëµÄË²¼ä×Ô¶¯ÊÕÆğ³éÌë£¬·½±ã·ÅÖÃµ½»­²¼
                         DragDrop.DoDragDrop(element, dragData, DragDropEffects.Copy);
                     }
                 }
@@ -118,7 +118,7 @@ namespace Grayson.Vison.FlowEdit.Views
 
         #endregion
 
-        #region 1. æ‹–æ‹½ç»„ä»¶åˆ°ç”»å¸ƒç”ŸæˆèŠ‚ç‚¹
+        #region 1. ÍÏ×§×é¼şµ½»­²¼Éú³É½Úµã
         private void ListBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (sender is ListBox listBox && listBox.SelectedItem is UnitMeta meta)
@@ -146,31 +146,31 @@ namespace Grayson.Vison.FlowEdit.Views
         }
         #endregion
 
-        #region 2. ç”»å¸ƒç¼©æ”¾ä¸å¹³ç§» (Pan & Zoom)
+        #region 2. »­²¼Ëõ·ÅÓëÆ½ÒÆ (Pan & Zoom)
         /// <summary>
-        /// æ»šè½®ä»…ç¼©æ”¾èŠ‚ç‚¹å’Œè¿çº¿ï¼ˆèƒŒæ™¯ä¿æŒä¸å˜ï¼‰
+        /// ¹öÂÖ½öËõ·Å½ÚµãºÍÁ¬Ïß£¨±³¾°±£³Ö²»±ä£©
         /// </summary>
         private void FlowCanvas_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             double zoom = e.Delta > 0 ? 1.1 : 0.9;
             double newScale = CanvasScale.ScaleX * zoom;
 
-            // é™åˆ¶ç¼©æ”¾æ¯”ä¾‹åœ¨ 0.4 åˆ° 2.5 ä¹‹é—´
+            // ÏŞÖÆËõ·Å±ÈÀıÔÚ 0.4 µ½ 2.5 Ö®¼ä
             if (newScale >= 0.4 && newScale <= 2.5)
             {
                 CanvasScale.ScaleX = newScale;
                 CanvasScale.ScaleY = newScale;
             }
 
-            e.Handled = true; // é˜»æ­¢å¤–å±‚ ScrollViewer é»˜è®¤æ»šåŠ¨
+            e.Handled = true; // ×èÖ¹Íâ²ã ScrollViewer Ä¬ÈÏ¹ö¶¯
         }
 
         /// <summary>
-        /// é¼ æ ‡å³é”®æŒ‰ä½æ‹–æ‹½ç”»å¸ƒå¹³ç§»
+        /// Êó±êÓÒ¼ü°´×¡ÍÏ×§»­²¼Æ½ÒÆ
         /// </summary>
         private void FlowCanvas_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
-            CloseDrawer(); // ğŸŒŸ æ‹–æ‹½å¹³ç§»ç”»å¸ƒæ—¶è‡ªåŠ¨æ”¶èµ·
+            CloseDrawer(); // ?? ÍÏ×§Æ½ÒÆ»­²¼Ê±×Ô¶¯ÊÕÆğ
             if (e.OriginalSource is Canvas || e.OriginalSource is System.Windows.Shapes.Path)
             {
                 _isPanning = true;
@@ -189,11 +189,11 @@ namespace Grayson.Vison.FlowEdit.Views
         }
 
         /// <summary>
-        /// é¼ æ ‡å·¦é”®ç‚¹å‡»ç”»å¸ƒç©ºç™½å¤„å–æ¶ˆé€‰ä¸­
+        /// Êó±ê×ó¼üµã»÷»­²¼¿Õ°×´¦È¡ÏûÑ¡ÖĞ
         /// </summary>
         private void FlowCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            CloseDrawer(); // ğŸŒŸ ç‚¹å‡»ç”»å¸ƒå–æ¶ˆé€‰æ‹©æ—¶é¡ºæ‰‹æ”¶èµ·æŠ½å±‰
+            CloseDrawer(); // ?? µã»÷»­²¼È¡ÏûÑ¡ÔñÊ±Ë³ÊÖÊÕÆğ³éÌë
             if (e.OriginalSource is Canvas || e.OriginalSource is System.Windows.Shapes.Path)
             {
                 if (DataContext is FlowVm vm)
@@ -203,17 +203,17 @@ namespace Grayson.Vison.FlowEdit.Views
             }
         }
         #endregion
-        #region 3. æ‹–æ‹½å»ºç«‹è¿çº¿äº¤äº’
+        #region 3. ÍÏ×§½¨Á¢Á¬Ïß½»»¥
 
         /// <summary>
-        /// å¼€å§‹è¿çº¿ï¼ˆç”± NodeControl ä¸Šçš„ OutputPort ç‚¹å‡»è§¦å‘ï¼‰
+        /// ¿ªÊ¼Á¬Ïß£¨ÓÉ NodeControl ÉÏµÄ OutputPort µã»÷´¥·¢£©
         /// </summary>
         public void StartConnecting(FlowNodeBase sourceNode, NodePort sourcePort)
         {
             _connectingSourceNode = sourceNode;
             _connectingSourcePort = sourcePort;
 
-            // ğŸŒŸ å¼ºåˆ¶æ¸…é™¤è™šçº¿ï¼Œä¿è¯æ‹–æ‹½æ—¶å±•ç¤ºå®çº¿
+            // ?? Ç¿ÖÆÇå³ıĞéÏß£¬±£Ö¤ÍÏ×§Ê±Õ¹Ê¾ÊµÏß
             TempPath.StrokeDashArray = null;
             TempPath.StrokeThickness = 2;
 
@@ -231,11 +231,11 @@ namespace Grayson.Vison.FlowEdit.Views
         }
 
         /// <summary>
-        /// ğŸŒŸ åŠ¨æ€ç»˜åˆ¶ä¸´æ—¶è¿çº¿ï¼ˆé¼ æ ‡æ‹–æ‹½è¿‡ç¨‹ï¼‰
+        /// ?? ¶¯Ì¬»æÖÆÁÙÊ±Á¬Ïß£¨Êó±êÍÏ×§¹ı³Ì£©
         /// </summary>
         private void FlowCanvas_MouseMove(object sender, MouseEventArgs e)
         {
-            // A. å³é”®å¹³ç§»ç”»å¸ƒé€»è¾‘
+            // A. ÓÒ¼üÆ½ÒÆ»­²¼Âß¼­
             if (_isPanning)
             {
                 Point currentPos = e.GetPosition(FlowScrollViewer);
@@ -247,17 +247,17 @@ namespace Grayson.Vison.FlowEdit.Views
                 return;
             }
 
-            // B. åŠ¨æ€ç»˜åˆ¶ä¸´æ—¶è´å¡å°”è¿çº¿é€»è¾‘
+            // B. ¶¯Ì¬»æÖÆÁÙÊ±±´Èû¶ûÁ¬ÏßÂß¼­
             if (_connectingSourceNode != null && _connectingSourcePort != null)
             {
                 Point mousePos = e.GetPosition(ContentGrid);
 
-                // ğŸŒŸ è·å–èµ·ç‚¹çš„ç²¾å‡†ç»å¯¹åæ ‡
+                // ?? »ñÈ¡ÆğµãµÄ¾«×¼¾ø¶Ô×ø±ê
                 Point startPoint = GetPortCenterAbsolutePosition(_connectingSourceNode, _connectingSourcePort);
 
                 TempFigure.StartPoint = startPoint;
 
-                // æ ¹æ®ç«¯å£æ–¹ä½è®¡ç®—æ§ç‚¹ï¼Œä¿è¯æ‹‰å‡ºå¤©ç„¶çš„æ›²çº¿å¼§åº¦
+                // ¸ù¾İ¶Ë¿Ú·½Î»¼ÆËã¿Øµã£¬±£Ö¤À­³öÌìÈ»µÄÇúÏß»¡¶È
                 switch (_connectingSourcePort.Position)
                 {
                     case PortPosition.Top:
@@ -281,27 +281,27 @@ namespace Grayson.Vison.FlowEdit.Views
 
                 TempBezier.Point3 = mousePos;
 
-                // å¸é™„æ£€æµ‹
+                // Îü¸½¼ì²â
                 var (targetNode, targetPort) = FindNearbyInputPort(mousePos, 35.0);
                 Mouse.OverrideCursor = (targetNode != null && targetPort != null) ? Cursors.Cross : null;
             }
         }
 
         /// <summary>
-        /// ğŸŒŸ å‡†ç¡®è®¡ç®—ç«¯å£ç«¯ç‚¹åœ¨ ContentGrid ç”»å¸ƒä¸­çš„åœ†å¿ƒåæ ‡
+        /// ?? ×¼È·¼ÆËã¶Ë¿Ú¶ËµãÔÚ ContentGrid »­²¼ÖĞµÄÔ²ĞÄ×ø±ê
         /// </summary>
         private Point GetPortCenterAbsolutePosition(FlowNodeBase node, NodePort port)
         {
             if (node == null || port == null) return new Point(0, 0);
 
-            // Node.PosX/PosY + Port.RelativeX/RelativeY å®Œç¾å¥‘åˆ 8px ç«¯ç‚¹åœ¨ (-4 offset) åçš„åœ†å¿ƒç»å¯¹åæ ‡
+            // Node.PosX/PosY + Port.RelativeX/RelativeY ÍêÃÀÆõºÏ 8px ¶ËµãÔÚ (-4 offset) ºóµÄÔ²ĞÄ¾ø¶Ô×ø±ê
             return new Point(
                 node.PosX + port.RelativeX,
                 node.PosY + port.RelativeY
             );
         }
         /// <summary>
-        /// âš ï¸ å…³é”®ä¿®æ­£ï¼šä½¿ç”¨ PreviewMouseLeftButtonUp å¼ºè¡Œä¼˜å…ˆæ•è·é¼ æ ‡æŠ¬èµ·
+        /// ?? ¹Ø¼üĞŞÕı£ºÊ¹ÓÃ PreviewMouseLeftButtonUp Ç¿ĞĞÓÅÏÈ²¶»ñÊó±êÌ§Æğ
         /// </summary>
         private void FlowCanvas_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
@@ -309,26 +309,26 @@ namespace Grayson.Vison.FlowEdit.Views
             {
                 Point mousePos = e.GetPosition(ContentGrid);
 
-                // ç»Ÿä¸€æ£€æµ‹åŠå¾„ä¸º 35.0ï¼ˆä¸ MouseMove ä¿æŒå®Œå®Œå…¨å…¨ä¸€è‡´ï¼ï¼‰
+                // Í³Ò»¼ì²â°ë¾¶Îª 35.0£¨Óë MouseMove ±£³ÖÍêÍêÈ«È«Ò»ÖÂ£¡£©
                 var (targetNode, targetPort) = FindNearbyInputPort(mousePos, 35.0);
 
                 if (targetNode != null && targetPort != null)
                 {
-                    // æˆåŠŸè¿æ¥ï¼
+                    // ³É¹¦Á¬½Ó£¡
                     EndConnecting(targetNode, targetPort);
                 }
                 else
                 {
-                    // æ— è®ºè½åœ¨å“ªé‡Œï¼Œåªè¦æ²¡å¸é™„æˆåŠŸï¼Œä¸€å¾‹å–æ¶ˆè¿çº¿ï¼Œé‡Šæ”¾é¼ æ ‡æ•è·ï¼
+                    // ÎŞÂÛÂäÔÚÄÄÀï£¬Ö»ÒªÃ»Îü¸½³É¹¦£¬Ò»ÂÉÈ¡ÏûÁ¬Ïß£¬ÊÍ·ÅÊó±ê²¶»ñ£¡
                     ResetConnecting();
                 }
 
-                e.Handled = true; // é˜»æ­¢äº‹ä»¶ä¼ é€’
+                e.Handled = true; // ×èÖ¹ÊÂ¼ş´«µİ
             }
         }
 
         /// <summary>
-        /// å³é”®ç‚¹å‡»æ‰“æ–­è¿çº¿
+        /// ÓÒ¼üµã»÷´ò¶ÏÁ¬Ïß
         /// </summary>
         private void FlowCanvas_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -357,7 +357,7 @@ namespace Grayson.Vison.FlowEdit.Views
             _connectingSourcePort = null;
             TempPath.Visibility = Visibility.Collapsed;
 
-            // è¿˜åŸå…¨å±€é¼ æ ‡æ ·å¼ä¸æ•è·
+            // »¹Ô­È«¾ÖÊó±êÑùÊ½Óë²¶»ñ
             Mouse.OverrideCursor = null;
             if (FlowCanvas.IsMouseCaptured)
             {
@@ -366,7 +366,7 @@ namespace Grayson.Vison.FlowEdit.Views
         }
 
         /// <summary>
-        /// ã€æ•°å­¦å‡ ä½•ç®—æ³•ã€‘ï¼šä» ViewModel çš„å½“å‰æµç¨‹ä¸­ï¼Œéå†æŸ¥æ‰¾è·ç¦»å½“å‰é¼ æ ‡ Point æœ€è¿‘ä¸”åœ¨ maxDistance åŠå¾„å†…çš„ InputPort
+        /// ¡¾ÊıÑ§¼¸ºÎËã·¨¡¿£º´Ó ViewModel µÄµ±Ç°Á÷³ÌÖĞ£¬±éÀú²éÕÒ¾àÀëµ±Ç°Êó±ê Point ×î½üÇÒÔÚ maxDistance °ë¾¶ÄÚµÄ InputPort
         /// </summary>
         private (FlowNodeBase Node, NodePort Port) FindNearbyInputPort(Point mousePoint, double maxDistance)
         {
@@ -383,7 +383,7 @@ namespace Grayson.Vison.FlowEdit.Views
                         {
                             foreach (var port in node.InputPorts)
                             {
-                                // âœ… ä¿®æ­£åï¼šè·å–ç²¾å‡†ç«¯ç‚¹åœ†å¿ƒåæ ‡
+                                // ? ĞŞÕıºó£º»ñÈ¡¾«×¼¶ËµãÔ²ĞÄ×ø±ê
                                 Point portPos = GetPortCenterAbsolutePosition(node, port);
 
                                 double dist = Math.Sqrt(Math.Pow(mousePoint.X - portPos.X, 2) + Math.Pow(mousePoint.Y - portPos.Y, 2));
@@ -401,9 +401,9 @@ namespace Grayson.Vison.FlowEdit.Views
         }
         #endregion
 
-        #region æ—¥å¿—çª—å£å¤åˆ¶
+        #region ÈÕÖ¾´°¿Ú¸´ÖÆ
         /// <summary>
-        /// å¤åˆ¶é€‰ä¸­è¡Œï¼šåªèƒ½ä»ListBoxå–é€‰ä¸­é¡¹ï¼Œéå†ä¸å¯é¿å…ï¼Œæ•°æ®é‡ä¸€èˆ¬ä¸å¤§æ— æ€§èƒ½å‹åŠ›
+        /// ¸´ÖÆÑ¡ÖĞĞĞ£ºÖ»ÄÜ´ÓListBoxÈ¡Ñ¡ÖĞÏî£¬±éÀú²»¿É±ÜÃâ£¬Êı¾İÁ¿Ò»°ã²»´óÎŞĞÔÄÜÑ¹Á¦
         /// </summary>
         private void CopySelectedLogRows(object sender, RoutedEventArgs e)
         {
@@ -419,7 +419,7 @@ namespace Grayson.Vison.FlowEdit.Views
         }
 
         /// <summary>
-        /// å¤åˆ¶å…¨éƒ¨ï¼šç›´æ¥æ‹¿VMæ•°æ®æºï¼Œè·³è¿‡UIæ§ä»¶ï¼Œé›¶UIéå†ï¼Œæ€§èƒ½æ‹‰æ»¡
+        /// ¸´ÖÆÈ«²¿£ºÖ±½ÓÄÃVMÊı¾İÔ´£¬Ìø¹ıUI¿Ø¼ş£¬ÁãUI±éÀú£¬ĞÔÄÜÀ­Âú
         /// </summary>
         private void CopyAllLogRows(object sender, RoutedEventArgs e)
         {
@@ -432,7 +432,7 @@ namespace Grayson.Vison.FlowEdit.Views
         }
         #endregion
         /// <summary>
-        /// å®‰å…¨æ”¶èµ·æŠ½å±‰
+        /// °²È«ÊÕÆğ³éÌë
         /// </summary>
         private void CloseDrawer()
         {
@@ -444,13 +444,13 @@ namespace Grayson.Vison.FlowEdit.Views
         }
 
         /// <summary>
-        /// å½“é¼ æ ‡ç‚¹å‡»åœ¨æŠ½å±‰å’Œå·¦ä¾§å›¾æ ‡æ å¤–éƒ¨æ—¶ï¼Œè‡ªåŠ¨æ”¶èµ·æŠ½å±‰
+        /// µ±Êó±êµã»÷ÔÚ³éÌëºÍ×ó²àÍ¼±êÀ¸Íâ²¿Ê±£¬×Ô¶¯ÊÕÆğ³éÌë
         /// </summary>
         private void FlowEditView_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (DrawerPanel.Visibility == Visibility.Visible)
             {
-                // è·å–å½“å‰é¼ æ ‡ç‚¹å‡»ç›¸å¯¹æŠ½å±‰å’Œå›¾æ ‡æ çš„ä½ç½®
+                // »ñÈ¡µ±Ç°Êó±êµã»÷Ïà¶Ô³éÌëºÍÍ¼±êÀ¸µÄÎ»ÖÃ
                 Point posInDrawer = e.GetPosition(DrawerPanel);
                 Point posInNav = e.GetPosition(ToolBoxCategories);
 
@@ -460,7 +460,7 @@ namespace Grayson.Vison.FlowEdit.Views
                 bool hitNav = (posInNav.X >= 0 && posInNav.X <= ToolBoxCategories.ActualWidth &&
                                posInNav.Y >= 0 && posInNav.Y <= ToolBoxCategories.ActualHeight);
 
-                // å¦‚æœæ—¢æ²¡ç‚¹åœ¨æŠ½å±‰é‡Œï¼Œä¹Ÿæ²¡ç‚¹åœ¨å·¦ä¾§å›¾æ ‡ä¸Šï¼Œç›´æ¥å…³é—­æŠ½å±‰
+                // Èç¹û¼ÈÃ»µãÔÚ³éÌëÀï£¬Ò²Ã»µãÔÚ×ó²àÍ¼±êÉÏ£¬Ö±½Ó¹Ø±Õ³éÌë
                 if (!hitDrawer && !hitNav)
                 {
                     CloseDrawer();
@@ -468,7 +468,7 @@ namespace Grayson.Vison.FlowEdit.Views
             }
         }
         /// <summary>
-        /// ç‚¹å‡»å·¦ä¾§å›¾æ ‡ï¼šåˆ‡æ¢/å±•å¼€äºŒçº§ Drawer é¢æ¿
+        /// µã»÷×ó²àÍ¼±ê£ºÇĞ»»/Õ¹¿ª¶ş¼¶ Drawer Ãæ°å
         /// </summary>
         /// 
         private CollectionViewGroup _activeGroup = null;
@@ -476,7 +476,7 @@ namespace Grayson.Vison.FlowEdit.Views
         {
             if (sender is FrameworkElement element && element.DataContext is CollectionViewGroup group)
             {
-                // å¦‚æœé‡å¤ç‚¹å‡»åŒä¸€ä¸ªåˆ†ç±»ï¼Œåˆ™æ”¶èµ·æŠ½å±‰
+                // Èç¹ûÖØ¸´µã»÷Í¬Ò»¸ö·ÖÀà£¬ÔòÊÕÆğ³éÌë
                 if (_activeGroup == group && DrawerPanel.Visibility == Visibility.Visible)
                 {
                     DrawerPanel.Visibility = Visibility.Collapsed;
@@ -484,7 +484,7 @@ namespace Grayson.Vison.FlowEdit.Views
                 }
                 else
                 {
-                    // åˆ‡æ¢åˆ†ç±»å¹¶å±•å¼€æŠ½å±‰
+                    // ÇĞ»»·ÖÀà²¢Õ¹¿ª³éÌë
                     _activeGroup = group;
                     TxtCurrentCategoryTitle.Text = group.Name?.ToString();
                     DrawerItemsControl.ItemsSource = group.Items;
@@ -494,7 +494,7 @@ namespace Grayson.Vison.FlowEdit.Views
         }
 
         /// <summary>
-        /// ç‚¹å‡»å…³é—­æŒ‰é’®æ”¶èµ·æŠ½å±‰
+        /// µã»÷¹Ø±Õ°´Å¥ÊÕÆğ³éÌë
         /// </summary>
         private void CloseDrawer_Click(object sender, RoutedEventArgs e)
         {

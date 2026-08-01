@@ -1,22 +1,27 @@
-ï»¿using System;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Services;
+using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using Grayson.Vision.Contracts.Business.Models;
-using Microsoft.Win32;
 using Newtonsoft.Json;
+using Grayson.Vison.FlowEdit.Services;
+
 
 namespace Grayson.Vison.FlowEdit.Services
 {
     /// <summary>
-    /// è´Ÿè´£é…æ–¹åºåˆ—åŒ–ã€æ–‡ä»¶æŒä¹…åŒ–ä¸å·¥å…·ç®±æ¨¡æ¿æ‰«ææœåŠ¡
+    /// ¸ºÔğÅä·½ĞòÁĞ»¯¡¢ÎÄ¼ş³Ö¾Ã»¯Óë¹¤¾ßÏäÄ£°åÉ¨Ãè·şÎñ
     /// </summary>
     public class RecipeManager
     {
         private readonly string _recipesFolderPath;
+        private readonly IFileDialogService _fileDialogService;
 
-        public RecipeManager()
+        public RecipeManager(IFileDialogService fileDialogService = null)
         {
+            _fileDialogService = fileDialogService;
             _recipesFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Recipes");
             if (!Directory.Exists(_recipesFolderPath))
             {
@@ -25,7 +30,7 @@ namespace Grayson.Vison.FlowEdit.Services
         }
 
         /// <summary>
-        /// æ‰«æ /Recipes/ ç›®å½•ï¼Œå°† .json å¯¼å‡ºä¸ºå¤åˆç§¯æœ¨æ³¨å…¥å·¥å…·ç®±
+        /// É¨Ãè /Recipes/ Ä¿Â¼£¬½« .json µ¼³öÎª¸´ºÏ»ıÄ¾×¢Èë¹¤¾ßÏä
         /// </summary>
         public void LoadCompositeRecipeTemplates(ObservableCollection<UnitMeta> toolBox, Action<string> logAction)
         {
@@ -41,7 +46,7 @@ namespace Grayson.Vison.FlowEdit.Services
                     toolBox.Add(new UnitMeta
                     {
                         NodeId = $"RECIPE_{fileName}",
-                        DisplayName = $"ğŸ“¦ {fileName}",
+                        DisplayName = $"?? {fileName}",
                         CategoryName = UnitMeta.GetEnumDescription(NodeCategory.CompositeEx),
                         Category = NodeCategory.CompositeEx,
                         Type = NodeType.CompositeFlow,
@@ -49,11 +54,11 @@ namespace Grayson.Vison.FlowEdit.Services
                     });
                 }
 
-                logAction?.Invoke($"ğŸ“‚ å·²åŠ è½½ {files.Length} ä¸ªå¤åˆæµç¨‹æ¨¡æ¿åˆ°å·¥å…·ç®±ã€‚");
+                logAction?.Invoke($"?? ÒÑ¼ÓÔØ {files.Length} ¸ö¸´ºÏÁ÷³ÌÄ£°åµ½¹¤¾ßÏä¡£");
             }
             catch (Exception ex)
             {
-                logAction?.Invoke($"âš ï¸ æ‰«æ Recipes ç›®å½•å¤±è´¥: {ex.Message}");
+                logAction?.Invoke($"?? É¨Ãè Recipes Ä¿Â¼Ê§°Ü: {ex.Message}");
             }
         }
 
@@ -67,31 +72,31 @@ namespace Grayson.Vison.FlowEdit.Services
             string json = JsonConvert.SerializeObject(currentProcess, settings);
             File.WriteAllText(filePath, json);
 
-            logAction?.Invoke($"ğŸ’¾ å½“å‰æµç¨‹å·²ä¿å­˜ä¸ºæ¨¡æ¿: {filePath}");
+            logAction?.Invoke($"?? µ±Ç°Á÷³ÌÒÑ±£´æÎªÄ£°å: {filePath}");
             LoadCompositeRecipeTemplates(toolBox, logAction);
         }
 
         public void ExportRecipe(FlowProcessModel rootProcess, Action<string> logAction)
         {
-            SaveFileDialog sfd = new SaveFileDialog { Filter = "Recipe File (*.json)|*.json", FileName = "VisionStationRecipe.json" };
-            if (sfd.ShowDialog() == true)
+            var fileName = _fileDialogService?.ShowSaveFileDialog("Recipe File (*.json)|*.json", "VisionStationRecipe.json");
+            if (!string.IsNullOrEmpty(fileName))
             {
                 string json = JsonConvert.SerializeObject(rootProcess, Formatting.Indented, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto });
-                File.WriteAllText(sfd.FileName, json);
-                logAction?.Invoke($"ğŸ“¤ é…æ–¹æˆåŠŸå¯¼å‡ºè‡³: {sfd.FileName}");
+                File.WriteAllText(fileName, json);
+                logAction?.Invoke($"é…æ–¹æˆåŠŸå¯¼å‡ºè‡? {fileName}");
             }
         }
 
         public FlowProcessModel ImportRecipe(Action<string> logAction)
         {
-            OpenFileDialog ofd = new OpenFileDialog { Filter = "Recipe File (*.json)|*.json" };
-            if (ofd.ShowDialog() == true)
+            var fileName = _fileDialogService?.ShowOpenFileDialog("Recipe File (*.json)|*.json");
+            if (!string.IsNullOrEmpty(fileName))
             {
-                string json = File.ReadAllText(ofd.FileName);
+                string json = File.ReadAllText(fileName);
                 var process = JsonConvert.DeserializeObject<FlowProcessModel>(json, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.Auto });
                 if (process != null)
                 {
-                    logAction?.Invoke($"ğŸ“¥ æˆåŠŸå¯¼å…¥é…æ–¹æ–‡ä»¶: {ofd.FileName}");
+                    logAction?.Invoke($"æˆåŠŸå¯¼å…¥é…æ–¹æ–‡ä»¶: {fileName}");
                     return process;
                 }
             }

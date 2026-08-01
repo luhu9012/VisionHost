@@ -3,6 +3,7 @@ using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Contracts.Business.Factories;
+using Grayson.Vision.Contracts.Plugin;
 // IO、反射、资源读取、WPF相关依赖
 using System;
 using System.Collections;
@@ -16,19 +17,19 @@ using System.Windows;
 namespace Grayson.Vison.FlowEdit.Services
 {
     /// <summary>
-    /// 插件加载服务静态类
+    /// 插件加载服务默认实现
     /// 整体作用：加载外部算子插件DLL，完成两件核心工作
     /// 1. 读取DLL内所有带[Node]特性的执行器，注册到全局NodeFactory工厂，供给工具箱/流程引擎使用
     /// 2. 解析DLL内嵌的XAML模板资源，提取DataTemplate合并到应用全局资源，画布自动加载节点UI样式
     /// </summary>
-    public static class NodePluginLoader
+    public class NodePluginLoader : INodePluginLoader
     {
         /// <summary>
         /// 入口方法：批量扫描插件目录，加载所有节点插件DLL
         /// </summary>
         /// <param name="pluginFolder">插件存放文件夹路径</param>
         /// <param name="logAction">日志输出回调，用于打印加载成功/失败信息</param>
-        public static void LoadPlugins(string pluginFolder, Action<string> logAction = null)
+        public void LoadPlugins(string pluginFolder, Action<string> logAction = null)
         {
             // 文件夹不存在直接终止加载
             if (!Directory.Exists(pluginFolder))

@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vison.FlowEdit.Converters;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vison.FlowEdit.Converters;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Contracts.ViewModels;
 using Grayson.Vison.FlowEdit.ViewModels;
@@ -38,9 +39,9 @@ namespace Grayson.Vison.FlowEdit.Controls
         public NodeControl()
         {
             Width = 160;
-            MinHeight = 65; // ğŸŒŸ å–æ¶ˆå›ºå®š Height = 70ï¼Œæ”¹ç”¨ MinHeight æ”¯æŒæ ¹æ®ç«¯å£æ•°é‡è‡ªé€‚åº”é«˜åº¦
+            MinHeight = 65; // ?? È¡Ïû¹Ì¶¨ Height = 70£¬¸ÄÓÃ MinHeight Ö§³Ö¸ù¾İ¶Ë¿ÚÊıÁ¿×ÔÊÊÓ¦¸ß¶È
             Template = GetNodeTemplate();
-            // åœ¨ NodeControl æ„é€ å‡½æ•°æˆ–åˆå§‹åŒ–ä¸­ç»‘å®š Node.Height
+            // ÔÚ NodeControl ¹¹Ôìº¯Êı»ò³õÊ¼»¯ÖĞ°ó¶¨ Node.Height
             this.SetBinding(FrameworkElement.HeightProperty, new Binding("Node.Height")
             {
                 RelativeSource = RelativeSource.Self,
@@ -49,7 +50,7 @@ namespace Grayson.Vison.FlowEdit.Controls
         }
 
         /// <summary>
-        /// å½“ Node å®ä¾‹å‘ç”Ÿå˜åŒ–æ—¶ï¼Œè§¦å‘ç«¯å£è‡ªåŠ¨æ’ç‰ˆå¸ƒå±€
+        /// µ± Node ÊµÀı·¢Éú±ä»¯Ê±£¬´¥·¢¶Ë¿Ú×Ô¶¯ÅÅ°æ²¼¾Ö
         /// </summary>
         private static void OnNodePropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
@@ -60,7 +61,7 @@ namespace Grayson.Vison.FlowEdit.Controls
         }
 
         /// <summary>
-        /// ğŸŒŸ å·¥ä¸šçº§è‡ªåŠ¨æ’ç‰ˆç®—æ³•ï¼šè‡ªåŠ¨è®¡ç®—æ§åˆ¶æµ(Exec)ä¸æ•°æ®æµ(Data)ç«¯ç‚¹çš„ RelativeY åæ ‡å¹¶æ’‘å¼€èŠ‚ç‚¹é«˜åº¦
+        /// ?? ¹¤Òµ¼¶×Ô¶¯ÅÅ°æËã·¨£º×Ô¶¯¼ÆËã¿ØÖÆÁ÷(Exec)ÓëÊı¾İÁ÷(Data)¶ËµãµÄ RelativeY ×ø±ê²¢³Å¿ª½Úµã¸ß¶È
         /// </summary>
         public void AutoLayoutNodePorts(FlowNodeBase node)
         {
@@ -70,13 +71,13 @@ namespace Grayson.Vison.FlowEdit.Controls
             double minNodeHeight = 70.0;
 
             // ----------------------------------------------------
-            // 1. è¿‡æ»¤æ‰ Exec ç«¯å£ï¼Œä»…ä¿ç•™ Data ç«¯å£
+            // 1. ¹ıÂËµô Exec ¶Ë¿Ú£¬½ö±£Áô Data ¶Ë¿Ú
             // ----------------------------------------------------
             var inDataPorts = node.InputPorts.Where(p => p.Category == PortCategory.Data).ToList();
             var outDataPorts = node.OutputPorts.Where(p => p.Category == PortCategory.Data).ToList();
 
-            // å¦‚æœä½ æœ‰æ‰©å±•ç«¯å£çš„åŒºåˆ†å±æ€§ï¼ˆæ¯”å¦‚ IsExtensionï¼‰ï¼Œåœ¨æ­¤åŒºåˆ†ï¼›
-            // é»˜è®¤ç¤ºä¾‹ï¼šå‰ 3 ä¸ªä¸ºä¸»è¦è¾“å…¥/è¾“å‡ºï¼ˆä¸Šä¸‹æ’ï¼‰ï¼Œå…¶ä½™ä¸ºæ‰©å±•ï¼ˆå·¦å³æ’ï¼‰
+            // Èç¹ûÄãÓĞÀ©Õ¹¶Ë¿ÚµÄÇø·ÖÊôĞÔ£¨±ÈÈç IsExtension£©£¬ÔÚ´ËÇø·Ö£»
+            // Ä¬ÈÏÊ¾Àı£ºÇ° 3 ¸öÎªÖ÷ÒªÊäÈë/Êä³ö£¨ÉÏÏÂÅÅ£©£¬ÆäÓàÎªÀ©Õ¹£¨×óÓÒÅÅ£©
             var topPorts = inDataPorts.Take(3).ToList();
             var leftPorts = inDataPorts.Skip(3).ToList();
 
@@ -84,34 +85,34 @@ namespace Grayson.Vison.FlowEdit.Controls
             var rightPorts = outDataPorts.Skip(3).ToList();
 
             // ----------------------------------------------------
-            // 2. é¡¶ç«¯ç«¯å£æ’ç‰ˆ (Top - è¾“å…¥)
+            // 2. ¶¥¶Ë¶Ë¿ÚÅÅ°æ (Top - ÊäÈë)
             // ----------------------------------------------------
             for (int i = 0; i < topPorts.Count; i++)
             {
                 var port = topPorts[i];
                 port.Position = PortPosition.Top;
-                // å‡åŒ€æ¨ªå‘åˆ†å¸ƒåœ¨é¡¶è¾¹
+                // ¾ùÔÈºáÏò·Ö²¼ÔÚ¶¥±ß
                 port.RelativeX = (nodeWidth / (topPorts.Count + 1)) * (i + 1);
-                port.RelativeY = 0; // é¡¶è¾¹ç¼˜
+                port.RelativeY = 0; // ¶¥±ßÔµ
             }
 
             // ----------------------------------------------------
-            // 3. åº•ç«¯ç«¯å£æ’ç‰ˆ (Bottom - è¾“å‡º)
+            // 3. µ×¶Ë¶Ë¿ÚÅÅ°æ (Bottom - Êä³ö)
             // ----------------------------------------------------
             for (int i = 0; i < bottomPorts.Count; i++)
             {
                 var port = bottomPorts[i];
                 port.Position = PortPosition.Bottom;
-                // å‡åŒ€æ¨ªå‘åˆ†å¸ƒåº•è¾¹
+                // ¾ùÔÈºáÏò·Ö²¼µ×±ß
                 port.RelativeX = (nodeWidth / (bottomPorts.Count + 1)) * (i + 1);
-                port.RelativeY = minNodeHeight; // åˆå§‹åº•è¾¹ç¼˜ï¼Œä¼šåœ¨ä¸‹é¢éšé«˜åº¦è°ƒæ•´
+                port.RelativeY = minNodeHeight; // ³õÊ¼µ×±ßÔµ£¬»áÔÚÏÂÃæËæ¸ß¶Èµ÷Õû
             }
 
             // ----------------------------------------------------
-            // 4. å·¦ä¾§æ‰©å±•ç«¯å£æ’ç‰ˆ (Left)
+            // 4. ×ó²àÀ©Õ¹¶Ë¿ÚÅÅ°æ (Left)
             // ----------------------------------------------------
             double sideRowHeight = 22.0;
-            double sideStartTop = 25.0; // é¿å¼€é¡¶éƒ¨ Header
+            double sideStartTop = 25.0; // ±Ü¿ª¶¥²¿ Header
             for (int i = 0; i < leftPorts.Count; i++)
             {
                 var port = leftPorts[i];
@@ -121,7 +122,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             }
 
             // ----------------------------------------------------
-            // 5. å³ä¾§æ‰©å±•ç«¯å£æ’ç‰ˆ (Right)
+            // 5. ÓÒ²àÀ©Õ¹¶Ë¿ÚÅÅ°æ (Right)
             // ----------------------------------------------------
             for (int i = 0; i < rightPorts.Count; i++)
             {
@@ -132,14 +133,14 @@ namespace Grayson.Vison.FlowEdit.Controls
             }
 
             // ----------------------------------------------------
-            // 6. åŠ¨æ€è®¡ç®—èŠ‚ç‚¹é«˜åº¦å¹¶æ ¡æ­£ Bottom ç«¯å£ Y åæ ‡
+            // 6. ¶¯Ì¬¼ÆËã½Úµã¸ß¶È²¢Ğ£Õı Bottom ¶Ë¿Ú Y ×ø±ê
             // ----------------------------------------------------
             int maxSideRows = Math.Max(leftPorts.Count, rightPorts.Count);
             double calculatedHeight = Math.Max(minNodeHeight, sideStartTop + (maxSideRows * sideRowHeight) + 15.0);
 
             node.Height = calculatedHeight;
 
-            // æ›´æ–°åº•éƒ¨ç«¯å£çš„ç›¸å¯¹ Y åæ ‡ï¼ˆå¯¹åº”èŠ‚ç‚¹å®é™…é«˜åº¦ï¼‰
+            // ¸üĞÂµ×²¿¶Ë¿ÚµÄÏà¶Ô Y ×ø±ê£¨¶ÔÓ¦½ÚµãÊµ¼Ê¸ß¶È£©
             foreach (var port in bottomPorts)
             {
                 port.RelativeY = calculatedHeight;
@@ -161,12 +162,12 @@ namespace Grayson.Vison.FlowEdit.Controls
             var grid = new FrameworkElementFactory(typeof(Grid));
 
             // ==========================================
-            // 1. èŠ‚ç‚¹èƒŒæ™¯ Border (ä¸»å¡ç‰‡æ ·å¼)
+            // 1. ½Úµã±³¾° Border (Ö÷¿¨Æ¬ÑùÊ½)
             // ==========================================
             var border = new FrameworkElementFactory(typeof(Border));
             border.SetBinding(Border.BackgroundProperty, new Binding("Node.Category") { RelativeSource = RelativeSource.TemplatedParent, Converter = new Converters.NodeColorConv() });
 
-            // é€‰ä¸­è¾¹æ¡†ä¸è¿è¡ŒçŠ¶æ€è¾¹æ¡†é«˜äº®ç»‘å®š
+            // Ñ¡ÖĞ±ß¿òÓëÔËĞĞ×´Ì¬±ß¿ò¸ßÁÁ°ó¶¨
             var borderBrushBind = new MultiBinding { Converter = new Converters.NodeBorderConv() };
             borderBrushBind.Bindings.Add(new Binding("Node") { RelativeSource = RelativeSource.TemplatedParent });
             borderBrushBind.Bindings.Add(new Binding("DataContext.SelectedNode")
@@ -178,7 +179,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             border.SetValue(Border.BorderThicknessProperty, new Thickness(2.5));
             border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
 
-            // ç»‘å®šå‘å…‰ç‰¹æ•ˆ (DropShadowEffect) - å½“ Node.IsRunning ä¸º True æ—¶ç”Ÿæ•ˆ
+            // °ó¶¨·¢¹âÌØĞ§ (DropShadowEffect) - µ± Node.IsRunning Îª True Ê±ÉúĞ§
             var glowEffectBind = new Binding("Node.IsRunning")
             {
                 RelativeSource = RelativeSource.TemplatedParent,
@@ -187,12 +188,12 @@ namespace Grayson.Vison.FlowEdit.Controls
             border.SetBinding(Border.EffectProperty, glowEffectBind);
 
             // ==========================================
-            // 2. èŠ‚ç‚¹å†…éƒ¨æ ‡é¢˜ä¸ä¿¡æ¯å¸ƒå±€
+            // 2. ½ÚµãÄÚ²¿±êÌâÓëĞÅÏ¢²¼¾Ö
             // ==========================================
             var stack = new FrameworkElementFactory(typeof(StackPanel));
             stack.SetValue(StackPanel.MarginProperty, new Thickness(10, 6, 10, 6));
 
-            // èŠ‚ç‚¹åç§° DisplayName
+            // ½ÚµãÃû³Æ DisplayName
             var txtName = new FrameworkElementFactory(typeof(TextBlock));
             var nameBind = new Binding("Node.DisplayName") { RelativeSource = RelativeSource.TemplatedParent };
             txtName.SetBinding(TextBlock.TextProperty, nameBind);
@@ -200,7 +201,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             txtName.SetValue(TextBlock.ForegroundProperty, Brushes.White);
             txtName.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
 
-            // èŠ‚ç‚¹ç±»å‹æ ‡è¯† (Type)
+            // ½ÚµãÀàĞÍ±êÊ¶ (Type)
             var txtKind = new FrameworkElementFactory(typeof(TextBlock));
             txtKind.SetBinding(TextBlock.TextProperty, new Binding("Node.Type") { RelativeSource = RelativeSource.TemplatedParent });
             txtKind.SetValue(TextBlock.FontSizeProperty, 10d);
@@ -212,7 +213,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             grid.AppendChild(border);
 
             // ==========================================
-            // 3. æ‰§è¡ŒçŠ¶æ€æç¤ºå¾½ç«  Badge (å³ä¸Šè§’ "â–¶ æ‰§è¡Œä¸­...")
+            // 3. Ö´ĞĞ×´Ì¬ÌáÊ¾»ÕÕÂ Badge (ÓÒÉÏ½Ç "? Ö´ĞĞÖĞ...")
             // ==========================================
             var badgeBorder = new FrameworkElementFactory(typeof(Border));
             badgeBorder.SetValue(Border.HorizontalAlignmentProperty, HorizontalAlignment.Right);
@@ -230,7 +231,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             });
 
             var badgeText = new FrameworkElementFactory(typeof(TextBlock));
-            badgeText.SetValue(TextBlock.TextProperty, "â–¶ æ‰§è¡Œä¸­...");
+            badgeText.SetValue(TextBlock.TextProperty, "? Ö´ĞĞÖĞ...");
             badgeText.SetValue(TextBlock.ForegroundProperty, Brushes.White);
             badgeText.SetValue(TextBlock.FontSizeProperty, 9d);
             badgeText.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
@@ -239,18 +240,18 @@ namespace Grayson.Vison.FlowEdit.Controls
             grid.AppendChild(badgeBorder);
 
             // ==========================================
-            // 2. ç»Ÿä¸€æ¸²æŸ“æ‰€æœ‰æ•°æ®ç«¯å£ (æ ¹æ® RelativeX, RelativeY å®šä½)
+            // 2. Í³Ò»äÖÈ¾ËùÓĞÊı¾İ¶Ë¿Ú (¸ù¾İ RelativeX, RelativeY ¶¨Î»)
             // ==========================================
             var allPortsItemsControl = new FrameworkElementFactory(typeof(ItemsControl));
 
-            // ğŸŒŸ ç›´æ¥ç»‘å®šåˆ° FlowNodeBase ä¸­çš„ AllPorts é›†åˆ
+            // ?? Ö±½Ó°ó¶¨µ½ FlowNodeBase ÖĞµÄ AllPorts ¼¯ºÏ
             allPortsItemsControl.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("Node.AllPorts") { RelativeSource = RelativeSource.TemplatedParent });
 
             var canvasFactory = new FrameworkElementFactory(typeof(Canvas));
             allPortsItemsControl.SetValue(ItemsControl.ItemsPanelProperty, new ItemsPanelTemplate(canvasFactory));
 
             var portContainerStyle = new Style(typeof(ContentPresenter));
-            // å±…ä¸­åç§»é‡: ç«¯å£å°ºå¯¸ä¸º 8pxï¼Œåç§» -4px å®ç°ä»¥ (RelativeX, RelativeY) ä¸ºåŸç‚¹å±…ä¸­
+            // ¾ÓÖĞÆ«ÒÆÁ¿: ¶Ë¿Ú³ß´çÎª 8px£¬Æ«ÒÆ -4px ÊµÏÖÒÔ (RelativeX, RelativeY) ÎªÔ­µã¾ÓÖĞ
             portContainerStyle.Setters.Add(new Setter(Canvas.LeftProperty, new Binding("RelativeX") { Converter = new OffsetYConverter(-4) }));
             portContainerStyle.Setters.Add(new Setter(Canvas.TopProperty, new Binding("RelativeY") { Converter = new OffsetYConverter(-4) }));
             allPortsItemsControl.SetValue(ItemsControl.ItemContainerStyleProperty, portContainerStyle);
@@ -260,17 +261,17 @@ namespace Grayson.Vison.FlowEdit.Controls
 
             anchor.SetValue(Border.WidthProperty, 8.0);
             anchor.SetValue(Border.HeightProperty, 8.0);
-            anchor.SetValue(Border.CornerRadiusProperty, new CornerRadius(4)); // åœ†å½¢ç«¯ç‚¹
+            anchor.SetValue(Border.CornerRadiusProperty, new CornerRadius(4)); // Ô²ĞÎ¶Ëµã
             anchor.SetBinding(Border.BackgroundProperty, new Binding("ColorHex") { Converter = new HexToBrushConv() });
             anchor.SetValue(Border.BorderBrushProperty, Brushes.White);
             anchor.SetValue(Border.BorderThicknessProperty, new Thickness(1.0));
             anchor.SetValue(Border.CursorProperty, Cursors.Cross);
             anchor.SetBinding(Border.ToolTipProperty, new Binding("PortName"));
 
-            // æ§åˆ¶ Exec ç«¯å£éšè—/è¿‡æ»¤
+            // ¿ØÖÆ Exec ¶Ë¿ÚÒş²Ø/¹ıÂË
             anchor.SetBinding(UIElement.VisibilityProperty, new Binding("Category") { Converter = new ExecPortHiddenConv() });
 
-            // äº¤äº’äº‹ä»¶ç»‘å®š...
+            // ½»»¥ÊÂ¼ş°ó¶¨...
             anchor.AddHandler(Border.MouseLeftButtonDownEvent, new MouseButtonEventHandler((s, e) => {
                 if (s is FrameworkElement el && el.DataContext is NodePort port)
                 {
@@ -295,11 +296,11 @@ namespace Grayson.Vison.FlowEdit.Controls
         }
 
         /// <summary>
-        /// èŠ‚ç‚¹æŒ‰ä¸‹äº‹ä»¶ï¼šè´Ÿè´£é€‰ä¸­èŠ‚ç‚¹ã€åŒå‡»å“åº”ï¼ˆå¤åˆèŠ‚ç‚¹ä¸‹æŒ–/æ™®é€šèŠ‚ç‚¹å¼¹æ¡†ï¼‰ä¸æ”¯æŒæ‹–æ‹½èŠ‚ç‚¹æ•´ä½“
+        /// ½Úµã°´ÏÂÊÂ¼ş£º¸ºÔğÑ¡ÖĞ½Úµã¡¢Ë«»÷ÏìÓ¦£¨¸´ºÏ½ÚµãÏÂÍÚ/ÆÕÍ¨½Úµãµ¯¿ò£©ÓëÖ§³ÖÍÏ×§½ÚµãÕûÌå
         /// </summary>
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
-            // ğŸŒŸ é˜²è¯¯è§¦æ ¸å¿ƒé€»è¾‘ï¼šå¦‚æœç‚¹å‡»çš„æ˜¯ç«¯å£ç«¯ç‚¹ (NodePort)ï¼Œè·³è¿‡èŠ‚ç‚¹æ‹–æ‹½é€»è¾‘ï¼Œäº¤ç»™ç«¯å£è¿çº¿å¤„ç†
+            // ?? ·ÀÎó´¥ºËĞÄÂß¼­£ºÈç¹ûµã»÷µÄÊÇ¶Ë¿Ú¶Ëµã (NodePort)£¬Ìø¹ı½ÚµãÍÏ×§Âß¼­£¬½»¸ø¶Ë¿ÚÁ¬Ïß´¦Àí
             if (e.OriginalSource is FrameworkElement elem && elem.DataContext is NodePort)
             {
                 return;
@@ -311,26 +312,26 @@ namespace Grayson.Vison.FlowEdit.Controls
             {
                 vm.SelectedNode = Node;
 
-                // ğŸŒŸ æ ¸å¿ƒä¿®æ”¹ï¼šå¤„ç†èŠ‚ç‚¹åŒå‡»å“åº”äº‹ä»¶ (ClickCount == 2)
+                // ?? ºËĞÄĞŞ¸Ä£º´¦Àí½ÚµãË«»÷ÏìÓ¦ÊÂ¼ş (ClickCount == 2)
                 if (e.ClickCount == 2 && Node != null)
                 {
-                    // 1. å¦‚æœæ˜¯å¤åˆèŠ‚ç‚¹ (CompositeFlowNode)ï¼Œä¿æŒåŸæ ·ä¸‹æŒ–
+                    // 1. Èç¹ûÊÇ¸´ºÏ½Úµã (CompositeFlowNode)£¬±£³ÖÔ­ÑùÏÂÍÚ
                     if (Node is CompositeFlowNode compositeNode)
                     {
                         vm.DrillDownCompositeNode(compositeNode);
                     }
-                    // 2. å¦‚æœæ˜¯æ™®é€šèŠ‚ç‚¹ï¼Œå¼¹çª—æ˜¾ç¤ºèŠ‚ç‚¹å‚æ•°æ¨¡å‹ä¸ XAML å±æ€§è®¾ç½®
+                    // 2. Èç¹ûÊÇÆÕÍ¨½Úµã£¬µ¯´°ÏÔÊ¾½Úµã²ÎÊıÄ£ĞÍÓë XAML ÊôĞÔÉèÖÃ
                     else
                     {
                         ShowNodePropertyDialog(Node);
                     }
 
-                    e.Handled = true; // é˜»æ­¢äº‹ä»¶å‘ä¸Šå†’æ³¡ï¼Œé˜²æ­¢è§¦å‘æ‹–æ‹½
+                    e.Handled = true; // ×èÖ¹ÊÂ¼şÏòÉÏÃ°Åİ£¬·ÀÖ¹´¥·¢ÍÏ×§
                     return;
                 }
             }
 
-            // å¼€å§‹æ‹–æ‹½èŠ‚ç‚¹æ•´ä½“ä½ç½®
+            // ¿ªÊ¼ÍÏ×§½ÚµãÕûÌåÎ»ÖÃ
             _isDragging = true;
             _dragStartPoint = e.GetPosition(Window.GetWindow(this));
             _nodeStartPos = new Point(Node.PosX, Node.PosY);
@@ -339,20 +340,20 @@ namespace Grayson.Vison.FlowEdit.Controls
         }
 
         /// <summary>
-        /// å¼¹å‡ºæ™®é€šèŠ‚ç‚¹çš„å±æ€§ä¸å‚æ•°è®¾ç½®çª—å£
+        /// µ¯³öÆÕÍ¨½ÚµãµÄÊôĞÔÓë²ÎÊıÉèÖÃ´°¿Ú
         /// </summary>
         private void ShowNodePropertyDialog(FlowNodeBase node)
         {
             var win = new Grayson.Vison.FlowEdit.Views.NodePropertyWindow
             {
-                DataContext = node, // å°†èŠ‚ç‚¹çš„ Model / ParameterModel ç»‘å®šè‡³å¼¹çª—
-                Owner = Window.GetWindow(this) // è®¾ç½®å½“å‰ Window ä¸ºå®¿ä¸»çª—å£ï¼Œä¿è¯å¼¹çª—å±…ä¸­
+                DataContext = node, // ½«½ÚµãµÄ Model / ParameterModel °ó¶¨ÖÁµ¯´°
+                Owner = Window.GetWindow(this) // ÉèÖÃµ±Ç° Window ÎªËŞÖ÷´°¿Ú£¬±£Ö¤µ¯´°¾ÓÖĞ
             };
             win.ShowDialog();
         }
 
         /// <summary>
-        /// èŠ‚ç‚¹ç§»åŠ¨äº‹ä»¶ï¼šå®æ—¶æ›´æ–° Node.PosX å’Œ Node.PosY
+        /// ½ÚµãÒÆ¶¯ÊÂ¼ş£ºÊµÊ±¸üĞÂ Node.PosX ºÍ Node.PosY
         /// </summary>
         protected override void OnMouseMove(MouseEventArgs e)
         {
@@ -367,7 +368,7 @@ namespace Grayson.Vison.FlowEdit.Controls
         }
 
         /// <summary>
-        /// é¼ æ ‡æŠ¬èµ·ç»“æŸèŠ‚ç‚¹æ‹–æ‹½
+        /// Êó±êÌ§Æğ½áÊø½ÚµãÍÏ×§
         /// </summary>
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
         {
@@ -380,10 +381,10 @@ namespace Grayson.Vison.FlowEdit.Controls
         }
     }
 
-    #region è½¬æ¢å™¨å·¥å…·ç±»
+    #region ×ª»»Æ÷¹¤¾ßÀà
 
     /// <summary>
-    /// å½“èŠ‚ç‚¹æ‰§è¡Œæ—¶ï¼Œç”Ÿæˆå‘å…‰/é˜´å½±ç‰¹æ•ˆ
+    /// µ±½ÚµãÖ´ĞĞÊ±£¬Éú³É·¢¹â/ÒõÓ°ÌØĞ§
     /// </summary>
     public class RunningGlowEffectConv : IValueConverter
     {
@@ -406,7 +407,7 @@ namespace Grayson.Vison.FlowEdit.Controls
     }
 
     /// <summary>
-    /// ç«¯å£ä¸­å¿ƒç‚¹ Y è½´åæ ‡åç§»è½¬æ¢å™¨
+    /// ¶Ë¿ÚÖĞĞÄµã Y Öá×ø±êÆ«ÒÆ×ª»»Æ÷
     /// </summary>
     public class OffsetYConverter : IValueConverter
     {
@@ -424,7 +425,7 @@ namespace Grayson.Vison.FlowEdit.Controls
     }
 
     /// <summary>
-    /// 16è¿›åˆ¶é¢œè‰²å­—ç¬¦ä¸²è½¬ WPF Brush
+    /// 16½øÖÆÑÕÉ«×Ö·û´®×ª WPF Brush
     /// </summary>
     public class HexToBrushConv : IValueConverter
     {
@@ -446,7 +447,7 @@ namespace Grayson.Vison.FlowEdit.Controls
     }
 
     /// <summary>
-    /// æ§åˆ¶ç«¯ç‚¹ç”¨çº¯åœ† (CornerRadius=5)ï¼Œæ•°æ®ç«¯ç‚¹ç”¨å°æ–¹å— (CornerRadius=1)
+    /// ¿ØÖÆ¶ËµãÓÃ´¿Ô² (CornerRadius=5)£¬Êı¾İ¶ËµãÓÃĞ¡·½¿é (CornerRadius=1)
     /// </summary>
     public class PortShapeConv : IValueConverter
     {
@@ -454,15 +455,15 @@ namespace Grayson.Vison.FlowEdit.Controls
         {
             if (value is PortCategory cat && cat == PortCategory.Exec)
             {
-                return new CornerRadius(5); // çº¯åœ†å½¢
+                return new CornerRadius(5); // ´¿Ô²ĞÎ
             }
-            return new CornerRadius(1);     // å°æ–¹å—
+            return new CornerRadius(1);     // Ğ¡·½¿é
         }
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
     /// <summary>
-    /// æ§åˆ¶ç«¯ç‚¹ 10pxï¼Œæ•°æ®ç«¯ç‚¹æ›´å°ä¸€ç‚¹ (8px)
+    /// ¿ØÖÆ¶Ëµã 10px£¬Êı¾İ¶Ëµã¸üĞ¡Ò»µã (8px)
     /// </summary>
     public class PortSizeConv : IValueConverter
     {
@@ -470,15 +471,15 @@ namespace Grayson.Vison.FlowEdit.Controls
         {
             if (value is PortCategory cat && cat == PortCategory.Exec)
             {
-                return 10.0; // æ§åˆ¶ç«¯ç‚¹å°ºå¯¸å¤§ä¸€ç‚¹
+                return 10.0; // ¿ØÖÆ¶Ëµã³ß´ç´óÒ»µã
             }
-            return 8.0;  // æ•°æ®ç«¯ç‚¹å°ºå¯¸å°ä¸€ç‚¹
+            return 8.0;  // Êı¾İ¶Ëµã³ß´çĞ¡Ò»µã
         }
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotImplementedException();
     }
 
     /// <summary>
-    /// æ ¹æ®ç«¯å£ç±»åˆ« (Category) ä¸å…¨å±€å¼€å…³ (ShowDataPorts) å†³å®šç«¯å£ç«¯ç‚¹æ˜¯å¦æ˜¾ç¤º
+    /// ¸ù¾İ¶Ë¿ÚÀà±ğ (Category) ÓëÈ«¾Ö¿ª¹Ø (ShowDataPorts) ¾ö¶¨¶Ë¿Ú¶ËµãÊÇ·ñÏÔÊ¾
     /// </summary>
     public class PortVisibilityConv : IMultiValueConverter
     {
@@ -509,7 +510,7 @@ namespace Grayson.Vison.FlowEdit.Controls
         {
             if (value is PortCategory cat && cat == PortCategory.Exec)
             {
-                return Visibility.Collapsed; // å®Œå…¨éšè— Exec ç«¯å£
+                return Visibility.Collapsed; // ÍêÈ«Òş²Ø Exec ¶Ë¿Ú
             }
             return Visibility.Visible;
         }

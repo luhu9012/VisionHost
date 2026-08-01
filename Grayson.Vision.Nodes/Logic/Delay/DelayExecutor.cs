@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -11,10 +12,10 @@ namespace Grayson.Vision.Nodes.Logic.Delay
     [Node(
         type: NodeType.Delay,
         category: NodeCategory.Logic,
-        displayName: "å»¶æ—¶ç­‰å¾…",
-        description: "çº¿ç¨‹ä¼‘çœ ç­‰å¾…æŒ‡å®šæ¯«ç§’æ•°",
+        displayName: "ÑÓÊ±µÈ´ı",
+        description: "Ïß³ÌĞİÃßµÈ´ıÖ¸¶¨ºÁÃëÊı",
         parameterType: typeof(DelayParam)
-         , icon: "â±ï¸"
+         , icon: "??"
     )]
     [NodePort("ExecIn", PortType.In, PortCategory.Data)]
     [NodePort("ExecOut", PortType.Out, PortCategory.Data)]
@@ -24,18 +25,18 @@ namespace Grayson.Vision.Nodes.Logic.Delay
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as DelayParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°æœªé…ç½®ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÎ´ÅäÖÃ¡£");
 
             int ms = param.DelayMs;
             int? inputMs = context.GetInputValue<int?>(node, "DelayMsIn");
             if (inputMs.HasValue && inputMs.Value >= 0) ms = inputMs.Value;
 
-            context.Log($"â±ï¸ [å»¶æ—¶å¼€å§‹] ç­‰å¾… {ms} ms...");
+            context.Log($"?? [ÑÓÊ±¿ªÊ¼] µÈ´ı {ms} ms...");
 
-            // æ­£ç¡®é…åˆ Token è¿›è¡Œéé˜»å¡å¼‚æ­¥ç­‰å¾…
+            // ÕıÈ·ÅäºÏ Token ½øĞĞ·Ç×èÈûÒì²½µÈ´ı
             await Task.Delay(ms, token);
 
-            context.Log($"âœ” [å»¶æ—¶ç»“æŸ]");
+            context.Log($"? [ÑÓÊ±½áÊø]");
         }
     }
 }

@@ -1,4 +1,5 @@
-ï»¿using Grayson.Vision.Contracts.Business;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business;
 using Grayson.Vision.Contracts.Business.Attributes;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Models;
@@ -12,10 +13,10 @@ namespace Grayson.Vision.Nodes.Logic.Merge
     [Node(
         type: NodeType.Merge,
         category: NodeCategory.Logic,
-        displayName: "æµç¨‹/æ•°æ®æ±‡èš (Merge)",
-        description: "æ±‡èšåˆ†æ”¯æ§åˆ¶æµï¼Œå¹¶å°†å¤šè·¯æˆ–å¤šè½®å¾ªç¯æ•°æ®æ•´åˆè¾“å‡º",
+        displayName: "Á÷³Ì/Êı¾İ»ã¾Û (Merge)",
+        description: "»ã¾Û·ÖÖ§¿ØÖÆÁ÷£¬²¢½«¶àÂ·»ò¶àÂÖÑ­»·Êı¾İÕûºÏÊä³ö",
         parameterType: typeof(MergeParam)
-         , icon: "ğŸ”€"
+         , icon: "??"
     )]
     //[NodePort("ExecIn1", PortType.In, PortCategory.Exec)]
     //[NodePort("ExecIn2", PortType.In, PortCategory.Exec)]
@@ -30,12 +31,12 @@ namespace Grayson.Vision.Nodes.Logic.Merge
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             var param = node.ParameterModel as MergeParam;
-            if (param == null) throw new InvalidOperationException($"èŠ‚ç‚¹ [{node.DisplayName}] å‚æ•°æœªé…ç½®ã€‚");
+            if (param == null) throw new InvalidOperationException($"½Úµã [{node.DisplayName}] ²ÎÊıÎ´ÅäÖÃ¡£");
 
             object val1 = context.GetInputValue<object>(node, "DataIn1");
             object val2 = context.GetInputValue<object>(node, "DataIn2");
 
-            // è·å–æˆ–åˆå§‹åŒ– List ç¼“å­˜
+            // »ñÈ¡»ò³õÊ¼»¯ List »º´æ
             var accumulatedList = context.GetState<List<object>>(node, "AccumulatedList", new List<object>());
 
             object finalResult = null;
@@ -57,14 +58,14 @@ namespace Grayson.Vision.Nodes.Logic.Merge
                     break;
             }
 
-            // æ›´æ–°çŠ¶æ€ä¸è¾“å‡º
+            // ¸üĞÂ×´Ì¬ÓëÊä³ö
             context.SetState(node, "AccumulatedList", accumulatedList);
             context.SetOutputValue(node, "DataOut", finalResult);
             context.SetOutputValue(node, "ListOut", accumulatedList);
 
-            context.Log($"ğŸ”€ [Merge æ±‡èš] æ¨¡å¼: {param.DataMode}, å½“å‰æ”¶é›†æ€»æ•°: {accumulatedList.Count}");
+            context.Log($"?? [Merge »ã¾Û] Ä£Ê½: {param.DataMode}, µ±Ç°ÊÕ¼¯×ÜÊı: {accumulatedList.Count}");
 
-            // ç»Ÿä¸€å‘ä¸‹æ¿€æ´»æ§åˆ¶æµ
+            // Í³Ò»ÏòÏÂ¼¤»î¿ØÖÆÁ÷
             context.SetActiveNextPort(node, "ExecOut");
 
             await Task.CompletedTask;

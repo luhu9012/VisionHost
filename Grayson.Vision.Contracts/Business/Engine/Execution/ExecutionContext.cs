@@ -34,7 +34,7 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         // 节点输出端口数据缓存: PortId -> Value
         private readonly ConcurrentDictionary<string, object> _portValueCache = new ConcurrentDictionary<string, object>();
 
-        // 核心流程控制事件总线 (纯控制流，不再包含日志事件)
+        // 核心流程控制事件总线
         public event EventHandler<FlowNodeBase> OnNodeExecuting;
         public event EventHandler<FlowNodeBase> OnNodeExecuted;
         public event EventHandler<NodeExecutionErrorEventArgs> OnExecutionError;

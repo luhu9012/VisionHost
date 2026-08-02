@@ -233,6 +233,17 @@ namespace Grayson.Vison.FlowEdit.Converters
             return isTrue ? SelectedBrush : NormalBrush;
         }
     }
+    public class BoolToTextConverter:BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            bool isTrue = false;
+            if (value is bool b) isTrue = b;
+            else if (value != null && bool.TryParse(value.ToString(), out bool parsed)) isTrue = parsed;
+
+            return isTrue ? "远程模式" : "嵌入式模式";
+        }
+    }
 
     #endregion
 

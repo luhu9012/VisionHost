@@ -199,7 +199,7 @@
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
-    <None Include="README.md" />
+    <None Include="README_main.md" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

@@ -23,6 +23,7 @@
             <cvts:ConnectionThicknessConv x:Key="ConnectionThicknessConv"/>
             <cvts:ConnectionDashConv x:Key="ConnectionDashConv"/>
             <cvts:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
+            <cvts:BoolToTextConverter x:Key="BoolToTextConverter"/>    
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -42,6 +43,15 @@
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                     <TextBlock Text="工业视觉流程编排器 (全量23节点)" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" Margin="0 0 15 0"/>
+                    <!-- 🌟 新增：模式切换 Toggle 按钮 -->
+                    <Border Background="#1E1E1E" CornerRadius="4" Padding="6 2" Margin="0 0 10 0" VerticalAlignment="Center">
+                        <CheckBox IsChecked="{Binding UseRemoteWorkerProcess, Mode=TwoWay}" 
+                                  Foreground="White" VerticalAlignment="Center" Cursor="Hand"
+                                  ToolTip="勾选：切换为 Worker 独立进程运行(IPC模式)；取消勾选：嵌入式后台线程运行">
+                            <TextBlock Text="{Binding UseRemoteWorkerProcess, Converter={StaticResource BoolToTextConverter}, FallbackValue='嵌入式模式'}" 
+                                       Foreground="#00FF66" FontSize="11" FontWeight="SemiBold"/>
+                        </CheckBox>
+                    </Border>
                     <Button Content="💾 保存" Command="{Binding SaveRecipeCmd}" Background="#3E3E42" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
 
                     <Button Content="📥 导入 JSON" Command="{Binding ImportRecipeCmd}" Background="#3E3E42" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
@@ -108,7 +118,6 @@
                 <ColumnDefinition Width="1*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：极简分类图标栏 -->
             <!-- 左侧：极简分类图标栏 -->
             <Border Grid.Column="0" BorderBrush="#3F3F46" BorderThickness="0 0 1 0" Background="#181818" Panel.ZIndex="10">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -390,11 +399,11 @@
             <Grid Grid.Column="2" Margin="2">
                 <Grid.RowDefinitions>
                     <!-- 上区：图像区域 (大图) -->
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="2*"/>
                     <!-- 缩略图列表 -->
                     <RowDefinition Height="80"/>
                     <!-- 下区：数据监视与日志 -->
-                    <RowDefinition Height="2*"/>
+                    <RowDefinition Height="1*"/>
                 </Grid.RowDefinitions>
 
                 <!-- 1. 图像展示区 -->

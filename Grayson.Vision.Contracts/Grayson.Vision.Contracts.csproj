@@ -68,7 +68,10 @@
     <Compile Include="Business\Engine\Execution\FlowExecutor.cs" />
     <Compile Include="Business\Engine\Execution\FrameCycleContext.cs" />
     <Compile Include="Business\Engine\Execution\NodeExecutionContext.cs" />
+    <Compile Include="Business\Engine\IStationWorkerHost.cs" />
     <Compile Include="Business\Enums\DeviceState.cs" />
+    <Compile Include="Business\Enums\WorkMode.cs" />
+    <Compile Include="Business\Events\IStationWorkerEvents.cs" />
     <Compile Include="Business\Helpers\EnumExtensions.cs" />
     <Compile Include="Business\Enums\NodeFlowEnums.cs" />
     <Compile Include="Business\Factories\NodeFactory.cs" />
@@ -84,6 +87,9 @@
     <Compile Include="Devices\IDevice.cs" />
     <Compile Include="Devices\IHardwarePlugin.cs" />
     <Compile Include="Devices\IPlc.cs" />
+    <Compile Include="IPC\IpcLogSink.cs" />
+    <Compile Include="IPC\IpcMessageContract.cs" />
+    <Compile Include="IPC\NodeErrorPayload.cs" />
     <Compile Include="Logging\FileLogSink.cs" />
     <Compile Include="Logging\LogBus.cs" />
     <Compile Include="Permission\UserRole.cs" />

@@ -84,9 +84,13 @@
     <Compile Include="Converters\ValueConverters.cs" />
     <Compile Include="Helpers\NodeMetaRegistry.cs" />
     <Compile Include="RecipeManager\RecipeManager.cs" />
+    <Compile Include="Services\EmbeddedWorkerClientProxy.cs" />
     <Compile Include="Services\IDialogService.cs" />
+    <Compile Include="Services\IWorkerClient.cs" />
     <Compile Include="Services\LayoutService.cs" />
     <Compile Include="Services\NodePluginLoader.cs" />
+    <Compile Include="Services\RemoteWorkerClientProxy.cs" />
+    <Compile Include="ViewModels\FlowVm - 复制.cs" />
     <Compile Include="ViewModels\FlowVm.cs" />
     <Compile Include="Views\FlowEditView.xaml.cs">
       <DependentUpon>FlowEditView.xaml</DependentUpon>
@@ -147,19 +151,30 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Grayson.Vision.Common\Grayson.Vision.Common.csproj">
+      <Project>{97de4abb-3947-454b-b27f-28d43e73ae55}</Project>
+      <Name>Grayson.Vision.Common</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
       <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
       <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Core\Grayson.Vision.Core.csproj">
+      <Project>{6a092dc6-536f-433f-94e0-31bf27777d95}</Project>
+      <Name>Grayson.Vision.Core</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper.Wpf\Grayson.Vision.HalconWrapper.Wpf.csproj">
+      <Project>{7a6b5c44-8d7e-4f2a-9b1c-3d8e4f5a6b7c}</Project>
+      <Name>Grayson.Vision.HalconWrapper.Wpf</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper\Grayson.Vision.HalconWrapper.csproj">
+      <Project>{ecc73133-c99e-43f3-9206-1edc2cbda74a}</Project>
+      <Name>Grayson.Vision.HalconWrapper</Name>
     </ProjectReference>
     <ProjectReference Include="..\Grayson.Vision.Nodes\Grayson.Vision.Nodes.csproj">
       <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>
       <Name>Grayson.Vision.Nodes</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Grayson.Vision.HalconWrapper.Wpf\Grayson.Vision.HalconWrapper.Wpf.csproj" xmlns="">
-      <Project>{7A6B5C44-8D7E-4F2A-9B1C-3D8E4F5A6B7C}</Project>
-      <Name>Grayson.Vision.HalconWrapper.Wpf</Name>
-    </ProjectReference>
   </ItemGroup>
-  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

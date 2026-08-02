@@ -1,20 +1,20 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{7A6B5C44-8D7E-4F2A-9B1C-3D8E4F5A6B7C}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Grayson.Vision.HalconWrapper.Wpf</RootNamespace>
-    <AssemblyName>Grayson.Vision.HalconWrapper.Wpf</AssemblyName>
+    <ProjectGuid>{3F5DDBF3-8618-48CE-A3BF-4FB07FDCCD1B}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Grayson.Vision.WorkerHost</RootNamespace>
+    <AssemblyName>Grayson.Vision.WorkerHost</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
-    <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -24,6 +24,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
@@ -32,32 +33,26 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="halcondotnet">
-      <HintPath>..\..\Grayson.VisionApp\Grayson.VisionApp.Core\bin\Debug\halcondotnet.dll</HintPath>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
-    <Reference Include="System.Xaml" />
-    <Reference Include="WindowsBase" />
-    <Reference Include="PresentationCore" />
-    <Reference Include="PresentationFramework" />
-    <Reference Include="System.Drawing" xmlns="" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="NamedPipeIpcServer.cs" />
+    <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Imaging\HalconRenderImage.cs" />
-    <Compile Include="Imaging\HalconImageRenderService.cs" />
-    <Compile Include="Controls\HalconImageDisplayHost.xaml.cs">
-      <DependentUpon>HalconImageDisplayHost.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Imaging\\WpfImageRenderContext.cs" xmlns="" />
-    <Compile Include="ViewModels\ImageDisplayVm.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Page Include="Controls\HalconImageDisplayHost.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
+    <None Include="App.config" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Grayson.Vision.Common\Grayson.Vision.Common.csproj">
@@ -68,13 +63,14 @@
       <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
       <Name>Grayson.Vision.Contracts</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Grayson.Vision.HalconWrapper\Grayson.Vision.HalconWrapper.csproj">
-      <Project>{ecc73133-c99e-43f3-9206-1edc2cbda74a}</Project>
-      <Name>Grayson.Vision.HalconWrapper</Name>
+    <ProjectReference Include="..\Grayson.Vision.Core\Grayson.Vision.Core.csproj">
+      <Project>{6a092dc6-536f-433f-94e0-31bf27777d95}</Project>
+      <Name>Grayson.Vision.Core</Name>
     </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="README_hwindow.md" />
+    <ProjectReference Include="..\Grayson.Vision.Nodes\Grayson.Vision.Nodes.csproj">
+      <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>
+      <Name>Grayson.Vision.Nodes</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

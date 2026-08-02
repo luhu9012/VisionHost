@@ -85,7 +85,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="file1.md" />
-    <None Include="README.md" />
+    <None Include="README_nodes.md" />
     <None Include="参数传递.md" />
   </ItemGroup>
   <ItemGroup>

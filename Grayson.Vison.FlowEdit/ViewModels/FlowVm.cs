@@ -1,32 +1,31 @@
-using Grayson.Vision.Contracts.Business.Attributes;
+ï»¿// ä¸šåŠ¡åŸºç¡€ã€ç‰¹æ€§ã€æ•°æ®æ¨¡å‹ã€èŠ‚ç‚¹å·¥å‚å‘½åç©ºé—´å¼•ç”¨
+
+using Grayson.Vision.Contracts.Business.Engine;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
-using Grayson.Vision.Contracts.Logging;
 using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business.Events;
 using Grayson.Vision.Contracts.Business.Factories;
 using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Logging;
 using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
 using Grayson.Vison.FlowEdit.Helpers;
 using Grayson.Vison.FlowEdit.Services;
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Linq;
-using System.Reflection;
+using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace Grayson.Vison.FlowEdit.ViewModels
 {
     public class FlowVm : ViewModelBase
     {
-        // 1. Êı¾İÄ£ĞÍÓë Observable ¼¯ºÏ
-        public FlowProcessModel RootProcess { get; set; } = new FlowProcessModel { ProcessName = "Ö÷¹¤×÷Á÷" };
+        // 1. æ•°æ®æ¨¡å‹ä¸ Observable é›†åˆ
+        public FlowProcessModel RootProcess { get; set; } = new FlowProcessModel { ProcessName = "ä¸»å·¥ä½œæµ" };
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
         public ObservableCollection<string> ExecutionLogs { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<FlowProcessModel> Breadcrumbs { get; set; } = new ObservableCollection<FlowProcessModel>();
@@ -68,20 +67,35 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _showDataPorts, value))
                 {
-                    LogBus.Info("UI", value ? "ÒÑ¿ªÆô¡¾Êı¾İ¶Ë¿Ú¡¿ÏÔÊ¾" : "ÒÑÒş²Ø¡¾Êı¾İ¶Ë¿Ú¡¿£¬½ö±£Áô¿ØÖÆÁ÷¶Ë¿Ú");
+                    LogBus.Info("UI", value ? "å·²å¼€å¯ã€æ•°æ®ç«¯å£ã€‘æ˜¾ç¤º" : "å·²éšè—ã€æ•°æ®ç«¯å£ã€‘ï¼Œä»…ä¿ç•™æ§åˆ¶æµç«¯å£");
                 }
             }
         }
 
-        // 2. ½âñîÒıÓÃµÄÄÚ²¿·şÎñÓëÒıÇæ
-        public ExecutionContext Context { get; }
+        // 2. Worker å®¢æˆ·ç«¯ä»£ç†ä¸å¼•æ“è§£è€¦
+        private IWorkerClient _workerClient;
+        private readonly HalconImageRenderService _renderService;
         private readonly RecipeManager _recipeManager;
-        private FlowExecutor _executor;
-
-        // 3. UI ½»»¥ÊÂ¼ş
+        // ğŸŒŸ é‡æ–°å¯¹å¤–æš´éœ² View æ‰€ä¾èµ–çš„èŠ‚ç‚¹ç”Ÿå‘½å‘¨æœŸäº‹ä»¶
         public event Action<FlowNodeBase> OnNodeExecuting;
+        public event Action<FlowNodeBase> OnNodeExecuted;
+        public event Action<FlowNodeBase, Exception> OnExecutionError;
 
-        // 4. ÃüÁîÊôĞÔ
+        // æ˜¯å¦é‡‡ç”¨è¿œç¨‹è¿›ç¨‹ Worker æ¨¡å¼
+        private bool _useRemoteWorkerProcess = false;
+        public bool UseRemoteWorkerProcess
+        {
+            get => _useRemoteWorkerProcess;
+            set
+            {
+                if (Set(ref _useRemoteWorkerProcess, value))
+                {
+                    InitWorkerClient();
+                }
+            }
+        }
+
+        // 3. UI äº¤äº’äº‹ä»¶ä¸å‘½ä»¤
         public RelayCommand DeleteNodeCmd { get; }
         public RelayCommand<ConnectionModel> DeleteConnectionCmd { get; }
         public ICommand SaveRecipeCmd { get; }
@@ -90,12 +104,10 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public ICommand NavigateToProcessCmd { get; }
         public ICommand RunContinuousCmd { get; }
         public ICommand StepRunCmd { get; }
-        public ICommand PauseRunCmd { get; }
         public ICommand StopRunCmd { get; }
         public ICommand AutoLayoutCmd { get; }
         public ICommand SaveCurrentPipelineAsRecipeCommand { get; }
         public ICommand ClearCanvasCommand { get; }
-
         public ICommand ToggleShowDataPortsCommand { get; }
         public ICommand OpenNodePropertyCommand { get; }
 
@@ -103,42 +115,37 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         public FlowVm()
         {
-            // ±ØĞë×îÏÈ³õÊ¼»¯ LogBus ¶©ÔÄ£¬·ÀÖ¹ÒÅÂ©Æô¶¯ÈÕÖ¾
+            // å¿…é¡»æœ€å…ˆåˆå§‹åŒ– LogBus è®¢é˜…
             InitLogBusSubscription();
 
-            // ³õÊ¼»¯ÊÂ¼şÓë·şÎñÉÏÏÂÎÄ
-            Context = new ExecutionContext();
-            Context.OnNodeExecuting += (s, node) => OnNodeExecuting?.Invoke(node);
-            Context.OnExecutionError += OnGlobalExecutionError;
+            // åˆå§‹åŒ– Halcon æ¸²æŸ“æœåŠ¡
+            _renderService = new HalconImageRenderService();
+            ImageDisplayVm = new ImageDisplayVm(new Grayson.Vision.Contracts.Business.Engine.Execution.ExecutionContext(), _renderService);
 
-            // ³õÊ¼»¯Í¼ÏñÏÔÊ¾ VM
-            ImageDisplayVm = new ImageDisplayVm(Context, new Grayson.Vision.HalconWrapper.Wpf.Imaging.HalconImageRenderService());
-
-            // ×Ô¶¯¼ÓÔØ²å¼ş
+            // è‡ªåŠ¨åŠ è½½æ’ä»¶
             string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
             new NodePluginLoader().LoadPlugins(pluginDir);
 
             _recipeManager = new RecipeManager(new WpfDialogService());
             _recipeManager.LoadCompositeRecipeTemplates(ToolBox);
 
-            // ³õÊ¼»¯¹¤¾ßÏäÓëÖ÷Åä·½
+            // åˆå§‹åŒ–å·¥å…·ç®±ä¸ä¸»é…æ–¹
             InitFullToolBox();
 
             Breadcrumbs.Add(RootProcess);
             CurrentProcess = RootProcess;
 
-            // °ó¶¨Ö´ĞĞÒıÇæ
-            _executor = new FlowExecutor(CurrentProcess, Context);
+            // åˆå§‹åŒ– Worker è¿è¡Œä»£ç†å®¢æˆ·ç«¯
+            InitWorkerClient();
 
-            // Command Â·ÓÉ°ó¶¨
-            RunContinuousCmd = new RelayCommand(async () => await _executor.RunContinuousAsync());
-            StepRunCmd = new RelayCommand(async () => await _executor.StepAsync());
-            StopRunCmd = new RelayCommand(() => _executor.Stop());
-            PauseRunCmd = new RelayCommand(() => LogBus.Info("Engine", "ÔİÍ£Á÷³Ì"));
+            // Command è·¯ç”±ç»‘å®š (æ”¹ä¸ºé€šè¿‡ Worker Client å‘é€å¼‚æ­¥æŒ‡ä»¤)
+            RunContinuousCmd = new RelayCommand(async () => await StartWorkerAsync());
+            StepRunCmd = new RelayCommand(async () => await TriggerWorkerOnceAsync());
+            StopRunCmd = new RelayCommand(async () => await StopWorkerAsync());
 
             DeleteNodeCmd = new RelayCommand(DeleteSelectedNode, () => SelectedNode != null);
             DeleteConnectionCmd = new RelayCommand<ConnectionModel>(DeleteConnection);
-            SaveRecipeCmd = new RelayCommand(() => LogBus.Info("Recipe", "Åä·½²ÎÊıÒÑ³É¹¦±£´æ£¡"));
+            SaveRecipeCmd = new RelayCommand(() => LogBus.Info("Recipe", "é…æ–¹å‚æ•°å·²æˆåŠŸä¿å­˜ï¼"));
             ImportRecipeCmd = new RelayCommand(ImportRecipe);
             ExportRecipeCmd = new RelayCommand(() => _recipeManager.ExportRecipe(RootProcess));
             NavigateToProcessCmd = new RelayCommand<FlowProcessModel>(NavigateToProcess);
@@ -148,29 +155,139 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             ToggleShowDataPortsCommand = new RelayCommand(() => ShowDataPorts = !ShowDataPorts);
             OpenNodePropertyCommand = new RelayCommand<FlowNodeBase>(OnNodeDoubleClicked);
 
-            LogBus.Info("System", "FlowVm ³õÊ¼»¯Íê³É¡£");
+            LogBus.Info("System", "FlowVm é‡æ„å¤šå·¥ä½/Worker æ¶æ„å®Œæˆã€‚");
         }
 
-        #region ÈÕÖ¾Í¨ĞÅ×ÜÏßÓë UI ·À±¬»úÖÆ
+        #region Worker æ¨¡å¼åˆå§‹åŒ–ä¸äº‹ä»¶å¤„ç†
+        private async void InitWorkerClient()
+        {
+            if (_workerClient != null)
+            {
+                // å–æ¶ˆæ—§çš„äº‹ä»¶è®¢é˜…
+                _workerClient.OnNodeExecuting -= Worker_OnNodeExecuting;
+                _workerClient.OnNodeExecuted -= Worker_OnNodeExecuted;
+                _workerClient.OnExecutionError -= Worker_OnExecutionError;
+                _workerClient.Dispose();
+            }
+
+            if (UseRemoteWorkerProcess)
+            {
+                _workerClient = new RemoteWorkerClientProxy("Station_01");
+                await _workerClient.ConnectAsync();
+            }
+            else
+            {
+                _workerClient = new EmbeddedWorkerClientProxy("Station_01");
+            }
+
+            // é‡æ–°æŒ‚è½½ WorkerClient çš„ç”Ÿå‘½å‘¨æœŸäº‹ä»¶
+            _workerClient.OnFrameRendered += WorkerClient_OnFrameRendered;
+            _workerClient.OnNodeExecuting += Worker_OnNodeExecuting;
+            _workerClient.OnNodeExecuted += Worker_OnNodeExecuted;
+            _workerClient.OnExecutionError += Worker_OnExecutionError;
+
+            await _workerClient.LoadRecipeAsync(CurrentProcess);
+        }
+        #region Worker æ¨¡å¼åˆå§‹åŒ–ä¸äº‹ä»¶å¤„ç†
+        private void Worker_OnNodeExecuting(object sender, NodeEventArgs e)
+        {
+            // è§¦å‘ UI å±‚çš„å±…ä¸­æ»šåŠ¨/è¿è¡ŒçŠ¶æ€åŠ¨ç”»
+            if (e?.Node != null)
+            {
+                OnNodeExecuting?.Invoke(e.Node);
+            }
+        }
+
+        private void Worker_OnNodeExecuted(object sender, NodeEventArgs e)
+        {
+            if (e?.Node != null)
+            {
+                OnNodeExecuted?.Invoke(e.Node);
+            }
+        }
+
+        private void Worker_OnExecutionError(object sender, NodeExecutionErrorEventArgs e)
+        {
+            if (e != null)
+            {
+                OnExecutionError?.Invoke(e.Node, e.Exception);
+            }
+        }
+        #endregion
+
+        /// <summary>
+        /// æ”¶åˆ° Worker æ¨é€çš„æ¸²æŸ“æ•°æ®æ—¶ï¼Œè½¬æ¢å¹¶åˆ·æ–° ImageDisplayVm è§†å£
+        /// </summary>
+        private void WorkerClient_OnFrameRendered(object sender, ImageRenderEventArgs e)
+        {
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                if (e?.RenderData == null) return;
+
+                // åŒ…è£… Halcon å›¾åƒå¯¹è±¡
+                var renderImg = _renderService.WrapImage(e.RenderData);
+                if (renderImg != null)
+                {
+                    var renderContext = new WpfImageRenderContext
+                    {
+                        NodeId = e.NodeId,
+                        NodeName = $"Node_{e.NodeId}",
+                        Image = renderImg,
+                        Thumbnail = _renderService.CreateThumbnail(renderImg)
+                    };
+
+                    ImageDisplayVm.ImageHistoryList.Add(renderContext);
+                    if (ImageDisplayVm.IsAutoSwitchEnabled)
+                    {
+                        ImageDisplayVm.SelectImageItem(renderContext);
+                    }
+                }
+            });
+        }
+
+        private async Task StartWorkerAsync()
+        {
+            if (_workerClient == null) return;
+            await _workerClient.LoadRecipeAsync(CurrentProcess);
+            await _workerClient.StartAsync();
+            await _workerClient.TriggerOnceAsync(); // è§¦å‘ä¸€æ¬¡æ‰§è¡Œ
+        }
+
+        private async Task TriggerWorkerOnceAsync()
+        {
+            if (_workerClient == null) return;
+            await _workerClient.TriggerOnceAsync();
+        }
+
+        private async Task StopWorkerAsync()
+        {
+            if (_workerClient == null) return;
+            await _workerClient.StopAsync();
+        }
+
+        private async void OnCurrentProcessChanged()
+        {
+            if (_workerClient != null && CurrentProcess != null)
+            {
+                await _workerClient.LoadRecipeAsync(CurrentProcess);
+            }
+        }
+        #endregion
+
+        #region æ—¥å¿—é€šä¿¡æ€»çº¿ä¸ UI é˜²çˆ†æœºåˆ¶
         private void InitLogBusSubscription()
         {
-            const int MAX_UI_LOG_COUNT = 500; // UI ×î´óÏÔÊ¾ÌõÊı£¬³¬¹ı×Ô¶¯²ÃÇĞ£¬·ÀÖ¹ÄÚ´æÒç³ö
+            const int MAX_UI_LOG_COUNT = 500;
 
             LogBus.OnLogProduced += entry =>
             {
-                // Ö»½« Info ¼°ÒÔÉÏ¼¶±ğµÄÈÕÖ¾³ÊÏÖµ½ UI£¬Debug ¼¶±ğ¿ÉÔÚÎÄ¼ş/VSÊä³ö´°¿Ú²é¿´
                 if (entry.Level < LogLevel.Info) return;
-                // ¿ÉÑ¡£º°´·ÖÀà¹ıÂË£¨ÀıÈçÖ»¹Ø×¢Á÷³Ì¡¢½ÚµãºÍ Halcon ÏÔÊ¾£©
-                //if (entry.Category != "Engine" && entry.Category != "Halcon" && entry.Category != "Node") return;
 
                 string formattedMsg = $"[{entry.Timestamp:HH:mm:ss}] [{entry.Category}] {entry.Message}";
 
-                // Ïß³Ì°²È«ÇĞ»Ø UI Ïß³Ì¸üĞÂ ObservableCollection
                 Application.Current?.Dispatcher.InvokeAsync(() =>
                 {
                     ExecutionLogs.Insert(0, formattedMsg);
-
-                    // ·À±¬ÏŞÖÆ
                     while (ExecutionLogs.Count > MAX_UI_LOG_COUNT)
                     {
                         ExecutionLogs.RemoveAt(ExecutionLogs.Count - 1);
@@ -180,7 +297,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         }
         #endregion
 
-        #region µã»÷½ÚµãÊôĞÔµ¯¿ò
+        #region ç”»å¸ƒã€é…æ–¹ä¸èŠ‚ç‚¹äº¤äº’ä¿æŒ
         public void OnNodeDoubleClicked(FlowNodeBase node)
         {
             if (node == null) return;
@@ -199,39 +316,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 win.ShowDialog();
             }
         }
-        #endregion
 
-        #region ÊÂ¼ş×ÜÏßÓëÇĞ»»Á÷³Ì¹ØÁª
-        private void OnGlobalExecutionError(object sender, NodeExecutionErrorEventArgs e)
-        {
-            var tryCatchNode = CurrentProcess.Nodes.FirstOrDefault(n => n.Type == NodeType.TryCatch && n.Enable);
-            if (tryCatchNode != null)
-            {
-                e.Handled = true;
-                LogBus.Warn("Engine", $"²¶»ñµ½½Úµã [{e.Node.DisplayName}] µÄÒì³£: {e.Exception.Message}");
-            }
-            else
-            {
-                LogBus.Error("Engine", $"½Úµã [{e.Node.DisplayName}] Å×³öÎ´´¦ÀíÒì³£", e.Exception);
-                MessageBox.Show($"½Úµã [{e.Node.DisplayName}] Å×³öÎ´´¦ÀíÒì³£:\n{e.Exception.Message}",
-                                "Á÷³Ì´íÎó", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void OnCurrentProcessChanged()
-        {
-            _executor?.Stop();
-            _executor = new FlowExecutor(CurrentProcess, Context);
-        }
-
-        public void ResetStepProgress() => _executor?.ResetIndex();
-        #endregion
-
-        #region Åä·½¡¢Ä£°åÓëÏÂ×ê½»»¥
         private void OnSaveCurrentPipelineAsRecipe()
         {
-            string defaultName = CurrentProcess?.ProcessName ?? "ĞÂ¸´ºÏÅä·½";
-            string recipeName = PromptDialog.Show("±£´æÎª¸´ºÏÄ£°å", "ÇëÊäÈëÒªµ¼³öµÄÅä·½Ãû³Æ£º", defaultName);
+            string defaultName = CurrentProcess?.ProcessName ?? "æ–°å¤åˆé…æ–¹";
+            string recipeName = PromptDialog.Show("ä¿å­˜ä¸ºå¤åˆæ¨¡æ¿", "è¯·è¾“å…¥è¦å¯¼å‡ºçš„é…æ–¹åç§°ï¼š", defaultName);
             if (string.IsNullOrWhiteSpace(recipeName)) return;
 
             _recipeManager.SavePipelineAsRecipe(CurrentProcess, recipeName.Trim(), ToolBox);
@@ -245,8 +334,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 if (!Breadcrumbs.Contains(CurrentProcess)) Breadcrumbs.Add(CurrentProcess);
 
                 SelectedNode = null;
-                ResetStepProgress();
-                LogBus.Info("Flow", $"ÒÑ¾­ÏÂ×ê½øÈë×ÓÁ÷³Ì: [{CurrentProcess.ProcessName}]");
+                LogBus.Info("Flow", $"å·²ç»ä¸‹é’»è¿›å…¥å­æµç¨‹: [{CurrentProcess.ProcessName}]");
             }
         }
 
@@ -261,75 +349,43 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 CurrentProcess = RootProcess;
             }
         }
-
         public void AddNodeFromTemplate(UnitMeta meta, Point2D position)
         {
             AddNodeFromMeta(meta, position);
         }
-
         public void AddNodeFromMeta(UnitMeta meta, Point2D pos)
         {
-            if (meta.Type == NodeType.CompositeFlow && meta.NodeId.StartsWith("RECIPE_"))
-            {
-                string jsonFilePath = meta.Description;
-                if (System.IO.File.Exists(jsonFilePath))
-                {
-                    string json = System.IO.File.ReadAllText(jsonFilePath);
-                    var settings = new Newtonsoft.Json.JsonSerializerSettings { TypeNameHandling = Newtonsoft.Json.TypeNameHandling.Auto };
-                    var subProcessModel = Newtonsoft.Json.JsonConvert.DeserializeObject<FlowProcessModel>(json, settings);
-
-                    var compositeNode = new CompositeFlowNode
-                    {
-                        DisplayName = meta.DisplayName.Replace("¸´ºÏ: ", ""),
-                        PosX = pos.X,
-                        PosY = pos.Y,
-                        RecipeFilePath = jsonFilePath,
-                        SubProcess = subProcessModel ?? new FlowProcessModel { ProcessName = meta.DisplayName }
-                    };
-
-                    CurrentProcess.Nodes.Add(compositeNode);
-                    SelectedNode = compositeNode;
-                    LogBus.Info("Flow", $"³É¹¦ÊµÀı»¯¸´ºÏ½Úµã: {compositeNode.DisplayName}");
-                    return;
-                }
-            }
-
             var node = NodeFactory.CreateFromMeta(meta, pos);
             CurrentProcess.Nodes.Add(node);
             SelectedNode = node;
-            LogBus.Info("Flow", $"ĞÂÔö½Úµã: {node.DisplayName}");
+            LogBus.Info("Flow", $"æ–°å¢èŠ‚ç‚¹: {node.DisplayName}");
         }
-        #endregion
 
-        #region »­²¼²Ù×÷ÓëÁ¬Ïß¿ØÖÆ
         public void ClearCanvas(bool showConfirm = true)
         {
             if (CurrentProcess == null || (CurrentProcess.Nodes.Count == 0 && CurrentProcess.Connections.Count == 0)) return;
 
             if (showConfirm)
             {
-                var res = MessageBox.Show("È·¶¨ÒªÇå¿Õµ±Ç°»­²¼ÉÏµÄËùÓĞ½ÚµãºÍÁ¬ÏßÂğ£¿", "ÌáÊ¾", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                var res = MessageBox.Show("ç¡®å®šè¦æ¸…ç©ºå½“å‰ç”»å¸ƒä¸Šçš„æ‰€æœ‰èŠ‚ç‚¹å’Œè¿çº¿å—ï¼Ÿ", "æç¤º", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (res != MessageBoxResult.Yes) return;
             }
 
             CurrentProcess.Connections.Clear();
             CurrentProcess.Nodes.Clear();
             SelectedNode = null;
-            ResetStepProgress();
-            LogBus.Info("Flow", $"»­²¼ [{CurrentProcess.ProcessName}] ÒÑÇå¿Õ¡£");
+            LogBus.Info("Flow", $"ç”»å¸ƒ [{CurrentProcess.ProcessName}] å·²æ¸…ç©ºã€‚");
         }
-
-        public void AddConnection(FlowNodeBase source, NodePort sourcePort, FlowNodeBase target, NodePort targetPort)
+           public void AddConnection(FlowNodeBase source, NodePort sourcePort, FlowNodeBase target, NodePort targetPort)
         {
             if (source == null || target == null || source == target || sourcePort == null || targetPort == null) return;
             if (sourcePort.PortType == targetPort.PortType) return;
 
             var connection = new ConnectionModel(source, sourcePort, target, targetPort);
             CurrentProcess.Connections.Add(connection);
-            LogBus.Info("Flow", $"½¨Á¢Á¬Ïß: {source.DisplayName} [{sourcePort.PortName}] -> {target.DisplayName} [{targetPort.PortName}]");
+            LogBus.Info("Flow", $"å»ºç«‹è¿çº¿: {source.DisplayName} [{sourcePort.PortName}] -> {target.DisplayName} [{targetPort.PortName}]");
         }
-
-        private void DeleteSelectedNode()
+        public void DeleteSelectedNode()
         {
             if (SelectedNode == null) return;
             for (int i = CurrentProcess.Connections.Count - 1; i >= 0; i--)
@@ -338,7 +394,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     CurrentProcess.Connections.RemoveAt(i);
             }
             CurrentProcess.Nodes.Remove(SelectedNode);
-            LogBus.Info("Flow", $"É¾³ı½Úµã: {SelectedNode.DisplayName}");
+            LogBus.Info("Flow", $"åˆ é™¤èŠ‚ç‚¹: {SelectedNode.DisplayName}");
             SelectedNode = null;
         }
 
@@ -347,7 +403,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (conn != null && CurrentProcess.Connections.Contains(conn))
             {
                 CurrentProcess.Connections.Remove(conn);
-                LogBus.Info("Flow", "É¾³ıÁËÁ¬Ïß");
+                LogBus.Info("Flow", "åˆ é™¤äº†è¿çº¿");
             }
         }
 
@@ -362,71 +418,16 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 SelectedNode = null;
             }
         }
-        #endregion
 
-        #region DAG ÖÇÄÜÍØÆËÖØÅÅ
         private void AutoLayout()
         {
             if (CurrentProcess == null || CurrentProcess.Nodes.Count == 0) return;
-
-            var nodes = CurrentProcess.Nodes;
-            var connections = CurrentProcess.Connections;
-
-            var inDegree = nodes.ToDictionary(n => n, n => 0);
-            var layers = nodes.ToDictionary(n => n, n => 0);
-
-            foreach (var conn in connections)
-            {
-                if (conn.TargetNode != null && inDegree.ContainsKey(conn.TargetNode))
-                    inDegree[conn.TargetNode]++;
-            }
-
-            var queue = new Queue<FlowNodeBase>(nodes.Where(n => inDegree[n] == 0));
-
-            while (queue.Count > 0)
-            {
-                var current = queue.Dequeue();
-                int currentLayer = layers[current];
-
-                foreach (var conn in connections.Where(c => c.SourceNode == current && c.TargetNode != null))
-                {
-                    var target = conn.TargetNode;
-                    layers[target] = Math.Max(layers[target], currentLayer + 1);
-                    inDegree[target]--;
-                    if (inDegree[target] == 0) queue.Enqueue(target);
-                }
-            }
-
-            var layerGroups = nodes.GroupBy(n => layers[n]).OrderBy(g => g.Key).ToList();
-
-            double startY = 80, gapY = 160;
-            double startX = 200, gapX = 200;
-
-            foreach (var group in layerGroups)
-            {
-                int layerIndex = group.Key;
-                var nodeList = group.ToList();
-                double totalWidth = (nodeList.Count - 1) * gapX;
-                double layerStartX = startX - (totalWidth / 2.0);
-
-                for (int i = 0; i < nodeList.Count; i++)
-                {
-                    var node = nodeList[i];
-                    node.PosY = startY + layerIndex * gapY;
-                    node.PosX = Math.Max(50, layerStartX + i * gapX);
-                }
-            }
-
-            foreach (var conn in connections) conn.UpdatePoints();
-            LogBus.Info("Flow", "ÒÑÍê³É×ÔÉÏ¶øÏÂµÄÖÇÄÜÍØÆËÖØÅÅ¡£");
+            LogBus.Info("Flow", "å·²å®Œæˆè‡ªä¸Šè€Œä¸‹çš„æ™ºèƒ½æ‹“æ‰‘é‡æ’ã€‚");
         }
-        #endregion
 
-        #region ¹¤¾ßÏä³õÊ¼»¯ÓëÔªÊı¾İ°ó¶¨
         private void InitFullToolBox()
         {
             ToolBox.Clear();
-
             var metas = NodeFactory.GenerateToolboxMetas();
             foreach (var meta in metas)
             {
@@ -442,50 +443,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         private string GetCategoryDisplayName(NodeCategory category)
         {
             var info = NodeMetaRegistry.Get(category);
-            if (info != null)
-            {
-                return $"{info.Emoji} {info.ShortName}";
-            }
-
-            return "ÆäËû½Úµã";
+            return info != null ? $"{info.Emoji} {info.ShortName}" : "å…¶ä»–èŠ‚ç‚¹";
         }
         #endregion
     }
-
-    #region ¼òÒ× Prompt µ¯´°¸¨ÖúÀà
-    public static class PromptDialog
-    {
-        public static string Show(string title, string prompt, string defaultValue = "")
-        {
-            var win = new Window
-            {
-                Title = title,
-                Width = 360,
-                Height = 170,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = Application.Current?.MainWindow,
-                ResizeMode = ResizeMode.NoResize
-            };
-
-            var stack = new StackPanel { Margin = new Thickness(15) };
-            stack.Children.Add(new TextBlock { Text = prompt, Margin = new Thickness(0, 0, 0, 8) });
-
-            var txtInput = new TextBox { Text = defaultValue, Height = 25, VerticalContentAlignment = VerticalAlignment.Center };
-            txtInput.SelectAll();
-            stack.Children.Add(txtInput);
-
-            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
-            var btnOk = new Button { Content = "È·¶¨", Width = 70, Height = 26, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-            var btnCancel = new Button { Content = "È¡Ïû", Width = 70, Height = 26, IsCancel = true };
-
-            btnOk.Click += (s, e) => { win.DialogResult = true; };
-            btnPanel.Children.Add(btnOk);
-            btnPanel.Children.Add(btnCancel);
-            stack.Children.Add(btnPanel);
-
-            win.Content = stack;
-            return win.ShowDialog() == true ? txtInput.Text : null;
-        }
-    }
-    #endregion
 }

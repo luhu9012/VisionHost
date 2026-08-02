@@ -73,7 +73,9 @@ namespace Grayson.Vision.Contracts.Logging
 
                 try
                 {
-                    string fileName = Path.Combine(_logDirectory, $"Vision_{DateTime.Now:yyyy-MM-dd}.log");
+                    // 修改 FileLogSink.cs 中的文件名拼接逻辑
+                    string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+                    string fileName = Path.Combine(_logDirectory, $"{processName}_{DateTime.Now:yyyy-MM-dd}.log");
                     using (var writer = new StreamWriter(fileName, true, System.Text.Encoding.UTF8))
                     {
                         while (_queue.TryDequeue(out var entry))

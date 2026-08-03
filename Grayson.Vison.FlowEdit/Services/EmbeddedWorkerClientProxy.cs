@@ -20,6 +20,8 @@ namespace Grayson.Vison.FlowEdit.Services
 
         private readonly StationWorker _worker;
 
+        public StationState CurrentState => _worker?.State ?? StationState.Stopped;
+
         public event EventHandler<StationState> OnStateChanged;
         public event EventHandler<ImageRenderEventArgs> OnFrameRendered;
         public event EventHandler<string> OnLogReceived;
@@ -51,6 +53,8 @@ namespace Grayson.Vison.FlowEdit.Services
         public Task StartAsync() => Task.Run(() => _worker.StartAsync());
         public Task StopAsync() => Task.Run(() => _worker.StopAsync());
         public Task TriggerOnceAsync(string batchId = null) => Task.Run(() => _worker.TriggerOnceAsync(batchId));
+
+        public Task StepNodeAsync(FlowNodeBase node) => Task.Run(() => _worker.StepNodeAsync(node));
         public void Dispose() => _worker?.Dispose();
     }
 }

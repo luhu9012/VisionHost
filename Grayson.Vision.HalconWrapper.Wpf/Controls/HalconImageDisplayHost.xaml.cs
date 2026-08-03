@@ -1,4 +1,4 @@
-// Grayson.Vision.HalconWrapper.Wpf/Controls/HalconImageDisplayHost.xaml.cs
+
 using Grayson.Vision.Contracts.Imaging;
 using Grayson.Vision.Contracts.Logging;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
@@ -14,17 +14,18 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
     {
         private HWindow _hWindow;
         private readonly IImageRenderService _renderService;
+        private ImageDisplayVm _boundVm; // 保存绑定的 ViewModel 引用，便于解绑
 
         public bool IsReady => _hWindow != null;
         public event EventHandler<CursorPixelEventArgs> CursorPixelMoved;
 
         // 注册 RenderContext 依赖属性，支持 WPF 双向/单向绑定
         public static readonly DependencyProperty RenderContextProperty =
-        DependencyProperty.Register(
-         nameof(RenderContext),
-         typeof(ImageRenderContext),
-         typeof(HalconImageDisplayHost),
-         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnRenderContextChanged));
+            DependencyProperty.Register(
+                nameof(RenderContext),
+                typeof(ImageRenderContext),
+                typeof(HalconImageDisplayHost),
+                new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnRenderContextChanged));
 
         public ImageRenderContext RenderContext
         {
@@ -36,9 +37,47 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
         {
             InitializeComponent();
             _renderService = new HalconImageRenderService();
+
+            // 🌟 核心增加：监听 DataContext 变化，订阅 ViewModel 的 OnRequestRender 渲染委托
+            this.DataContextChanged += HalconImageDisplayHost_DataContextChanged;
         }
 
-        // 当绑定的 Context 发生变化时（例如用户切换图片或节点执行完），自动触发渲染
+        private void HalconImageDisplayHost_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            // 1. 解绑旧 ViewModel 的订阅，防止内存泄漏
+            if (_boundVm != null)
+            {
+                _boundVm.OnRequestRender -= HandleRequestRender;
+                LogBus.Debug("HalconHost", "已解绑旧 ImageDisplayVm.OnRequestRender 事件");
+                _boundVm = null;
+            }
+
+            // 2. 绑定新 ViewModel 的 OnRequestRender 事件
+            if (e.NewValue is ImageDisplayVm newVm)
+            {
+                _boundVm = newVm;
+                _boundVm.OnRequestRender += HandleRequestRender;
+                LogBus.Info("HalconHost", "成功订阅 ImageDisplayVm.OnRequestRender 事件！");
+
+                // 如果此时 ViewModel 已有激活图像，补刷一次
+                if (newVm.ActiveImageContext != null)
+                {
+                    HandleRequestRender(newVm.ActiveImageContext);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 响应 ImageDisplayVm 主动发起的 OnRequestRender 渲染通知
+        /// </summary>
+        private void HandleRequestRender(ImageRenderContext context)
+        {
+            if (context == null) return;
+            LogBus.Info("HalconHost", $"[OnRequestRender 响应] 收到渲染请求，节点: [{context.NodeName}]，图像尺寸: [{context.Image?.Width}x{context.Image?.Height}]");
+            Display(context);
+        }
+
+        // 当绑定的 Context 发生变化时（如切换不同节点），自动触发渲染
         private static void OnRenderContextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             if (d is HalconImageDisplayHost host)
@@ -55,55 +94,52 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             }
         }
 
+        private int _lastImageWidth = 0;
+        private int _lastImageHeight = 0;
+
         public void Display(ImageRenderContext context)
         {
-            if (_hWindow == null)
+            if (_hWindow == null || context?.Image == null)
             {
-                LogBus.Warn("HalconHost", "⚠️ Display 被调用，但 _hWindow 尚未初始化 (SmartWindow 还没完成 HInitWindow)！请求已暂存，等待窗口加载。");
-                return;
-            }
-            if (context == null)
-            {
-                LogBus.Warn("HalconHost", "⚠️ Display 被调用，但传入的 RenderContext 为 null！");
+                LogBus.Warn("HalconHost", $"[Display] 跳过渲染 - HWindow 已准备: {_hWindow != null}, Context/Image 是否为空: {context?.Image == null}");
                 return;
             }
 
-            // 切换到 WPF UI 线程执行 Halcon 渲染
             Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
-                    LogBus.Debug("HalconHost", $"▶ 开始执行 SmartWindow 主图渲染指令 | 节点: [{context.NodeName}]...");
-
-                    // 1. 调用渲染服务画图与叠加图元
+                    // 1. 执行 Halcon 内存图像绘制与 Overlays 叠加
                     _renderService.RenderToWindow(_hWindow, context.Image, context.Overlays);
+                    LogBus.Debug("HalconHost", $"[Display] 图像已成功 DispObj 到 HWindow (尺寸: {context.Image.Width}x{context.Image.Height})");
 
-                    // 2. 图像视口全图自适应（关键步骤：防止视口缩放全黑）
                     if (context.Image != null)
                     {
-                        _renderService.FitImageToWindow(_hWindow, context.Image);
+                        // 🌟 性能优化：仅在图像分辨率尺寸发生变化时，才重置视口
+                        if (_lastImageWidth != context.Image.Width || _lastImageHeight != context.Image.Height)
+                        {
+                            _renderService.FitImageToWindow(_hWindow, context.Image);
+                            SmartWindow?.SetFullImagePart();
 
-                        // 🌟 核心补充：触发 SmartWindow 的全图视图刷新（针对 HSmartWindowControlWPF 特有机制）
-                        SmartWindow?.SetFullImagePart();
-                        LogBus.Info("HalconHost", $"✔ [主图渲染成功] 图像尺寸: [{context.Image.Width} x {context.Image.Height}]，已适应 SmartWindow 视口。");
-                    }
-                    else
-                    {
-                        LogBus.Warn("HalconHost", "⚠️ context.Image 为 null，仅清屏未绘制主图。");
+                            _lastImageWidth = context.Image.Width;
+                            _lastImageHeight = context.Image.Height;
+                            LogBus.Info("HalconHost", $"[Display] 视口区域根据新图像尺寸 [{context.Image.Width}x{context.Image.Height}] 完成自适应调整。");
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    LogBus.Error("HalconHost", $"❌ 渲染主图到 SmartWindow 失败: {ex.Message}", ex);
+                    LogBus.Error("HalconHost", $"渲染主图失败: {ex.Message}", ex);
                 }
-            });
+            }, System.Windows.Threading.DispatcherPriority.Render); // 渲染级别 Dispatcher 响应
         }
 
         public void FitImage()
         {
-            if (_hWindow != null && RenderContext?.Image != null)
+            var activeContext = RenderContext ?? _boundVm?.ActiveImageContext;
+            if (_hWindow != null && activeContext?.Image != null)
             {
-                _renderService.FitImageToWindow(_hWindow, RenderContext.Image);
+                _renderService.FitImageToWindow(_hWindow, activeContext.Image);
                 SmartWindow?.SetFullImagePart();
                 LogBus.Debug("HalconHost", "手动触发了图像自适应窗口 (FitImage)。");
             }
@@ -117,11 +153,12 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
             LogBus.Info("HalconHost", "SmartWindow 句柄 HInitWindow 初始化完成！");
 
-            // 窗口加载完成时，如果已经有图片，立即补发绘制
-            if (RenderContext != null)
+            // 优先使用 RenderContext，无则使用 ViewModel 中的 ActiveImageContext
+            var currentContext = RenderContext ?? _boundVm?.ActiveImageContext;
+            if (currentContext != null)
             {
-                LogBus.Info("HalconHost", "窗口准备完毕，开始补发渲染之前已设置的 RenderContext...");
-                Display(RenderContext);
+                LogBus.Info("HalconHost", "窗口准备完毕，开始补发渲染当前 Context...");
+                Display(currentContext);
             }
             else
             {

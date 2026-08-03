@@ -62,8 +62,9 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
             NextImageCmd = new RelayCommand(SelectNextImage);
             SelectImageItemCmd = new RelayCommand<WpfImageRenderContext>(SelectImageItem);
 
-            _engineContext.OnNodeExecuted += EngineContext_OnNodeExecuted;
-            LogBus.Debug("ImageDisplay", "ImageDisplayVm 初始化完成，已挂载 OnNodeExecuted 监听。");
+            // 🌟 核心修改：移除 _engineContext.OnNodeExecuted 监听！
+            // 渲染完全统一交给 WorkerClient 的 OnFrameRendered 进行路由更新，避免双重渲染和重复包装
+            LogBus.Debug("ImageDisplay", "ImageDisplayVm 初始化完成。");
         }
 
         private void EngineContext_OnNodeExecuted(object sender, FlowNodeBase node)
@@ -191,8 +192,12 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
         {
             if (ActiveImageContext != null)
             {
-                LogBus.Debug("ImageDisplay", $"手动请求刷新 ActiveImageContext: {ActiveImageContext.NodeName}");
-                OnRequestRender?.Invoke(ActiveImageContext);
+                LogBus.Debug("ImageDisplay", $"手动/事件驱动刷新 ActiveImageContext: [{ActiveImageContext.NodeName}] (NodeId: {ActiveImageContext.NodeId})");
+                OnRequestRender?.Invoke(ActiveImageContext); // 触发主视图绘制
+            }
+            else
+            {
+                LogBus.Warn("ImageDisplay", "请求刷新 ActiveImageContext 但当前 ActiveImageContext 为 null");
             }
         }
 

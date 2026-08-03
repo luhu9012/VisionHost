@@ -3,7 +3,6 @@ using Grayson.Vision.Contracts.Business.Engine.Execution;
 using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Nodes.Common;
-using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,34 +17,59 @@ namespace Grayson.Vision.Nodes.All.ImageInput.ReadImageFile
 
         protected override async Task ExecuteCoreAsync(FlowNodeBase node, ReadImageFileParam param, NodeExecutionContext context, CancellationToken token)
         {
-            string targetPath = param.IsBatchFolder ? param.FolderPath : param.FilePath;
-            context.Log($"[图像读取] 开始读取路径: {targetPath}...");
-
             await Task.Yield();
 
-            if (!string.IsNullOrWhiteSpace(targetPath) && File.Exists(targetPath))
+            string targetFilePath = null;
+
+            if (param.IsBatchFolder)
             {
-                // 🌟 修复：直接将真实文件的路径作为输出，让 WrapImage 能成功 new HImage(filePath)
-                context.SetOutputValue(node, PORT_OUT_IMAGE, targetPath);
-                context.Log($"[图像读取] 读取成功: {Path.GetFileName(targetPath)}");
+                if (param.FileItems.Count == 0 && Directory.Exists(param.FolderPath))
+                {
+                    param.LoadFolderFiles();
+                }
+
+                if (param.FileItems.Count > 0)
+                {
+                    if (param.CurrentImageIndex < 0 || param.CurrentImageIndex >= param.FileItems.Count)
+                    {
+                        param.CurrentImageIndex = 0;
+                    }
+
+                    targetFilePath = param.FileItems[param.CurrentImageIndex];
+                    param.SelectedFilePath = targetFilePath;
+
+                    context.Log($"[图像读取] 批处理模式读取 [{param.CurrentImageIndex + 1}/{param.FileItems.Count}]: {Path.GetFileName(targetFilePath)}");
+
+                    // 结合 LoopFolder 递增指针
+                    if (param.LoopFolder)
+                    {
+                        param.CurrentImageIndex = (param.CurrentImageIndex + 1) % param.FileItems.Count;
+                    }
+                    else if (param.CurrentImageIndex < param.FileItems.Count - 1)
+                    {
+                        param.CurrentImageIndex++;
+                    }
+                }
+                else
+                {
+                    context.Log($"⚠️ [图像读取] 批处理文件夹内无有效图片: {param.FolderPath}");
+                }
             }
             else
             {
-                // 如果是文件夹模式，取文件夹内的第一张图片
-                if (param.IsBatchFolder && Directory.Exists(targetPath))
+                targetFilePath = param.FilePath;
+                if (!string.IsNullOrWhiteSpace(targetFilePath) && File.Exists(targetFilePath))
                 {
-                    var files = Directory.GetFiles(targetPath, "*.*", SearchOption.TopDirectoryOnly);
-                    if (files.Length > 0)
-                    {
-                        context.SetOutputValue(node, PORT_OUT_IMAGE, files[0]);
-                        context.Log($"[图像读取] 批处理文件夹加载成功: {Path.GetFileName(files[0])}");
-                        return;
-                    }
+                    context.Log($"[图像读取] 单图模式读取: {Path.GetFileName(targetFilePath)}");
                 }
-
-                context.SetOutputValue(node, PORT_OUT_IMAGE, null);
-                context.Log($"⚠️ [图像读取] 路径无效或文件不存在: '{targetPath}'");
+                else
+                {
+                    context.Log($"⚠️ [图像读取] 单图文件路径无效: {targetFilePath}");
+                    targetFilePath = null;
+                }
             }
+
+            context.SetOutputValue(node, PORT_OUT_IMAGE, targetFilePath);
         }
     }
 }

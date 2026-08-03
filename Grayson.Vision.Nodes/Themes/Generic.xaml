@@ -4,101 +4,41 @@
 
     <!-- 1. 全局节点通用 ValueConverter -->
     <cvts:InverseBoolConverter x:Key="InverseBoolConverter"/>
+    <cvts:EnumToIntConverter x:Key="EnumToIntConverter"/>
 
-    <!-- 1. 统一标题文本样式 -->
+    <!-- 2. 统一标题文本样式 -->
     <Style x:Key="NodeParamHeaderLabel" TargetType="TextBlock">
         <Setter Property="Foreground" Value="#AAAAAA"/>
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="Margin" Value="0,6,0,2"/>
     </Style>
 
-    <!-- 2. 统一输入框样式 -->
+    <!-- 3. 统一输入框样式 (包含禁用态处理) -->
     <Style x:Key="NodeParamInputStyle" TargetType="TextBox">
         <Setter Property="Background" Value="#2D2D30"/>
         <Setter Property="Foreground" Value="#FFFFFF"/>
         <Setter Property="BorderBrush" Value="#434346"/>
         <Setter Property="Padding" Value="5,3"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
-        <!-- 开启验证错误时的红框提示 -->
-        <Style.Triggers>
-            <Trigger Property="Validation.HasError" Value="True">
-                <Setter Property="BorderBrush" Value="#E74C3C"/>
-                <Setter Property="ToolTip" Value="{Binding (Validation.Errors)[0].ErrorContent, RelativeSource={RelativeSource Self}}"/>
-            </Trigger>
-        </Style.Triggers>
-    </Style>
-
-    <!-- 3. 统一深色下拉框 ComboBox 样式 -->
-    <Style x:Key="NodeParamComboBoxStyle" TargetType="ComboBox">
-        <Setter Property="Background" Value="#2D2D30"/>
-        <Setter Property="Foreground" Value="#FFFFFF"/>
-        <Setter Property="BorderBrush" Value="#434346"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="6,4"/>
-
-        <Setter Property="ItemContainerStyle">
-            <Setter.Value>
-                <Style TargetType="ComboBoxItem">
-                    <Setter Property="Background" Value="#2D2D30"/>
-                    <Setter Property="Foreground" Value="#FFFFFF"/>
-                    <Setter Property="Padding" Value="6,4"/>
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="ComboBoxItem">
-                                <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter />
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="#3E3E42"/>
-                                    </Trigger>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="#007ACC"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
-            </Setter.Value>
-        </Setter>
-
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="ComboBox">
-                    <Grid x:Name="MainGrid">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Border x:Name="BackgroundBorder" Grid.ColumnSpan="2"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="2"/>
-
-                        <ContentPresenter Grid.Column="0" Margin="{TemplateBinding Padding}"
-                                          HorizontalAlignment="Left" VerticalAlignment="Center"
-                                          Content="{TemplateBinding SelectionBoxItem}"
-                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
-
-                        <Path x:Name="ArrowPath" Grid.Column="1" Data="M 0 0 L 4 4 L 8 0 Z"
-                              Fill="#AAAAAA" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-
-                        <Popup x:Name="PART_Popup" AllowsTransparency="True" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom">
-                            <Border x:Name="DropDownBorder" MinWidth="{Binding ActualWidth, ElementName=MainGrid}"
-                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                    Background="#2D2D30" BorderBrush="#434346" BorderThickness="1">
-                                <ScrollViewer x:Name="DropDownScrollViewer">
-                                    <ItemsPresenter />
-                                </ScrollViewer>
-                            </Border>
-                        </Popup>
-                    </Grid>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="bd" 
+                            Background="{TemplateBinding Background}" 
+                            BorderBrush="{TemplateBinding BorderBrush}" 
+                            BorderThickness="{TemplateBinding BorderThickness}" 
+                            CornerRadius="2">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                    </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="BackgroundBorder" Property="Background" Value="#3E3E42"/>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="bd" Property="Background" Value="#1E1E1E"/>
+                            <Setter TargetName="bd" Property="BorderBrush" Value="#333337"/>
+                            <Setter Property="Foreground" Value="#6D6D6D"/>
+                        </Trigger>
+                        <Trigger Property="Validation.HasError" Value="True">
+                            <Setter TargetName="bd" Property="BorderBrush" Value="#E74C3C"/>
+                            <Setter Property="ToolTip" Value="{Binding (Validation.Errors)[0].ErrorContent, RelativeSource={RelativeSource Self}}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -106,5 +46,222 @@
         </Setter>
     </Style>
 
+    <!-- 4. 统一深色按钮样式 -->
+    <Style x:Key="NodeParamButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="#3E3E42"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#434346"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8,0"/>
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" 
+                            Background="{TemplateBinding Background}" 
+                            BorderBrush="{TemplateBinding BorderBrush}" 
+                            BorderThickness="{TemplateBinding BorderThickness}" 
+                            CornerRadius="2">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="#4E4E52"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="#007ACC"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="bd" Property="Background" Value="#252526"/>
+                            <Setter TargetName="bd" Property="BorderBrush" Value="#333337"/>
+                            <Setter Property="Foreground" Value="#555555"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
+    <!-- 5. 统一深色 ListBoxItem 样式（去除默认白色选中高亮） -->
+    <Style x:Key="NodeParamListBoxItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="#DCDCDC"/>
+        <Setter Property="Padding" Value="6,4"/>
+        <Setter Property="Margin" Value="1"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" 
+                            Background="{TemplateBinding Background}" 
+                            BorderBrush="{TemplateBinding BorderBrush}" 
+                            BorderThickness="{TemplateBinding BorderThickness}" 
+                            Padding="{TemplateBinding Padding}" 
+                            CornerRadius="2">
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#3E3E42"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#007ACC"/>
+                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="#555555"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 6. 统一深色 ListBox 容器样式 -->
+    <Style x:Key="NodeParamListBoxStyle" TargetType="ListBox">
+        <Setter Property="Background" Value="#252526"/>
+        <Setter Property="Foreground" Value="#FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#3F3F46"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource NodeParamListBoxItemStyle}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <Border x:Name="Bd" 
+                            Background="{TemplateBinding Background}" 
+                            BorderBrush="{TemplateBinding BorderBrush}" 
+                            BorderThickness="{TemplateBinding BorderThickness}" 
+                            CornerRadius="2">
+                        <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}">
+                            <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                        </ScrollViewer>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="#1E1E1E"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#333337"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 7. 统一深色下拉框 ComboBox 样式 -->
+    <Style x:Key="NodeParamComboBoxStyle" TargetType="{x:Type ComboBox}">
+        <Setter Property="Background" Value="#2A2A2B"/>
+        <Setter Property="Foreground" Value="#EEEEEE"/>
+        <Setter Property="BorderBrush" Value="#3F3F46"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="6,4"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ComboBox}">
+                    <Grid x:Name="MainGrid" SnapsToDevicePixels="True">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="20"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 背景和边框 -->
+                        <Border x:Name="Border" Grid.ColumnSpan="2" 
+                                Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="3"/>
+
+                        <!-- 当前选中文本渲染 -->
+                        <ContentPresenter Grid.Column="0" Margin="{TemplateBinding Padding}" 
+                                          IsHitTestVisible="False" 
+                                          HorizontalAlignment="Left" VerticalAlignment="Center" 
+                                          Content="{TemplateBinding SelectionBoxItem}" 
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+
+                        <!-- 下拉小箭头的 ToggleButton -->
+                        <ToggleButton Grid.ColumnSpan="2" 
+                                      Background="Transparent" 
+                                      BorderThickness="0" 
+                                      Focusable="False"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Style>
+                                <Style TargetType="{x:Type ToggleButton}">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                                <Border Background="Transparent">
+                                                    <Path x:Name="Arrow" Data="M 0 0 L 4 4 L 8 0 Z" 
+                                                          Fill="#888888" HorizontalAlignment="Right" 
+                                                          VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Arrow" Property="Fill" Value="#02C39A"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ToggleButton.Style>
+                        </ToggleButton>
+
+                        <!-- 下拉弹出窗体 (必须叫 PART_Popup) -->
+                        <Popup x:Name="PART_Popup" AllowsTransparency="True" Grid.ColumnSpan="2" 
+                               IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}" 
+                               Placement="Bottom" PopupAnimation="Slide">
+                            <Border x:Name="DropDownBorder" Background="#252526" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="2" MaxHeight="200" MinWidth="{TemplateBinding ActualWidth}">
+                                <ScrollViewer x:Name="DropDownScrollViewer">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- 8. 统一深色复选框 CheckBox 样式 (解决暗色模式下禁用白色高亮问题) -->
+    <Style x:Key="NodeParamCheckBoxStyle" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="#DCDCDC"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid x:Name="templateRoot" Background="Transparent" SnapsToDevicePixels="True">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="checkBoxBorder" Margin="0,0,6,0" Width="14" Height="14" 
+                            Background="#2D2D30" BorderBrush="#555555" BorderThickness="1" CornerRadius="2">
+                            <Path x:Name="optionMark" Data="M 2 6 L 5 9 L 11 3" Stroke="#007ACC" 
+                              StrokeThickness="2" Visibility="Collapsed"/>
+                        </Border>
+                        <ContentPresenter Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="optionMark" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="checkBoxBorder" Property="BorderBrush" Value="#007ACC"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="checkBoxBorder" Property="Background" Value="#1E1E1E"/>
+                            <Setter TargetName="checkBoxBorder" Property="BorderBrush" Value="#333337"/>
+                            <Setter TargetName="optionMark" Property="Stroke" Value="#555555"/>
+                            <Setter Property="Foreground" Value="#555555"/>
+                            <!-- 统一深灰色禁用颜色 -->
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

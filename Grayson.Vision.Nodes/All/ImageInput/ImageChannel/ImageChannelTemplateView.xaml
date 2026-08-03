@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:Grayson.Vision.Nodes.All.ImageInput.ImageChannel"
-             mc:Ignorable="d" d:DesignHeight="400" d:DesignWidth="300" Background="#1E1E1E">
+             mc:Ignorable="d" d:DesignHeight="200" d:DesignWidth="320" Background="#1E1E1E">
 
     <UserControl.Resources>
         <ResourceDictionary>
@@ -13,42 +13,35 @@
             </ResourceDictionary.MergedDictionaries>
 
             <DataTemplate DataType="{x:Type local:ImageChannelParam}">
-                <StackPanel Margin="8">
-                    <TextBlock Text="相机标识 (Cam Alias):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <TextBox Text="{Binding CameraAlias, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
+                <StackPanel Margin="10,6">
 
-                    <TextBlock Text="触发模式 (Trigger Mode):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <ComboBox SelectedValue="{Binding TriggerMode}" Style="{StaticResource NodeParamComboBoxStyle}">
-                        <ComboBoxItem Content="Software"/>
-                        <ComboBoxItem Content="Hardware"/>
-                        <ComboBoxItem Content="Continuous"/>
-                    </ComboBox>
+                    <!-- 色彩空间与提取通道配置 -->
+                    <Border Background="#252526" BorderBrush="#333337" BorderThickness="1" CornerRadius="4" Padding="8">
+                        <StackPanel>
+                            <TextBlock Text="色彩空间" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <ComboBox Style="{StaticResource NodeParamComboBoxStyle}"
+                                      SelectedIndex="{Binding ColorSpace, Mode=TwoWay, Converter={StaticResource EnumToIntConverter}}"
+                                      Margin="0,0,0,8">
+                                <ComboBoxItem Content="🔴 RGB 空间"/>
+                                <ComboBoxItem Content="🌈 HSV 空间"/>
+                            </ComboBox>
 
-                    <Grid Margin="0 8 0 0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0" Margin="0 0 4 0">
-                            <TextBlock Text="曝光时间 (us):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                            <TextBox Text="{Binding ExposureTime, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
+                            <TextBlock Text="提取通道" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <ComboBox Style="{StaticResource NodeParamComboBoxStyle}"
+                                      SelectedIndex="{Binding SelectedChannelIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="通道 1 ( R / H )"/>
+                                <ComboBoxItem Content="通道 2 ( G / S )"/>
+                                <ComboBoxItem Content="通道 3 ( B / V )"/>
+                            </ComboBox>
                         </StackPanel>
+                    </Border>
 
-                        <StackPanel Grid.Column="1" Margin="4 0 0 0">
-                            <TextBlock Text="增益 (Gain):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                            <TextBox Text="{Binding Gain, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <TextBlock Text="超时等待 (ms):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
                 </StackPanel>
             </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid d:DataContext="{d:DesignInstance Type=local:ImageChannelParam, IsDesignTimeCreatable=True}">
-        <ContentControl Content="{Binding}"/>
+        <ContentControl Content="{Binding}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
     </Grid>
 </UserControl>

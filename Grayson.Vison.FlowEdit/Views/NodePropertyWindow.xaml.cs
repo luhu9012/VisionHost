@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Grayson.Vison.FlowEdit.ViewModels;
 
 namespace Grayson.Vison.FlowEdit.Views
 {
@@ -19,6 +20,7 @@ namespace Grayson.Vison.FlowEdit.Views
     /// </summary>
     public partial class NodePropertyWindow : Window
     {
+        public FlowVm ParentFlowVm { get; set; }
         public NodePropertyWindow()
         {
             InitializeComponent();

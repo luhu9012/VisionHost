@@ -1,6 +1,6 @@
 ﻿using Grayson.Vision.Contracts.Business.Engine;
 using Grayson.Vision.Contracts.Business.Engine.Execution;
-using Grayson.Vision.Contracts.Business.Enums; 
+using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Business.Events;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vision.Contracts.Logging;
@@ -11,19 +11,27 @@ using System.Threading.Tasks;
 
 namespace Grayson.Vision.Core
 {
-    public class StationWorker : IStationWorkerHost, IStationWorkerEvents
+    /// <summary>
+    /// 工位核心 Worker (遵循 PackML 工业状态机)
+    /// </summary>
+    public class StationWorker : IStationWorkerHost, IStationWorkerEvents, IDisposable
     {
         public string StationId { get; }
+
+        /// <summary>
+        /// 工位当前状态
+        /// </summary>
         public StationState State { get; private set; } = StationState.Stopped;
 
-        // 🌟 新增：当前运行模式（默认为调试模式）
         public WorkMode Mode { get; set; } = WorkMode.Production;
 
         private readonly StationContext _stationContext;
         private FlowExecutor _executor;
         private FlowProcessModel _currentRecipe;
+        private readonly SemaphoreSlim _execLock = new SemaphoreSlim(1, 1); // 保证单步/连续触发的线程安全
 
-        // 🌟 用于控制“连续调试运行”的取消令牌
+        public ExecutionChain ActiveExecutionChain { get; private set; }
+
         private CancellationTokenSource _continuousLoopCts;
 
         #region 事件定义
@@ -49,82 +57,103 @@ namespace Grayson.Vision.Core
             }
         }
 
+        /// <summary>
+        /// 加载配方并初始化基于 ExecutionChain 的执行器
+        /// 🛡️ 工业级规范：不强抛致命异常，通过返回 Task&lt;bool&gt; 告知上层加载状态，确保 UI 能够正常启动
+        /// </summary>
+        /// <summary>
+        /// 加载配方并初始化基于 ExecutionChain 的执行器
+        /// 🛡️ 遵守 IStationWorkerHost 契约 ( Task LoadRecipeAsync )
+        /// </summary>
         public Task LoadRecipeAsync(FlowProcessModel recipe)
         {
-            _currentRecipe = recipe ?? throw new ArgumentNullException(nameof(recipe));
-            _executor = new FlowExecutor(_currentRecipe, _stationContext.GlobalEngineContext);
-            LogBus.Info("StationWorker", $"工位 [{StationId}] 成功加载配方: {_currentRecipe.ProcessName}");
+            if (recipe == null)
+            {
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 传入配方为空，回退为空白执行链。");
+                ActiveExecutionChain = new ExecutionChain();
+                _executor = new FlowExecutor(ActiveExecutionChain, _stationContext.GlobalEngineContext);
+                UpdateState(StationState.Stopped);
+                return Task.CompletedTask;
+            }
+
+            _currentRecipe = recipe;
+
+            // 构建/获取执行链
+            var buildResult = ExecutionChain.BuildAndValidate(_currentRecipe);
+            if (!buildResult.IsSuccess)
+            {
+                // 🛡️ 防暴关键：不抛 Exception，仅记录错误并将工位标记为 Faulted
+                LogBus.Error("StationWorker", $"工位 [{StationId}] 加载配方 [{_currentRecipe.ProcessName}] 校验未通过：{buildResult.ErrorMessage}");
+
+                // 依然保留已构建的部分链或空链，保障 UI 能够渲染错误节点
+                ActiveExecutionChain = buildResult.Chain ?? new ExecutionChain();
+                _executor = new FlowExecutor(ActiveExecutionChain, _stationContext.GlobalEngineContext);
+
+                // 标记为 Faulted，告知上层加载配方失败
+                UpdateState(StationState.Faulted);
+                return Task.CompletedTask;
+            }
+
+            ActiveExecutionChain = buildResult.Chain;
+            _executor = new FlowExecutor(ActiveExecutionChain, _stationContext.GlobalEngineContext);
+
+            // 配方就绪，进入待机/就绪状态
+            UpdateState(StationState.Idle); // 或根据你的枚举调整为可运行状态
+            LogBus.Info("StationWorker", $"工位 [{StationId}] 成功加载配方并就绪执行链: {_currentRecipe.ProcessName}");
+
             return Task.CompletedTask;
         }
-
-        /// <summary>
-        /// 启动工位 (开启连续模式或进入就绪状态)
-        /// </summary>
-        public Task StartAsync()
+        public async Task StartAsync()
         {
-            if (_executor == null)
-                throw new InvalidOperationException($"工位 [{StationId}] 未加载配方，无法启动！");
+            if (_executor == null || ActiveExecutionChain == null || ActiveExecutionChain.Count == 0)
+            {
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 缺乏有效执行链，无法启动。");
+                return;
+            }
 
-            if (State == StationState.Running) return Task.CompletedTask;
+            if (State == StationState.Running) return;
 
             UpdateState(StationState.Running);
             LogBus.Info("StationWorker", $"工位 [{StationId}] 已启动 (模式: {Mode})。");
 
-            // 🌟 如果在调试模式下点击连续运行，自动开启后台软循环节拍
             if (Mode == WorkMode.Debug)
             {
                 _continuousLoopCts = new CancellationTokenSource();
-                Task.Run(() => StartDebugContinuousLoopAsync(_continuousLoopCts.Token));
+                _ = Task.Run(() => StartDebugContinuousLoopAsync(_continuousLoopCts.Token));
             }
-            else
-            {
-                // 产线模式：开启硬件/相机 Trigger 监听句柄 (如有)
-            }
-
-            return Task.CompletedTask;
+            await Task.CompletedTask;
         }
 
-        /// <summary>
-        /// 停止工位
-        /// </summary>
-        public Task StopAsync()
+        public async Task StopAsync()
         {
-            // 取消调试连续循环
             _continuousLoopCts?.Cancel();
             _continuousLoopCts?.Dispose();
             _continuousLoopCts = null;
 
             _executor?.Stop();
-            UpdateState(StationState.Stopped);
+
+            // 如果配方有效切回 Idle，无配方切为 Stopped
+            UpdateState(ActiveExecutionChain?.Count > 0 ? StationState.Idle : StationState.Stopped);
             LogBus.Info("StationWorker", $"工位 [{StationId}] 已停止。");
-            return Task.CompletedTask;
+            await Task.CompletedTask;
         }
 
         /// <summary>
-        /// 单次/单步触发 (兼容调试模式下的强行单步测试)
+        /// 单次触发（单步或单帧执行）
         /// </summary>
         public async Task TriggerOnceAsync(string batchId = null)
         {
-            if (_executor == null)
+            if (_executor == null || ActiveExecutionChain == null || ActiveExecutionChain.Count == 0)
             {
-                LogBus.Error("StationWorker", $"工位 [{StationId}] 未加载配方，无法触发。");
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 未加载有效配方，忽略触发。");
                 return;
             }
 
-            // 🌟 状态守护兼容：如果是 Debug 模式且当前 Stopped，允许单次临时放行
-            bool tempStarted = false;
-            if (State == StationState.Stopped)
+            // 锁保护：防止重入导致的线程竞争
+            if (!await _execLock.WaitAsync(0))
             {
-                if (Mode == WorkMode.Debug)
-                {
-                    LogBus.Info("StationWorker", $"调试模式下响应单步触发，临时启动执行...");
-                    tempStarted = true;
-                }
-                else
-                {
-                    LogBus.Warn("StationWorker", $"产线模式下工位未处于 Running 状态，拒绝触发。");
-                    return;
-                }
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 正在执行中，忽略重复触发信号。");
+                return;
             }
 
             try
@@ -136,21 +165,65 @@ namespace Grayson.Vision.Core
                     _stationContext.ResolveDevice
                 );
 
-                await _executor.RunContinuousAsync();
+                await _executor.StepAsync();
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("StationWorker", $"工位 [{StationId}] 触发单次运行失败: {ex.Message}", ex);
             }
             finally
             {
-                // 临时触发完毕恢复状态
-                if (tempStarted && State == StationState.Running)
+                _execLock.Release();
+            }
+        }
+        /// <summary>
+        /// 仅单步执行指定的单个节点（适用于节点属性弹窗调试）
+        /// </summary>
+        public async Task StepNodeAsync(FlowNodeBase node)
+        {
+            if (node == null) return;
+
+            if (!await _execLock.WaitAsync(0))
+            {
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 正在执行中，忽略重复触发信号。");
+                return;
+            }
+
+            try
+            {
+                var cycleContext = new FrameCycleContext { BatchId = Guid.NewGuid().ToString("N") };
+                var nodeExecContext = new NodeExecutionContext(
+                    _stationContext.GlobalEngineContext,
+                    cycleContext,
+                    _stationContext.ResolveDevice
+                );
+
+                // 如果 FlowExecutor 支持单节点执行，可以直接调用 executor.ExecuteNodeAsync(node, nodeExecContext)
+                // 或者是单节点 Executor 的实例化运行：
+                LogBus.Info("StationWorker", $"调试单步运行节点: {node.DisplayName} ({node.NodeId})");
+
+                // 触发节点开始/结束事件，以供 UI 渲染和日志收集
+                _stationContext.GlobalEngineContext?.NotifyNodeExecuting(node);
+
+                // 获取/创建对应的 NodeExecutor 并执行
+                var executor = node.Executor;
+                if (executor != null)
                 {
-                    UpdateState(StationState.Stopped);
+                    await executor.ExecuteAsync(node, nodeExecContext, CancellationToken.None);
                 }
+
+                _stationContext.GlobalEngineContext?.NotifyNodeExecuted(node);
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("StationWorker", $"节点 [{node.DisplayName}] 单步运行失败: {ex.Message}", ex);
+            }
+            finally
+            {
+                _execLock.Release();
             }
         }
 
-        /// <summary>
-        /// 🌟 调试模式下的连续软触发循环线程
-        /// </summary>
         private async Task StartDebugContinuousLoopAsync(CancellationToken token)
         {
             LogBus.Info("StationWorker", $"进入调试连续运行循环...");
@@ -159,8 +232,7 @@ namespace Grayson.Vision.Core
                 try
                 {
                     await TriggerOnceAsync();
-                    // 调试模式下连续运行添加适量间隔 (如 50ms)，防止 CPU 占满卡死 UI
-                    await Task.Delay(50, token);
+                    await Task.Delay(50, token); // 工业连续调试微小间隔
                 }
                 catch (TaskCanceledException)
                 {
@@ -185,7 +257,10 @@ namespace Grayson.Vision.Core
         {
             OnNodeExecuted?.Invoke(this, new NodeEventArgs(StationId, node));
 
-            var imagePort = node.OutputPorts?.FirstOrDefault(p => p.DataType == "Image" || (p.PortName != null && p.PortName.Contains("Image")));
+            // 推送渲染事件
+            var imagePort = node.OutputPorts?.FirstOrDefault(p =>
+                p.DataType == "Image" || (p.PortName != null && p.PortName.IndexOf("Image", StringComparison.OrdinalIgnoreCase) >= 0));
+
             if (imagePort?.DataValue != null)
             {
                 OnFrameRendered?.Invoke(this, new ImageRenderEventArgs
@@ -204,13 +279,17 @@ namespace Grayson.Vision.Core
 
         private void UpdateState(StationState newState)
         {
+            if (State == newState) return;
             State = newState;
             OnStateChanged?.Invoke(this, State);
         }
 
         public void Dispose()
         {
-            StopAsync().Wait();
+            _continuousLoopCts?.Cancel();
+            _continuousLoopCts?.Dispose();
+            _execLock?.Dispose();
+
             if (_stationContext?.GlobalEngineContext != null)
             {
                 _stationContext.GlobalEngineContext.OnNodeExecuting -= Engine_OnNodeExecuting;

@@ -90,7 +90,6 @@
     <Compile Include="Services\LayoutService.cs" />
     <Compile Include="Services\NodePluginLoader.cs" />
     <Compile Include="Services\RemoteWorkerClientProxy.cs" />
-    <Compile Include="ViewModels\FlowVm - 复制.cs" />
     <Compile Include="ViewModels\FlowVm.cs" />
     <Compile Include="Views\FlowEditView.xaml.cs">
       <DependentUpon>FlowEditView.xaml</DependentUpon>

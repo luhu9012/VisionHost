@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:Grayson.Vision.Nodes.All.ImageInput.ReadImageFile"
-             mc:Ignorable="d" d:DesignHeight="400" d:DesignWidth="300" Background="#1E1E1E">
+             mc:Ignorable="d" d:DesignHeight="480" d:DesignWidth="320" Background="#1E1E1E">
 
     <UserControl.Resources>
         <ResourceDictionary>
@@ -13,68 +13,112 @@
             </ResourceDictionary.MergedDictionaries>
 
             <DataTemplate DataType="{x:Type local:ReadImageFileParam}">
-                <StackPanel Margin="8">
-                    <!-- 模式切换 -->
-                    <CheckBox Content="批处理文件夹模式" 
-                              IsChecked="{Binding IsBatchFolder}" 
-                              Foreground="White" 
-                              Margin="0 4 0 10"/>
+                <StackPanel Margin="10,6">
 
-                    <!-- 1. 单文件路径选择区 -->
-                    <TextBlock Text="单图文件路径:" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <Grid Margin="0 2 0 8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                    <!-- 1. 工业级分段模式切换卡 -->
+                    <Border Background="#252526" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="4" Padding="2" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                        <TextBox Grid.Column="0" 
-                                 Text="{Binding FilePath, UpdateSourceTrigger=PropertyChanged}" 
-                                 IsEnabled="{Binding IsBatchFolder, Converter={StaticResource InverseBoolConverter}}"
-                                 Style="{StaticResource NodeParamInputStyle}"/>
+                            <RadioButton Grid.Column="0" Content="📄 静态单图" 
+                                         Height="26"
+                                         IsChecked="{Binding IsBatchFolder, Converter={StaticResource InverseBoolConverter}, Mode=TwoWay}"
+                                         Style="{StaticResource {x:Type ToggleButton}}" 
+                                         Background="Transparent" Foreground="#AAAAAA"
+                                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                         BorderThickness="0"/>
 
-                        <Button Grid.Column="1" 
-                                Content="📁 浏览..." 
-                                Margin="4 0 0 0" 
-                                Padding="8 0" 
-                                Height="26"
-                                Background="#3E3E42" 
-                                Foreground="White" 
-                                BorderThickness="0"
-                                IsEnabled="{Binding IsBatchFolder, Converter={StaticResource InverseBoolConverter}}"
-                                Click="BtnBrowseFile_Click"/>
-                    </Grid>
+                            <RadioButton Grid.Column="1" Content="📁 批处理文件夹" 
+                                         Height="26"
+                                         IsChecked="{Binding IsBatchFolder, Mode=TwoWay}"
+                                         Style="{StaticResource {x:Type ToggleButton}}" 
+                                         Background="Transparent" Foreground="#AAAAAA"
+                                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                         BorderThickness="0"/>
+                        </Grid>
+                    </Border>
 
-                    <!-- 2. 文件夹路径选择区 -->
-                    <TextBlock Text="批处理文件夹路径:" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <Grid Margin="0 2 0 8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                    <!-- 2. 单文件路径选择卡片 -->
+                    <Border Background="#252526" BorderBrush="#333337" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="图像文件路径" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                        <TextBox Grid.Column="0" 
-                                 Text="{Binding FolderPath, UpdateSourceTrigger=PropertyChanged}" 
-                                 IsEnabled="{Binding IsBatchFolder}"
-                                 Style="{StaticResource NodeParamInputStyle}"/>
+                                <TextBox Grid.Column="0" 
+                                         Text="{Binding FilePath, UpdateSourceTrigger=PropertyChanged}" 
+                                         IsEnabled="{Binding IsBatchFolder, Converter={StaticResource InverseBoolConverter}}"
+                                         Style="{StaticResource NodeParamInputStyle}"/>
 
-                        <Button Grid.Column="1" 
-                                Content="📂 浏览..." 
-                                Margin="4 0 0 0" 
-                                Padding="8 0" 
-                                Height="26"
-                                Background="#3E3E42" 
-                                Foreground="White" 
-                                BorderThickness="0"
-                                IsEnabled="{Binding IsBatchFolder}"
-                                Click="BtnBrowseFolder_Click"/>
-                    </Grid>
+                                <!-- 🌟 替换 Click 为 Command 绑定 -->
+                                <Button Grid.Column="1" 
+                                        Content="浏览..." 
+                                        Margin="4,0,0,0" 
+                                        Style="{StaticResource NodeParamButtonStyle}"
+                                        IsEnabled="{Binding IsBatchFolder, Converter={StaticResource InverseBoolConverter}}"
+                                        Command="{Binding BrowseFileCommand}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 3. 批处理文件夹卡片 -->
+                    <Border Background="#252526" BorderBrush="#333337" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="批处理文件夹" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Grid.Column="0" 
+                                         Text="{Binding FolderPath, UpdateSourceTrigger=PropertyChanged}" 
+                                         IsEnabled="{Binding IsBatchFolder}"
+                                         Style="{StaticResource NodeParamInputStyle}"/>
+
+                                <!-- 🌟 替换 Click 为 Command 绑定 -->
+                                <Button Grid.Column="1" 
+                                        Content="目录..." 
+                                        Margin="4,0,0,0" 
+                                        Style="{StaticResource NodeParamButtonStyle}"
+                                        IsEnabled="{Binding IsBatchFolder}"
+                                        Command="{Binding BrowseFolderCommand}"/>
+                            </Grid>
+
+                            <TextBlock Text="文件夹包含图片" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,2,0,2"/>
+                            <ListBox Height="120"
+                                     ItemsSource="{Binding FileItems}"
+                                     SelectedIndex="{Binding CurrentImageIndex, Mode=TwoWay}"
+                                     IsEnabled="{Binding IsBatchFolder}"
+                                     Style="{StaticResource NodeParamListBoxStyle}"
+                                     SelectionChanged="LstFiles_SelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" ToolTip="{Binding}" FontSize="11" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <CheckBox Content="自动循环播放文件夹列表" 
+                                      IsChecked="{Binding LoopFolder}" 
+                                      IsEnabled="{Binding IsBatchFolder}"
+                                      Style="{StaticResource NodeParamCheckBoxStyle}"
+                                      Margin="0,8,0,2"/>
+                        </StackPanel>
+                    </Border>
+
                 </StackPanel>
             </DataTemplate>
         </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid d:DataContext="{d:DesignInstance Type=local:ReadImageFileParam, IsDesignTimeCreatable=True}">
-        <ContentControl Content="{Binding}"/>
+        <ContentControl Content="{Binding}" Focusable="False" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
     </Grid>
 </UserControl>

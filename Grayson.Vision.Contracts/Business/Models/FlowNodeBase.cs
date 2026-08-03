@@ -14,9 +14,14 @@ namespace Grayson.Vision.Contracts.Business.Models
     /// </summary>
     public abstract class FlowNodeBase : ViewModelBase
     {
-        private string _nodeId = Guid.NewGuid().ToString("N");
+        private string _nodeId;
+        public string NodeId
+        {
+            get => string.IsNullOrEmpty(_nodeId) ? Guid.NewGuid().ToString("N") : _nodeId;
+            set => Set(ref _nodeId, value);
+        }
         // 节点全局唯一 ID，配方序列化标识节点
-        public string NodeId { get => _nodeId; set => Set(ref _nodeId, value); }
+
         // 节点全局唯一 ID，配方序列化标识节点
         public string Id
         {
@@ -115,6 +120,16 @@ namespace Grayson.Vision.Contracts.Business.Models
         /// 或者保存执行器的 Type (便于延迟加载)
         /// </summary>
         public Type ExecutorType { get; set; }
+
+        private bool _hasError;
+        /// <summary>
+        /// 节点是否处于报错状态（用于驱动 UI 标红）
+        /// </summary>
+        public bool HasError
+        {
+            get => _hasError;
+            set => Set(ref _hasError, value); // 🌟 触发 UI 绑定更新
+        }
 
     }
 }

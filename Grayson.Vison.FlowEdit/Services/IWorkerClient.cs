@@ -16,6 +16,11 @@ namespace Grayson.Vison.FlowEdit.Services
         string StationId { get; }
         bool IsConnected { get; }
 
+        /// <summary>
+        /// 客户端代理当前记录的工位状态
+        /// </summary>
+        StationState CurrentState { get; }
+
         Task<bool> ConnectAsync();
         Task LoadRecipeAsync(FlowProcessModel recipe);
         Task StartAsync();

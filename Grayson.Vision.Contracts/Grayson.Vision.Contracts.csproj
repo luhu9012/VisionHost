@@ -64,6 +64,7 @@
   <ItemGroup>
     <Compile Include="Business\Attributes\NodeFieldMetaAttribute.cs" />
     <Compile Include="Business\Attributes\NodePortAttribute.cs" />
+    <Compile Include="Business\Engine\Execution\ExecutionChain.cs" />
     <Compile Include="Business\Engine\Execution\ExecutionContext.cs" />
     <Compile Include="Business\Engine\Execution\FlowExecutor.cs" />
     <Compile Include="Business\Engine\Execution\FrameCycleContext.cs" />
@@ -81,6 +82,9 @@
     <Compile Include="Business\Models\FlowNode.cs" />
     <Compile Include="Business\Models\FlowNodeBase.cs" />
     <Compile Include="Business\Attributes\NodeAttribute.cs" />
+    <Compile Include="Recipe\DTOs\DTOs.cs" />
+    <Compile Include="Recipe\DTOs\RecipeConverter.cs" />
+    <Compile Include="Recipe\RecipeModel.cs" />
     <Compile Include="Core\Pose3D.cs" />
     <Compile Include="Core\Result.cs" />
     <Compile Include="Devices\ICamera.cs" />

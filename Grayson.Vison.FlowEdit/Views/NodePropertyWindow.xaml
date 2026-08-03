@@ -107,7 +107,7 @@
 
         <!-- 4. 底部按钮栏 -->
         <DockPanel Grid.Row="3" Margin="0 10 0 0">
-            <Button Content="▶ 单步运行该节点" Command="{Binding TestRunNodeCmd}" Background="#02C39A" Foreground="White" Padding="10 4" BorderThickness="0" DockPanel.Dock="Left" ToolTip="执行当前节点并刷新主界面右侧图像"/>
+            <Button Content="▶ 运行该节点" Command="{Binding ParentFlowVm.StepRunNodeCmd, RelativeSource={RelativeSource AncestorType=Window}}"  Background="#02C39A" Foreground="White" Padding="10 4" BorderThickness="0" DockPanel.Dock="Left" ToolTip="执行当前节点并刷新主界面右侧图像"/>
 
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
                 <Button Content="确定" Width="75" Height="28" Background="#2563EB" Foreground="White" BorderThickness="0" Margin="0 0 8 0" Click="BtnOk_Click"/>

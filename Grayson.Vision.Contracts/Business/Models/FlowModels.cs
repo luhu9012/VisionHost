@@ -24,7 +24,14 @@ namespace Grayson.Vision.Contracts.Business.Models
 
     public class NodePort : ViewModelBase
     {
-        public string PortId { get; set; } = Guid.NewGuid().ToString("N");
+        // 🌟 改为默认以 PortName 或固定 Key 作为 ID
+        // 🌟 保证 PortId 只要初始化一次就不会在 get 中反复变动
+        private string _portId = Guid.NewGuid().ToString("N");
+        public string PortId
+        {
+            get => _portId;
+            set => Set(ref _portId, value);
+        }
         public string PortName { get; set; }        // 端口显示的名称 (如 "In", "OK", "NG", "Pass", "Fail")
         public PortType PortType { get; set; }     // 输入还是输出
         public ConnectorType Connector { get; set; }// 端口对应的连接语义
@@ -90,7 +97,13 @@ namespace Grayson.Vision.Contracts.Business.Models
     /// </summary>
     public class FlowProcessModel : ViewModelBase
     {
-        public string ProcessId { get; set; } = Guid.NewGuid().ToString("N");
+        // 🌟 改为默认 或固定 Key 作为 ID
+        private string _processId= Guid.NewGuid().ToString("N");
+        public string ProcessId
+        {
+            get => _processId;
+            set => _processId = value;
+        }
         public string ProcessName { get; set; } = "主流程";
 
         public ObservableCollection<FlowNodeBase> Nodes { get; set; } = new ObservableCollection<FlowNodeBase>();
@@ -103,8 +116,14 @@ namespace Grayson.Vision.Contracts.Business.Models
 
     public class ConnectionModel : ViewModelBase
     {
-        // 连线唯一ID
-        public string ConnectionId { get; set; } = Guid.NewGuid().ToString("N");
+
+        // 🌟 改为默认 或固定 Key 作为 ID
+        private string _connectionId = Guid.NewGuid().ToString("N");
+        public string ConnectionId
+        {
+            get =>  _connectionId;
+            set => _connectionId = value;
+        }
         // 连线起点节点
         public FlowNodeBase SourceNode { get; set; }
         // 连线起点端口类型
@@ -201,6 +220,44 @@ namespace Grayson.Vision.Contracts.Business.Models
         // 🌟 新增：动态获取目标端口对象
         public NodePort TargetPort => TargetNode?.InputPorts.Concat(TargetNode.OutputPorts)
                                                 .FirstOrDefault(p => p.PortId == TargetPortId);
+
+        /// <summary>
+        /// 🌟 新增：显式绑定节点位置监听事件，并即刻刷新连线两端坐标
+        /// </summary>
+        public void BindAndUpdate()
+        {
+            if (SourceNode == null || TargetNode == null) return;
+
+            // 1. 尝试从节点端口列表中匹配最新的端口对象并刷新 Relative 偏移
+            var sPort = SourcePort;
+            if (sPort != null)
+            {
+                SourceRelativeX = sPort.RelativeX;
+                SourceRelativeY = sPort.RelativeY;
+            }
+
+            var tPort = TargetPort;
+            if (tPort != null)
+            {
+                TargetRelativeX = tPort.RelativeX;
+                TargetRelativeY = tPort.RelativeY;
+            }
+
+            // 2. 解绑防重复，再重新绑定节点移动事件
+            SourceNode.OnPositionChanged -= OnNodePositionChanged;
+            TargetNode.OnPositionChanged -= OnNodePositionChanged;
+
+            SourceNode.OnPositionChanged += OnNodePositionChanged;
+            TargetNode.OnPositionChanged += OnNodePositionChanged;
+
+            // 3. 立刻刷新端点坐标
+            UpdatePoints();
+        }
+
+        private void OnNodePositionChanged(object sender, EventArgs e)
+        {
+            UpdatePoints();
+        }
     }
            
     public class SharedDataItem : ViewModelBase

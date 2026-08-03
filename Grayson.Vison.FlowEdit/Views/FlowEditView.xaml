@@ -23,8 +23,25 @@
             <cvts:ConnectionThicknessConv x:Key="ConnectionThicknessConv"/>
             <cvts:ConnectionDashConv x:Key="ConnectionDashConv"/>
             <cvts:BoolToBrushConverter x:Key="BoolToBrushConverter"/>
-            <cvts:BoolToTextConverter x:Key="BoolToTextConverter"/>    
+            <cvts:BoolToTextConverter x:Key="BoolToTextConverter"/>
+
+            <Style x:Key="ToolBarBtnStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="#DCDCDC"/>
+                <Setter Property="Padding" Value="8 4"/>
+                <Setter Property="Margin" Value="2 0"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#3E3E42"/>
+                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
+        
     </UserControl.Resources>
 
     <UserControl.DataContext>
@@ -38,49 +55,90 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 顶部控制栏 -->
-        <Border Background="#2D2D30" Padding="8 0">
+        <!-- 顶部控制栏 (精细化工业风) -->
+        <Border Background="#1E1E1E" BorderBrush="#3F3F46" BorderThickness="0 0 0 1" Padding="12 0">
             <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                    <TextBlock Text="工业视觉流程编排器 (全量23节点)" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" Margin="0 0 15 0"/>
-                    <!-- 🌟 新增：模式切换 Toggle 按钮 -->
-                    <Border Background="#1E1E1E" CornerRadius="4" Padding="6 2" Margin="0 0 10 0" VerticalAlignment="Center">
-                        <CheckBox IsChecked="{Binding UseRemoteWorkerProcess, Mode=TwoWay}" 
-                                  Foreground="White" VerticalAlignment="Center" Cursor="Hand"
-                                  ToolTip="勾选：切换为 Worker 独立进程运行(IPC模式)；取消勾选：嵌入式后台线程运行">
-                            <TextBlock Text="{Binding UseRemoteWorkerProcess, Converter={StaticResource BoolToTextConverter}, FallbackValue='嵌入式模式'}" 
-                                       Foreground="#00FF66" FontSize="11" FontWeight="SemiBold"/>
+                <!-- 左侧：品牌与配方信息 -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                    <!-- 系统 Logo/标题 -->
+                    <StackPanel Orientation="Horizontal" Margin="0 0 16 0">
+                        <Path Data="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4Z" 
+                      Fill="#007ACC" Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center" Margin="0 0 6 0"/>
+                        <TextBlock Text="Grayson Vision" FontWeight="Bold" Foreground="#F1F1F1" FontSize="13" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- 配方状态卡片 -->
+                    <Border Background="#2D2D30" CornerRadius="4" Padding="8 4" Margin="0 0 12 0" BorderBrush="#3F3F46" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="6" Height="6" Fill="{Binding IsDirty, Converter={StaticResource BoolToBrushConverter}, FallbackValue=#00FF66}" Margin="0 0 6 0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding CurrentRecipeInfo}" Foreground="#CCCCCC" FontSize="11" FontFamily="Consolas"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 模式切换 Badge -->
+                    <Border Background="#252526" CornerRadius="4" Padding="6 2" BorderBrush="#3F3F46" BorderThickness="1" VerticalAlignment="Center">
+                        <CheckBox IsChecked="{Binding UseRemoteWorkerProcess, Mode=TwoWay}" Foreground="#AAA" FontSize="11" VerticalAlignment="Center" Cursor="Hand">
+                            <TextBlock Text="{Binding UseRemoteWorkerProcess, Converter={StaticResource BoolToTextConverter}, FallbackValue='嵌入模式'}" 
+                               Foreground="{Binding UseRemoteWorkerProcess, Converter={StaticResource BoolToBrushConverter}}" FontSize="11" FontWeight="SemiBold"/>
                         </CheckBox>
                     </Border>
-                    <Button Content="💾 保存" Command="{Binding SaveRecipeCmd}" Background="#3E3E42" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-
-                    <Button Content="📥 导入 JSON" Command="{Binding ImportRecipeCmd}" Background="#3E3E42" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-                    <Button Content="📤 导出 JSON" Command="{Binding ExportRecipeCmd}" Background="#3E3E42" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-                    <Separator Width="1" Background="#555" Margin="6 6"/>
-                    <Button Content="🗑️ 清空画布" 
-                        Command="{Binding ClearCanvasCommand}"
-                        Background="#E74C3C" Foreground="White" 
-                        Padding="8,4" Margin="0 0 4 0"
-                        ToolTip="清空当前画布中的所有节点和连线"/>
-
-                    <Button Content="✨ 自动重排" Command="{Binding AutoLayoutCmd}" Background="#2980B9" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-                    <Button Content="❌ 删除节点" Command="{Binding DeleteNodeCmd}" Background="#A93226" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                    <!-- 🌟 新增：保存为复合模板按钮 -->
-                    <Button Content="📦 另存为模板" 
-                    Command="{Binding SaveCurrentPipelineAsRecipeCommand}"
-                    Background="#8E44AD" Foreground="White" Padding="8,4" Margin="0 0 4 0"
-                    ToolTip="将当前画布中的子流程导出为 JSON 模板并刷新到左侧工具箱"/>
-                    <Button Content="▶ 连续运行" Command="{Binding RunContinuousCmd}" Background="#27AE60" Foreground="White" FontWeight="Bold" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-                    <Button Content="⏯ 单步运行" Command="{Binding StepRunCmd}" Background="#2980B9" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-                    <Button Content="⏸ 暂停" Command="{Binding PauseRunCmd}" Background="#D35400" Foreground="White" Padding="10 4" Margin="0 0 4 0" BorderThickness="0"/>
-                    <Button Content="⏹ 停止" Command="{Binding StopRunCmd}" Background="#C0392B" Foreground="White" Padding="10 4" BorderThickness="0"/>
+                <!-- 右侧：运行控制组（高优先级） -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <!-- 运行控制按钮组 -->
+                    <Border Background="#252526" CornerRadius="4" Padding="2" BorderBrush="#3F3F46" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Command="{Binding RunContinuousCmd}" ToolTip="连续运行 (F5)" Style="{StaticResource ToolBarBtnStyle}" Background="#1E4620" Foreground="#4EC9B0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="▶" Margin="0 0 4 0" FontSize="10"/>
+                                    <TextBlock Text="运行"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding StepRunCmd}" ToolTip="单步运行 (F10)" Style="{StaticResource ToolBarBtnStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="⏯" Margin="0 0 4 0" FontSize="10"/>
+                                    <TextBlock Text="单步"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding PauseRunCmd}" ToolTip="暂停" Style="{StaticResource ToolBarBtnStyle}">
+                                <TextBlock Text="⏸ 暂停"/>
+                            </Button>
+
+                            <!-- 🌟 新增：复位按钮 -->
+                            <Button Command="{Binding ResetCmd}" ToolTip="复位流程至初始就绪状态 (Shift+F5)" Style="{StaticResource ToolBarBtnStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="🔄" Margin="0 0 4 0" FontSize="10"/>
+                                    <TextBlock Text="复位"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Button Command="{Binding StopRunCmd}" ToolTip="停止运行" Style="{StaticResource ToolBarBtnStyle}" Foreground="#F44336">
+                                <TextBlock Text="⏹ 停止" FontWeight="Bold"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                <!-- 中间：文件与画布编辑工具组 -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- 文件/配方组 -->
+                    <StackPanel Orientation="Horizontal" Margin="0 0 10 0">
+                        <Button Content="💾 保存" Command="{Binding SaveRecipeCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
+                        <Button Content="📥 导入" Command="{Binding ImportRecipeCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
+                        <Button Content="📤 导出" Command="{Binding ExportRecipeCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
+                    </StackPanel>
+
+                    <Rectangle Width="1" Height="16" Fill="#3F3F46" Margin="4 0"/>
+
+                    <!-- 画布辅助组 -->
+                    <StackPanel Orientation="Horizontal" Margin="10 0 0 0">
+                        <Button Content="✨ 自动重排" Command="{Binding AutoLayoutCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
+                        <Button Content="📦 另存模板" Command="{Binding SaveCurrentPipelineAsRecipeCommand}" Style="{StaticResource ToolBarBtnStyle}"/>
+                        <Button Content="🗑️ 清空" Command="{Binding ClearCanvasCommand}" Style="{StaticResource ToolBarBtnStyle}" Foreground="#E74C3C"/>
+                    </StackPanel>
                 </StackPanel>
             </DockPanel>
         </Border>
-
         <!-- 面包屑导航 -->
         <Border Grid.Row="1" Background="#252526" BorderBrush="#3F3F46" BorderThickness="0 1 0 1" Padding="12 0">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

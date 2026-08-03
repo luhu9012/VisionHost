@@ -12,6 +12,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace Grayson.Vison.FlowEdit.Controls
 {
@@ -35,8 +36,8 @@ namespace Grayson.Vison.FlowEdit.Controls
 
         public NodeControl()
         {
-            Width = 160;
-            MinHeight = 65;
+            Width = 135;        // 🌟 VisionMaster 经典胶囊宽度
+            MinHeight = 32;     // 🌟 经典胶囊高度
             Template = GetNodeTemplate();
 
             this.SetBinding(FrameworkElement.HeightProperty, new Binding("Node.Height")
@@ -58,8 +59,8 @@ namespace Grayson.Vison.FlowEdit.Controls
         {
             if (node == null) return;
 
-            double nodeWidth = this.Width > 0 ? this.Width : 160.0;
-            double minNodeHeight = 70.0;
+            double nodeWidth = this.Width > 0 ? this.Width : 135.0;
+            double minNodeHeight = 32.0;
 
             var inDataPorts = node.InputPorts.Where(p => p.Category == PortCategory.Data).ToList();
             var outDataPorts = node.OutputPorts.Where(p => p.Category == PortCategory.Data).ToList();
@@ -70,6 +71,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             var bottomPorts = outDataPorts.Take(3).ToList();
             var rightPorts = outDataPorts.Skip(3).ToList();
 
+            // 1. 顶端流程与数据入口 (Top-In)
             for (int i = 0; i < topPorts.Count; i++)
             {
                 var port = topPorts[i];
@@ -78,16 +80,9 @@ namespace Grayson.Vison.FlowEdit.Controls
                 port.RelativeY = 0;
             }
 
-            for (int i = 0; i < bottomPorts.Count; i++)
-            {
-                var port = bottomPorts[i];
-                port.Position = PortPosition.Bottom;
-                port.RelativeX = (nodeWidth / (bottomPorts.Count + 1)) * (i + 1);
-                port.RelativeY = minNodeHeight;
-            }
-
-            double sideRowHeight = 22.0;
-            double sideStartTop = 25.0;
+            // 2. 侧边扩展端口（若有）
+            double sideRowHeight = 14.0;
+            double sideStartTop = 8.0;
             for (int i = 0; i < leftPorts.Count; i++)
             {
                 var port = leftPorts[i];
@@ -105,16 +100,19 @@ namespace Grayson.Vison.FlowEdit.Controls
             }
 
             int maxSideRows = Math.Max(leftPorts.Count, rightPorts.Count);
-            double calculatedHeight = Math.Max(minNodeHeight, sideStartTop + (maxSideRows * sideRowHeight) + 15.0);
+            double calculatedHeight = Math.Max(minNodeHeight, sideStartTop + (maxSideRows * sideRowHeight) + 8.0);
 
             node.Height = calculatedHeight;
 
-            foreach (var port in bottomPorts)
+            // 3. 底端流程与数据出口 (Bottom-Out)
+            for (int i = 0; i < bottomPorts.Count; i++)
             {
+                var port = bottomPorts[i];
+                port.Position = PortPosition.Bottom;
+                port.RelativeX = (nodeWidth / (bottomPorts.Count + 1)) * (i + 1);
                 port.RelativeY = calculatedHeight;
             }
         }
-
         private FlowEditView GetParentFlowEditView()
         {
             DependencyObject parent = VisualTreeHelper.GetParent(this);
@@ -125,84 +123,134 @@ namespace Grayson.Vison.FlowEdit.Controls
             return parent as FlowEditView;
         }
 
+        /// <summary>
+        /// 动态生成画布节点的控件模板（完全代码构建，替代XAML Template）
+        /// 整体层级结构：根Grid
+        /// ├─ 底层Border：节点底色、圆角、选中/报错边框、运行发光特效
+        /// │   └─ StackPanel：节点名称+类型两行文字
+        /// ├─ 右上角徽章Border：节点正在运行时才显示「执行中」角标
+        /// └─ ItemsControl(Canvas面板)：渲染所有输入/输出端口小圆点，支持拖拽连线
+        /// </summary>
         private ControlTemplate GetNodeTemplate()
         {
             var grid = new FrameworkElementFactory(typeof(Grid));
 
-            // 1. 节点背景 Border (改用统一的 CategoryMetaConverter)
+            // 1. 外层主卡片 Border (VM 经典深色胶囊形状)
             var border = new FrameworkElementFactory(typeof(Border));
-            border.SetBinding(Border.BackgroundProperty, new Binding("Node.Category")
-            {
-                RelativeSource = RelativeSource.TemplatedParent,
-                Converter = new CategoryMetaConverter(),
-                ConverterParameter = "Brush"
-            });
 
+            // 🌟 动态背景色绑定 (正常分类色 vs 报错深红色)
+            var bgMultiBind = new MultiBinding { Converter = new NodeBackgroundConv() };
+            bgMultiBind.Bindings.Add(new Binding("Node.Category") { RelativeSource = RelativeSource.TemplatedParent });
+            bgMultiBind.Bindings.Add(new Binding("Node.HasError") { RelativeSource = RelativeSource.TemplatedParent });
+            border.SetBinding(Border.BackgroundProperty, bgMultiBind);
+
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(16));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(2.0)); // 适当加厚边框感
+
+            // 动态边框绑定 (选中/报错/高亮)
             var borderBrushBind = new MultiBinding { Converter = new NodeBorderConv() };
             borderBrushBind.Bindings.Add(new Binding("Node") { RelativeSource = RelativeSource.TemplatedParent });
+            borderBrushBind.Bindings.Add(new Binding("Node.HasError") { RelativeSource = RelativeSource.TemplatedParent });
             borderBrushBind.Bindings.Add(new Binding("DataContext.SelectedNode")
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(UserControl), 1)
             });
             border.SetBinding(Border.BorderBrushProperty, borderBrushBind);
 
-            border.SetValue(Border.BorderThicknessProperty, new Thickness(2.5));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-
-            var glowEffectBind = new Binding("Node.IsRunning")
-            {
-                RelativeSource = RelativeSource.TemplatedParent,
-                Converter = new RunningGlowEffectConv()
-            };
+            // 🌟 动态 Effect 绑定 (运行绿光 vs 报错红光)
+            var glowEffectBind = new MultiBinding { Converter = new NodeGlowEffectConv() };
+            glowEffectBind.Bindings.Add(new Binding("Node.IsRunning") { RelativeSource = RelativeSource.TemplatedParent });
+            glowEffectBind.Bindings.Add(new Binding("Node.HasError") { RelativeSource = RelativeSource.TemplatedParent });
             border.SetBinding(Border.EffectProperty, glowEffectBind);
 
-            // 2. 节点内部标题与信息布局
-            var stack = new FrameworkElementFactory(typeof(StackPanel));
-            stack.SetValue(StackPanel.MarginProperty, new Thickness(10, 6, 10, 6));
+            // 2. 节点内部内容区 [左侧节点Icon | 中间名称 | 右侧状态指示点]
+            var contentGrid = new FrameworkElementFactory(typeof(Grid));
+            contentGrid.SetValue(Grid.MarginProperty, new Thickness(4, 2, 8, 2));
 
-            var txtName = new FrameworkElementFactory(typeof(TextBlock));
-            var nameBind = new Binding("Node.DisplayName") { RelativeSource = RelativeSource.TemplatedParent };
-            txtName.SetBinding(TextBlock.TextProperty, nameBind);
-            txtName.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
-            txtName.SetValue(TextBlock.ForegroundProperty, Brushes.White);
-            txtName.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+            var col1 = new FrameworkElementFactory(typeof(ColumnDefinition));
+            col1.SetValue(ColumnDefinition.WidthProperty, new GridLength(26));
+            var col2 = new FrameworkElementFactory(typeof(ColumnDefinition));
+            col2.SetValue(ColumnDefinition.WidthProperty, new GridLength(1, GridUnitType.Star));
+            var col3 = new FrameworkElementFactory(typeof(ColumnDefinition));
+            col3.SetValue(ColumnDefinition.WidthProperty, new GridLength(8));
 
-            var txtKind = new FrameworkElementFactory(typeof(TextBlock));
-            txtKind.SetBinding(TextBlock.TextProperty, new Binding("Node.Type") { RelativeSource = RelativeSource.TemplatedParent });
-            txtKind.SetValue(TextBlock.FontSizeProperty, 10d);
-            txtKind.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush(Color.FromRgb(200, 200, 200)));
+            contentGrid.AppendChild(col1);
+            contentGrid.AppendChild(col2);
+            contentGrid.AppendChild(col3);
 
-            stack.AppendChild(txtName);
-            stack.AppendChild(txtKind);
-            border.AppendChild(stack);
-            grid.AppendChild(border);
+            // 左侧胶囊圆圈图标
+            var iconBorder = new FrameworkElementFactory(typeof(Border));
+            iconBorder.SetValue(Grid.ColumnProperty, 0);
+            iconBorder.SetValue(Border.WidthProperty, 24.0);
+            iconBorder.SetValue(Border.HeightProperty, 24.0);
+            iconBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(12));
+            iconBorder.SetValue(Border.BackgroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3E3E42")));
+            iconBorder.SetValue(Border.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+            iconBorder.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Center);
 
-            // 3. 执行状态提示徽章 Badge
-            var badgeBorder = new FrameworkElementFactory(typeof(Border));
-            badgeBorder.SetValue(Border.HorizontalAlignmentProperty, HorizontalAlignment.Right);
-            badgeBorder.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Top);
-            badgeBorder.SetValue(Border.MarginProperty, new Thickness(0, -10, -5, 0));
-            badgeBorder.SetValue(Border.PaddingProperty, new Thickness(6, 2, 6, 2));
-            badgeBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
-            badgeBorder.SetValue(Border.BackgroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#27AE60")));
-            badgeBorder.SetValue(Panel.ZIndexProperty, 99);
-
-            badgeBorder.SetBinding(UIElement.VisibilityProperty, new Binding("Node.IsRunning")
+            var iconTxt = new FrameworkElementFactory(typeof(TextBlock));
+            iconTxt.SetBinding(TextBlock.TextProperty, new Binding("Node")
             {
                 RelativeSource = RelativeSource.TemplatedParent,
-                Converter = new BooleanToVisibilityConverter()
+                Converter = new NodeIconConverter(),
+                FallbackValue = "📷"
+            });
+            iconTxt.SetValue(TextBlock.FontFamilyProperty, new FontFamily("Segoe UI Emoji"));
+            iconTxt.SetValue(TextBlock.FontSizeProperty, 12d);
+            iconTxt.SetValue(TextBlock.ForegroundProperty, Brushes.White);
+            iconTxt.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            iconTxt.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            iconBorder.AppendChild(iconTxt);
+
+            // 中间单行节点名称
+            var txtName = new FrameworkElementFactory(typeof(TextBlock));
+            txtName.SetValue(Grid.ColumnProperty, 1);
+            txtName.SetBinding(TextBlock.TextProperty, new Binding("Node.DisplayName") { RelativeSource = RelativeSource.TemplatedParent });
+            txtName.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+            txtName.SetValue(TextBlock.FontSizeProperty, 11.5d);
+            txtName.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F1F1")));
+            txtName.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+            txtName.SetValue(TextBlock.MarginProperty, new Thickness(6, 0, 4, 0));
+            txtName.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+
+            // 🌟 右侧状态指示灯：在 运行中 (IsRunning) 或 报错 (HasError) 时均显示，颜色根据状态切换
+            var statusDot = new FrameworkElementFactory(typeof(Ellipse));
+            statusDot.SetValue(Grid.ColumnProperty, 2);
+            statusDot.SetValue(Ellipse.WidthProperty, 6.0);
+            statusDot.SetValue(Ellipse.HeightProperty, 6.0);
+            statusDot.SetValue(Ellipse.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            statusDot.SetValue(Ellipse.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            // 根据 HasError 动态决定点灯颜色（报错变红，运行变绿）
+            statusDot.SetBinding(Shape.FillProperty, new Binding("Node.HasError")
+            {
+                RelativeSource = RelativeSource.TemplatedParent,
+                Converter = new NodeStatusDotBrushConv()
             });
 
-            var badgeText = new FrameworkElementFactory(typeof(TextBlock));
-            badgeText.SetValue(TextBlock.TextProperty, "▶ 执行中...");
-            badgeText.SetValue(TextBlock.ForegroundProperty, Brushes.White);
-            badgeText.SetValue(TextBlock.FontSizeProperty, 9d);
-            badgeText.SetValue(TextBlock.FontWeightProperty, FontWeights.Bold);
+            // 只有在 运行中 或 报错 时才显示状态点
+            var dotVisMultiBind = new MultiBinding
+            {
+                Converter = new BaseMultiConverterLambda((values) =>
+                {
+                    bool isRunning = values.Length > 0 && values[0] is bool r && r;
+                    bool hasError = values.Length > 1 && values[1] is bool e && e;
+                    return (isRunning || hasError) ? Visibility.Visible : Visibility.Collapsed;
+                })
+            };
+            dotVisMultiBind.Bindings.Add(new Binding("Node.IsRunning") { RelativeSource = RelativeSource.TemplatedParent });
+            dotVisMultiBind.Bindings.Add(new Binding("Node.HasError") { RelativeSource = RelativeSource.TemplatedParent });
+            statusDot.SetBinding(UIElement.VisibilityProperty, dotVisMultiBind);
 
-            badgeBorder.AppendChild(badgeText);
-            grid.AppendChild(badgeBorder);
+            contentGrid.AppendChild(iconBorder);
+            contentGrid.AppendChild(txtName);
+            contentGrid.AppendChild(statusDot);
 
-            // 4. 端口渲染
+            border.AppendChild(contentGrid);
+            grid.AppendChild(border);
+
+            // 3. 连线端口渲染 (Top/Bottom 挂载点)
             var allPortsItemsControl = new FrameworkElementFactory(typeof(ItemsControl));
             allPortsItemsControl.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("Node.AllPorts") { RelativeSource = RelativeSource.TemplatedParent });
 
@@ -250,7 +298,6 @@ namespace Grayson.Vison.FlowEdit.Controls
 
             return new ControlTemplate { VisualTree = grid };
         }
-
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
             if (e.OriginalSource is FrameworkElement elem && elem.DataContext is NodePort)
@@ -266,15 +313,8 @@ namespace Grayson.Vison.FlowEdit.Controls
 
                 if (e.ClickCount == 2 && Node != null)
                 {
-                    if (Node is CompositeFlowNode compositeNode)
-                    {
-                        vm.DrillDownCompositeNode(compositeNode);
-                    }
-                    else
-                    {
-                        ShowNodePropertyDialog(Node);
-                    }
-
+                    // 只转发，业务全部交给VM处理
+                    vm.OnNodeDoubleClicked(Node);
                     e.Handled = true;
                     return;
                 }
@@ -287,15 +327,7 @@ namespace Grayson.Vison.FlowEdit.Controls
             e.Handled = true;
         }
 
-        private void ShowNodePropertyDialog(FlowNodeBase node)
-        {
-            var win = new Grayson.Vison.FlowEdit.Views.NodePropertyWindow
-            {
-                DataContext = node,
-                Owner = Window.GetWindow(this)
-            };
-            win.ShowDialog();
-        }
+      
 
         protected override void OnMouseMove(MouseEventArgs e)
         {

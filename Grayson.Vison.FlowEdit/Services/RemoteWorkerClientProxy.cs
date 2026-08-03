@@ -22,6 +22,10 @@ namespace Grayson.Vison.FlowEdit.Services
     {
         public string StationId { get; }
         public bool IsConnected => _clientStream != null && _clientStream.IsConnected;
+        /// <summary>
+        /// 远程 Worker 的本地缓存状态
+        /// </summary>
+        public StationState CurrentState { get; private set; } = StationState.Stopped;
 
         private readonly string _pipeName;
         private NamedPipeClientStream _clientStream;
@@ -129,7 +133,11 @@ namespace Grayson.Vison.FlowEdit.Services
             {
                 case "OnStateChanged":
                     if (Enum.TryParse<StationState>(payloadJson, out var state))
+                    {
+                        CurrentState = state; // 🌟 接收到远程状态广播后更新本地属性
                         OnStateChanged?.Invoke(this, state);
+                    }
+                    
                     break;
 
                 case "OnFrameRendered":

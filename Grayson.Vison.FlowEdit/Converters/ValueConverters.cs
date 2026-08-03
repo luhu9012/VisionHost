@@ -1,4 +1,6 @@
-﻿using Grayson.Vision.Contracts.Business.Enums;
+﻿using Grayson.Vision.Contracts.Business.Attributes;
+using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Business.Helpers;
 using Grayson.Vision.Contracts.Business.Models;
 using Grayson.Vison.FlowEdit.Helpers;
 using System;
@@ -118,12 +120,16 @@ namespace Grayson.Vison.FlowEdit.Converters
     {
         public override object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
-            if (values.Length < 2) return Brushes.Transparent;
+            if (values.Length < 3) return Brushes.Transparent;
             var node = values[0] as FlowNodeBase;
-            var sel = values[1] as FlowNodeBase;
+            var hasError = values[1] as bool?;
+            var sel = values[2] as FlowNodeBase;
 
+            // 🌟 报错优先，高亮鲜红边框
+            if (hasError == true) return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF4D4D"));
             if (node != null && node.IsRunning) return Brushes.SpringGreen;
             if (node != null && node == sel) return Brushes.Gold;
+
             return Brushes.Transparent;
         }
     }
@@ -361,9 +367,126 @@ namespace Grayson.Vison.FlowEdit.Converters
     }
 
 
+    /// <summary>
+    /// 根据 FlowNodeBase 对象动态寻找其 UnitMeta 并提取 Icon 的转换器
+    /// </summary>
+    public class NodeIconConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is FlowNodeBase node)
+            {
+                // 🌟 通过 GetAttribute<NodeFieldMetaAttribute>() 直接提取 NodeType 上标记的 Emoji 图标
+                var meta = node.Type.GetAttribute<NodeFieldMetaAttribute>();
+                if (meta != null && !string.IsNullOrEmpty(meta.Emoji))
+                {
+                    return meta.Emoji;
+                }
 
+                // 2. 如果你的 UnitMeta 注册表是以 Type 为 Key 的检索：
+                // var meta = NodeMetaRegistry.GetByType(node.Type);
+                // if (meta != null) return meta.Icon;
+            }
+
+            // 兜底默认图标
+            return "📷";
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+    /// <summary>
+    /// 节点背景色转换器：支持正常分类背景、异常警示背景、选中高亮
+    /// </summary>
+    public class NodeBackgroundConv : BaseMultiConverter
+    {
+        public override object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (values.Length < 2) return Brushes.Transparent;
+
+            var category = values[0] as NodeCategory?;
+            var hasError = values[1] as bool?;
+
+            // 🌟 1. 优先处理异常状态：使用警告红深暗背景，与文字对比鲜明
+            if (hasError == true)
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4D1212")); // 警示深红背景
+            }
+
+            // 🌟 2. 正常状态：从 CategoryMetaRegistry 获取分类默认背景
+            if (category.HasValue)
+            {
+                var meta = NodeMetaRegistry.Get(category.Value);
+                if (meta != null) return meta.Brush;
+            }
+
+            return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2D2D30"));
+        }
+    }
+
+    /// <summary>
+    /// 节点发光/阴影特效转换器：运行态绿光 / 报错态红光
+    /// </summary>
+    public class NodeGlowEffectConv : BaseMultiConverter
+    {
+        public override object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (values.Length < 2) return null;
+
+            var isRunning = values[0] as bool?;
+            var hasError = values[1] as bool?;
+
+            // 🌟 报错态：鲜艳红色外发光，大幅提升视觉警示力
+            if (hasError == true)
+            {
+                return new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#FF2222"),
+                    BlurRadius = 18,
+                    ShadowDepth = 0,
+                    Opacity = 0.9
+                };
+            }
+
+            // 🌟 运行态：绿色呼吸发光
+            if (isRunning == true)
+            {
+                return new DropShadowEffect
+                {
+                    Color = (Color)ColorConverter.ConvertFromString("#00FF66"),
+                    BlurRadius = 16,
+                    ShadowDepth = 0,
+                    Opacity = 0.95
+                };
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 节点右侧状态指示灯颜色转换器
+    /// </summary>
+    public class NodeStatusDotBrushConv : BaseConverter
+    {
+        public override object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool hasError && hasError)
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3B30")); // 异常红灯
+            }
+            return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00FF66"));     // 运行绿灯
+        }
+    }
     #endregion
-
+    public class BaseMultiConverterLambda : BaseMultiConverter
+    {
+        private readonly Func<object[], object> _converter;
+        public BaseMultiConverterLambda(Func<object[], object> converter) => _converter = converter;
+        public override object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) => _converter?.Invoke(values);
+    }
 
 
 }

@@ -17,5 +17,9 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
         /// WPF 缩略图，用于底部缩略图列表显示。
         /// </summary>
         public BitmapSource Thumbnail { get; set; }
+        /// <summary>
+        /// 🌟 扩展属性：用于存储附加信息（如文件真实路径、在文件夹中的索引等）
+        /// </summary>
+        public object Tag { get; set; }
     }
 }

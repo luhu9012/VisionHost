@@ -142,29 +142,35 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
             if (halconImage == null || !halconImage.IsInitialized())
                 return null;
 
-            string tempFile = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".bmp");
             try
             {
-                halconImage.WriteImage("bmp", 0, tempFile);
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.UriSource = new Uri(tempFile);
-                bitmap.EndInit();
-                bitmap.Freeze();
-                return bitmap;
+                // 🌟 性能优化关键：直接在 Halcon 内存层缩放到小图（例如 100 像素宽），大幅降低转换与渲染开销
+                halconImage.GetImageSize(out int w, out int h);
+                if (w <= 0 || h <= 0) return null;
+
+                double scale = 100.0 / Math.Max(w, h);
+                using (HImage zoomImg = halconImage.ZoomImageFactor(scale, scale, "constant"))
+                {
+                    // 获取字节指针与尺寸
+                    zoomImg.GetImageSize(out int zoomW, out int zoomH);
+                    IntPtr pointer = zoomImg.GetImagePointer1(out string type, out int imgWidth, out int imgHeight);
+
+                    // 构造 8位 灰度 BitmapSource (无磁盘 IO)
+                    var pixelFormat = System.Windows.Media.PixelFormats.Gray8;
+                    var bitmap = BitmapSource.Create(
+                        zoomW, zoomH, 96, 96, pixelFormat,
+                        BitmapPalettes.Gray256, pointer, zoomW * zoomH, zoomW);
+
+                    bitmap.Freeze(); // 冻结对象，支持跨线程安全传递
+                    return bitmap;
+                }
             }
             catch (Exception ex)
             {
-                LogBus.Warn("Halcon", $"创建缩略图失败: {ex.Message}");
+                LogBus.Warn("Halcon", $"纯内存创建缩略图失败: {ex.Message}");
                 return null;
             }
-            finally
-            {
-                try { File.Delete(tempFile); } catch { }
-            }
         }
-
         public string GetPixelInfo(IRenderImage image, int x, int y)
         {
             var halconImage = (image as HalconRenderImage)?.HImage;

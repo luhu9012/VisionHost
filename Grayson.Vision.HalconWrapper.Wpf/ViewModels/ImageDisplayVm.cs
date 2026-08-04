@@ -13,8 +13,9 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
 {
     public class ImageDisplayVm : ViewModelBase
     {
+        // 缩略图列表，按时间顺序存储最近的图像渲染上下文
         public ObservableCollection<WpfImageRenderContext> ImageHistoryList { get; set; } = new ObservableCollection<WpfImageRenderContext>();
-
+        // 当前激活的图像渲染上下文
         private WpfImageRenderContext _activeImageContext;
         public WpfImageRenderContext ActiveImageContext
         {
@@ -49,71 +50,26 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
         public ICommand PreviousImageCmd { get; }
         public ICommand NextImageCmd { get; }
         public ICommand SelectImageItemCmd { get; }
+        public ICommand FitImageCmd { get; }
 
-        private readonly ExecutionContext _engineContext;
+        public Action OnRequestFitImage;
+
         private readonly HalconImageRenderService _renderService;
 
-        public ImageDisplayVm(ExecutionContext engineContext, HalconImageRenderService renderService)
+        public ImageDisplayVm(HalconImageRenderService renderService)
         {
-            _engineContext = engineContext ?? throw new ArgumentNullException(nameof(engineContext));
             _renderService = renderService ?? throw new ArgumentNullException(nameof(renderService));
 
             PreviousImageCmd = new RelayCommand(SelectPreviousImage);
             NextImageCmd = new RelayCommand(SelectNextImage);
             SelectImageItemCmd = new RelayCommand<WpfImageRenderContext>(SelectImageItem);
+            FitImageCmd = new RelayCommand(() => OnRequestFitImage?.Invoke());
 
-            // 🌟 核心修改：移除 _engineContext.OnNodeExecuted 监听！
+
             // 渲染完全统一交给 WorkerClient 的 OnFrameRendered 进行路由更新，避免双重渲染和重复包装
             LogBus.Debug("ImageDisplay", "ImageDisplayVm 初始化完成。");
         }
 
-        private void EngineContext_OnNodeExecuted(object sender, FlowNodeBase node)
-        {
-            if (node == null) return;
-            LogBus.Info("ImageDisplay", $"节点 [{node.DisplayName}] 执行完毕，开始检查图像输出...");
-
-            // 确保回到 UI 线程更新
-            System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
-            {
-                // 1. 从节点的 OutputPorts 寻找是否有图像类型的数据
-                var imagePort = node.OutputPorts?.FirstOrDefault(p =>
-                    (p.DataType == "HImage" || p.DataType == "Image") && p.DataValue != null);
-
-                if (imagePort != null)
-                {
-                    LogBus.Info("ImageDisplay", $"找到节点 [{node.DisplayName}] 的图像端口 [{imagePort.PortName}] (类型:{imagePort.DataType})，开始转换...");
-
-                    // 2. 组装 UI 渲染上下文
-                    var renderImage = _renderService.WrapImage(imagePort.DataValue);
-                    if (renderImage == null)
-                    {
-                        LogBus.Warn("ImageDisplay", $"节点 [{node.DisplayName}] 图像包装失败 (WrapImage 返回 null)");
-                        return;
-                    }
-
-                    var renderContext = new WpfImageRenderContext
-                    {
-                        NodeId = node.NodeId,
-                        NodeName = node.DisplayName,
-                        Image = renderImage,
-                        Thumbnail = _renderService.CreateThumbnail(renderImage)
-                    };
-
-                    // 3. 更新历史列表及主图
-                    ImageHistoryList.Add(renderContext);
-                    LogBus.Info("ImageDisplay", $"已追加历史图像列表，当前历史数量: {ImageHistoryList.Count}");
-
-                    if (IsAutoSwitchEnabled)
-                    {
-                        SelectImageItem(renderContext);
-                    }
-                }
-                else
-                {
-                    LogBus.Debug("ImageDisplay", $"节点 [{node.DisplayName}] 未检测到有效图像输出");
-                }
-            });
-        }
 
         //private Task OnNodeParamChanged(NodeParamChangedEvent e)
         //{
@@ -174,7 +130,7 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
                 if (x >= 0 && x < ActiveImageContext.Image.Width && y >= 0 && y < ActiveImageContext.Image.Height)
                 {
                     var pixelInfo = _renderService.GetPixelInfo(ActiveImageContext.Image, x, y);
-                    SelectedImageInfo = $"[{ActiveImageContext.NodeName}]  X:{x}, Y:{y} | {pixelInfo}";
+                    SelectedImageInfo = $" X:{x}, Y:{y} | {pixelInfo}";
                 }
             }
             catch { }
@@ -200,12 +156,63 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
                 LogBus.Warn("ImageDisplay", "请求刷新 ActiveImageContext 但当前 ActiveImageContext 为 null");
             }
         }
+        /// <summary>
+        /// 清空所有图像历史与当前画面
+        /// </summary>
+        public void Clear()
+        {
+            // 遍历 Dispose 掉历史列表中的所有资源
+            foreach (var item in ImageHistoryList)
+            {
+                item?.Dispose();
+            }
+            ImageHistoryList.Clear();
 
-        // 记得在 ViewModel 销毁时解绑，防止内存泄漏
-        //public  void Cleanup()
-        //{
-        //    _engineContext.OnNodeExecuted -= EngineContext_OnNodeExecuted;
-        //    base.Cleanup();
-        //}
+            ActiveImageContext?.Dispose();
+            ActiveImageContext = null;
+            SelectedImageInfo = "无图像";
+
+            // 通知 View 擦除画布
+            OnRequestRender?.Invoke(null);
+
+            LogBus.Info("ImageDisplay", "图像历史与内存句柄已完全清空与释放。");
+        }
+
+        /// <summary>
+        /// 🌟 2. 覆盖/更新某个节点的图像时，释放该节点上一张旧图的内存
+        /// </summary>
+        public void AddOrUpdateImageContext(WpfImageRenderContext newContext)
+        {
+            if (newContext == null) return;
+
+            var existing = ImageHistoryList.FirstOrDefault(x => x.NodeId == newContext.NodeId);
+            if (existing != null)
+            {
+                int index = ImageHistoryList.IndexOf(existing);
+
+                // 如果旧图当前正在显示，先清空引用
+                if (ActiveImageContext == existing)
+                {
+                    ActiveImageContext = newContext;
+                }
+
+                // 释放旧 Context 的内存句柄
+                existing.Dispose();
+
+                // 替换为新 Context
+                ImageHistoryList[index] = newContext;
+
+                RefreshActiveImage();// 触发主视图绘制
+            }
+            else
+            {
+                ImageHistoryList.Add(newContext);
+                if (IsAutoSwitchEnabled || ActiveImageContext == null)
+                {
+                    SelectImageItem(newContext);// context 变化会触发视图更新
+                }
+            }
+           
+        }
     }
 }

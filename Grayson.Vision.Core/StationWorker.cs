@@ -40,6 +40,7 @@ namespace Grayson.Vision.Core
         public event EventHandler<NodeEventArgs> OnNodeExecuting;
         public event EventHandler<NodeEventArgs> OnNodeExecuted;
         public event EventHandler<NodeExecutionErrorEventArgs> OnExecutionError;
+        public event EventHandler<ChainCompletedEventArgs> OnExecutionCompleted;
         public event EventHandler<string> OnLogReceived;
         #endregion
 
@@ -67,11 +68,17 @@ namespace Grayson.Vision.Core
         /// </summary>
         public Task LoadRecipeAsync(FlowProcessModel recipe)
         {
+            // 先取消订阅旧 executor 的事件
+            if (_executor != null)
+            {
+                _executor.OnChainCompleted -= Executor_OnChainCompleted;
+            }
             if (recipe == null)
             {
                 LogBus.Warn("StationWorker", $"工位 [{StationId}] 传入配方为空，回退为空白执行链。");
                 ActiveExecutionChain = new ExecutionChain();
                 _executor = new FlowExecutor(ActiveExecutionChain, _stationContext.GlobalEngineContext);
+                _executor.OnChainCompleted += Executor_OnChainCompleted; // 🌟 订阅
                 UpdateState(StationState.Stopped);
                 return Task.CompletedTask;
             }
@@ -88,6 +95,7 @@ namespace Grayson.Vision.Core
                 // 依然保留已构建的部分链或空链，保障 UI 能够渲染错误节点
                 ActiveExecutionChain = buildResult.Chain ?? new ExecutionChain();
                 _executor = new FlowExecutor(ActiveExecutionChain, _stationContext.GlobalEngineContext);
+                _executor.OnChainCompleted += Executor_OnChainCompleted; // 🌟 订阅
 
                 // 标记为 Faulted，告知上层加载配方失败
                 UpdateState(StationState.Faulted);
@@ -96,12 +104,50 @@ namespace Grayson.Vision.Core
 
             ActiveExecutionChain = buildResult.Chain;
             _executor = new FlowExecutor(ActiveExecutionChain, _stationContext.GlobalEngineContext);
+            _executor.OnChainCompleted += Executor_OnChainCompleted; // 🌟 订阅
 
             // 配方就绪，进入待机/就绪状态
             UpdateState(StationState.Idle); // 或根据你的枚举调整为可运行状态
             LogBus.Info("StationWorker", $"工位 [{StationId}] 成功加载配方并就绪执行链: {_currentRecipe.ProcessName}");
 
             return Task.CompletedTask;
+        }
+        // 🌟 处理 Executor 传上来的完成事件并继续抛给 Worker 订阅者
+        private void Executor_OnChainCompleted(object sender, ChainCompletedEventArgs e)
+        {
+            LogBus.Info("StationWorker", $"工位 [{StationId}] 执行链结束，执行结果: {e.Result}");
+
+            switch (e.Result)
+            {
+                case ChainExecutionResult.Success:
+                    // 🌟 正常跑完最后一个节点：
+                    // 如果是连续生产/调试循环，保持 Running 状态；
+                    // 如果是单次/单步触发完成，切回 Idle 等待下一次信号。
+                    if (Mode == WorkMode.Production || Mode == WorkMode.Debug)
+                    {
+                        // 如果是 TriggerOnce 模式，执行完后切回 Idle
+                        UpdateState(StationState.Idle);
+                    }
+                    break;
+
+                case ChainExecutionResult.Failed:
+                    // 🌟 节点执行失败/致命错误：切入 Faulted 状态，阻止后续触发
+                    UpdateState(StationState.Faulted);
+                    break;
+
+                case ChainExecutionResult.Canceled:
+                    // 🌟 手动停止取消：切入 Stopped 状态
+                    UpdateState(StationState.Stopped);
+                    break;
+
+                case ChainExecutionResult.StepEndReached:
+                    // 🌟 单步已到末尾：切回 Paused 或 Idle
+                    UpdateState(StationState.Idle);
+                    break;
+            }
+
+            // 🌟 将完成事件与结果继续向上层抛出（通知 UI / 应用层做清理和复位）
+            OnExecutionCompleted?.Invoke(this, e);
         }
         public async Task StartAsync()
         {
@@ -227,6 +273,7 @@ namespace Grayson.Vision.Core
         private async Task StartDebugContinuousLoopAsync(CancellationToken token)
         {
             LogBus.Info("StationWorker", $"进入调试连续运行循环...");
+            
             while (!token.IsCancellationRequested && State == StationState.Running)
             {
                 try
@@ -267,6 +314,7 @@ namespace Grayson.Vision.Core
                 {
                     StationId = StationId,
                     NodeId = node.NodeId,
+                    NodeName = node.DisplayName,
                     RenderData = imagePort.DataValue
                 });
             }
@@ -286,6 +334,10 @@ namespace Grayson.Vision.Core
 
         public void Dispose()
         {
+            if (_executor != null)
+            {
+                _executor.OnChainCompleted -= Executor_OnChainCompleted;
+            }
             _continuousLoopCts?.Cancel();
             _continuousLoopCts?.Dispose();
             _execLock?.Dispose();
@@ -296,6 +348,7 @@ namespace Grayson.Vision.Core
                 _stationContext.GlobalEngineContext.OnNodeExecuted -= Engine_OnNodeExecuted;
                 _stationContext.GlobalEngineContext.OnExecutionError -= Engine_OnExecutionError;
             }
+
         }
         #endregion
     }

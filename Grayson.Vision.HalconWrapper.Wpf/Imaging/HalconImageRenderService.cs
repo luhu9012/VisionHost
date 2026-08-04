@@ -174,17 +174,33 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
         public string GetPixelInfo(IRenderImage image, int x, int y)
         {
             var halconImage = (image as HalconRenderImage)?.HImage;
-            if (halconImage == null || !halconImage.IsInitialized())
-                return string.Empty;
+            if (halconImage == null || !halconImage.IsInitialized()) return string.Empty;
 
             try
             {
                 halconImage.GetImageSize(out int w, out int h);
-                if (x < 0 || x >= w || y < 0 || y >= h)
-                    return string.Empty;
+                if (x < 0 || x >= w || y < 0 || y >= h) return string.Empty;
 
-                HTuple gray = halconImage.GetGrayval(y, x);
-                return $"Gray:{gray}";
+                int channels = halconImage.CountChannels();
+                if (channels == 1)
+                {
+                    HTuple gray = halconImage.GetGrayval(y, x);
+                    return $"Gray: {gray.I}";
+                }
+                else if (channels == 3)
+                {
+                    // 彩色图像：分别获取 R, G, B
+                    using (HImage r = halconImage.Decompose3(out HImage g, out HImage b))
+                    {
+                        int rVal = r.GetGrayval(y, x);
+                        int gVal = g.GetGrayval(y, x);
+                        int bVal = b.GetGrayval(y, x);
+                        g.Dispose();
+                        b.Dispose();
+                        return $"R:{rVal}, G:{gVal}, B:{bVal}";
+                    }
+                }
+                return string.Empty;
             }
             catch
             {

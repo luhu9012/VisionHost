@@ -26,11 +26,13 @@ namespace Grayson.Vison.FlowEdit.Services
         Task StartAsync();
         Task StopAsync();
         Task TriggerOnceAsync(string batchId = null);
+        Task StepNodeAsync(FlowNodeBase node);
 
         // 状态与渲染事件
         event EventHandler<StationState> OnStateChanged;
         event EventHandler<ImageRenderEventArgs> OnFrameRendered;
         event EventHandler<string> OnLogReceived;
+        event EventHandler<ChainCompletedEventArgs> OnExecutionCompleted;
 
         // 🌟 统一为强类型事件
         event EventHandler<NodeEventArgs> OnNodeExecuting;

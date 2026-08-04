@@ -135,6 +135,8 @@
                         <Button Content="✨ 自动重排" Command="{Binding AutoLayoutCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
                         <Button Content="📦 另存模板" Command="{Binding SaveCurrentPipelineAsRecipeCommand}" Style="{StaticResource ToolBarBtnStyle}"/>
                         <Button Content="🗑️ 清空" Command="{Binding ClearCanvasCommand}" Style="{StaticResource ToolBarBtnStyle}" Foreground="#E74C3C"/>
+                        <Button Content="🗑️ 删除" Command="{Binding DeleteNodeCmd}" Style="{StaticResource ToolBarBtnStyle}" />
+                        
                     </StackPanel>
                 </StackPanel>
             </DockPanel>

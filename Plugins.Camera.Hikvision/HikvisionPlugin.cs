@@ -4,7 +4,7 @@ using Grayson.Vision.Contracts.Business.Enums;
 using Grayson.Vision.Contracts.Core;
 using System;
 
-namespace Grayson.Vision.Plugin.Hikvision
+namespace Plugins.Camera.Hikvision
 {
 
     public class HikCamera : ICamera

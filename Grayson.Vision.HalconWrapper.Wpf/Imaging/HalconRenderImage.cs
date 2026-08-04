@@ -5,18 +5,19 @@
 
 using Grayson.Vision.Contracts.Imaging;
 using HalconDotNet;
+using System;
 
 namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
 {
     /// <summary>
     /// Halcon 渲染图像句柄
     /// </summary>
-    public class HalconRenderImage : IRenderImage
+    public class HalconRenderImage : IRenderImage, IDisposable
     {
         /// <summary>
         /// 内部 Halcon 图像
         /// </summary>
-        public HImage HImage { get; }
+        public HImage HImage { get; private set; }
 
         /// <summary>
         /// 原生句柄
@@ -44,6 +45,15 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
                 image.GetImageSize(out int width, out int height);
                 Width = width;
                 Height = height;
+            }
+        }
+       
+        public void Dispose()
+        {
+            if (HImage != null && HImage.IsInitialized())
+            {
+                HImage.Dispose();
+                HImage = null;
             }
         }
     }

@@ -24,6 +24,7 @@ namespace Grayson.Vison.FlowEdit.Services
 
         public event EventHandler<StationState> OnStateChanged;
         public event EventHandler<ImageRenderEventArgs> OnFrameRendered;
+        public event EventHandler<ChainCompletedEventArgs> OnExecutionCompleted;
         public event EventHandler<string> OnLogReceived;
 
         // 🌟 节点生命周期事件代理 (类型已对齐 IWorkerClient)
@@ -41,6 +42,7 @@ namespace Grayson.Vison.FlowEdit.Services
             // 订阅 StationWorker 的底层事件并转发
             _worker.OnStateChanged += (s, e) => OnStateChanged?.Invoke(this, e);
             _worker.OnFrameRendered += (s, e) => OnFrameRendered?.Invoke(this, e);
+            _worker.OnExecutionCompleted += (s, e) => OnExecutionCompleted?.Invoke(this, e);
 
             // 🌟 转发逻辑类型完全对齐
             _worker.OnNodeExecuting += (s, args) => OnNodeExecuting?.Invoke(this, args);

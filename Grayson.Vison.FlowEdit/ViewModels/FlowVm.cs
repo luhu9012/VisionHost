@@ -125,7 +125,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             }
         }
 
-       
+
         private bool _isDirty = false;
         /// <summary>
         /// 画布或流程拓扑是否发生变更（未同步到 Worker / 未保存）
@@ -197,7 +197,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             // 1. 初始化日志与图像渲染
             InitLogBusSubscription();
             _renderService = new HalconImageRenderService();
-            ImageDisplayVm = new ImageDisplayVm(new ExecutionContext(), _renderService);
+            ImageDisplayVm = new ImageDisplayVm(_renderService);
 
             // 2. 加载插件与配方管理器
             string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -389,6 +389,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 _workerClient.OnNodeExecuting -= Worker_OnNodeExecuting;
                 _workerClient.OnNodeExecuted -= Worker_OnNodeExecuted;
                 _workerClient.OnExecutionError -= Worker_OnExecutionError;
+                _workerClient.OnExecutionCompleted -= Worker_OnExecutionCompleted;
                 _workerClient.Dispose();
             }
 
@@ -401,6 +402,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             _workerClient.OnNodeExecuting += Worker_OnNodeExecuting;
             _workerClient.OnNodeExecuted += Worker_OnNodeExecuted;
             _workerClient.OnExecutionError += Worker_OnExecutionError;
+            _workerClient.OnExecutionCompleted += Worker_OnExecutionCompleted;
 
             await _workerClient.LoadRecipeAsync(CurrentProcess);
         }
@@ -449,7 +451,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 OnExecutionError?.Invoke(e.Node, e.Exception);
             });
         }
-
+        // 后台StatinWorker线程、进程发布的更新渲染事件
         private void WorkerClient_OnFrameRendered(object sender, ImageRenderEventArgs e)
         {
             if (e?.RenderData == null) return;
@@ -460,34 +462,27 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 {
                     var renderImg = _renderService.WrapImage(e.RenderData);
                     if (renderImg == null) return;
+                    WpfImageRenderContext renderContext;
 
-                    var existingContext = ImageDisplayVm.ImageHistoryList.FirstOrDefault(x => x.NodeId == e.NodeId);
-                    if (existingContext != null)
+                    renderContext = ImageDisplayVm.ImageHistoryList.FirstOrDefault(x => x.NodeId == e.NodeId);
+                    if (renderContext != null)
                     {
-                        existingContext.Image = renderImg;
-                        existingContext.Thumbnail = _renderService.CreateThumbnail(renderImg);
-                        if (ImageDisplayVm.ActiveImageContext?.NodeId == e.NodeId)
-                        {
-                            ImageDisplayVm.RefreshActiveImage();
-                        }
+                        renderContext.Image = renderImg;
+                        renderContext.Thumbnail = _renderService.CreateThumbnail(renderImg);
+
                     }
                     else
                     {
                         var node = CurrentProcess?.Nodes?.FirstOrDefault(n => n.NodeId == e.NodeId);
-                        var renderContext = new WpfImageRenderContext
+                        renderContext = new WpfImageRenderContext
                         {
                             NodeId = e.NodeId,
-                            NodeName = node?.DisplayName ?? $"Node_{e.NodeId}",
+                            NodeName = node?.DisplayName ?? $"[{e.NodeName}]",
                             Image = renderImg,
                             Thumbnail = _renderService.CreateThumbnail(renderImg)
                         };
-
-                        ImageDisplayVm.ImageHistoryList.Add(renderContext);
-                        if (ImageDisplayVm.IsAutoSwitchEnabled || ImageDisplayVm.ActiveImageContext == null)
-                        {
-                            ImageDisplayVm.SelectImageItem(renderContext);
-                        }
                     }
+                    ImageDisplayVm.AddOrUpdateImageContext(renderContext);
                 }
                 catch (Exception ex)
                 {
@@ -495,6 +490,43 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 }
             }, System.Windows.Threading.DispatcherPriority.Background);
         }
+        // 🌟 流程结束后的回调函数（处理 UI 复位及副作用清理）
+        private void Worker_OnExecutionCompleted(object sender, ChainCompletedEventArgs e)
+        {
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                LogBus.Info("FlowVm", $"接收到流程结束通知: {e.Result}");
+
+                // 2. 根据不同的结束结果做不同的业务副作用处理
+                switch (e.Result)
+                {
+                    case ChainExecutionResult.Success:
+                        // 例如：触发 OK 信号输出、自动化复位、日志收尾等
+                        break;
+                    case ChainExecutionResult.Failed:
+                        // 例如：触发 NG 报警清理
+                        break;
+                    case ChainExecutionResult.Canceled:
+                        // 例如：手动停止后的清空处理
+                        break;
+                }
+            });
+        }
+        /// <summary>
+        /// 准备进入新一轮执行：重置节点 UI 状态、清空临时观察数据
+        /// </summary>
+        private async Task PrepareForNewExecutionAsync()
+        {
+            // 1. 如果 Worker 处于 Faulted 或 Finished 状态，先重置 Worker/Engine 指针
+            if (_workerClient != null &&
+               (_workerClient.CurrentState == StationState.Faulted || _workerClient.CurrentState == StationState.Idle))
+            {
+                await ResetWorkerAsync();
+            }
+
+           
+        }
+
 
         private async Task EnsureWorkerSyncedAsync()
         {
@@ -521,6 +553,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             try
             {
+                //await PrepareForNewExecutionAsync();
                 await EnsureWorkerSyncedAsync(); // 🌟 运行前自动检查并重新构建
                 await _workerClient.StartAsync();
                 await _workerClient.TriggerOnceAsync();
@@ -530,13 +563,14 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 LogBus.Error("FlowVm", $"启动失败: {ex.Message}");
             }
         }
-
+        // 🌟 单步运行（Step Run）命令：在当前流程上触发一次执行
         private async Task TriggerWorkerOnceAsync()
         {
             if (_workerClient == null) return;
 
             try
             {
+                //await PrepareForNewExecutionAsync();
                 await EnsureWorkerSyncedAsync(); // 🌟 触发前自动检查并重新构建
                 await _workerClient.TriggerOnceAsync();
             }
@@ -546,15 +580,16 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             }
         }
 
+        // 🌟 运行当前选中节点（Step Run Node）命令
         private async Task StepRunNodeAsync()
         {
-            if (_workerClient == null ) return;
+            if (_workerClient == null) return;
             await _workerClient.LoadRecipeAsync(CurrentProcess);
 
             if (_workerClient is EmbeddedWorkerClientProxy embeddedProxy)
                 await embeddedProxy.StepNodeAsync(SelectedNode);
             else
-                await _workerClient.TriggerOnceAsync();
+                await _workerClient.StepNodeAsync(SelectedNode);
         }
 
         private async Task StopWorkerAsync()
@@ -577,16 +612,18 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         {
             try
             {
+                // 0) 清空图像显示历史
+                ImageDisplayVm.Clear();
                 // 1) 停止当前可能在运行的 Worker
                 if (_workerClient != null)
                 {
                     await _workerClient.StopAsync();
-            
-            // 重新加载配方，重置引擎内部的 Step/Node 指针
-            if (CurrentProcess != null)
+
+                    // 重新加载配方，重置引擎内部的 Step/Node 指针
+                    if (CurrentProcess != null)
                     {
-                        await _workerClient.LoadRecipeAsync(CurrentProcess); 
-            }
+                        await _workerClient.LoadRecipeAsync(CurrentProcess);
+                    }
                 }
 
                 // 2) 清空 UI 节点上的状态标志 (IsRunning, HasError)
@@ -599,12 +636,12 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     }
 
                     // 焦点自动切回第一个节点（如果有）
-                    SelectedNode = CurrentProcess.Nodes.FirstOrDefault();
-        }
+                   SelectedNode = null;
+                }
 
                 // 3) 可选：清空运行日志或监控数据
-                // ExecutionLogs.Clear();
-                // WatchData.Clear();
+                ExecutionLogs.Clear();
+                WatchData.Clear();
 
                 LogBus.Info("FlowVm", "流程已成功复位至就绪状态。");
             }

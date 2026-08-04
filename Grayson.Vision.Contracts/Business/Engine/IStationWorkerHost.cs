@@ -70,6 +70,7 @@ namespace Grayson.Vision.Contracts.Business.Engine
     {
         public string StationId { get; set; }
         public string NodeId { get; set; }
+        public string NodeName { get; set; } = string.Empty;
         public string ImagePathOrBufferId { get; set; } // 图像缓存 ID 或共享内存路径
         public object RenderData { get; set; }          // 额外 ROI 或检测框数据
     }

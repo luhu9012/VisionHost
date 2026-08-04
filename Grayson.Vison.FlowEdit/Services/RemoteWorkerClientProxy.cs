@@ -35,6 +35,7 @@ namespace Grayson.Vison.FlowEdit.Services
 
         public event EventHandler<StationState> OnStateChanged;
         public event EventHandler<ImageRenderEventArgs> OnFrameRendered;
+        public event EventHandler<ChainCompletedEventArgs> OnExecutionCompleted;
         public event EventHandler<string> OnLogReceived;
 
         // 🌟 节点生命周期事件代理 (类型已对齐 IWorkerClient)
@@ -77,6 +78,7 @@ namespace Grayson.Vison.FlowEdit.Services
         public async Task StopAsync() => await SendCommandAsync<object>("Stop", null);
         public async Task TriggerOnceAsync(string batchId = null) => await SendCommandAsync("TriggerOnce", batchId ?? Guid.NewGuid().ToString("N"));
 
+        public async Task StepNodeAsync(FlowNodeBase node) => await SendCommandAsync("StepNode", node);
         private async Task SendCommandAsync<T>(string action, T payload)
         {
             if (!IsConnected)
@@ -163,6 +165,13 @@ namespace Grayson.Vison.FlowEdit.Services
                     {
                         var errArgs = new NodeExecutionErrorEventArgs(errPayload.Node, new Exception(errPayload.ErrorMessage));
                         OnExecutionError?.Invoke(this, errArgs);
+                    }
+                    break;
+                case "OnExecutionCompleted":
+                    var completedArgs = JsonConvert.DeserializeObject<ChainCompletedEventArgs>(payloadJson);
+                    if (completedArgs != null)
+                    {
+                        OnExecutionCompleted?.Invoke(this, completedArgs);
                     }
                     break;
             }

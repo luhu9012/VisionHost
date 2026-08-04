@@ -112,6 +112,10 @@ namespace Grayson.Vision.WorkerHost
                         string batchId = payloadJson;
                         await _worker.TriggerOnceAsync(batchId);
                         break;
+                    case "StepNode":
+                        var node = JsonConvert.DeserializeObject<FlowNodeBase>(payloadJson);
+                        await _worker.StepNodeAsync(node);
+                        break;
 
                     default:
                         Console.WriteLine($"[IPC Command Warning] 无法识别的 Action 命令: {action}");

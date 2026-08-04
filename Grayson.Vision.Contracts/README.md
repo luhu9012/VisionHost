@@ -94,11 +94,58 @@ Grayson.Vision.Contracts
    └─ AssemblyInfo.cs
 ```
 
-> 说明：原 `Core/Message`、`Core/Runtime`、`Registry`、`Recipe`、`Business/Flow` 等旧规划目录已在当前版本中移除或重构到 `Business/Engine`、`Business/Models` 等位置。
+> 说明：目录未更新到最新 Contracts 结构，实际目录请以源码为准。
 
 ---
 
 ## 核心模块说明
+
+### 0. Business / Engine —— 工位 Worker 宿主契约
+
+为适应新版 **Worker-Host + IPC + Observer UI** 架构，Contracts 在 `Business/Engine` 下定义了工位 Worker 的统一接口与事件模型，供 `Grayson.Vision.Core` 的 `StationWorker`、控制台 `Grayson.Vision.WorkerHost` 以及 `Grayson.Vison.FlowEdit` 的嵌入式宿主共同实现或消费。
+
+#### StationState（工位状态）
+
+- `Idle`：初始空闲/配方就绪状态
+- `Stopped`：处于停止/空闲状态
+- `Running`：正在运行/准备响应触发
+- `Paused`：已暂停
+- `Faulted`：发生异常报错
+
+#### IStationWorkerHost
+
+工位 Worker 宿主契约，包含：
+
+- `StationId`：当前工位唯一标识
+- `State`：当前运行状态
+- `LoadRecipeAsync(FlowProcessModel recipe)`：加载/更新配方（含流程图拓扑与节点参数）
+- `StartAsync()` / `StopAsync()`：启动/停止工位
+- `TriggerOnceAsync(string batchId = null)`：触发单次节拍运行
+- `OnStateChanged` / `OnFrameRendered`：状态变更与渲染帧推送事件
+
+#### IStationWorkerEvents
+
+统一汇总的工位事件暴露接口，补充 `IStationWorkerHost` 未包含的节点级事件：
+
+- `OnNodeExecuting` / `OnNodeExecuted`：节点开始/结束执行
+- `OnExecutionError`：节点执行异常
+- `OnExecutionCompleted`：执行链完成（含 `ChainExecutionResult`）
+- `OnLogReceived`：日志接收
+
+#### ImageRenderEventArgs
+
+跨进程/跨线程图像渲染事件参数：
+
+- `StationId`、`NodeId`、`NodeName`：定位信息
+- `ImagePathOrBufferId`：图像缓存 ID 或共享内存路径（避免直接序列化大 Bitmap）
+- `RenderData`：额外 ROI、检测框、测量数据
+
+#### WorkMode
+
+工位运行模式：
+
+- `Debug`：调试/编排模式，支持单步/单次触发，开启全量日志与图像渲染
+- `Production`：自动/产线模式，监听外部硬触发，极简渲染，追求极致性能
 
 ### 1. Core
 
@@ -132,20 +179,35 @@ Grayson.Vision.Contracts
 ### 4. Enums
 
 - **`DeviceState`**：`Disconnected / Connecting / Connected / Error`。
+- **`WorkMode`**：`Debug / Production`，工位运行模式，由 `StationWorker` 在状态切换与事件输出策略中引用。
 - **`NodeCategory`**：10 大业务分类（图像采集、图像增强、标定定位、几何测量、识别读码、逻辑运算、流程控制、子流程、设备 IO、数据 MES）。
 - **`NodeType`**：具体节点类型枚举（如 `AcquireImage`、`ShapeMatch`、`CaliperMeasure`、`PlcReadWrite` 等）。
 - **`PortType / PortCategory / PortPosition / ConnectorType`**：端口方向、类别、位置、连接语义枚举。
 
-### 5. Imaging
+### 5. IPC —— 进程间通信契约
+
+`Grayson.Vision.Contracts.IPC` 定义了 Worker 进程与 UI 观察者之间统一的 JSON 消息封包。
+
+- **`IpcMessageType`**：
+  - `Command`：UI → Worker 控制指令
+  - `Response`：Worker → UI 指令应答
+  - `EventBroadcast`：Worker → UI 异步事件广播
+- **`IpcMessage`**：统一消息包，包含 `MessageId`、`StationId`、`MessageType`、`Action`、`PayloadJson`。
+
+> 该协议当前由 `Grayson.Vision.WorkerHost.NamedPipeIpcServer` 通过命名管道实现，未来可无缝替换为 TCP / gRPC / WebSocket 适配器而无需修改消息模型。
+
+### 6. Imaging
 
 提供与具体图像库（Halcon）解耦的渲染契约。
+
+> 新版架构下，`IRenderImage` / `IImageRenderService` 不仅要服务同进程 WPF 显示，还要能处理跨进程 Worker 推送的 `ImageRenderEventArgs`。建议通过 `ImagePathOrBufferId` 传递图像缓存 ID 或共享内存名称，而非直接序列化 HObject。
 
 - **`IRenderImage`**：渲染图像句柄，内部持有原生图像对象。
 - **`IImageRenderService`**：包装图像、查询像素、包装叠加图元、渲染到窗口、自适应窗口。
 - **`IImageDisplayHost`**：图像显示宿主契约，由 WPF 控件实现。
 - **`ImageRenderContext / ImageOverlay / OverlayKind`**：渲染上下文与叠加图元抽象。
 
-### 6. Logging
+### 7. Logging
 
 - **`LogBus`**：全局静态日志总线，通过 `OnLogProduced` 事件发布 `LogEntry`。
 - **`LogLevel / LogEntry`**：日志级别与日志实体。
@@ -163,9 +225,11 @@ Grayson.Vision.Contracts
 ## 设计约束
 
 1. **零第三方依赖**：Contracts 不引用 `HalconDotNet`、相机 SDK、PLC SDK、WPF 等任何第三方 dll。
-2. **抽象优先**：所有硬件、渲染、对话框、流程布局均通过接口或抽象模型描述。
+2. **抽象优先**：所有硬件、渲染、对话框、流程布局、Worker 宿主、IPC 消息均通过接口或抽象模型描述。
 3. **数据流驱动**：流程执行不再依赖传统 `Exec` 控制线，而是通过数据连线拓扑决定执行顺序。
 4. **节点可扩展**：新算法节点只需实现 `INodeExecutor` 并标记 `[Node]`/`[NodePort]`，由 `NodeFactory` 自动扫描注册。
+5. **Worker 宿主可替换**：同一 `IStationWorkerHost` 可以被 `Grayson.Vision.WorkerHost`（独立进程）或 `Grayson.Vison.FlowEdit`（嵌入式线程）实现/消费。
+6. **IPC 协议中性**：`IpcMessage` 不依赖任何传输层，便于在命名管道、TCP、gRPC 之间切换。
 
 ---
 
@@ -174,3 +238,5 @@ Grayson.Vision.Contracts
 - 新增节点类型时，应同步扩展 `NodeType` 与 `NodeCategory` 枚举，并为节点字段添加 `[NodeFieldMeta]` 与 `[Description]`。
 - 新增硬件类型时，优先扩展 `DeviceCategory` 并在 `Devices` 命名空间下新增对应接口。
 - 若需调整流程引擎执行语义，应同步更新 `FlowExecutor` 与 `ExecutionContext` 的接口/事件设计。
+- 新增 IPC 控制指令时，应同步更新 `IpcMessageContract` 相关说明、`Grayson.Vision.WorkerHost` 的 `HandleIpcCommand` 以及 UI 客户端的代理类。
+- 新增 Worker 事件时，优先在 `IStationWorkerEvents` 扩展，再由 `StationWorker` 触发，`WorkerHost` 广播给 UI。

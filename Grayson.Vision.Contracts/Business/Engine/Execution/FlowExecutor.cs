@@ -1,10 +1,11 @@
-﻿using System;
+﻿using Grayson.Vision.Contracts.Business.Events;
+using Grayson.Vision.Contracts.Business.Models;
+using Grayson.Vision.Contracts.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Grayson.Vision.Contracts.Business.Models;
-using Grayson.Vision.Contracts.Logging;
 
 namespace Grayson.Vision.Contracts.Business.Engine.Execution
 {
@@ -27,6 +28,8 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
 
         private int _currentStepIndex = 0;
         public ExecutionMode State { get; private set; } = ExecutionMode.Stopped;
+        // 🌟 新增：执行链完成事件
+        public event EventHandler<ChainCompletedEventArgs> OnChainCompleted;
 
         public FlowExecutor(ExecutionChain executionChain, ExecutionContext context)
         {
@@ -40,10 +43,13 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
         public async Task RunContinuousAsync()
         {
             if (State == ExecutionMode.Continuous) return;
-
+            ResetIndex();
             State = ExecutionMode.Continuous;
             _cts = new CancellationTokenSource();
             LogBus.Info("Engine", $"▶ 引擎按预编译执行链开始运行 (共 {_executionChain.Count} 个节点)...");
+
+            ChainExecutionResult execResult = ChainExecutionResult.Success;
+            Exception fatalException = null;
 
             try
             {
@@ -60,6 +66,7 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
                         if (!success)
                         {
                             LogBus.Warn("Engine", $"🛑 节点 [{node.DisplayName}] 执行失败，中止流程。");
+                            execResult = ChainExecutionResult.Failed;
                             break;
                         }
                     }
@@ -71,22 +78,29 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
                     _currentStepIndex++;
                 }
 
-                LogBus.Info("Engine", $"✔ 执行链顺利运行完毕。");
+                if (execResult == ChainExecutionResult.Success)
+                {
+                    LogBus.Info("Engine", $"✔ 执行链顺利运行完毕。");
+                }
             }
             catch (OperationCanceledException)
             {
+                execResult = ChainExecutionResult.Canceled;
                 LogBus.Info("Engine", "⏹ 流程已被手动停止。");
             }
             catch (Exception ex)
             {
+                execResult = ChainExecutionResult.Failed;
+                fatalException = ex;
                 LogBus.Error("Engine", $"❌ 引擎致命错误: {ex.Message}", ex);
             }
             finally
             {
                 Stop();
+                // 🌟 核心：通知上层执行链已结束
+                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(execResult, fatalException));
             }
         }
-
         /// <summary>
         /// 单步执行下一个节点
         /// </summary>
@@ -101,8 +115,10 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
 
             if (_currentStepIndex >= execChain.Count)
             {
-                _currentStepIndex = 0;
-                LogBus.Info("Engine", "🔄 单步执行到达末尾，自动重置回起点。");
+                LogBus.Info("Engine", "🔄 单步执行到达末尾");
+                // 🌟 告知上层单步已到末尾
+                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.StepEndReached));
+                return;
             }
 
             State = ExecutionMode.Step;
@@ -126,8 +142,13 @@ namespace Grayson.Vision.Contracts.Business.Engine.Execution
             }
 
             State = ExecutionMode.Paused;
-        }
 
+            // 🌟 如果单步刚好执行完最后一个节点，也触发完成通知
+            if (_currentStepIndex >= execChain.Count)
+            {
+                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.Success));
+            }
+        }
         /// <summary>
         /// 带数据绑定与异常捕获的单个节点执行
         /// </summary>

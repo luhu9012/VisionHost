@@ -34,11 +34,14 @@ Grayson.Vision.HalconWrapper.Wpf/
 ├── Properties/
 │   └── AssemblyInfo.cs
 ├── Controls/
-│   └── HalconImageDisplayHost.xaml       # 封装 HSmartWindowControlWPF 的显示宿主
+│   ├── HalconImageDisplayHost.xaml       # 封装 HSmartWindowControlWPF 的显示宿主
+│   └── HalconImageDisplayHost.xaml.cs    # 主机事件处理与 IImageDisplayHost 实现
 ├── Imaging/
 │   ├── HalconImageRenderService.cs       # IImageRenderService 的 Halcon 实现
 │   ├── HalconRenderImage.cs              # IRenderImage 的实现
 │   └── WpfImageRenderContext.cs          # 含 BitmapSource 缩略图的 WPF 专用渲染上下文
+├── ViewModels/
+│   └── ImageDisplayVm.cs                 # 图像显示 ViewModel（封装 HalconImageDisplayHost 的可绑定状态）
 └── Grayson.Vision.HalconWrapper.Wpf.csproj
 ```
 

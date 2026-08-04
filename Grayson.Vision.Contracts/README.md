@@ -46,14 +46,19 @@ Grayson.Vision.Contracts
 │  │  └─ NodePortAttribute.cs          // 节点端口声明特性
 │  ├─ Engine
 │  │  ├─ Execution
+│  │  │  ├─ ExecutionChain.cs          // 节点拓扑执行链（含验证与排序）
 │  │  │  ├─ ExecutionContext.cs        // 流程执行全局数据管线
 │  │  │  ├─ FlowExecutor.cs            // 流程执行引擎（Kahn 拓扑排序驱动）
 │  │  │  ├─ FrameCycleContext.cs       // 单次节拍/触发生命周期上下文
 │  │  │  └─ NodeExecutionContext.cs    // 单个节点执行上下文
-│  │  └─ INodeExecutor.cs              // 节点算子执行器接口
+│  │  ├─ INodeExecutor.cs              // 节点算子执行器接口
+│  │  └─ IStationWorkerHost.cs         // 工位 Worker 宿主契约
 │  ├─ Enums
 │  │  ├─ DeviceState.cs                // 设备通用状态枚举
-│  │  └─ NodeFlowEnums.cs              // 节点分类 / 端口 / 节点类型枚举
+│  │  ├─ NodeFlowEnums.cs              // 节点分类 / 端口 / 节点类型枚举
+│  │  └─ WorkMode.cs                   // 工位运行模式（Debug / Production）
+│  ├─ Events
+│  │  └─ IStationWorkerEvents.cs       // 工位状态/节点/执行链/日志事件
 │  ├─ Factories
 │  │  └─ NodeFactory.cs                // 流程节点工厂（扫描 / 注册 / 创建）
 │  ├─ Helpers
@@ -77,6 +82,10 @@ Grayson.Vision.Contracts
 │  ├─ ImageOverlay.cs                  // 图像叠加图元抽象
 │  ├─ ImageRenderContext.cs            // 渲染上下文
 │  └─ IRenderImage.cs                  // 与图像库无关的渲染图像句柄
+├─ IPC
+│  ├─ IpcLogSink.cs                    // 跨进程日志接收模型
+│  ├─ IpcMessageContract.cs            // IPC 消息类型与统一封包
+│  └─ NodeErrorPayload.cs              // 节点执行异常序列化载荷
 ├─ Logging
 │  ├─ FileLogSink.cs                   // 文件日志落盘
 │  └─ LogBus.cs                        // 全局日志总线
@@ -84,6 +93,11 @@ Grayson.Vision.Contracts
 │  └─ UserRole.cs                      // 系统角色枚举
 ├─ Plugin
 │  └─ INodePluginLoader.cs             // 节点插件加载器契约
+├─ Recipe
+│  ├─ DTOs
+│  │  ├─ DTOs.cs                       // 配方持久化数据传输对象
+│  │  └─ RecipeConverter.cs            // 配方 DTO 与业务模型互转
+│  └─ RecipeModel.cs                   // 配方业务模型
 ├─ Services
 │  ├─ IDialogService.cs                // 通用对话框服务
 │  ├─ IFileDialogService.cs            // 文件对话框服务
@@ -93,8 +107,6 @@ Grayson.Vision.Contracts
 └─ Properties
    └─ AssemblyInfo.cs
 ```
-
-> 说明：目录未更新到最新 Contracts 结构，实际目录请以源码为准。
 
 ---
 

@@ -1,4 +1,4 @@
-﻿using Grayson.Vision.Contracts.ViewModels;
+﻿using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;

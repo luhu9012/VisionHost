@@ -1,4 +1,4 @@
-﻿using Grayson.Vision.Contracts.ViewModels; 
+﻿using Grayson.Vision.Contracts.Infrastructure.Mvvm; 
 using System.ComponentModel;
 
 namespace Grayson.Vision.Nodes.Common

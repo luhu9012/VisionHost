@@ -1,6 +1,6 @@
 ﻿using Grayson.Vision.Contracts.Devices;
 using System.Collections.Generic;
-using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Core;
 using System;
 

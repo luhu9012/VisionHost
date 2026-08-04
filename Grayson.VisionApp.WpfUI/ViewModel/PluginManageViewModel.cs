@@ -1,6 +1,6 @@
-﻿using Grayson.Vision.Contracts.Business.Enums;
+﻿using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Devices;
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service; // 引入 DevicePoolManager 命名空间
 using System;

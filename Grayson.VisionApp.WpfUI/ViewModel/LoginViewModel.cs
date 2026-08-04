@@ -9,7 +9,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 

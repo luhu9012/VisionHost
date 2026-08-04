@@ -1,7 +1,7 @@
-﻿using Grayson.Vision.Contracts.Business.Attributes;
-using Grayson.Vision.Contracts.Business.Enums;
-using Grayson.Vision.Contracts.Business.Helpers;
-using Grayson.Vision.Contracts.Business.Models;
+﻿using Grayson.Vision.Contracts.Flow.Attributes;
+using Grayson.Vision.Contracts.Flow.Enums;
+using Grayson.Vision.Contracts.Flow.Helpers;
+using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vison.FlowEdit.Helpers;
 using System;
 using System.Globalization;

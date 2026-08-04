@@ -143,6 +143,7 @@
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
     <None Include="READE.md" />
+    <None Include="README.md" />
     <None Include="todo1.md" />
     <None Include="节点-宿主-视图窗口通信案例.md" />
   </ItemGroup>

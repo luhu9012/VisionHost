@@ -7,7 +7,7 @@
 //===================================================================================
 
 using Grayson.Vision.Contracts.Devices;
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using System.Collections.ObjectModel;

@@ -1,8 +1,7 @@
 ﻿using System;
 using DynamicExpresso;
-using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.Common.Logging;
-using Grayson.Vision.Contracts.Business.Engine.Execution;
+using Grayson.Vision.Contracts.Flow.Contexts;
 
 namespace Grayson.Vision.Common.Helpers
 {

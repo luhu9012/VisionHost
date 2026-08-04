@@ -1,5 +1,5 @@
-﻿using Grayson.Vision.Contracts.Business.Models;
-using Grayson.Vision.Contracts.Services;
+﻿using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.Contracts.Infrastructure.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;

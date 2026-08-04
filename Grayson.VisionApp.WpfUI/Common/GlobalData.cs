@@ -6,7 +6,7 @@
 // 说 明: 全局单例数据上下文,供所有 ViewModel 访问和订阅 (继承自 Contracts ViewModelBase)
 //===================================================================================
 
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 
 using System;
 

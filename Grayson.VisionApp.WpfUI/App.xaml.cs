@@ -14,7 +14,7 @@ using Grayson.Vision.WpfUI.Service;
 using Grayson.Vision.WpfUI.View;
 using Grayson.Vision.WpfUI.ViewModel;
 using Grayson.VisionApp.WpfUI.View;
-using Grayson.Vision.Contracts.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 
 namespace Grayson.Vision.WpfUI
 {

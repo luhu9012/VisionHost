@@ -4,7 +4,7 @@
 // 说 明: 产线工位管理 ViewModel (C# 7.3 兼容版，支持按钮完整演示逻辑)
 //===================================================================================
 
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using System;
 using System.Collections.Generic;

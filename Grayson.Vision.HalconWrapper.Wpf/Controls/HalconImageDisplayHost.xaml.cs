@@ -1,5 +1,5 @@
 using Grayson.Vision.Contracts.Imaging;
-using Grayson.Vision.Contracts.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
 using HalconDotNet;

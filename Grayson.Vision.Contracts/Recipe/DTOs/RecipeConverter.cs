@@ -1,6 +1,6 @@
-﻿using Grayson.Vision.Contracts.Business.Factories;
-using Grayson.Vision.Contracts.Business.Helpers;
-using Grayson.Vision.Contracts.Business.Models;
+﻿using Grayson.Vision.Contracts.Flow.Factories;
+using Grayson.Vision.Contracts.Flow.Helpers;
+using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.Contracts.Recipe.Models;
 using System;
 using System.Collections.Generic;

@@ -39,71 +39,98 @@ Grayson.Vision.Host.slnx
 
 ```
 Grayson.Vision.Contracts
-├─ Business
+├─ Core                                // 基础公共类型与结构
+│  ├─ Models
+│  │  ├─ Result.cs                     // 通用执行结果模型
+│  │  └─ Result<T>                     // 泛型执行结果模型（与 Result.cs 同文件）
+│  └─ Geometry
+│     └─ Pose3D.cs                     // 全局统一位姿结构体
+│
+├─ Station                             // 工位与 Worker 宿主契约
+│  ├─ Interfaces
+│  │  ├─ IStationWorkerHost.cs         // 工位 Worker 宿主契约
+│  │  └─ IStationWorkerEvents.cs       // 工位事件暴露接口
+│  ├─ Models
+│  │  ├─ ImageRenderEventArgs.cs       // 图像渲染推送事件参数
+│  │  └─ ChainCompletedEventArgs.cs    // 执行链完成事件参数
+│  └─ Enums
+│     ├─ StationState.cs               // 工位运行状态枚举
+│     └─ WorkMode.cs                   // 工位运行模式（Debug / Production）
+│
+├─ Flow                                // 流程图与节点引擎契约
+│  ├─ Nodes
+│  │  ├─ FlowNodeBase.cs               // 所有流程节点基类
+│  │  ├─ FlowNode.cs                   // 具体画布节点
+│  │  ├─ CompositeFlowNode.cs          // 复合（Group）节点
+│  │  └─ FlowModels.cs                 // 端口 / 连线 / 流程容器 / 工具箱元数据
+│  ├─ Executants
+│  │  ├─ INodeExecutor.cs              // 节点算子执行器接口
+│  │  ├─ ExecutionChain.cs             // 节点拓扑执行链（含验证与排序）
+│  │  └─ FlowExecutor.cs               // 流程执行引擎（Kahn 拓扑排序驱动）
+│  ├─ Contexts
+│  │  ├─ ExecutionContext.cs           // 流程执行全局数据管线
+│  │  ├─ NodeExecutionContext.cs       // 单个节点执行上下文
+│  │  └─ FrameCycleContext.cs          // 单次节拍/触发生命周期上下文
 │  ├─ Attributes
 │  │  ├─ NodeAttribute.cs              // 节点执行器元数据特性
-│  │  ├─ NodeFieldMetaAttribute.cs     // 节点字段 UI 元数据（图标/颜色/描述）
-│  │  └─ NodePortAttribute.cs          // 节点端口声明特性
-│  ├─ Engine
-│  │  ├─ Execution
-│  │  │  ├─ ExecutionChain.cs          // 节点拓扑执行链（含验证与排序）
-│  │  │  ├─ ExecutionContext.cs        // 流程执行全局数据管线
-│  │  │  ├─ FlowExecutor.cs            // 流程执行引擎（Kahn 拓扑排序驱动）
-│  │  │  ├─ FrameCycleContext.cs       // 单次节拍/触发生命周期上下文
-│  │  │  └─ NodeExecutionContext.cs    // 单个节点执行上下文
-│  │  ├─ INodeExecutor.cs              // 节点算子执行器接口
-│  │  └─ IStationWorkerHost.cs         // 工位 Worker 宿主契约
-│  ├─ Enums
-│  │  ├─ DeviceState.cs                // 设备通用状态枚举
-│  │  ├─ NodeFlowEnums.cs              // 节点分类 / 端口 / 节点类型枚举
-│  │  └─ WorkMode.cs                   // 工位运行模式（Debug / Production）
-│  ├─ Events
-│  │  └─ IStationWorkerEvents.cs       // 工位状态/节点/执行链/日志事件
+│  │  ├─ NodePortAttribute.cs          // 节点端口声明特性
+│  │  └─ NodeFieldMetaAttribute.cs     // 节点字段 UI 元数据（图标/颜色/描述）
 │  ├─ Factories
 │  │  └─ NodeFactory.cs                // 流程节点工厂（扫描 / 注册 / 创建）
-│  ├─ Helpers
-│  │  └─ EnumExtensions.cs             // 枚举 Description / Attribute 扩展
+│  ├─ Enums
+│  │  └─ NodeFlowEnums.cs              // 节点分类 / 端口 / 节点类型枚举
+│  └─ Helpers
+│     └─ EnumExtensions.cs             // 枚举 Description / Attribute 扩展
+│
+├─ Recipe                              // 配方与流程模型
+│  ├─ Models
+│  │  └─ RecipeModel.cs                // 配方业务模型
+│  └─ DTOs
+│     ├─ RecipeDto.cs                  // 配方持久化数据传输对象
+│     └─ RecipeConverter.cs            // 配方 DTO 与业务模型互转
+│
+├─ Devices                             // 硬件抽象层契约
+│  ├─ Interfaces
+│  │  ├─ IDevice.cs                    // 所有硬件顶层接口
+│  │  ├─ ICamera.cs                    // 工业相机通用接口
+│  │  ├─ IPlc.cs                       // PLC 通用读写接口
+│  │  └─ IHardwarePlugin.cs            // 硬件插件工厂接口
+│  └─ Enums
+│     └─ DeviceState.cs                // 设备通用状态枚举
+│
+├─ Ipc                                 // 进程间通信消息契约（WorkerHost <-> UI）
+│  ├─ Models
+│  │  ├─ IpcMessage.cs                 // IPC 消息类型与统一封包
+│  │  ├─ NodeErrorPayload.cs           // 节点执行异常序列化载荷
+│  │  └─ IpcLogSink.cs                 // 跨进程日志接收模型
+│  └─ Enums
+│     └─ IpcMessageType.cs             // IPC 消息类型枚举
+│
+├─ Imaging                             // 跨进程 / UI 无关的图像与渲染抽象
+│  ├─ Interfaces
+│  │  ├─ IRenderImage.cs               // 与图像库无关的渲染图像句柄
+│  │  ├─ IImageRenderService.cs        // 图像渲染服务契约
+│  │  └─ IImageDisplayHost.cs          // 图像显示宿主契约
 │  └─ Models
-│     ├─ CompositeFlowNode.cs          // 复合（Group）节点
-│     ├─ FlowModels.cs                 // 端口 / 连线 / 流程容器 / 工具箱元数据
-│     ├─ FlowNode.cs                   // 具体画布节点
-│     └─ FlowNodeBase.cs               // 所有流程节点基类
-├─ Core
-│  ├─ Pose3D.cs                        // 全局统一位姿结构体
-│  └─ Result.cs                        // 通用执行结果模型
-├─ Devices
-│  ├─ ICamera.cs                       // 工业相机通用接口
-│  ├─ IDevice.cs                       // 所有硬件顶层接口
-│  ├─ IHardwarePlugin.cs               // 硬件插件工厂接口
-│  └─ IPlc.cs                          // PLC 通用读写接口
-├─ Imaging
-│  ├─ IImageDisplayHost.cs             // 图像显示宿主契约
-│  ├─ IImageRenderService.cs           // 图像渲染服务契约
-│  ├─ ImageOverlay.cs                  // 图像叠加图元抽象
-│  ├─ ImageRenderContext.cs            // 渲染上下文
-│  └─ IRenderImage.cs                  // 与图像库无关的渲染图像句柄
-├─ IPC
-│  ├─ IpcLogSink.cs                    // 跨进程日志接收模型
-│  ├─ IpcMessageContract.cs            // IPC 消息类型与统一封包
-│  └─ NodeErrorPayload.cs              // 节点执行异常序列化载荷
-├─ Logging
-│  ├─ FileLogSink.cs                   // 文件日志落盘
-│  └─ LogBus.cs                        // 全局日志总线
-├─ Permission
-│  └─ UserRole.cs                      // 系统角色枚举
-├─ Plugin
-│  └─ INodePluginLoader.cs             // 节点插件加载器契约
-├─ Recipe
-│  ├─ DTOs
-│  │  ├─ DTOs.cs                       // 配方持久化数据传输对象
-│  │  └─ RecipeConverter.cs            // 配方 DTO 与业务模型互转
-│  └─ RecipeModel.cs                   // 配方业务模型
-├─ Services
-│  ├─ IDialogService.cs                // 通用对话框服务
-│  ├─ IFileDialogService.cs            // 文件对话框服务
-│  └─ IFlowLayoutService.cs            // 流程图自动布局服务
-├─ VM
-│  └─ ViewModelBase.cs                 // MVVM 基类 + RelayCommand
+│     ├─ ImageRenderContext.cs         // 渲染上下文
+│     └─ ImageOverlay.cs               // 图像叠加图元抽象
+│
+├─ Infrastructure                      // UI / 通用横切服务契约与基类
+│  ├─ Mvvm
+│  │  ├─ ViewModelBase.cs              // MVVM 基类
+│  │  └─ RelayCommand.cs               // 命令实现
+│  ├─ Logging
+│  │  ├─ LogBus.cs                     // 全局日志总线
+│  │  └─ FileLogSink.cs                // 文件日志落盘
+│  ├─ Services
+│  │  ├─ IDialogService.cs             // 通用对话框服务
+│  │  ├─ IFileDialogService.cs         // 文件对话框服务
+│  │  └─ IFlowLayoutService.cs         // 流程图自动布局服务
+│  ├─ Permission
+│  │  └─ UserRole.cs                   // 系统角色枚举
+│  └─ Plugin
+│     └─ INodePluginLoader.cs          // 节点插件加载器契约
+│
 └─ Properties
    └─ AssemblyInfo.cs
 ```
@@ -112,9 +139,9 @@ Grayson.Vision.Contracts
 
 ## 核心模块说明
 
-### 0. Business / Engine —— 工位 Worker 宿主契约
+### 0. Station —— 工位 Worker 宿主契约
 
-为适应新版 **Worker-Host + IPC + Observer UI** 架构，Contracts 在 `Business/Engine` 下定义了工位 Worker 的统一接口与事件模型，供 `Grayson.Vision.Core` 的 `StationWorker`、控制台 `Grayson.Vision.WorkerHost` 以及 `Grayson.Vison.FlowEdit` 的嵌入式宿主共同实现或消费。
+为适应新版 **Worker-Host + IPC + Observer UI** 架构，Contracts 在 `Station/Interfaces` 下定义了工位 Worker 的统一接口与事件模型，供 `Grayson.Vision.Core` 的 `StationWorker`、控制台 `Grayson.Vision.WorkerHost` 以及 `Grayson.Vison.FlowEdit` 的嵌入式宿主共同实现或消费。
 
 #### StationState（工位状态）
 
@@ -174,27 +201,26 @@ Grayson.Vision.Contracts
 - **`IPlc`**：PLC 通用点位读写（Bit/Int/Float）。
 - **`IHardwarePlugin / DeviceInfo`**：硬件插件工厂契约及设备扫描元数据，供反射动态加载插件使用。
 
-### 3. Business —— 流程图与节点执行
+### 3. Flow —— 流程图与节点执行
 
-当前 Contracts 的核心是 **数据流驱动的视觉流程图引擎**。
+当前 Contracts 的核心是 **数据流驱动的视觉流程图引擎**，相关契约位于 `Flow` 目录下。
 
-- **`INodeExecutor`**：所有节点算子的执行接口，实现类通过 `ExecuteAsync` 完成具体算法。
-- **`FlowNodeBase / FlowNode / CompositeFlowNode`**：节点模型，包含位置、端口集合、参数模型、执行器绑定。
-- **`NodePort / ConnectionModel / FlowProcessModel`**：端口、连线、流程容器模型；支持数据端口类型、相对坐标、动态连线更新。
-- **`ExecutionContext`**：全局数据管线，包含 `SharedVariables`、端口值缓存 `_portValueCache`、节点执行事件与日志接口。
-- **`NodeExecutionContext`**：单个节点执行上下文，封装端口数据读写、硬件解析、`FrameCycleContext`、节点状态暂存。
-- **`FrameCycleContext`**：单次节拍触发生命周期上下文（CycleId、TriggerTime、BatchId、TransientItems）。
-- **`FlowExecutor`**：流程执行引擎，基于 Kahn 拓扑排序构建执行链，支持连续运行、单步运行、停止、异常处理。
-- **`NodeFactory`**：静态节点工厂，扫描程序集注册 `INodeExecutor` 实现，生成工具箱元数据并创建画布节点。
-- **`NodeAttribute / NodeFieldMetaAttribute / NodePortAttribute`**：节点元数据特性，用于工具箱分组、图标、颜色、端口声明与参数绑定。
+- **`INodeExecutor`**（`Flow/Executants`）：所有节点算子的执行接口，实现类通过 `ExecuteAsync` 完成具体算法。
+- **`FlowNodeBase / FlowNode / CompositeFlowNode`**（`Flow/Nodes`）：节点模型，包含位置、端口集合、参数模型、执行器绑定。
+- **`NodePort / ConnectionModel / FlowProcessModel`**（`Flow/Nodes/FlowModels.cs`）：端口、连线、流程容器模型；支持数据端口类型、相对坐标、动态连线更新。
+- **`ExecutionContext`**（`Flow/Contexts`）：全局数据管线，包含 `SharedVariables`、端口值缓存 `_portValueCache`、节点执行事件与日志接口。
+- **`NodeExecutionContext`**（`Flow/Contexts`）：单个节点执行上下文，封装端口数据读写、硬件解析、`FrameCycleContext`、节点状态暂存。
+- **`FrameCycleContext`**（`Flow/Contexts`）：单次节拍触发生命周期上下文（CycleId、TriggerTime、BatchId、TransientItems）。
+- **`FlowExecutor`**（`Flow/Executants`）：流程执行引擎，基于 Kahn 拓扑排序构建执行链，支持连续运行、单步运行、停止、异常处理。
+- **`NodeFactory`**（`Flow/Factories`）：静态节点工厂，扫描程序集注册 `INodeExecutor` 实现，生成工具箱元数据并创建画布节点。
+- **`NodeAttribute / NodeFieldMetaAttribute / NodePortAttribute`**（`Flow/Attributes`）：节点元数据特性，用于工具箱分组、图标、颜色、端口声明与参数绑定。
 
 ### 4. Enums
 
-- **`DeviceState`**：`Disconnected / Connecting / Connected / Error`。
-- **`WorkMode`**：`Debug / Production`，工位运行模式，由 `StationWorker` 在状态切换与事件输出策略中引用。
-- **`NodeCategory`**：10 大业务分类（图像采集、图像增强、标定定位、几何测量、识别读码、逻辑运算、流程控制、子流程、设备 IO、数据 MES）。
-- **`NodeType`**：具体节点类型枚举（如 `AcquireImage`、`ShapeMatch`、`CaliperMeasure`、`PlcReadWrite` 等）。
-- **`PortType / PortCategory / PortPosition / ConnectorType`**：端口方向、类别、位置、连接语义枚举。
+- **`DeviceState`**（`Devices/Enums`）：`Disconnected / Connecting / Connected / Error`。
+- **`WorkMode`**（`Station/Enums`）：`Debug / Production`，工位运行模式，由 `StationWorker` 在状态切换与事件输出策略中引用。
+- **`StationState`**（`Station/Interfaces/IStationWorkerHost.cs`）：`Idle / Stopped / Running / Paused / Faulted`。
+- **`NodeCategory / NodeType / PortType / PortCategory / PortPosition / ConnectorType`**（`Flow/Enums/NodeFlowEnums.cs`）：节点分类、具体节点类型、端口方向、类别、位置、连接语义枚举。
 
 ### 5. IPC —— 进程间通信契约
 

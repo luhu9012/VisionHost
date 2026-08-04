@@ -1,9 +1,8 @@
 ﻿// 业务基础、特性、数据模型、节点工厂命名空间引用
-using Grayson.Vision.Contracts.Business;
-using Grayson.Vision.Contracts.Business.Attributes;
-using Grayson.Vision.Contracts.Business.Models;
-using Grayson.Vision.Contracts.Business.Factories;
-using Grayson.Vision.Contracts.Plugin;
+using Grayson.Vision.Contracts.Flow.Attributes;
+using Grayson.Vision.Contracts.Flow.Executants;
+using Grayson.Vision.Contracts.Flow.Factories;
+using Grayson.Vision.Contracts.Infrastructure.Plugin;
 // IO、反射、资源读取、WPF相关依赖
 using System;
 using System.Collections;

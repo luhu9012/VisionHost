@@ -5,7 +5,7 @@
 // 说 明: 配方管理界面 ViewModel (包含Mock数据收拢与交互逻辑)
 //===================================================================================
 
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using System;
 using System.Collections.Generic;

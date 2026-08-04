@@ -74,6 +74,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <None Include="README.md" />
     <None Include="README_hwindow.md" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

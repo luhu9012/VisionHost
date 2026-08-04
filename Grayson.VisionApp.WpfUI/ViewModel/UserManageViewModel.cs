@@ -5,7 +5,7 @@
 // 说 明: 用户管理界面的 ViewModel，包含用户增删改查和权限分配功能
 //===================================================================================
 
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using System;
 using System.Collections.Generic;

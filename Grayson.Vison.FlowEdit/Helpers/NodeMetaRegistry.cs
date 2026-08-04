@@ -2,8 +2,8 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Windows.Media;
-using Grayson.Vision.Contracts.Business.Attributes;
-using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Flow.Attributes;
+using Grayson.Vision.Contracts.Flow.Enums;
 
 namespace Grayson.Vison.FlowEdit.Helpers
 {

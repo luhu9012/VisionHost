@@ -4,7 +4,7 @@
 //===================================================================================
 
 using Grayson.Vision.Contracts.Imaging;
-using Grayson.Vision.Contracts.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using HalconDotNet;
 using System;
 using System.Collections.Generic;

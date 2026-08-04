@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Grayson.Vison.FlowEdit"
              xmlns:vm="clr-namespace:Grayson.Vison.FlowEdit.ViewModels"
-             xmlns:models="clr-namespace:Grayson.Vision.Contracts.Business.Models;assembly=Grayson.Vision.Contracts"
+             xmlns:models="clr-namespace:Grayson.Vision.Contracts.Flow.Nodes;assembly=Grayson.Vision.Contracts"
              xmlns:controls="clr-namespace:Grayson.Vison.FlowEdit.Controls"
              xmlns:view ="clr-namespace:Grayson.Vison.FlowEdit.Views"
              xmlns:cvts="clr-namespace:Grayson.Vison.FlowEdit.Converters"

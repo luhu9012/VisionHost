@@ -1,7 +1,7 @@
-﻿using Grayson.Vision.Contracts.Business.Enums;
+﻿using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.Contracts.Devices;
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service; // 引入统一服务层
 using System;

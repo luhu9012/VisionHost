@@ -4,7 +4,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Grayson.Vision.Contracts.IPC;
+using Grayson.Vision.Contracts.Ipc.Models;
 using Newtonsoft.Json;
 
 namespace Grayson.Vision.WorkerHost

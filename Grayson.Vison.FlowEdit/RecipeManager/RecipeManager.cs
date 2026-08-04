@@ -1,9 +1,9 @@
-﻿using Grayson.Vision.Contracts.Business.Enums;
-using Grayson.Vision.Contracts.Business.Models;
-using Grayson.Vision.Contracts.Logging;
-using Grayson.Vision.Contracts.Recipe.DTOs; // 引入 DTO 和 RecipeConverter
+﻿using Grayson.Vision.Contracts.Flow.Enums;
+using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
+using Grayson.Vision.Contracts.Recipe.DTOs;
 using Grayson.Vision.Contracts.Recipe.Models;
-using Grayson.Vision.Contracts.Services;
+using Grayson.Vision.Contracts.Infrastructure.Services;
 using Newtonsoft.Json;
 using System;
 using System.Collections.ObjectModel;

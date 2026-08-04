@@ -5,7 +5,7 @@
 // 说 明: 报警日志界面的 ViewModel
 //===================================================================================
 
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using System;
 using System.Collections.ObjectModel;

@@ -1,8 +1,7 @@
-﻿using Grayson.Vision.Contracts.Business.Engine.Execution;
-using Grayson.Vision.Contracts.Business.Models;
+﻿
 using Grayson.Vision.Contracts.Imaging;
-using Grayson.Vision.Contracts.Logging;
-using Grayson.Vision.Contracts.ViewModels;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using System;
 using System.Collections.ObjectModel;

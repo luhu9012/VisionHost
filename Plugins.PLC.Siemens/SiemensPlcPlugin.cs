@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Grayson.Vision.Contracts.Devices;
-using Grayson.Vision.Contracts.Business.Enums;
+using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Core;
 
 namespace Plugins.PLC.Siemens

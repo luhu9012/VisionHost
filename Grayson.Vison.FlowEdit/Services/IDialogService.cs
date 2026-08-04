@@ -1,4 +1,4 @@
-﻿using Grayson.Vision.Contracts.Services;
+﻿using Grayson.Vision.Contracts.Infrastructure.Services;
 using Microsoft.Win32;
 using System.Threading.Tasks;
 using System.Windows;

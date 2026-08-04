@@ -36,24 +36,31 @@ Grayson.Vision.WorkerHost (独立进程 Worker 宿主)
 ## 2. 目录结构
 
 ```text
-Grayson.Vison.FlowEdit/
+Grayson.Vision.FlowEdit/
 ├── App.xaml / App.xaml.cs              # 应用入口
-├── MainWindow.xaml / .cs               # 独立运行时的调试宿主窗口
+├── MainWindow.xaml / .xaml.cs          # 独立运行时的调试宿主窗口
+├── packages.config                     # NuGet 包引用
+├── Grayson.Vision.FlowEdit.csproj      # 项目文件
 ├── Views/
 │   ├── FlowEditView.xaml / .xaml.cs    # 主画布（工具箱、节点、连线、图像区、日志）
 │   └── NodePropertyWindow.xaml / .cs   # 节点属性弹窗
 ├── ViewModels/
-│   ├── FlowVm.cs                       # 主流程 ViewModel
+│   └── FlowVm.cs                       # 主流程 ViewModel
 ├── Controls/
 │   └── NodeControl.cs                  # 可视化节点控件（拖拽、端口渲染）
 ├── Converters/
 │   └── ValueConverters.cs              # XAML 转换器（贝塞尔曲线、节点颜色等）
-├── Services/
-│   ├── WpfDialogService.cs             # IDialogService / IFileDialogService 的 WPF 实现
-│   ├── NodePluginLoader.cs             # 插件加载，实现 INodePluginLoader
-│   ├── LayoutService.cs                # 自动布局，实现 IFlowLayoutService
+├── Helpers/
+│   └── NodeMetaRegistry.cs             # 节点元数据注册表
+├── RecipeManager/
 │   └── RecipeManager.cs                # 配方 JSON 导入/导出/扫描
-└── Grayson.Vision.FlowEdit.csproj
+└── Services/
+    ├── EmbeddedWorkerClientProxy.cs    # 本地 StationWorker 的 IWorkerClient 代理
+    ├── IDialogService.cs               # 对话框服务接口
+    ├── IWorkerClient.cs                # Worker 客户端抽象
+    ├── LayoutService.cs                # 自动布局，实现 IFlowLayoutService
+    ├── NodePluginLoader.cs             # 插件加载，实现 INodePluginLoader
+    └── RemoteWorkerClientProxy.cs      # 远端 WorkerHost 的 IWorkerClient 代理
 ```
 
 > 注意：本项目不再包含 `ImageDisplayControl.xaml` 和 `HalconRenderContext.cs`，Halcon 显示已迁移到 `Grayson.Vision.HalconWrapper.Wpf`。

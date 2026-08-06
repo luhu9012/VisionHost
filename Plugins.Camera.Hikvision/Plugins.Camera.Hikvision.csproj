@@ -37,6 +37,9 @@
     <Reference Include="MvCamCtrl.Net">
       <HintPath>..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\MvCamCtrl.Net.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -47,6 +50,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="官方案例Demo_仅供参考功�?cs" />
+    <Compile Include="官方案例Demo_仅供参考功�?Designer.cs">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    </Compile>
     <Compile Include="HikvisionPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -55,6 +62,20 @@
       <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
       <Name>Grayson.Vision.Contracts</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="官方案例Demo_仅供参考功�?en-US.resx">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="官方案例Demo_仅供参考功�?resx">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="官方案例Demo_仅供参考功�?zh-CHS.resx">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

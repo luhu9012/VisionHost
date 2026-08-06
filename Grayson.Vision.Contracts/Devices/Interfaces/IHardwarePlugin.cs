@@ -1,4 +1,7 @@
 ﻿using System.Collections.Generic;
+using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Core;
+
 
 namespace Grayson.Vision.Contracts.Devices
 {
@@ -22,7 +25,7 @@ namespace Grayson.Vision.Contracts.Devices
         /// <summary>
         /// 扫描/搜索当前系统连接的该品牌硬件设备
         /// </summary>
-        List<DeviceInfo> EnumerateDevices();
+        Result<List<DeviceInfo>> EnumerateDevices();
 
         /// <summary>
         /// 根据扫描得到的 DeviceId 创建具体的硬件实例（返回 IDevice 抽象）
@@ -42,6 +45,7 @@ namespace Grayson.Vision.Contracts.Devices
         public string ModelName { get; set; }  // 设备型号 (如 "MV-CA060-10GM", "S7-1200")
         public DeviceCategory Category { get; set; } // 设备类型
         public string BrandName { get; set; }  // 品牌名称
+
         public object ExtraInfo { get; set; }  // 额外信息 (如 IP、端口、通道号等)
     }
 }

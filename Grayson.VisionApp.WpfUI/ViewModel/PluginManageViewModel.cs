@@ -1,4 +1,4 @@
-﻿using Grayson.Vision.Contracts.Flow.Enums;
+﻿using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;

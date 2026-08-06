@@ -51,6 +51,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
@@ -75,6 +78,7 @@
     <Compile Include="Service\DevicePoolManager.cs" />
     <Compile Include="Service\IAuthenticationService.cs" />
     <Compile Include="Service\IDialogService.cs" />
+    <Compile Include="Service\INavigationAware.cs" />
     <Compile Include="Service\INavigationService.cs" />
     <Compile Include="Service\NavigationService.cs" />
     <Compile Include="ViewModel\AlarmViewModel.cs" />
@@ -199,7 +203,7 @@
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
-    <None Include="README_main.md" />
+    <None Include="README_wpfui.md" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
@@ -220,6 +224,14 @@
     <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
       <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
       <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Core\Grayson.Vision.Core.csproj">
+      <Project>{6a092dc6-536f-433f-94e0-31bf27777d95}</Project>
+      <Name>Grayson.Vision.Core</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper.Wpf\Grayson.Vision.HalconWrapper.Wpf.csproj">
+      <Project>{7a6b5c44-8d7e-4f2a-9b1c-3d8e4f5a6b7c}</Project>
+      <Name>Grayson.Vision.HalconWrapper.Wpf</Name>
     </ProjectReference>
     <ProjectReference Include="..\Grayson.Vision.Nodes\Grayson.Vision.Nodes.csproj">
       <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>

@@ -1,4 +1,5 @@
-﻿using Grayson.Vision.Contracts.Flow.Contexts;
+﻿using Grayson.Vision.Core.Client.Proxy;
+using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Executants;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Station.Models;
@@ -881,6 +882,71 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     }
                 });
             };
+        }
+
+        #endregion
+        #region 9🌟 跨界面/外部对接接口 (供 View 界面调用)
+
+        /// <summary>
+        /// 外部加载配方实体统一入口
+        /// </summary>
+        /// <param name="recipe">外部传入的 RecipeModel 对象</param>
+        public void LoadRecipe(RecipeModel recipe)
+        {
+            if (recipe == null) return;
+
+            // 1. 更新当前配方引用
+            CurrentRecipe = recipe;
+
+            // 2. 防空保护：确保主流程实体存在
+            if (CurrentRecipe.MainProcess == null)
+            {
+                CurrentRecipe.MainProcess = new FlowProcessModel
+                {
+                    ProcessName = string.IsNullOrWhiteSpace(recipe.RecipeName) ? "主流程" : recipe.RecipeName
+                };
+            }
+
+            // 3. 递归重构主流程及所有子流程的连线坐标与位置事件监听
+            BindAndRefreshConnections(CurrentRecipe.MainProcess);
+            if (CurrentRecipe.SubProcesses != null)
+            {
+                foreach (var subProc in CurrentRecipe.SubProcesses.Values)
+                {
+                    BindAndRefreshConnections(subProc);
+                }
+            }
+
+            // 4. 重置导航面包屑与当前编辑画布
+            Breadcrumbs.Clear();
+            Breadcrumbs.Add(RootProcess);
+            CurrentProcess = RootProcess;
+
+            // 5. 重新载入 Worker 客户端
+            InitWorkerClient();
+
+            // 6. 重置脏标记
+            IsDirty = false;
+
+            LogBus.Info("Recipe", $"[FlowVm] 成功加载外部配方: [{CurrentRecipe.RecipeName}]");
+        }
+
+        /// <summary>
+        /// 外部导出/同步当前编辑后的配方实体
+        /// </summary>
+        /// <returns>最新同步后的 RecipeModel</returns>
+        public RecipeModel ExportCurrentRecipe()
+        {
+            // 在退出或切换前同步当前编辑的流程数据
+            if (CurrentRecipe != null && CurrentProcess != null)
+            {
+                // 如果在主流程编辑，更新 MainProcess
+                if (CurrentProcess == RootProcess)
+                {
+                    CurrentRecipe.MainProcess = CurrentProcess;
+                }
+            }
+            return CurrentRecipe;
         }
 
         #endregion

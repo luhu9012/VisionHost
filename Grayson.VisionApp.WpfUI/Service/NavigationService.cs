@@ -45,6 +45,9 @@ namespace Grayson.Vision.WpfUI.Service
         /// <summary>
         /// 导航到指定页面
         /// </summary>
+        /// <summary>
+        /// 导航到指定页面
+        /// </summary>
         public void NavigateTo(PageType pageType, object parameter = null)
         {
             if (!_pageFactory.ContainsKey(pageType))
@@ -52,13 +55,30 @@ namespace Grayson.Vision.WpfUI.Service
                 throw new InvalidOperationException($"页面类型 {pageType} 未注册");
             }
 
-            // 创建页面实例
+            // 🌟 1. 触发旧页面的 OnNavigatedFrom（离开当前页面）
+            if (_contentPresenter.Content is UserControl oldPage)
+            {
+                if (oldPage.DataContext is INavigationAware oldVm)
+                {
+                    oldVm.OnNavigatedFrom();
+                }
+                else if (oldPage is INavigationAware oldViewAware)
+                {
+                    oldViewAware.OnNavigatedFrom();
+                }
+            }
+
+            // 创建新页面实例
             var page = _pageFactory[pageType]();
 
-            // 如果 ViewModel 支持接收参数,可以在这里传递
-            if (page.DataContext != null && parameter != null)
+            // 🌟 2. 触发新页面的 OnNavigatedTo（优先交由 ViewModel 处理，其次交由 View 处理）
+            if (page.DataContext is INavigationAware targetVm)
             {
-                // TODO: 实现参数传递逻辑
+                targetVm.OnNavigatedTo(parameter);
+            }
+            else if (page is INavigationAware targetViewAware)
+            {
+                targetViewAware.OnNavigatedTo(parameter);
             }
 
             _contentPresenter.Content = page;
@@ -66,7 +86,6 @@ namespace Grayson.Vision.WpfUI.Service
 
             PageChanged?.Invoke(this, pageType);
         }
-
         /// <summary>
         /// 返回上一页
         /// </summary>

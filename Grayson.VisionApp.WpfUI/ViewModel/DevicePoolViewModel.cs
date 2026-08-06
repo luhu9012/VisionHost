@@ -7,6 +7,7 @@ using Grayson.Vision.WpfUI.Service; // 引入统一服务层
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
@@ -31,33 +32,32 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string BrandName => Model.BrandName;
         public DeviceCategory Category => Model.Category;
 
+        // 1. 变成带通知的 Field 属性
         private DeviceState _state;
         public DeviceState State
         {
             get => _state;
-            set
+            private set
             {
                 if (Set(ref _state, value))
                 {
-                    Model.State = value;
                     OnPropertyChanged(nameof(StatusText));
+                    OnPropertyChanged(nameof(IsConnected)); // UI 绑定 IsConnected 也能联动
                 }
             }
         }
 
-        public string StatusText
+        public bool IsConnected => State == DeviceState.Connected;
+
+        public string StatusText => GetStatusText();
+
+        private string GetStatusText()
         {
-            get
+            switch (State)
             {
-                switch (State)
-                {
-                    case DeviceState.Connected:
-                        return "已连接";
-                    case DeviceState.Disconnected:
-                        return "已断开";
-                    default:
-                        return "未知";
-                }
+                case DeviceState.Connected: return "已连接";
+                case DeviceState.Disconnected: return "已断开";
+                default: return "未知";
             }
         }
 
@@ -84,19 +84,19 @@ namespace Grayson.Vision.WpfUI.ViewModel
         // 绑定真实 IDevice 的通用参数设置字典/属性
         public string IpAddress
         {
-            get => Model.GetParam("IP")?.ToString() ?? string.Empty;
+            get => Model.GetParam("IP")?.Data?.ToString() ?? string.Empty;
             set => Model.SetParam("IP", value);
         }
 
         public string Port
         {
-            get => Model.GetParam("Port")?.ToString() ?? string.Empty;
+            get => Model.GetParam("Port")?.Data?.ToString() ?? string.Empty;
             set => Model.SetParam("Port", value);
         }
 
         public string ExposureTime
         {
-            get => Model.GetParam("Exposure")?.ToString() ?? string.Empty;
+            get => Model.GetParam("Exposure")?.Data?.ToString() ?? string.Empty;
             set => Model.SetParam("Exposure", value);
         }
 
@@ -104,6 +104,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             Model = device ?? throw new ArgumentNullException(nameof(device));
             _state = device.State;
+
+            // 2. 自动监听底层设备的真实状态变化！
+            Model.StateChanged += (s, newState) =>
+            {
+                // 切回 UI 线程同步
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    State = newState;
+                });
+            };
         }
     }
 
@@ -115,7 +125,36 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public DeviceItemViewModel SelectedDevice
         {
             get => _selectedDevice;
-            set => Set(ref _selectedDevice, value);
+            set
+            {
+                if (Set(ref _selectedDevice, value))
+                {
+                    OnSelectedDeviceChanged(value);
+                }
+            }
+        }
+
+        private void OnSelectedDeviceChanged(DeviceItemViewModel newDevice)
+        {
+            if (newDevice != null)
+            {
+                newDevice.PropertyChanged += OnSelectedDevicePropertyChanged;
+            }
+
+            // 切换选中设备后，立即刷新连接/断开按钮的可用状态
+            (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (DisconnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void OnSelectedDevicePropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            // 只要底层设备状态变化（State/IsConnected）都刷新命令
+            if (e.PropertyName == nameof(DeviceItemViewModel.State) ||
+                e.PropertyName == nameof(DeviceItemViewModel.IsConnected))
+            {
+                (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (DisconnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
         }
 
         public ICommand RefreshCommand { get; }      // 刷新列表（同步单例容器）
@@ -213,8 +252,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private void OnConnect()
         {
             if (SelectedDevice == null) return;
+
             var res = SelectedDevice.Model.Connect();
-            SelectedDevice.State = SelectedDevice.Model.State;
+            // 显式更新 ViewModel 状态（内部会触发 StatusText 的 OnPropertyChanged）
+            //SelectedDevice.State = SelectedDevice.Model.State;
+
+            // 关键：强制 WPF 命令系统刷新 ConnectCommand / DisconnectCommand 的 CanExecute 状态
+            CommandManager.InvalidateRequerySuggested();
 
             if (!res.Success)
             {
@@ -225,8 +269,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private void OnDisconnect()
         {
             if (SelectedDevice == null) return;
+
             SelectedDevice.Model.Disconnect();
-            SelectedDevice.State = SelectedDevice.Model.State;
+            //SelectedDevice.State = SelectedDevice.Model.State;
+
+            // 强制刷新按钮可用状态
+            CommandManager.InvalidateRequerySuggested();
         }
 
         private void OnDeleteDevice()

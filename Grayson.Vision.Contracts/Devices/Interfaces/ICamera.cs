@@ -33,10 +33,6 @@ namespace Grayson.Vision.Contracts.Devices
         Result SetTriggerMode(bool enable);
         Result SoftwareTrigger();
 
-        // ----- GenICam 属性通用读写接口（用于参数补丁/高级配置） -----
-        Result SetParamString(string key, string value);
-        Result SetParamFloat(string key, float value);
-        Result SetParamInt(string key, long value);
         /// <summary>软触发单次拍照</summary>
         Result SoftTrigger();
 
@@ -45,5 +41,7 @@ namespace Grayson.Vision.Contracts.Devices
 
         /// <summary>停止连续采集</summary>
         Result StopContinuousGrab();
+
+        Result SaveImageFile(string path, string format);
     }
 }

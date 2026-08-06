@@ -12,7 +12,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Grayson.Vison.FlowEdit.Proxy
+namespace Grayson.Vision.Core.Client.Proxy
 {
     /// <summary>
     /// 远程 WorkerHost 进程 IPC 代理客户端

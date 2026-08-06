@@ -1,10 +1,13 @@
 ﻿using Grayson.Vision.Contracts.Devices;
+using Grayson.Vision.Contracts.Devices.Enums;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using System.Linq;  
+using System.Linq;
+using Grayson.Vision.Contracts.Core;
+using System.Windows;
 
 namespace Grayson.Vision.WpfUI.Service
 {
@@ -101,7 +104,15 @@ namespace Grayson.Vision.WpfUI.Service
             {
                 try
                 {
-                    list.AddRange(plugin.EnumerateDevices());
+                    Result<List<DeviceInfo>> result = plugin.EnumerateDevices();
+                    if (result?.Success == true)
+                    {
+                        list.AddRange(result.Data);
+                    }
+                    else
+                    {
+                        //MessageBox.Show(result.Message, "扫描设备失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
                 }
                 catch (Exception ex)
                 {

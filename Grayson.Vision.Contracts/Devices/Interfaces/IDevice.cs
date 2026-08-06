@@ -3,15 +3,10 @@ using Grayson.Vision.Contracts.Core;
 using System;
 using System.Collections.Generic;
 
+
 namespace Grayson.Vision.Contracts.Devices
 {
-    public enum DeviceCategory
-    {
-        Camera,         // 工业相机
-        MotionCard,     // 运动控制卡
-        PLC,            // PLC 通信
-        LightController // 光源控制器
-    }
+ 
     /// <summary>所有硬件顶层接口：相机、PLC、运动卡、机器人全部实现</summary>
     public interface IDevice : IDisposable
     {
@@ -44,5 +39,8 @@ namespace Grayson.Vision.Contracts.Devices
 
         /// <summary>读取硬件参数</summary>
         Result<object> GetParam(string key);
+
+        // 关键：状态变更事件
+        event EventHandler<DeviceState> StateChanged;
     }
 }

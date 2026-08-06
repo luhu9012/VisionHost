@@ -4,17 +4,15 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="700" d:DesignWidth="1100">
+             d:DesignHeight="760" d:DesignWidth="1200">
 
     <Grid Margin="12">
         <Grid.RowDefinitions>
-            <!-- 顶部工具栏 -->
             <RowDefinition Height="Auto"/>
-            <!-- 内容主体（左右分栏） -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ================= 1. 顶部工具栏 ================= -->
+        <!-- 1. 顶部工具栏卡片 -->
         <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="12,8" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -23,173 +21,170 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 标题 -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <TextBlock Text="📦" FontSize="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBlock Text="配方管理" Style="{StaticResource SubTitleTextStyle}"/>
+                    <TextBlock Text="配方与方案管理" Style="{StaticResource SubTitleTextStyle}"/>
                 </StackPanel>
 
-                <!-- 搜索框 -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="30,0,0,0">
-                    <TextBlock Text="搜索配方：" Style="{StaticResource FormLabelStyle}"/>
-                    <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                             Width="220" Height="32" 
+                    <TextBlock Text="搜索：" Style="{StaticResource FormLabelStyle}"/>
+                    <TextBox Style="{StaticResource ModernTextBoxStyle}" Width="200" Height="32" 
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
 
-                <!-- 快捷操作按钮群 -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Content="+ 新建配方" 
-                            Style="{StaticResource PrimaryButtonStyle}" 
-                            Command="{Binding CreateRecipeCommand}"
-                            Margin="0,0,8,0"/>
+                    <!-- 🌟 增加目标工位选择 -->
+                    <TextBlock Text="目标工位：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="110" Height="32" Margin="0,0,10,0"
+              ItemsSource="{Binding AvailableStations}" 
+              SelectedItem="{Binding SelectedTargetStationId}"/>
 
-                    <Button Content="🚀 切换/应用配方" 
-                            Style="{StaticResource SuccessButtonStyle}" 
-                            Command="{Binding ApplyRecipeCommand}"
-                            Margin="0,0,8,0"/>
-
-                    <Button Content="🗑️ 删除" 
-                            Style="{StaticResource DangerButtonStyle}" 
-                            Command="{Binding DeleteRecipeCommand}"/>
+                    <Button Content="+ 新建配方" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding CreateRecipeCommand}" Margin="0,0,8,0"/>
+                    <Button Content="🚀 应用至工位" Style="{StaticResource SuccessButtonStyle}" Command="{Binding ApplyRecipeCommand}" Margin="0,0,8,0"/>
+                    <Button Content="🗑️ 删除" Style="{StaticResource DangerButtonStyle}" Command="{Binding DeleteRecipeCommand}"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- ================= 2. 主体区（左列表，右参数配置） ================= -->
+        <!-- 2. 内容主体 -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <!-- 左侧配方表格列表 -->
                 <ColumnDefinition Width="3.5*"/>
-                <!-- 间隔 -->
-                <ColumnDefinition Width="8"/>
-                <!-- 右侧配方详细参数修改区 -->
-                <ColumnDefinition Width="2.5*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="4.5*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- ========== 左侧：配方列表 ========== -->
-            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Margin="0">
+            <!-- 左侧：配方列表卡片 -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}">
                 <DataGrid Style="{StaticResource ModernDataGridStyle}"
                           ItemsSource="{Binding FilteredRecipes}"
                           SelectedItem="{Binding SelectedRecipe, Mode=TwoWay}">
                     <DataGrid.Columns>
-                        <!-- 运行状态标记 -->
-                        <DataGridTemplateColumn Header="状态" Width="65">
+                        <DataGridTemplateColumn Header="状态" Width="50">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <!-- 生效中为绿色，非生效中为暗色 -->
-                                        <Ellipse Width="10" Height="10">
-                                            <Ellipse.Style>
-                                                <Style TargetType="Ellipse">
-                                                    <Setter Property="Fill" Value="#FF5A5A5A"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
-                                                            <Setter Property="Fill" Value="{StaticResource SuccessBrush}"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Ellipse.Style>
-                                        </Ellipse>
-                                    </StackPanel>
+                                    <Ellipse Width="10" Height="10" HorizontalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="#555555"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                        <Setter Property="Fill" Value="{StaticResource SuccessBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-
-                        <DataGridTextColumn Header="配方编号" Binding="{Binding RecipeCode}" Width="120"/>
+                        <DataGridTextColumn Header="配方编号" Binding="{Binding RecipeCode}" Width="130"/>
                         <DataGridTextColumn Header="配方名称" Binding="{Binding RecipeName}" Width="*"/>
-                        <DataGridTextColumn Header="产品类别" Binding="{Binding ProductCategory}" Width="110"/>
-                        <DataGridTextColumn Header="绑定视觉流程" Binding="{Binding FlowName}" Width="160"/>
-                        <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="140"/>
+                        <DataGridTextColumn Header="版本" Binding="{Binding Version}" Width="60"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
 
-            <!-- ========== 右侧：配方参数详情与编辑 ========== -->
-            <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Margin="0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+            <!-- 右侧：属性编辑卡片区（上下划分） -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                    <!-- 分组标题 -->
-                    <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,8" Margin="0,0,0,12">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⚙️ 配方详细参数" Style="{StaticResource SectionTitleTextStyle}"/>
-                            <TextBlock Text="{Binding SelectedRecipe.RecipeCode, StringFormat=' ({0})'}" 
-                                       Foreground="{StaticResource TextSecondaryBrush}" 
-                                       VerticalAlignment="Center"/>
+                <!-- 右上卡片 1：元数据配置 -->
+                <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="⚙️ 配方基础元信息" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
+                        
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Grid.Column="0">
+                                <TextBlock Text="配方名称" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.RecipeName, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="0" Grid.Column="2">
+                                <TextBlock Text="产品类别" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.ProductCategory, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
+                                <TextBlock Text="创建/修改人" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.Author, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+                                <TextBlock Text="版本号" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.Version, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 右中卡片：自动从 FlowEdit 拓扑分析出的逻辑设备 -->
+                <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="🔌 关联流程逻辑设备清单" Style="{StaticResource SectionTitleTextStyle}" VerticalAlignment="Center"/>
+                            <Button Content="🔄 从 Flow 重新分析提取" Style="{StaticResource SecondaryButtonStyle}" 
+            Command="{Binding RefreshDevicesCommand}" Padding="6,2" Margin="12,0,0,0" Height="26" FontSize="11"/>
                         </StackPanel>
-                    </Border>
 
-                    <!-- 属性表单编辑内容 -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="0,0,8,0">
+                        <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}"
+                  ItemsSource="{Binding LogicalDevicesList}" AutoGenerateColumns="False" IsReadOnly="True">
+                            <DataGrid.Columns>
+                                <!-- 映射状态校验 -->
+                                <DataGridTemplateColumn Header="硬件映射" Width="75">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <TextBlock Text="🟢 已绑定" Foreground="Green" FontSize="11"
+                                           Visibility="{Binding IsBoundToPhysical, Converter={StaticResource BoolToVisConverter}}"/>
+                                                <TextBlock Text="🔴 未绑定" Foreground="Red" FontSize="11"
+                                           Visibility="{Binding IsBoundToPhysical, Converter={StaticResource InverseBoolToVisConverter}}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                            <!-- 配方名称 -->
-                            <TextBlock Text="配方名称" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                                     Text="{Binding SelectedRecipe.RecipeName, UpdateSourceTrigger=PropertyChanged}" 
-                                     Margin="0,0,0,12"/>
+                                <DataGridTextColumn Header="逻辑设备ID" Binding="{Binding LogicalDeviceId}" Width="120"/>
+                                <DataGridTextColumn Header="节点依赖名称" Binding="{Binding LogicalDeviceName}" Width="130"/>
+                                <DataGridTextColumn Header="设备类型" Binding="{Binding LogicalDeviceType}" Width="100"/>
+                                <DataGridTextColumn Header="需求规格要求" Binding="{Binding RequiredSpec}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+                <!-- 右下卡片 3：操作按钮与跳转入口 -->
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
 
-                            <!-- 产品类别 -->
-                            <TextBlock Text="所属产品类别" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <ComboBox Style="{StaticResource ModernComboBoxStyle}" 
-                                      SelectedValue="{Binding SelectedRecipe.ProductCategory, Mode=TwoWay}"
-                                      SelectedValuePath="Content"
-                                      Margin="0,0,0,12">
-                                <ComboBoxItem Content="3C电子"/>
-                                <ComboBoxItem Content="新能源锂电"/>
-                                <ComboBoxItem Content="半导体"/>
-                                <ComboBoxItem Content="汽车零部件"/>
-                                <ComboBoxItem Content="通用分类"/>
-                            </ComboBox>
-
-                            <!-- 绑定视觉流程 -->
-                            <TextBlock Text="关联视觉流程文件" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                                     Text="{Binding SelectedRecipe.FlowName, UpdateSourceTrigger=PropertyChanged}" 
-                                     Margin="0,0,0,12"/>
-
-                            <!-- 相机曝光时间 (ms) -->
-                            <TextBlock Text="默认相机曝光 (us)" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                                     Text="{Binding SelectedRecipe.ExposureTime, UpdateSourceTrigger=PropertyChanged}" 
-                                     Margin="0,0,0,12"/>
-
-                            <!-- 相机增益 -->
-                            <TextBlock Text="默认相机增益 (Gain)" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                                     Text="{Binding SelectedRecipe.Gain, UpdateSourceTrigger=PropertyChanged}" 
-                                     Margin="0,0,0,12"/>
-
-                            <!-- 判定公差 -->
-                            <TextBlock Text="判定公差阈值 (mm)" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                                     Text="{Binding SelectedRecipe.ToleranceMm, UpdateSourceTrigger=PropertyChanged}" 
-                                     Margin="0,0,0,12"/>
-
-                            <!-- 配方描述 -->
-                            <TextBlock Text="配方备注说明" Style="{StaticResource FormLabelStyle}" Margin="0,4"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" 
-                                     Text="{Binding SelectedRecipe.Description, UpdateSourceTrigger=PropertyChanged}" 
-                                     Height="60" TextWrapping="Wrap" AcceptsReturn="True" 
-                                     Margin="0,0,0,12"/>
-
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <!-- 底部保存/放弃按钮 -->
-                    <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
-                        <Button Content="💾 保存配方参数" 
-                                Style="{StaticResource PrimaryButtonStyle}" 
-                                HorizontalAlignment="Stretch"
-                                Command="{Binding SaveDetailCommand}"/>
-                    </Border>
-                </Grid>
-            </Border>
+                        <Button Grid.Column="0" Content="💾 保存配方修改" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SaveDetailCommand}"/>
+                        <Button Grid.Column="2" Content="🎨 打开视觉流程编辑器 (FlowEdit)" Style="{StaticResource SuccessButtonStyle}" Command="{Binding OpenFlowEditCommand}"/>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>

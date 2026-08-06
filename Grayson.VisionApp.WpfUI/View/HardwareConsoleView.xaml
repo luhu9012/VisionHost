@@ -3,74 +3,118 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
              mc:Ignorable="d" d:DesignHeight="700" d:DesignWidth="1000">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
     </UserControl.Resources>
     <Grid Background="{StaticResource BackgroundBrush}">
             <TabControl Style="{StaticResource ModernTabControlStyle}">
 
                 <!-- 1. 相机调测 Panel -->
-                <TabItem Header="📷 相机调试" Style="{StaticResource ModernTabItemStyle}">
-                    <Grid Margin="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="320"/>
-                        </Grid.ColumnDefinitions>
+            <TabItem Header="📷 相机调试" Style="{StaticResource ModernTabItemStyle}">
+                <Grid Margin="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="340"/>
+                    </Grid.ColumnDefinitions>
 
-                        <!-- 左侧：图像实时渲染区域 -->
-                        <Border Grid.Column="0" Background="Black" CornerRadius="4" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,12,0">
-                            <Grid>
-                                <Image Source="{Binding CameraImageSource}" Stretch="Uniform"/>
-                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" 
-                                        Visibility="{Binding IsGrabbing, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}">
-                                    <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#444"/>
-                                    <TextBlock Text="相机未开流或无实时图像信号" Foreground="{StaticResource TextDisabledBrush}" Margin="0,10,0,0"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+                    <!-- 左侧：图像渲染与抓拍展示区域 -->
+                    <Border Grid.Column="0" Background="Black" CornerRadius="4" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,12,0">
+                        <Grid>
+                            <Image Source="{Binding CameraImageSource}" Stretch="Uniform"/>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" 
+                            Visibility="{Binding IsGrabbing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                                <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#444"/>
+                                <TextBlock Text="相机未开流或无实时图像信号" Foreground="{StaticResource TextDisabledBrush}" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
 
-                        <!-- 右侧：曝光/增益控制与软触发 -->
-                        <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Margin="0">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel>
-                                    <TextBlock Text="相机设备调试" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,15"/>
+                    <!-- 右侧：完整控制与参数设置面板 -->
+                    <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Margin="0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="相机设备控制台" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,12"/>
 
-                                    <TextBlock Text="选择相机设备 (设备池):" Style="{StaticResource FormLabelStyle}"/>
-                                    <ComboBox ItemsSource="{Binding CameraDeviceList}" DisplayMemberPath="DisplayName" SelectedItem="{Binding SelectedCameraDevice}" Margin="0,4,0,15"/>
+                                <!-- 1. 选择相机设备 -->
+                                <TextBlock Text="目标相机设备 (设备池):" Style="{StaticResource FormLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding CameraDeviceList}" DisplayMemberPath="DeviceKey" SelectedItem="{Binding SelectedCameraDevice}" Margin="0,4,0,10"/>
 
-                                    <TextBlock Text="曝光时间 (us):" Style="{StaticResource FormLabelStyle}"/>
-                                    <Grid Margin="0,4,0,8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ExposureTime, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <Button Grid.Column="1" Content="写入" Command="{Binding SetExposureTimeCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="12,4" Margin="6,0,0,0"/>
-                                    </Grid>
+                                <!-- 2. 连接与断开控制栏 -->
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="⚡ 连接相机" Command="{Binding ConnectCommand}" Style="{StaticResource SuccessButtonStyle}" Margin="0,0,4,0"/>
+                                    <Button Grid.Column="1" Content="⏹ 断开连接" Command="{Binding DisconnectCommand}" Style="{StaticResource DangerButtonStyle}" Margin="4,0,0,0"/>
+                                </Grid>
 
-                                    <TextBlock Text="增益 (Gain):" Style="{StaticResource FormLabelStyle}"/>
-                                    <Grid Margin="0,4,0,15">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding GainValue, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <Button Grid.Column="1" Content="写入" Command="{Binding SetGainCommand}" Style="{StaticResource SecondaryButtonStyle}" Padding="12,4" Margin="6,0,0,0"/>
-                                    </Grid>
+                                <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,12"/>
 
-                                    <Separator Background="{StaticResource BorderBrush}" Margin="0,5,0,15"/>
+                                <!-- 3. 常见采集与光学参数调整 -->
+                                <TextBlock Text="曝光时间 (us):" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ExposureTime, UpdateSourceTrigger=LostFocus}" Margin="0,4,0,10"/>
 
-                                    <Button Content="⚡ 软触发一次 (SoftTrigger)" Command="{Binding SoftwareTriggerCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,0,10"/>
-                                    <Button Content="▶ 开启连续采集" Command="{Binding StartGrabCommand}" Style="{StaticResource SuccessButtonStyle}" Margin="0,0,0,10"/>
-                                    <Button Content="⏹ 停止采集" Command="{Binding StopGrabCommand}" Style="{StaticResource DangerButtonStyle}"/>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Border>
-                    </Grid>
-                </TabItem>
+                                <TextBlock Text="增益 (Gain):" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding GainValue, UpdateSourceTrigger=LostFocus}" Margin="0,4,0,10"/>
 
-                <!-- 2. 运动控制轴 Panel -->
+                                <!-- 4. 触发模式选择 -->
+                                <TextBlock Text="触发模式 (Trigger Mode):" Style="{StaticResource FormLabelStyle}"/>
+                                <ComboBox SelectedIndex="{Binding SelectedTriggerMode}" Style="{StaticResource ModernComboBoxStyle}" Margin="0,4,0,10">
+                                    <ComboBoxItem Content="0 - 连续采集 (Free Run)"/>
+                                    <ComboBoxItem Content="1 - 软触发模式 (Software)"/>
+                                    <ComboBoxItem Content="2 - 硬件外触发 (Line0)"/>
+                                </ComboBox>
+
+                                <TextBlock Text="目标帧率 (AcquisitionFrameRate / fps):" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding AcquisitionFrameRate, UpdateSourceTrigger=LostFocus}" Margin="0,4,0,10"/>
+
+                                <!--<TextBlock Text="实际帧率 (ResultingFrameRate / fps):" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox IsReadOnly="True" IsTabStop="False" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ResultingFrameRate, Mode=OneWay}" Margin="0,4,0,10"/>
+
+                                <TextBlock Text="分辨率 (Width x Height):" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox IsReadOnly="True" IsTabStop="False" Style="{StaticResource ModernTextBoxStyle}" Margin="0,4,0,10">
+                                    <TextBox.Text>
+                                        <MultiBinding StringFormat="{}{0} x {1}">
+                                            <Binding Path="ImageWidth" Mode="OneWay"/>
+                                            <Binding Path="ImageHeight" Mode="OneWay"/>
+                                        </MultiBinding>
+                                    </TextBox.Text>
+                                </TextBox>-->
+
+                                <TextBlock Text="像素格式 (PixelFormat):" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox IsReadOnly="True" IsTabStop="False" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding PixelFormat, Mode=OneWay}" Margin="0,4,0,15"/>
+
+                                <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,15"/>
+
+                                <!-- 5. 采集流程控制 -->
+                                <Button Content="▶ 开启连续采集" Command="{Binding StartGrabCommand}" Style="{StaticResource SuccessButtonStyle}" Margin="0,0,0,8"/>
+                                <Button Content="⏹ 停止采集" Command="{Binding StopGrabCommand}" Style="{StaticResource DangerButtonStyle}" Margin="0,0,0,8"/>
+                                <Button Content="⚡ 软触发一次 (SoftTrigger)" Command="{Binding SoftwareTriggerCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,0,10"/>
+
+                                <!-- 6. 保存当前帧图像 -->
+                                <TextBlock Text="保存当前帧:" Style="{StaticResource FormLabelStyle}" Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Content="BMP" Command="{Binding SaveImageCommand}" CommandParameter="bmp" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,3,0"/>
+                                    <Button Grid.Column="1" Content="JPG" Command="{Binding SaveImageCommand}" CommandParameter="jpg" Style="{StaticResource SecondaryButtonStyle}" Margin="3,0,3,0"/>
+                                    <Button Grid.Column="2" Content="PNG" Command="{Binding SaveImageCommand}" CommandParameter="png" Style="{StaticResource SecondaryButtonStyle}" Margin="3,0,3,0"/>
+                                    <Button Grid.Column="3" Content="TIF" Command="{Binding SaveImageCommand}" CommandParameter="tif" Style="{StaticResource SecondaryButtonStyle}" Margin="3,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <!-- 2. 运动控制轴 Panel -->
                 <TabItem Header="⚙️ 轴点动调试" Style="{StaticResource ModernTabItemStyle}">
                     <Grid Margin="12">
                         <Grid.ColumnDefinitions>

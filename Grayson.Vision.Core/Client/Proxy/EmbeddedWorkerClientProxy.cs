@@ -7,7 +7,7 @@ using Grayson.Vision.Core;
 using System;
 using System.Threading.Tasks;
 
-namespace Grayson.Vison.FlowEdit.Proxy
+namespace Grayson.Vision.Core.Client.Proxy
 {
     /// <summary>
     /// 本地嵌入式后台线程 Worker 代理

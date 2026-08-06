@@ -5,7 +5,7 @@ using Grayson.Vision.Contracts.Flow.Nodes;
 namespace Grayson.Vision.Contracts.Recipe.Models
 {
     /// <summary>
-    /// 工厂/工位级配方契约模型
+    /// 全局唯一：工位级配方领域模型（数据与 UI 绑定共用）
     /// </summary>
     public class RecipeModel
     {
@@ -68,5 +68,7 @@ namespace Grayson.Vision.Contracts.Recipe.Models
         public Dictionary<string, FlowProcessModel> SubProcesses { get; set; }
             = new Dictionary<string, FlowProcessModel>();
         #endregion
+
+        public List<RecipeDeviceMappingModel> LogicalDevices { get; set; } = new List<RecipeDeviceMappingModel>();
     }
 }

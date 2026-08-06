@@ -1,211 +1,53 @@
-﻿//===================================================================================
-// Copyright (c) 2026 Grayson.Vision. All rights reserved.
-// 文件名: RecipeManageViewModel.cs
-// 创 建: 2026-07-29
-// 说 明: 配方管理界面 ViewModel (包含Mock数据收拢与交互逻辑)
-//===================================================================================
-
-using Grayson.Vision.Contracts.Infrastructure.Mvvm;
-using Grayson.Vision.WpfUI.Common;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
+using Newtonsoft.Json;
+
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Recipe.Models;
+using Grayson.Vision.Contracts.Recipe.Services;
+using Grayson.Vision.Contracts.Station.Interfaces;
+using Grayson.Vision.Core.Client;
+using Grayson.Vision.WpfUI.Common;
+using Grayson.Vision.WpfUI.Service;
+
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
-    /// <summary>
-    /// 配方数据模型
-    /// </summary>
-    public class RecipeModel : ViewModelBase
-    {
-        private string _recipeCode;
-        public string RecipeCode
-        {
-            get => _recipeCode;
-            set => Set(ref _recipeCode, value);
-        }
-
-        private string _recipeName;
-        public string RecipeName
-        {
-            get => _recipeName;
-            set => Set(ref _recipeName, value);
-        }
-
-        private string _productCategory;
-        public string ProductCategory
-        {
-            get => _productCategory;
-            set => Set(ref _productCategory, value);
-        }
-
-        private string _flowName;
-        public string FlowName
-        {
-            get => _flowName;
-            set => Set(ref _flowName, value);
-        }
-
-        private bool _isActive;
-        public bool IsActive
-        {
-            get => _isActive;
-            set => Set(ref _isActive, value);
-        }
-
-        private string _description;
-        public string Description
-        {
-            get => _description;
-            set => Set(ref _description, value);
-        }
-
-        private DateTime _updatedTime;
-        public DateTime UpdatedTime
-        {
-            get => _updatedTime;
-            set => Set(ref _updatedTime, value);
-        }
-
-        private string _updatedBy;
-        public string UpdatedBy
-        {
-            get => _updatedBy;
-            set => Set(ref _updatedBy, value);
-        }
-
-        private double _exposureTime;
-        public double ExposureTime
-        {
-            get => _exposureTime;
-            set => Set(ref _exposureTime, value);
-        }
-
-        private double _gain;
-        public double Gain
-        {
-            get => _gain;
-            set => Set(ref _gain, value);
-        }
-
-        private double _toleranceMm;
-        public double ToleranceMm
-        {
-            get => _toleranceMm;
-            set => Set(ref _toleranceMm, value);
-        }
-        private string _version;
-        public string Version
-        {
-            get => _version;
-            set => Set(ref _version, value);
-        }
-        public ObservableCollection<RecipeDeviceMappingModel> LogicalDevices { get; set; }
-        public RecipeModel()
-        {
-            LogicalDevices = new ObservableCollection<RecipeDeviceMappingModel>();
-        }
-    }
-
-    /// <summary>
-    /// 配方管理 ViewModel
-    /// </summary>
     public class RecipeManageViewModel : ViewModelBase
     {
-        public RecipeManageViewModel()
-        {
-            // 加载 Mock 数据
-            LoadMockData();
+        private readonly string _recipesFolderPath;
+        private readonly StationRuntimeManager _runtimeManager;
 
+        public RecipeManageViewModel(StationRuntimeManager runtimeManager = null)
+        {
+            _runtimeManager = runtimeManager;
+            _recipesFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Recipes");
+
+            if (!Directory.Exists(_recipesFolderPath))
+                Directory.CreateDirectory(_recipesFolderPath);
+
+            // 初始化工位选择列表 (可对接 RuntimeManager 或配置服务)
+            AvailableStations = new ObservableCollection<string> { "ST_01", "ST_02", "ST_03" };
+            SelectedTargetStationId = AvailableStations.FirstOrDefault();
+
+            LoadRecipesFromDisk();
+
+            // 命令绑定
             SearchCommand = new RelayCommand(_ => OnSearch());
             CreateRecipeCommand = new RelayCommand(_ => OnCreateRecipe());
-            ApplyRecipeCommand = new RelayCommand(_ => OnApplyRecipe(), _ => SelectedRecipe != null);
+            ApplyRecipeCommand = new RelayCommand(_ => OnApplyRecipe(), _ => SelectedRecipe != null && !string.IsNullOrEmpty(SelectedTargetStationId));
             DeleteRecipeCommand = new RelayCommand(_ => OnDeleteRecipe(), _ => SelectedRecipe != null && !SelectedRecipe.IsActive);
             SaveDetailCommand = new RelayCommand(_ => OnSaveDetail(), _ => SelectedRecipe != null);
+            OpenFlowEditCommand = new RelayCommand(_ => OnOpenFlowEdit(), _ => SelectedRecipe != null);
+            RefreshDevicesCommand = new RelayCommand(_ => RefreshLogicalDevicesFromFlow(), _ => SelectedRecipe?.MainProcess != null);
         }
 
-        #region Mock 数据产生（收拢至单一函数）
-
-        /// <summary>
-        /// 统一生成Mock数据集合，方便后期切换真正API/DB
-        /// </summary>
-        private static List<RecipeModel> GetMockRecipes()
-        {
-            return new List<RecipeModel>
-            {
-                new RecipeModel
-                {
-                    RecipeCode = "RCP-3C-001",
-                    RecipeName = "手机中框外观缺陷检测",
-                    ProductCategory = "3C电子",
-                    FlowName = "Main_Frame_Inspection_v2",
-                    IsActive = true,
-                    Description = "针对铝合金中框划痕、崩角的高精度检测配方",
-                    UpdatedTime = DateTime.Now.AddDays(-1),
-                    UpdatedBy = "张工",
-                    ExposureTime = 1200.0,
-                    Gain = 2.5,
-                    ToleranceMm = 0.05
-                },
-                new RecipeModel
-                {
-                    RecipeCode = "RCP-BAT-002",
-                    RecipeName = "锂电池极耳焊接质量检测",
-                    ProductCategory = "新能源锂电",
-                    FlowName = "Battery_Tab_Weld_Flow",
-                    IsActive = false,
-                    Description = "极耳焊点虚焊、炸飞、爆点红外与视觉融合分析",
-                    UpdatedTime = DateTime.Now.AddDays(-3),
-                    UpdatedBy = "李工",
-                    ExposureTime = 800.0,
-                    Gain = 1.0,
-                    ToleranceMm = 0.10
-                },
-                new RecipeModel
-                {
-                    RecipeCode = "RCP-SEMI-003",
-                    RecipeName = "晶圆Bumping金球尺寸测量",
-                    ProductCategory = "半导体",
-                    FlowName = "Wafer_Bump_Measure_Precise",
-                    IsActive = false,
-                    Description = "亚微米级金球高度及圆度测量配方",
-                    UpdatedTime = DateTime.Now.AddDays(-5),
-                    UpdatedBy = "王工",
-                    ExposureTime = 2500.0,
-                    Gain = 4.0,
-                    ToleranceMm = 0.01
-                },
-                new RecipeModel
-                {
-                    RecipeCode = "RCP-AUTO-004",
-                    RecipeName = "汽车刹车盘螺孔位置度",
-                    ProductCategory = "汽车零部件",
-                    FlowName = "Auto_Brake_Disc_Locating",
-                    IsActive = false,
-                    Description = "大视野高景深多螺孔中心距测量",
-                    UpdatedTime = DateTime.Now.AddDays(-7),
-                    UpdatedBy = "张工",
-                    ExposureTime = 1500.0,
-                    Gain = 1.5,
-                    ToleranceMm = 0.20
-                }
-            };
-        }
-
-        private void LoadMockData()
-        {
-            var data = GetMockRecipes();
-            AllRecipes = new ObservableCollection<RecipeModel>(data);
-            FilteredRecipes = new ObservableCollection<RecipeModel>(data);
-            SelectedRecipe = FilteredRecipes.FirstOrDefault();
-        }
-
-        #endregion
-
-        #region 属性
+        #region 属性绑定
 
         private ObservableCollection<RecipeModel> _allRecipes;
         public ObservableCollection<RecipeModel> AllRecipes
@@ -225,31 +67,183 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public RecipeModel SelectedRecipe
         {
             get => _selectedRecipe;
-            set => Set(ref _selectedRecipe, value);
+            set
+            {
+                if (Set(ref _selectedRecipe, value))
+                {
+                    // 🌟 自动从 FlowEdit 递归提取最新的逻辑设备依赖
+                    RefreshLogicalDevicesFromFlow();
+                }
+            }
+        }
+
+        private ObservableCollection<RecipeDeviceMappingModel> _logicalDevicesList;
+        public ObservableCollection<RecipeDeviceMappingModel> LogicalDevicesList
+        {
+            get => _logicalDevicesList;
+            set => Set(ref _logicalDevicesList, value);
         }
 
         private string _searchText;
         public string SearchText
         {
             get => _searchText;
-            set
-            {
-                if (Set(ref _searchText, value))
-                {
-                    OnSearch();
-                }
-            }
+            set { if (Set(ref _searchText, value)) OnSearch(); }
+        }
+
+        // 🌟 目标下发工位列表与选中项
+        public ObservableCollection<string> AvailableStations { get; set; }
+
+        private string _selectedTargetStationId;
+        public string SelectedTargetStationId
+        {
+            get => _selectedTargetStationId;
+            set => Set(ref _selectedTargetStationId, value);
         }
 
         #endregion
 
-        #region 命令与逻辑
+        #region 命令定义
 
         public ICommand SearchCommand { get; }
         public ICommand CreateRecipeCommand { get; }
         public ICommand ApplyRecipeCommand { get; }
         public ICommand DeleteRecipeCommand { get; }
         public ICommand SaveDetailCommand { get; }
+        public ICommand OpenFlowEditCommand { get; }
+        public ICommand RefreshDevicesCommand { get; }
+
+        #endregion
+
+        #region 交互逻辑
+
+        /// <summary>
+        /// 🌟 1. 递归提取与拓扑同步
+        /// </summary>
+        private void RefreshLogicalDevicesFromFlow()
+        {
+            if (SelectedRecipe == null)
+            {
+                LogicalDevicesList = new ObservableCollection<RecipeDeviceMappingModel>();
+                return;
+            }
+
+            if (SelectedRecipe.MainProcess != null)
+            {
+                // 反射拓扑提取
+                var extractedDevices = RecipeDeviceExtractor.ExtractLogicalDevices(SelectedRecipe.MainProcess);
+                SelectedRecipe.LogicalDevices = extractedDevices;
+            }
+
+            LogicalDevicesList = SelectedRecipe.LogicalDevices != null
+                ? new ObservableCollection<RecipeDeviceMappingModel>(SelectedRecipe.LogicalDevices)
+                : new ObservableCollection<RecipeDeviceMappingModel>();
+        }
+
+        /// <summary>
+        /// 🌟 2. 打开编辑器并传参
+        /// </summary>
+        private void OnOpenFlowEdit()
+        {
+            if (SelectedRecipe == null) return;
+
+            SaveRecipeToDisk(SelectedRecipe);
+
+            // 跨界面跳转并携带 SelectedRecipe 参数对象
+            NavigationService.Current?.NavigateTo(PageType.FlowEdit, SelectedRecipe);
+        }
+
+        /// <summary>
+        /// 🌟 3. 指定目标工位下发配方
+        /// </summary>
+        private async void OnApplyRecipe()
+        {
+            if (SelectedRecipe == null || string.IsNullOrEmpty(SelectedTargetStationId)) return;
+
+            // 保持内存与存储一致
+            SaveRecipeToDisk(SelectedRecipe);
+
+            if (_runtimeManager != null)
+            {
+                IWorkerClient client = _runtimeManager.GetClient(SelectedTargetStationId);
+                if (client != null && SelectedRecipe.MainProcess != null)
+                {
+                    await client.LoadRecipeAsync(SelectedRecipe.MainProcess);
+                    MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已成功下发至工位 [{SelectedTargetStationId}]！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+            }
+
+            MessageBox.Show($"未找到运行中的目标工位 [{SelectedTargetStationId}] 实例！", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        private void OnSaveDetail()
+        {
+            if (SelectedRecipe == null) return;
+
+            SelectedRecipe.LastModifiedTime = DateTime.Now;
+            SaveRecipeToDisk(SelectedRecipe);
+
+            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 保存成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void LoadRecipesFromDisk()
+        {
+            var list = new List<RecipeModel>();
+            if (Directory.Exists(_recipesFolderPath))
+            {
+                var files = Directory.GetFiles(_recipesFolderPath, "*.json");
+                foreach (var file in files)
+                {
+                    try
+                    {
+                        string json = File.ReadAllText(file);
+                        var recipe = JsonConvert.DeserializeObject<RecipeModel>(json);
+                        if (recipe != null) list.Add(recipe);
+                    }
+                    catch { }
+                }
+            }
+
+            AllRecipes = new ObservableCollection<RecipeModel>(list);
+            OnSearch();
+        }
+
+        private void SaveRecipeToDisk(RecipeModel recipe)
+        {
+            string filePath = Path.Combine(_recipesFolderPath, $"{recipe.RecipeCode ?? recipe.RecipeId}.json");
+            string json = JsonConvert.SerializeObject(recipe, Formatting.Indented);
+            File.WriteAllText(filePath, json);
+        }
+
+        private void OnCreateRecipe()
+        {
+            var newRecipe = new RecipeModel
+            {
+                RecipeCode = "RCP-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"),
+                RecipeName = "新建视觉配方",
+                ProductCategory = "通用分类",
+                Author = "Admin",
+                IsActive = false,
+                LogicalDevices = new List<RecipeDeviceMappingModel>()
+            };
+
+            SaveRecipeToDisk(newRecipe);
+            AllRecipes.Insert(0, newRecipe);
+            OnSearch();
+            SelectedRecipe = newRecipe;
+        }
+
+        private void OnDeleteRecipe()
+        {
+            if (SelectedRecipe == null || SelectedRecipe.IsActive) return;
+
+            string filePath = Path.Combine(_recipesFolderPath, $"{SelectedRecipe.RecipeCode ?? SelectedRecipe.RecipeId}.json");
+            if (File.Exists(filePath)) File.Delete(filePath);
+
+            AllRecipes.Remove(SelectedRecipe);
+            OnSearch();
+        }
 
         private void OnSearch()
         {
@@ -259,79 +253,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
             else
             {
-                var keyword = SearchText.Trim().ToLower();
-                var results = AllRecipes.Where(r =>
-                    (r.RecipeCode != null && r.RecipeCode.ToLower().Contains(keyword)) ||
-                    (r.RecipeName != null && r.RecipeName.ToLower().Contains(keyword)) ||
-                    (r.ProductCategory != null && r.ProductCategory.ToLower().Contains(keyword))
+                var kw = SearchText.Trim().ToLower();
+                FilteredRecipes = new ObservableCollection<RecipeModel>(
+                    AllRecipes.Where(r => (r.RecipeCode?.ToLower().Contains(kw) == true) ||
+                                          (r.RecipeName?.ToLower().Contains(kw) == true))
                 );
-                FilteredRecipes = new ObservableCollection<RecipeModel>(results);
             }
-
-            if (SelectedRecipe == null || !FilteredRecipes.Contains(SelectedRecipe))
-            {
-                SelectedRecipe = FilteredRecipes.FirstOrDefault();
-            }
-        }
-
-        private void OnCreateRecipe()
-        {
-            var newRecipe = new RecipeModel
-            {
-                RecipeCode = "RCP-NEW-" + DateTime.Now.ToString("fff"),
-                RecipeName = "新建配方方案",
-                ProductCategory = "通用分类",
-                FlowName = "Default_Vision_Flow",
-                IsActive = false,
-                Description = "自定义新建检测配方",
-                UpdatedTime = DateTime.Now,
-                UpdatedBy = "CurrentOperator",
-                ExposureTime = 1000,
-                Gain = 1.0,
-                ToleranceMm = 0.05
-            };
-
-            AllRecipes.Insert(0, newRecipe);
-            OnSearch();
-            SelectedRecipe = newRecipe;
-        }
-
-        private void OnApplyRecipe()
-        {
-            if (SelectedRecipe == null) return;
-
-            foreach (var recipe in AllRecipes)
-            {
-                recipe.IsActive = (recipe == SelectedRecipe);
-            }
-
-            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已成功下发并应用至当前生产线！", "配方应用成功", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void OnDeleteRecipe()
-        {
-            if (SelectedRecipe == null) return;
-
-            if (SelectedRecipe.IsActive)
-            {
-                MessageBox.Show("不能删除当前正在生产生效中的配方！", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var confirm = MessageBox.Show($"确定要删除配方 [{SelectedRecipe.RecipeName}] 吗？", "警告", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (confirm == MessageBoxResult.Yes)
-            {
-                AllRecipes.Remove(SelectedRecipe);
-                OnSearch();
-            }
-        }
-
-        private void OnSaveDetail()
-        {
-            if (SelectedRecipe == null) return;
-
-            SelectedRecipe.UpdatedTime = DateTime.Now;
-            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 参数配置保存成功！", "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            SelectedRecipe = FilteredRecipes.FirstOrDefault();
         }
 
         #endregion

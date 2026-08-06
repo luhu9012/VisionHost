@@ -31,6 +31,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -41,6 +44,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Client\Proxy\EmbeddedWorkerClientProxy.cs" />
+    <Compile Include="Client\Proxy\RemoteWorkerClientProxy.cs" />
+    <Compile Include="Client\StationProcessManager.cs" />
+    <Compile Include="Client\StationRuntimeManager.cs" />
+    <Compile Include="Client\WorkerClientFactory.cs" />
+    <Compile Include="Client\WorkerClientManager.cs" />
     <Compile Include="StationWorker.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="StationContext.cs" />
@@ -52,7 +61,8 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="README.md" />
+    <None Include="packages.config" />
+    <None Include="README_core.md" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

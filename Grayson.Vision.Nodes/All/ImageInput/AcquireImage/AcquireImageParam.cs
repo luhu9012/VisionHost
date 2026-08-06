@@ -1,10 +1,14 @@
 ﻿using Grayson.Vision.Nodes.Common;
+using Grayson.Vision.Contracts.Devices.Enums;
 
 namespace Grayson.Vision.Nodes.All.ImageInput.AcquireImage
 {
     public class AcquireImageParam : ParamBase
     {
         private string _cameraAlias = "TopCam";
+
+        // 🌟 通过特性标注：该属性关联的是相机逻辑设备
+        [LogicalDeviceBinding(deviceType: DeviceCategory.Camera, deviceName: "Top Camera", requiredSpec: "面阵工业相机")]
         public string CameraAlias
         {
             get => _cameraAlias;

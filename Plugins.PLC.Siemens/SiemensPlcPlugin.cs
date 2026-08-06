@@ -16,8 +16,23 @@ namespace Plugins.PLC.Siemens
         public string DeviceName { get; set; }
         public string DeviceKey { get; set; }
         public string BrandName { get; set; }
-        public DeviceState State { get; set; }
+      
         public DeviceCategory Category { get; set; }
+        private DeviceState _state = DeviceState.Disconnected;
+        public DeviceState State
+        {
+            get => _state;
+            set
+            {
+                if (_state != value)
+                {
+                    _state = value;
+                    StateChanged?.Invoke(this, _state); // 触发事件
+                }
+            }
+        }
+
+        public event EventHandler<DeviceState> StateChanged;
         public SiemensPlc(string deviceId)
         {
             DeviceId = deviceId;
@@ -100,13 +115,14 @@ namespace Plugins.PLC.Siemens
 
         public void Initialize() { }
 
-        public List<DeviceInfo> EnumerateDevices()
+        public Result<List<DeviceInfo>> EnumerateDevices()
         {
+            return null;
             // PLC 也可以返回常用/历史配置点位，或者通过 S7 协议全网段 Ping 广播
-            return new List<DeviceInfo>
+            return Result<List<DeviceInfo>>.Ok(new List<DeviceInfo>
             {
                 new DeviceInfo { DeviceId = "192.168.1.200", ModelName = "S7-1200", Category = Category, BrandName = BrandName }
-            };
+            });
         }
 
         public IDevice CreateDevice(string deviceId)

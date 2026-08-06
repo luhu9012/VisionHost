@@ -5,7 +5,7 @@ using Grayson.Vision.Contracts.Flow.Nodes;
 using System;
 using System.Threading.Tasks;
 
-namespace Grayson.Vison.FlowEdit.Proxy
+namespace Grayson.Vision.Contracts.Station.Interfaces
 {
     /// <summary>
     /// Worker 客户端客户端统一接口

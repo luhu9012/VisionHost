@@ -69,6 +69,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             InitializeMenuItems();
 
+            // 🌟 订阅导航切换事件，保证菜单选中状态始终与 NavigationService 当前页面同步
+            _navigationService.PageChanged += OnPageChanged;
+
             NavigateCommand = new RelayCommand(OnNavigate);
             LogoutCommand = new RelayCommand(_ => OnLogout());
             MinimizeCommand = new RelayCommand(_ => OnMinimize());
@@ -78,6 +81,65 @@ namespace Grayson.Vision.WpfUI.ViewModel
             NavigateToAlarmCommand = new RelayCommand(_ => OnNavigateToAlarm());
             DismissAlarmBannerCommand = new RelayCommand(_ => _globalData.DismissCriticalAlarm());
             ToggleMenuCollapseCommand = new RelayCommand(_ => ToggleMenuCollapse());
+        }
+        /// <summary>
+        /// 🌟 当 NavigationService 发生页面切换（无论是代码跳转还是 GoBack）时自动触发
+        /// </summary>
+        private void OnPageChanged(object sender, PageType pageType)
+        {
+            // 递归查找匹配 PageType 的菜单项
+            var matchedItem = FindMenuItemByPageType(MenuItems, pageType);
+            if (matchedItem != null)
+            {
+                ClearMenuSelection(MenuItems);
+                matchedItem.IsSelected = true;
+                SelectedMenuItem = matchedItem;
+
+                // 如果该菜单属于某个折叠组（父节点），顺便将父节点展开
+                ExpandParentMenuIfNeeded(MenuItems, matchedItem);
+            }
+        }
+        /// <summary>
+        /// 递归查找目标 PageType 对应的 MenuItemViewModel
+        /// </summary>
+        private MenuItemViewModel FindMenuItemByPageType(ObservableCollection<MenuItemViewModel> items, PageType pageType)
+        {
+            if (items == null) return null;
+
+            foreach (var item in items)
+            {
+                if (!item.IsSectionHeader && !item.HasChildren && item.PageType == pageType)
+                {
+                    return item;
+                }
+
+                if (item.HasChildren)
+                {
+                    var childMatch = FindMenuItemByPageType(item.Children, pageType);
+                    if (childMatch != null) return childMatch;
+                }
+            }
+            return null;
+        }
+        /// <summary>
+        /// 若选中的是子菜单，自动展开父级菜单
+        /// </summary>
+        private bool ExpandParentMenuIfNeeded(ObservableCollection<MenuItemViewModel> items, MenuItemViewModel targetItem)
+        {
+            if (items == null) return false;
+
+            foreach (var item in items)
+            {
+                if (item.HasChildren)
+                {
+                    if (item.Children.Contains(targetItem) || ExpandParentMenuIfNeeded(item.Children, targetItem))
+                    {
+                        item.IsExpanded = true;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         #region 属性
@@ -247,11 +309,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     return;
                 }
 
-                ClearMenuSelection(MenuItems);
-
-                menuItem.IsSelected = true;
-                SelectedMenuItem = menuItem;
-
+                // 🌟 发起页面导航（PageChanged 事件会自动更新菜单高亮状态）
                 _navigationService.NavigateTo(menuItem.PageType);
             }
         }

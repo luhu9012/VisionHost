@@ -89,7 +89,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 从真实 DevicePoolManager 中加载插件列表
+        /// 从DevicePoolManager 中加载插件列表
         /// </summary>
         private void LoadRealPluginsFromService()
         {

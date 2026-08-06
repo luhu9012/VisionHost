@@ -4,11 +4,11 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{CF4D0F77-4A4F-4684-85AF-055EEFBB28C7}</ProjectGuid>
+    <ProjectGuid>{A909AF73-E5D5-4CBC-8A86-7A7ED579FB49}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Plugins.Motion.Zmc</RootNamespace>
-    <AssemblyName>Plugins.Motion.Zmc</AssemblyName>
+    <RootNamespace>Grayson.Vision.Repository</RootNamespace>
+    <AssemblyName>Grayson.Vision.Repository</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
@@ -21,7 +21,6 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -32,7 +31,13 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="LiteDB, Version=5.0.21.0, Culture=neutral, PublicKeyToken=4ee40123013c9f27, processorArchitecture=MSIL">
+      <HintPath>..\packages\LiteDB.5.0.21\lib\net45\LiteDB.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+    </Reference>
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -42,11 +47,24 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ZmcConnectionOptions.cs" />
-    <Compile Include="ZmcMotionCard.cs" />
-    <Compile Include="ZmcMotionCardPlugin.cs" />
+    <Compile Include="Core\BaseEntity.cs" />
+    <Compile Include="Core\DbContext.cs" />
+    <Compile Include="Entities\DeviceConfigPo.cs" />
+    <Compile Include="Entities\InspectionLogPo.cs" />
+    <Compile Include="Entities\RecipePo.cs" />
+    <Compile Include="Entities\UserPo.cs" />
+    <Compile Include="Implementations\LiteDbDeviceConfigRepository.cs" />
+    <Compile Include="Implementations\LiteDbInspectionLogRepository.cs" />
+    <Compile Include="Implementations\LiteDbRecipeRepository.cs" />
+    <Compile Include="Implementations\LiteDbRepositoryBase.cs" />
+    <Compile Include="Implementations\LiteDbUserRepository.cs" />
+    <Compile Include="Interfaces\IDeviceConfigRepository.cs" />
+    <Compile Include="Interfaces\IInspectionLogRepository.cs" />
+    <Compile Include="Interfaces\IRecipeRepository.cs" />
+    <Compile Include="Interfaces\IUserRepository.cs" />
+    <Compile Include="StorageFactory.cs" />
+    <Compile Include="Interfaces\IRepository.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Zmcaux.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
@@ -54,5 +72,10 @@
       <Name>Grayson.Vision.Contracts</Name>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="目录.md" />
+  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

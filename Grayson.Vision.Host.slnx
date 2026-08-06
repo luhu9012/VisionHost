@@ -9,9 +9,11 @@
   <Project Path="Grayson.Vision.HalconWrapper.Wpf/Grayson.Vision.HalconWrapper.Wpf.csproj" Id="7a6b5c44-8d7e-4f2a-9b1c-3d8e4f5a6b7c" />
   <Project Path="Grayson.Vision.HalconWrapper/Grayson.Vision.HalconWrapper.csproj" Id="ecc73133-c99e-43f3-9206-1edc2cbda74a" />
   <Project Path="Grayson.Vision.Nodes/Grayson.Vision.Nodes.csproj" Id="5a281c6b-1822-4435-aa21-e42f1a0d02f7" />
+  <Project Path="Grayson.Vision.Repository/Grayson.Vision.Repository.csproj" Id="a909af73-e5d5-4cbc-8a86-7a7ed579fb49" />
   <Project Path="Grayson.Vision.WorkerHost/Grayson.Vision.WorkerHost.csproj" Id="3f5ddbf3-8618-48ce-a3bf-4fb07fdccd1b" />
   <Project Path="Grayson.VisionApp.WpfUI/Grayson.Vision.WpfUI.csproj" Id="a161af53-5187-4451-9f5d-cb3327f68d67" />
   <Project Path="Grayson.Vison.FlowEdit/Grayson.Vision.FlowEdit.csproj" Id="4fbca5f2-5fb8-4701-ac89-5c68a7b3fdd5" />
   <Project Path="Plugins.Camera.Hikvision/Plugins.Camera.Hikvision.csproj" Id="612ed44d-86b9-4888-9afe-6ee833befdd8" />
-  <Project Path="Plugins.PLC.Siemens/Plugins.PLC.Siemens.csproj" Id="366075b2-b4db-472d-898c-0548b06a4b96" />
+  <Project Path="Plugins.Motion.Zmc/Plugins.Motion.Zmc.csproj" Id="cf4d0f77-4a4f-4684-85af-055eefbb28c7" />
+  <Project Path="Plugins.Protocol.Universal/Plugins.Protocol.Universal.csproj" Id="245c22ab-7e19-47d1-a44c-2fc052f569e9" />
 </Solution>

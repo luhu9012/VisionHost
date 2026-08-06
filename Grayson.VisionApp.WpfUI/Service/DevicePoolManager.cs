@@ -1,59 +1,83 @@
-﻿using Grayson.Vision.Contracts.Devices;
+﻿using Grayson.Vision.Contracts.Core;
+using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Repository;
+using Grayson.Vision.Repository.Entities;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Linq;
-using Grayson.Vision.Contracts.Core;
-using System.Windows;
+using System.Reflection;
+using System.Threading.Tasks;
 
 namespace Grayson.Vision.WpfUI.Service
 {
+    /// <summary>
+    /// 全局硬件设备池管理器（单例）
+    /// 负责：硬件驱动插件装载、物理设备扫描、内存设备池维护、LiteDB 数据库持久化同步
+    /// </summary>
     public class DevicePoolManager
     {
+        #region 单例与线程安全初始化
+
         private static readonly Lazy<DevicePoolManager> _instance = new Lazy<DevicePoolManager>(() => new DevicePoolManager());
         public static DevicePoolManager Instance => _instance.Value;
 
-        // 保存加载的所有品牌插件 key: BrandName_Category, value: IHardwarePlugin
+        private readonly object _initializeLock = new object();
+        private bool _isInitialized = false;
+
+        private DevicePoolManager()
+        {
+        }
+
+        #endregion
+
+        #region 内部容器
+
+        /// <summary>
+        /// 保存已加载的所有品牌插件 key: BrandName_Category, value: IHardwarePlugin
+        /// </summary>
         private readonly ConcurrentDictionary<string, IHardwarePlugin> _plugins = new ConcurrentDictionary<string, IHardwarePlugin>();
 
-        // 设备池统一容器 key: DeviceKey (用户定义的逻辑名称，如 Cam_Top_01), value: IDevice
-        private readonly ConcurrentDictionary<string, IDevice> _devicePool = new ConcurrentDictionary<string, IDevice>  ();
-
-        public IEnumerable<IDevice> GetAllDevices() => _devicePool.Values;
-
         /// <summary>
-        /// 扫描装载指定目录下的所有品牌插件 DLL
+        /// 设备池统一内存容器 key: DeviceKey (逻辑名称，如 Cam_Top_01), value: IDevice 实例
         /// </summary>
-        public void LoadPlugins(string pluginFolder)
-        {
-            if (!Directory.Exists(pluginFolder)) return;
+        private readonly ConcurrentDictionary<string, IDevice> _devicePool = new ConcurrentDictionary<string, IDevice>();
 
-            foreach (var file in Directory.GetFiles(pluginFolder, "Plugin.*.dll"))
-            {
-                var assembly = Assembly.LoadFrom(file);
-                var pluginTypes = assembly.GetTypes()
-                    .Where(t => typeof(IHardwarePlugin).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+        #endregion
 
-                foreach (var type in pluginTypes)
-                {
-                    if (Activator.CreateInstance(type) is IHardwarePlugin plugin)
-                    {
-                        plugin.Initialize();
-                        string key = $"{plugin.BrandName}_{plugin.Category}";
-                        _plugins[key] = plugin;
-                    }
-                }
-            }
-        }
+        #region 系统初始化与插件加载
+
         /// <summary>
-        /// 自动加载当前运行目录下/引用程序集中所有实现了 IHardwarePlugin 的插件
+        /// 设备池异步初始化入口：加载插件 -> 从数据库恢复设备实例
+        /// </summary>
+        public async Task InitializeAsync()
+        {
+            if (_isInitialized) return;
+
+            await Task.Run(() =>
+            {
+                lock (_initializeLock)
+                {
+                    if (_isInitialized) return;
+
+                    // 1. 自动装载插件
+                    AutoLoadAllPlugins();
+
+                    // 2. 从数据库恢复已注册的设备实例
+                    LoadConfiguredDevicesFromDb();
+
+                    _isInitialized = true;
+                }
+            });
+        }
+
+        /// <summary>
+        /// 自动加载当前运行目录下所有包含 Plugin 的 DLL 驱动程序集
         /// </summary>
         public void AutoLoadAllPlugins()
         {
-            // 1. 获取当前运行目录下的所有 DLL 文件（包括被主程序引用的项目生成的 DLL）
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var dllFiles = Directory.GetFiles(baseDir, "*.dll");
 
@@ -61,7 +85,6 @@ namespace Grayson.Vision.WpfUI.Service
             {
                 try
                 {
-                    // 过滤并加载包含 Plugin 的 DLL，或者直接全部检查
                     var assemblyName = Path.GetFileNameWithoutExtension(file);
                     if (!assemblyName.Contains("Plugin"))
                         continue;
@@ -69,9 +92,9 @@ namespace Grayson.Vision.WpfUI.Service
                     var assembly = Assembly.LoadFrom(file);
                     LoadPluginsFromAssembly(assembly);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    // 忽略不兼容或不可加载的非 NET 程序集
+                    // 忽略不可加载的非 .NET/Native 动态库
                 }
             }
         }
@@ -94,8 +117,91 @@ namespace Grayson.Vision.WpfUI.Service
                 }
             }
         }
+
         /// <summary>
-        /// 扫描所有已加载插件下的物理硬件
+        /// 扫描指定文件夹下的 Plugin.*.dll 插件文件
+        /// </summary>
+        public void LoadPlugins(string pluginFolder)
+        {
+            if (!Directory.Exists(pluginFolder)) return;
+
+            foreach (var file in Directory.GetFiles(pluginFolder, "Plugin.*.dll"))
+            {
+                try
+                {
+                    var assembly = Assembly.LoadFrom(file);
+                    LoadPluginsFromAssembly(assembly);
+                }
+                catch
+                {
+                    // 忽略加裁失败的文件
+                }
+            }
+        }
+
+        #endregion
+
+        #region 数据库恢复与物理扫描
+
+        /// <summary>
+        /// 从数据库（LiteDB）加载配置的设备并在内存池中实例化（保持未连接状态）
+        /// </summary>
+        private void LoadConfiguredDevicesFromDb()
+        {
+            try
+            {
+                var configRepo = StorageFactory.CreateDeviceConfigRepository();
+                var configuredDevices = configRepo.GetAllEnabled();
+
+                if (configuredDevices == null || !configuredDevices.Any()) return;
+
+                foreach (var config in configuredDevices)
+                {
+                    if (_devicePool.ContainsKey(config.DeviceKey)) continue;
+
+                    string pluginKey = $"{config.BrandName}_{config.Category}";
+
+                    if (_plugins.TryGetValue(pluginKey, out var plugin))
+                    {
+                        try
+                        {
+                            // 1. 实例化设备对象
+                            var device = plugin.CreateDevice(config.DeviceId);
+
+                            // 核心修复：增加 null 校验，防止 plugin.CreateDevice 返回空对象引发报空
+                            if (device == null)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DevicePool] 驱动插件 [{pluginKey}] 无法根据 DeviceId:[{config.DeviceId}] 创建设备实例，返回了 null。");
+                                continue;
+                            }
+
+                            device.DeviceKey = config.DeviceKey;
+
+                            if (!string.IsNullOrEmpty(config.ConnectionString))
+                            {
+                                device.SetParam("ConnectionString", config.ConnectionString);
+                            }
+
+                            _devicePool[config.DeviceKey] = device;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DevicePool] 复原设备 [{config.DeviceKey}] (SN:{config.DeviceId}) 失败: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DevicePool] 驱动插件缺失: [{config.BrandName}] - [{config.Category}]，无法恢复设备 [{config.DeviceKey}]");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DevicePool] 从数据库恢复设备配置失败: {ex.Message}");
+            }
+        }
+        /// <summary>
+        /// 扫描所有已加载插件下的在线物理硬件信息（只读模式，不修改内存池与数据库）
         /// </summary>
         public List<DeviceInfo> ScanAllPhysicalDevices()
         {
@@ -105,44 +211,309 @@ namespace Grayson.Vision.WpfUI.Service
                 try
                 {
                     Result<List<DeviceInfo>> result = plugin.EnumerateDevices();
-                    if (result?.Success == true)
+                    if (result?.Success == true && result.Data != null)
                     {
                         list.AddRange(result.Data);
                     }
-                    else
-                    {
-                        //MessageBox.Show(result.Message, "扫描设备失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    // 记录某个驱动扫描失败的日志，不影响其他驱动
+                    // 忽略单个驱动扫描失败的情况
                 }
             }
             return list;
         }
 
+        #endregion
+
+        #region 设备管理 CRUD (内存池与 LiteDB 同步)
+
         /// <summary>
-        /// 向设备池添加硬件设备
+        /// 添加物理扫描到的设备到设备池，并异步持久化保存到数据库
         /// </summary>
-        public IDevice AddDeviceToPool(string brandName, DeviceCategory category, string deviceId, string deviceKey)
+        public async Task<Result<IDevice>> AddDeviceToPoolAndSaveAsync(DeviceInfo info, string userDeviceKey, string connectionString = "")
         {
-            string pluginKey = $"{brandName}_{category}";
-            if (!_plugins.TryGetValue(pluginKey, out var plugin))
+            return await Task.Run(() =>
             {
-                throw new NotSupportedException($"未找到支持 [{brandName}] - [{category}] 的驱动插件!");
-            }
+                if (string.IsNullOrWhiteSpace(userDeviceKey)) return Result<IDevice>.Fail("逻辑名称不能为空!");
+                if (_devicePool.ContainsKey(userDeviceKey)) return Result<IDevice>.Fail($"已存在 Key 为 [{userDeviceKey}] 的内存设备!");
 
-            var device = plugin.CreateDevice(deviceId);
-            device.DeviceKey = deviceKey;
+                string pluginKey = $"{info.BrandName}_{info.Category}";
+                if (!_plugins.TryGetValue(pluginKey, out var plugin))
+                {
+                    return Result<IDevice>.Fail($"未找到支持 [{info.BrandName}] - [{info.Category}] 的驱动插件!");
+                }
 
-            _devicePool[deviceKey] = device;
-            return device;
+                var configRepo = StorageFactory.CreateDeviceConfigRepository();
+                if (configRepo.GetByKey(userDeviceKey) != null)
+                {
+                    return Result<IDevice>.Fail($"数据库中已注册逻辑名称为 [{userDeviceKey}] 的设备，请更改 Key！");
+                }
+                if (configRepo.GetByDeviceId(info.DeviceId) != null)
+                {
+                    return Result<IDevice>.Fail($"数据库中已存在物理 ID 为 [{info.DeviceId}] 的设备配置，不能重复添加。");
+                }
+
+                try
+                {
+                    var device = plugin.CreateDevice(info.DeviceId);
+                    device.DeviceKey = userDeviceKey;
+
+                    if (!string.IsNullOrEmpty(connectionString))
+                    {
+                        device.SetParam("ConnectionString", connectionString);
+                    }
+
+                    var po = new DeviceConfigPo
+                    {
+                        DeviceKey = userDeviceKey,
+                        DeviceId = info.DeviceId,
+                        BrandName = info.BrandName,
+                        Category = info.Category,
+                        IsEnabled = true,
+                        ConnectionString = connectionString
+                    };
+
+                    if (configRepo.Insert(po))
+                    {
+                        _devicePool[userDeviceKey] = device;
+                        return Result<IDevice>.Ok(device);
+                    }
+                    else
+                    {
+                        device.Dispose();
+                        return Result<IDevice>.Fail("写入数据库配置失败!");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return Result<IDevice>.Fail($"添加设备并保存失败: {ex.Message}");
+                }
+            });
         }
 
         /// <summary>
-        /// 从设备池获取设备（泛型快捷方式）
-        /// 业务层使用：var camera = DevicePoolManager.Instance.GetDevice<ICamera>("Cam_Top_01");
+        /// 手动创建设备（适用于 PLC、串口、网络网关等无自动广播扫描的设备）
+        /// </summary>
+        public async Task<Result<IDevice>> CreateAndSaveManualDeviceAsync(DeviceCategory category, string brand, string deviceKey, string connectionString)
+        {
+            return await Task.Run(() =>
+            {
+                if (string.IsNullOrWhiteSpace(deviceKey)) return Result<IDevice>.Fail("设备逻辑名称不能为空!");
+                if (_devicePool.ContainsKey(deviceKey)) return Result<IDevice>.Fail($"内存设备池中已存在名称为 [{deviceKey}] 的设备!");
+
+                var plugin = GetPluginByBrandAndCategory(brand, category);
+                if (plugin == null)
+                {
+                    return Result<IDevice>.Fail($"未找到匹配品牌 [{brand}] 与类别 [{category}] 的驱动插件，请确保相关插件已正常加载！");
+                }
+
+                var configRepo = StorageFactory.CreateDeviceConfigRepository();
+                if (configRepo.GetByKey(deviceKey) != null)
+                {
+                    return Result<IDevice>.Fail($"数据库中已存在逻辑名称为 [{deviceKey}] 的记录!");
+                }
+
+                try
+                {
+                    // 修正 DeviceId 生成，避免将 ConnectionString 赋给 DeviceId 导致 UI 显示混乱
+                    string manualDeviceId = $"PLC_{DateTime.Now:yyyyMMddHHmmss}_{new Random().Next(100, 999)}";
+
+                    var device = plugin.CreateDevice(manualDeviceId);
+                    device.DeviceKey = deviceKey;
+                    if (!string.IsNullOrEmpty(connectionString))
+                    {
+                        device.SetParam("ConnectionString", connectionString);
+                    }
+
+                    var po = new DeviceConfigPo
+                    {
+                        DeviceKey = deviceKey,
+                        DeviceId = manualDeviceId,
+                        BrandName = brand,
+                        Category = category,
+                        IsEnabled = true,
+                        ConnectionString = connectionString
+                    };
+
+                    if (configRepo.Insert(po))
+                    {
+                        _devicePool[deviceKey] = device;
+                        return Result<IDevice>.Ok(device);
+                    }
+                    else
+                    {
+                        device.Dispose();
+                        return Result<IDevice>.Fail("手动设备写入数据库失败!");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return Result<IDevice>.Fail($"手动添加设备异常: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// 增量批量同步在线物理设备到数据库与内存池
+        /// </summary>
+        public async Task<Result<int>> AddIncrementalPhysicalDevicesAsync(IEnumerable<DeviceInfo> onlineInfos)
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    if (onlineInfos == null || !onlineInfos.Any()) return Result<int>.Ok(0);
+
+                    var configRepo = StorageFactory.CreateDeviceConfigRepository();
+                    int addedCount = 0;
+
+                    foreach (var info in onlineInfos)
+                    {
+                        var existingConfig = configRepo.GetByDeviceId(info.DeviceId);
+                        if (existingConfig == null)
+                        {
+                            string autoKey = $"{info.BrandName}_{info.Category}_{info.DeviceId}";
+                            if (_devicePool.ContainsKey(autoKey)) continue;
+
+                            string pluginKey = $"{info.BrandName}_{info.Category}";
+                            if (!_plugins.TryGetValue(pluginKey, out var plugin)) continue;
+
+                            try
+                            {
+                                var device = plugin.CreateDevice(info.DeviceId);
+                                device.DeviceKey = autoKey;
+
+                                var po = new DeviceConfigPo
+                                {
+                                    DeviceKey = autoKey,
+                                    DeviceId = info.DeviceId,
+                                    BrandName = info.BrandName,
+                                    Category = info.Category,
+                                    IsEnabled = true,
+                                    ConnectionString = ""
+                                };
+
+                                if (configRepo.Insert(po))
+                                {
+                                    _devicePool[autoKey] = device;
+                                    addedCount++;
+                                }
+                                else
+                                {
+                                    device.Dispose();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[DevicePool] 增量添加 SN:{info.DeviceId} 失败: {ex.Message}");
+                            }
+                        }
+                    }
+                    return Result<int>.Ok(addedCount);
+                }
+                catch (Exception ex)
+                {
+                    return Result<int>.Fail($"增量同步发生错误: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// 当用户修改了设备的逻辑名称 (DeviceKey) 或连接参数后更新数据库与内存映射
+        /// </summary>
+        public async Task<Result> UpdateDeviceMappingAsync(IDevice device, string newConnectionString = null)
+        {
+            return await Task.Run(() =>
+            {
+                if (device == null) return Result.Fail("设备对象不能为空!");
+
+                try
+                {
+                    var configRepo = StorageFactory.CreateDeviceConfigRepository();
+                    var po = configRepo.GetByDeviceId(device.DeviceId);
+                    if (po == null) return Result.Fail($"找不到 SN/物理ID 为 [{device.DeviceId}] 的设备配置记录，无法更新！");
+
+                    var duplicateKey = configRepo.GetByKey(device.DeviceKey);
+                    if (duplicateKey != null && duplicateKey.Id != po.Id)
+                    {
+                        return Result.Fail($"逻辑名称 [{device.DeviceKey}] 已被其他物理设备占用，请使用唯一的逻辑 Key！");
+                    }
+
+                    // 1. 更新数据库 PO 记录
+                    po.DeviceKey = device.DeviceKey;
+                    if (newConnectionString != null)
+                    {
+                        po.ConnectionString = newConnectionString;
+                        device.SetParam("ConnectionString", newConnectionString);
+                    }
+                    configRepo.Update(po);
+
+                    // 2. 迁移 ConcurrentDictionary 内存映射字典 Key
+                    string oldKey = _devicePool.FirstOrDefault(x => x.Value.DeviceId == device.DeviceId).Key;
+                    if (!string.IsNullOrEmpty(oldKey) && oldKey != device.DeviceKey)
+                    {
+                        if (_devicePool.TryRemove(oldKey, out var removedDevice))
+                        {
+                            _devicePool[device.DeviceKey] = removedDevice;
+                        }
+                    }
+
+                    return Result.Ok();
+                }
+                catch (Exception ex)
+                {
+                    return Result.Fail($"更新逻辑名称映射失败: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// 从内存池和数据库中彻底移除指定设备（并断开连接释放资源）
+        /// </summary>
+        public bool RemoveDevice(string deviceKey)
+        {
+            if (_devicePool.TryRemove(deviceKey, out var device))
+            {
+                try
+                {
+                    device.Disconnect();
+                    device.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DevicePool] 释放设备 [{deviceKey}] 资源异常: {ex.Message}");
+                }
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var configRepo = StorageFactory.CreateDeviceConfigRepository();
+                        var po = configRepo.GetByKey(deviceKey);
+                        if (po != null)
+                        {
+                            configRepo.Delete(po.Id);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DevicePool] 从数据库删除设备配置 [{deviceKey}] 失败: {ex.Message}");
+                    }
+                });
+
+                return true;
+            }
+            return false;
+        }
+
+        #endregion
+
+        #region 公共查询接口
+
+        /// <summary>
+        /// 从内存池中按 DeviceKey 获取指定强类型的设备实例
+        /// 例：var camera = DevicePoolManager.Instance.GetDevice&lt;ICamera&gt;("Cam_Top_01");
         /// </summary>
         public T GetDevice<T>(string deviceKey) where T : class, IDevice
         {
@@ -153,22 +524,32 @@ namespace Grayson.Vision.WpfUI.Service
             return null;
         }
 
-        public bool RemoveDevice(string deviceKey)
-        {
-            if (_devicePool.TryRemove(deviceKey, out var device))
-            {
-                device.Disconnect();
-                device.Dispose();
-                return true;
-            }
-            return false;
-        }
+        /// <summary>
+        /// 获取当前内存池中所有设备列表
+        /// </summary>
+        public IEnumerable<IDevice> GetAllDevices() => _devicePool.Values;
+
         /// <summary>
         /// 获取当前已加载的所有插件实例列表
         /// </summary>
-        public IEnumerable<IHardwarePlugin> GetAllPlugins()
+        public IEnumerable<IHardwarePlugin> GetAllPlugins() => _plugins.Values;
+
+        /// <summary>
+        /// 根据品牌与类别获取匹配的驱动插件
+        /// </summary>
+        private IHardwarePlugin GetPluginByBrandAndCategory(string brand, DeviceCategory category)
         {
-            return _plugins.Values;
+            string key = $"{brand}_{category}";
+            if (_plugins.TryGetValue(key, out var plugin))
+            {
+                return plugin;
+            }
+
+            return _plugins.Values.FirstOrDefault(p =>
+                string.Equals(p.BrandName, brand, StringComparison.OrdinalIgnoreCase) &&
+                p.Category == category);
         }
+
+        #endregion
     }
 }

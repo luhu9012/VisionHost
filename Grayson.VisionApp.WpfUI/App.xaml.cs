@@ -6,15 +6,19 @@
 // 核心职责：程序启动初始化、全局异常捕获、登录窗口与主页面窗口切换、页面导航注册、全局生命周期管控
 // 前端类比：整个文件等同于Vue项目main.ts，负责创建应用实例、全局挂载、路由注册、全局错误捕获
 //===================================================================================
-
-using System;
-using System.Windows;
+using Grayson.Vision.Repository;
+using Grayson.Vision.Contracts.Devices;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using Grayson.Vision.WpfUI.View;
 using Grayson.Vision.WpfUI.ViewModel;
 using Grayson.VisionApp.WpfUI.View;
-using Grayson.Vision.Contracts.Infrastructure.Logging;
+using System;
+using System.IO;
+using System.Linq;
+using System.Windows;
+
 
 namespace Grayson.Vision.WpfUI
 {
@@ -40,11 +44,15 @@ namespace Grayson.Vision.WpfUI
         /// 应用程序启动入口事件，程序打开时第一个执行的方法
         /// 类比前端main.ts入口函数，统一完成全局初始化工作
         /// </summary>
-        private void Application_Startup(object sender, StartupEventArgs e)
+        private async void Application_Startup(object sender, StartupEventArgs e)
         {
             // 1. 初始化文件日志服务
             _fileLogSink = new FileLogSink();
 
+            // 2. 初始化存储层数据库路径 (存放在运行目录 Data/GraysonVision.db)
+            string dbPath = Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Data", "GraysonVision.db");
+            StorageFactory.Initialize(dbPath);
+         
 #if DEBUG
             // 【VS 开发环境】：
             // 不需要开启 FileLogSink（或者只输出到默认 Debug/Logs 目录）
@@ -66,9 +74,9 @@ namespace Grayson.Vision.WpfUI
             _fileLogSink.Enable();
 #endif
 
-          
+
             // 1. 初始化账号认证服务（当前使用Mock模拟登录服务，可替换为数据库/网络登录实现）
-            _authService = new MockAuthenticationService();
+            _authService = new LiteDbAuthenticationService();
 
             // 2. 注册两套全局异常捕获，兜底防止程序无提示闪退
             // AppDomain：捕获后台非UI线程、Task、子线程抛出的未处理异常（如视觉采集、运动控制后台线程报错）
@@ -77,7 +85,10 @@ namespace Grayson.Vision.WpfUI
             DispatcherUnhandledException += OnDispatcherUnhandledException;
 
             // 🚀 在程序启动时，自动扫描并加载海康、西门子等所有硬件插件
-            DevicePoolManager.Instance.AutoLoadAllPlugins();
+            //DevicePoolManager.Instance.AutoLoadAllPlugins();
+            // 2. 初始化设备池（异步）
+            await DevicePoolManager.Instance.InitializeAsync();
+
             // 3. 程序启动默认弹出登录窗口，登录校验通过后再加载主业务界面
             ShowLoginWindow();
             LogBus.Info("System", "应用程序启动完成！");

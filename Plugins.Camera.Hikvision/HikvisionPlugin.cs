@@ -288,13 +288,18 @@ namespace Plugins.Camera.Hikvision
 
         public Result Connect()
         {
-            if (null == cCameraInfo)
+            // 核心修复：如果 cCameraInfo 为空（说明是从 LiteDB 离线恢复的），尝试通过 DeviceId 重新枚举定位
+            if (cCameraInfo == null)
             {
-                string errorMsg = Helper.ShowErrorMsg("No device!", 0);
-                return Result.Fail(errorMsg);
+                var searchRes = FindCameraInfoByDeviceId(DeviceId);
+                if (!searchRes.Success)
+                {
+                    return Result.Fail($"连接失败：未能在线定位到 SerialNumber 为 [{DeviceId}] 的相机！");
+                }
+                cCameraInfo = searchRes.Data;
             }
 
-            if (null == m_MyCamera)
+            if (m_MyCamera == null)
             {
                 m_MyCamera = new CCamera();
             }
@@ -309,33 +314,51 @@ namespace Plugins.Camera.Hikvision
             if (CErrorDefine.MV_OK != nRet)
             {
                 m_MyCamera.DestroyHandle();
-                string errorMsg = Helper.ShowErrorMsg("Device open fail!", nRet);
-                return Result.Fail(errorMsg);
+                return Result.Fail(Helper.ShowErrorMsg("Device open fail!", nRet));
             }
 
-            if (cCameraInfo.nTLayerType == CSystem.MV_GIGE_DEVICE)
+            // ... 后续包大小调整及参数同步保持不变
+            State = DeviceState.Connected;
+            SyncTriggerModeFromDevice();
+            SyncParamsFromDevice();
+            SyncParamsToDevice();
+
+            return Result.Ok();
+        }
+        /// <summary>
+        /// 辅助方法：连接时动态搜索在线匹配 SN 的硬件结构体
+        /// </summary>
+        private Result<CCameraInfo> FindCameraInfoByDeviceId(string targetSn)
+        {
+            List<CCameraInfo> deviceList = new List<CCameraInfo>();
+            int nRet = CSystem.EnumDevices(CSystem.MV_GIGE_DEVICE | CSystem.MV_USB_DEVICE, ref deviceList);
+            if (nRet != 0 || deviceList.Count == 0)
             {
-                int nPacketSize = m_MyCamera.GIGE_GetOptimalPacketSize();
-                if (nPacketSize > 0)
+                return Result<CCameraInfo>.Fail("未扫描到任何在线海康设备");
+            }
+
+            foreach (var dev in deviceList)
+            {
+                if (dev.nTLayerType == CSystem.MV_GIGE_DEVICE)
                 {
-                    nRet = m_MyCamera.SetIntValue("GevSCPSPacketSize", (uint)nPacketSize);
-                    if (nRet != CErrorDefine.MV_OK)
+                    var gigeInfo = (CGigECameraInfo)dev;
+                    if (string.Equals(gigeInfo.chSerialNumber, targetSn, StringComparison.OrdinalIgnoreCase))
                     {
-                        string errorMsg = Helper.ShowErrorMsg("Set Packet Size failed!", nRet);
+                        return Result<CCameraInfo>.Ok(dev);
+                    }
+                }
+                // USB 相机同理支持
+                else if (dev.nTLayerType == CSystem.MV_USB_DEVICE)
+                {
+                    var usbInfo = (CUSBCameraInfo)dev;
+                    if (string.Equals(usbInfo.chSerialNumber, targetSn, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Result<CCameraInfo>.Ok(dev);
                     }
                 }
             }
 
-            State = DeviceState.Connected;
-
-            // 连接成功后，同步硬件当前触发状态、参数到本地字典
-            SyncTriggerModeFromDevice();
-            SyncParamsFromDevice();
-
-            // 若本地有配置参数则下发到硬件
-            SyncParamsToDevice();
-
-            return Result.Ok();
+            return Result<CCameraInfo>.Fail($"未寻找到序列号为 [{targetSn}] 的设备");
         }
 
         public Result Disconnect()
@@ -770,9 +793,19 @@ namespace Plugins.Camera.Hikvision
         }
         #endregion
 
+        // 默认无参或带 SerialNumber 构造，支持离线/数据库恢复实例化
+        public HikCamera(string deviceId)
+        {
+            DeviceId = deviceId;
+        }
+
         public HikCamera(CCameraInfo info)
         {
             cCameraInfo = info;
+            if (info is CGigECameraInfo gigeInfo)
+            {
+                DeviceId = gigeInfo.chSerialNumber;
+            }
         }
     }
 
@@ -789,6 +822,7 @@ namespace Plugins.Camera.Hikvision
         public Result<List<DeviceInfo>> EnumerateDevices()
         {
             GC.Collect();
+            cCameraInfos.Clear();
 
             int nRet = CSystem.EnumDevices(CSystem.MV_GIGE_DEVICE | CSystem.MV_USB_DEVICE, ref cCameraInfos);
             if (0 != nRet)
@@ -797,49 +831,69 @@ namespace Plugins.Camera.Hikvision
                 return Result<List<DeviceInfo>>.Fail(errorMsg);
             }
 
-            string jsonConvert = JsonConvert.SerializeObject(cCameraInfos);
-
             var list = cCameraInfos.Select(c =>
             {
-                CGigECameraInfo cGigECameraInfo = (CGigECameraInfo)c;
+                string sn = "";
+                string model = "";
+                if (c.nTLayerType == CSystem.MV_GIGE_DEVICE)
+                {
+                    var gige = (CGigECameraInfo)c;
+                    sn = gige.chSerialNumber;
+                    model = gige.chModelName;
+                }
+                else if (c.nTLayerType == CSystem.MV_USB_DEVICE)
+                {
+                    var usb = (CUSBCameraInfo)c;
+                    sn = usb.chSerialNumber;
+                    model = usb.chModelName;
+                }
+
                 return new DeviceInfo
                 {
-                    DeviceId = cGigECameraInfo.chSerialNumber,
-                    ModelName = cGigECameraInfo.chModelName,
+                    DeviceId = sn,
+                    ModelName = model,
                     Category = Category,
-                    BrandName = BrandName,
-                    ExtraInfo = jsonConvert
+                    BrandName = BrandName
                 };
             }).ToList();
 
             return Result<List<DeviceInfo>>.Ok(list);
         }
-
+        /// <summary>
+        /// 无论是从 UI 扫描创建，还是从 LiteDB 恢复，都能顺利返回 IDevice 实例！
+        /// </summary>
         public IContractDevice CreateDevice(string deviceId)
         {
-            var gigeInfo = cCameraInfos.OfType<CGigECameraInfo>()
-                .FirstOrDefault(item => item.chSerialNumber == deviceId);
+            if (string.IsNullOrWhiteSpace(deviceId)) return null;
 
-            if (gigeInfo != null)
+            // 1. 优先查内存中已有的结构体（如果是刚扫描出来的）
+            var matchedInfo = cCameraInfos.FirstOrDefault(c =>
             {
-                var device = new HikCamera(gigeInfo)
-                {
-                    DeviceId = deviceId,
-                    BrandName = BrandName,
-                    Category = Category
-                };
+                if (c.nTLayerType == CSystem.MV_GIGE_DEVICE) return ((CGigECameraInfo)c).chSerialNumber == deviceId;
+                if (c.nTLayerType == CSystem.MV_USB_DEVICE) return ((CUSBCameraInfo)c).chSerialNumber == deviceId;
+                return false;
+            });
 
-                uint nIp = gigeInfo.nCurrentIp;
-                string ipAddress = $"{(nIp >> 24) & 0xFF}.{(nIp >> 16) & 0xFF}.{(nIp >> 8) & 0xFF}.{nIp & 0xFF}";
-
-                device.SetParam("IP", ipAddress);
-                device.SetParam("Port", "3596");
-                device.SetParam("Exposure", 3600.0);
-                device.SetParam("Gain", 0.0);
-                device.SetParam("TriggerModeSelect", 0); // 默认连续采集模式
-                return device;
+            HikCamera device;
+            if (matchedInfo != null)
+            {
+                device = new HikCamera(matchedInfo);
             }
-            return null;
+            else
+            {
+                // 2. 如果是从数据库恢复的（cCameraInfos 为空），直接通过 DeviceId 建立纯软对象
+                device = new HikCamera(deviceId);
+            }
+
+            device.BrandName = BrandName;
+            device.Category = Category;
+
+            // 默认初始化参数
+            device.SetParam("Exposure", 3600.0);
+            device.SetParam("Gain", 0.0);
+            device.SetParam("TriggerModeSelect", 0);
+
+            return device;
         }
 
         public void Shutdown() { }

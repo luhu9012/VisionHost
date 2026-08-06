@@ -1,4 +1,5 @@
-﻿using Grayson.Vision.Contracts.Devices;
+﻿using Grayson.Vision.Contracts.Communication;
+using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
@@ -516,6 +517,175 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         #endregion
+
+        #region 通信日志监视属性与数据结构
+
+        public ObservableCollection<IDevice> AllCommunicationDevices { get; set; } = new ObservableCollection<IDevice>();
+        public ObservableCollection<CommunicationMessage> CommLogs { get; set; } = new ObservableCollection<CommunicationMessage>();
+
+        private IDevice _selectedCommDevice;
+        public IDevice SelectedCommDevice
+        {
+            get => _selectedCommDevice;
+            set
+            {
+                if (Set(ref _selectedCommDevice, value))
+                {
+                    // 可在此切换选中的通信日志监听
+                }
+            }
+        }
+
+        public ICommand ClearCommLogCommand { get; private set; }
+        public ICommand SendCustomRawCommand { get; private set; }
+
+        private string _sendBufferText;
+        public string SendBufferText
+        {
+            get => _sendBufferText;
+            set => Set(ref _sendBufferText, value);
+        }
+        // 是否开启通信监控（仅当 Tab 选中时设为 true）
+        private bool _isCommTabActive;
+        public bool IsCommTabActive
+        {
+            get => _isCommTabActive;
+            set
+            {
+                if (Set(ref _isCommTabActive, value))
+                {
+                    ToggleCommunicationMonitoring(value);
+                }
+            }
+        }
+
+        // 结构化发送参数
+        public ObservableCollection<string> CommandTypeList { get; } = new ObservableCollection<string>
+    {
+        "ReadBool", "WriteBool", "ReadInt32", "WriteInt32", "ReadFloat", "WriteFloat", "ReadString"
+    };
+
+        private string _selectedCmdType = "ReadInt32";
+        public string SelectedCmdType
+        {
+            get => _selectedCmdType;
+            set => Set(ref _selectedCmdType, value);
+        }
+
+        private string _targetAddress = "D100";
+        public string TargetAddress
+        {
+            get => _targetAddress;
+            set => Set(ref _targetAddress, value);
+        }
+
+        private string _writeValue = "123";
+        public string WriteValue
+        {
+            get => _writeValue;
+            set => Set(ref _writeValue, value);
+        }
+
+        // 日志加入逻辑（UI 限制 200 条）
+        public void AppendCommLog(string direction, string content, bool isSuccess, string remark)
+        {
+            if (!IsCommTabActive) return; // 离开界面直接忽略，零 CPU/内存损耗！
+
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                if (CommLogs.Count >= 200)
+                {
+                    CommLogs.RemoveAt(0); // 超过 200 条丢弃最老的一条
+                }
+                CommLogs.Add(new CommunicationMessage
+                {
+                    Timestamp = DateTime.Now,
+                    Direction = direction,
+                    Content = content,
+                    IsSuccess = isSuccess,
+                    Remark = remark
+                });
+            });
+        }
+
+        private void ToggleCommunicationMonitoring(bool enable)
+        {
+            if (SelectedCommDevice is ICommunicationObservable observable)
+            {
+                if (enable)
+                    observable.MessageTransmitted += OnMessageTransmitted;
+                else
+                    observable.MessageTransmitted -= OnMessageTransmitted;
+            }
+        }
+
+        private void OnMessageTransmitted(object sender, CommunicationMessage e)
+        {
+            AppendCommLog(e.Direction, e.Content, e.IsSuccess, e.Remark);
+        }
+        #endregion
+        #region 数字量 IO 完善逻辑
+
+        public ObservableCollection<IoPointModel> InputIOList { get; set; } = new ObservableCollection<IoPointModel>();
+        public ObservableCollection<IoPointModel> OutputIOList { get; set; } = new ObservableCollection<IoPointModel>();
+
+        private DeviceInfoModel _selectedIoDevice;
+        public DeviceInfoModel SelectedIoDevice
+        {
+            get => _selectedIoDevice;
+            set
+            {
+                if (Set(ref _selectedIoDevice, value))
+                {
+                    RefreshIoPointsForSelectedDevice();
+                }
+            }
+        }
+
+        private void InitIoAndCommCommands()
+        {
+            ClearCommLogCommand = new RelayCommand(_ => CommLogs.Clear());
+
+            SendCustomRawCommand = new RelayCommand(_ =>
+            {
+                if (string.IsNullOrWhiteSpace(SendBufferText)) return;
+
+                // 手动测试收发报文逻辑
+                CommLogs.Add(new CommunicationMessage
+                {
+                    Direction = "TX",
+                    Content = SendBufferText,
+                    IsSuccess = true,
+                    Remark = "手动指令发送"
+                });
+            });
+        }
+
+        private void RefreshIoPointsForSelectedDevice()
+        {
+            InputIOList.Clear();
+            OutputIOList.Clear();
+
+            // 示例模拟数据填充（实际开发中从 SelectedIoDevice 读取硬件通道列表）
+            for (int i = 0; i < 8; i++)
+            {
+                InputIOList.Add(new IoPointModel { ChannelIndex = i, Name = $"DI_{i:D2} (感应器{i + 1})", IsActive = false });
+
+                var doPoint = new IoPointModel { ChannelIndex = i, Name = $"DO_{i:D2} (电磁阀{i + 1})", IsActive = false };
+                // 绑定 DO 切换事件通知底层硬件
+                doPoint.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(IoPointModel.IsActive))
+                    {
+                        // TODO: 调用底层 IO 板卡写 DO 接口: WriteOutputBit(doPoint.ChannelIndex, doPoint.IsActive);
+                    }
+                };
+                OutputIOList.Add(doPoint);
+            }
+        }
+
+        #endregion
+
     }
 
     #region 辅助数据模型

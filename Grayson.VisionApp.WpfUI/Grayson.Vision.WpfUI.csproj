@@ -31,7 +31,7 @@
     <BootstrapperEnabled>true</BootstrapperEnabled>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x64</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -80,7 +80,9 @@
     <Compile Include="Service\IDialogService.cs" />
     <Compile Include="Service\INavigationAware.cs" />
     <Compile Include="Service\INavigationService.cs" />
+    <Compile Include="Service\LiteDbAuthenticationService.cs" />
     <Compile Include="Service\NavigationService.cs" />
+    <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\AlarmViewModel.cs" />
     <Compile Include="Model\CommonModel.cs" />
     <Compile Include="ViewModel\DevicePoolViewModel.cs" />
@@ -89,9 +91,13 @@
     <Compile Include="Model\MockDataFactory.cs" />
     <Compile Include="ViewModel\PluginManageViewModel.cs" />
     <Compile Include="ViewModel\RecipeManageViewModel.cs" />
+    <Compile Include="ViewModel\ScanDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\ShellViewModel.cs" />
     <Compile Include="ViewModel\StationManageViewModel.cs" />
     <Compile Include="ViewModel\UserManageViewModel.cs" />
+    <Compile Include="View\AddDeviceDialog.xaml.cs">
+      <DependentUpon>AddDeviceDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="View\AlarmView.xaml.cs">
       <DependentUpon>AlarmView.xaml</DependentUpon>
     </Compile>
@@ -112,6 +118,9 @@
     </Compile>
     <Compile Include="View\RecipeManageView.xaml.cs">
       <DependentUpon>RecipeManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\ScanDeviceDialog.xaml.cs">
+      <DependentUpon>ScanDeviceDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\ShellView.xaml.cs">
       <DependentUpon>ShellView.xaml</DependentUpon>
@@ -143,6 +152,10 @@
     <Page Include="Resource\Styles\GlobalStyles.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="View\AddDeviceDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="View\AlarmView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -166,6 +179,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\RecipeManageView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\ScanDeviceDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -237,6 +254,10 @@
       <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>
       <Name>Grayson.Vision.Nodes</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Repository\Grayson.Vision.Repository.csproj">
+      <Project>{a909af73-e5d5-4cbc-8a86-7a7ed579fb49}</Project>
+      <Name>Grayson.Vision.Repository</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Grayson.Vison.FlowEdit\Grayson.Vision.FlowEdit.csproj">
       <Project>{4fbca5f2-5fb8-4701-ac89-5c68a7b3fdd5}</Project>
       <Name>Grayson.Vision.FlowEdit</Name>
@@ -245,9 +266,13 @@
       <Project>{612ed44d-86b9-4888-9afe-6ee833befdd8}</Project>
       <Name>Plugins.Camera.Hikvision</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Plugins.PLC.Siemens\Plugins.PLC.Siemens.csproj">
-      <Project>{366075b2-b4db-472d-898c-0548b06a4b96}</Project>
-      <Name>Plugins.PLC.Siemens</Name>
+    <ProjectReference Include="..\Plugins.Motion.Zmc\Plugins.Motion.Zmc.csproj">
+      <Project>{cf4d0f77-4a4f-4684-85af-055eefbb28c7}</Project>
+      <Name>Plugins.Motion.Zmc</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Plugins.Protocol.Universal\Plugins.Protocol.Universal.csproj">
+      <Project>{245c22ab-7e19-47d1-a44c-2fc052f569e9}</Project>
+      <Name>Plugins.Protocol.Universal</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

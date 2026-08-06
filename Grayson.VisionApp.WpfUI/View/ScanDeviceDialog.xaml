@@ -1,0 +1,81 @@
+﻿<Window x:Class="Grayson.Vision.WpfUI.View.ScanDeviceDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="扫描发现在线硬件" Height="480" Width="780"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Window.Resources>
+        <!-- 统一单元格文本样式，保证内外边距与垂直居中 -->
+        <Style x:Key="LeftAlignedColumnStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="8,0,8,0"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+
+        <!-- 核心修复：基于全局深色样式 ModernDataGridColumnHeaderStyle 继承，确保背景依然是深色，同时重置对齐 -->
+        <Style x:Key="LeftAlignedHeaderStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource ModernDataGridColumnHeaderStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="8,0,8,0"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="🔍 扫描到的物理硬件设备 (请勾选需要导入到系统的设备):" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,10"/>
+
+        <!-- 应用 ModernDataGridStyle 并在列上绑定统一继承后的 LeftAlignedHeaderStyle -->
+        <DataGrid Grid.Row="1" 
+                  ItemsSource="{Binding ScannedDevices}" 
+                  Style="{StaticResource ModernDataGridStyle}"
+                  ColumnHeaderStyle="{StaticResource LeftAlignedHeaderStyle}">
+            <DataGrid.Columns>
+                <!-- 选择框 -->
+                <DataGridCheckBoxColumn Header="导入" 
+                                        Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" 
+                                        Width="60"/>
+
+                <!-- 类型和品牌 -->
+                <DataGridTextColumn Header="设备类别" 
+                                    Binding="{Binding Category}" 
+                                    IsReadOnly="True" 
+                                    Width="110"
+                                    ElementStyle="{StaticResource LeftAlignedColumnStyle}"/>
+
+                <DataGridTextColumn Header="品牌" 
+                                    Binding="{Binding BrandName}" 
+                                    IsReadOnly="True" 
+                                    Width="110"
+                                    ElementStyle="{StaticResource LeftAlignedColumnStyle}"/>
+
+                <!-- 物理标识 -->
+                <DataGridTextColumn Header="物理SN/MAC/路径" 
+                                    Binding="{Binding DeviceId}" 
+                                    IsReadOnly="True" 
+                                    Width="200"
+                                    ElementStyle="{StaticResource LeftAlignedColumnStyle}"/>
+
+                <!-- 给用户预先起逻辑名的编辑框 -->
+                <DataGridTextColumn Header="分配逻辑 Key (分配给站点的名称)" 
+                                    Binding="{Binding TargetDeviceKey, UpdateSourceTrigger=PropertyChanged}" 
+                                    Width="*"
+                                    ElementStyle="{StaticResource LeftAlignedColumnStyle}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- 底部按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <Button Content="确认导入选中设备" 
+                    Command="{Binding ConfirmCommand}" 
+                    CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}" 
+                    Style="{StaticResource PrimaryButtonStyle}" 
+                    Width="150" Height="32" Margin="0,0,10,0"/>
+            <Button Content="取消" IsCancel="True" Style="{StaticResource DangerButtonStyle}" Width="80" Height="32"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -40,7 +40,7 @@ namespace Grayson.Vision.Contracts.Devices
         /// <summary>读取硬件参数</summary>
         Result<object> GetParam(string key);
 
-        // 关键：状态变更事件
+        // 状态变更事件
         event EventHandler<DeviceState> StateChanged;
     }
 }

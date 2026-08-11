@@ -109,17 +109,36 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public DeviceItemViewModel SelectedDevice
         {
             get => _selectedDevice;
-            set => Set(ref _selectedDevice, value);
+            set
+            {
+                // 取消对旧选中设备属性变化的监听
+                if (_selectedDevice != null)
+                {
+                    _selectedDevice.PropertyChanged -= OnSelectedDevicePropertyChanged;
+                }
+
+                if (Set(ref _selectedDevice, value))
+                {
+                    // 监听新选中设备的属性变化（特别是 State / IsConnected 变更）
+                    if (_selectedDevice != null)
+                    {
+                        _selectedDevice.PropertyChanged += OnSelectedDevicePropertyChanged;
+                    }
+
+                    // SelectedDevice 改变时通知命令刷新 CanExecute
+                    RaiseCommandsCanExecuteChanged();
+                }
+            }
         }
 
         // 命令声明
-        public ICommand RefreshCommand { get; }
-        public ICommand ManualAddDeviceCommand { get; } // 🆕 手动添加
-        public ICommand ScanHardwareCommand { get; }    // 🆕 扫描弹窗确认
-        public ICommand SaveConfigCommand { get; }
-        public ICommand DeleteDeviceCommand { get; }
-        public ICommand ConnectCommand { get; }
-        public ICommand DisconnectCommand { get; }
+        public RelayCommand RefreshCommand { get; }
+        public RelayCommand ManualAddDeviceCommand { get; } // 🆕 手动添加
+        public RelayCommand ScanHardwareCommand { get; }    // 🆕 扫描弹窗确认
+        public RelayCommand SaveConfigCommand { get; }
+        public RelayCommand DeleteDeviceCommand { get; }
+        public RelayCommand ConnectCommand { get; }
+        public RelayCommand DisconnectCommand { get; }
 
         public DevicePoolViewModel()
         {
@@ -134,7 +153,29 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             LoadFromManager();
         }
+        /// <summary>
+        /// 当选中设备的属性（如 IsConnected、State）发生变化时调用
+        /// </summary>
+        private void OnSelectedDevicePropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(DeviceItemViewModel.State) ||
+                e.PropertyName == nameof(DeviceItemViewModel.IsConnected))
+            {
+                // 2. 当连接状态发生异步变化时，刷新按钮可执行状态
+                RaiseCommandsCanExecuteChanged();
+            }
+        }
 
+        /// <summary>
+        /// 统一触发依赖设备状态的 RelayCommand 状态更新
+        /// </summary>
+        private void RaiseCommandsCanExecuteChanged()
+        {
+            SaveConfigCommand?.RaiseCanExecuteChanged();
+            DeleteDeviceCommand?.RaiseCanExecuteChanged();
+            ConnectCommand?.RaiseCanExecuteChanged();
+            DisconnectCommand?.RaiseCanExecuteChanged();
+        }
         /// <summary>
         /// 手动添加设备（PLC、串口卡等不支持枚举的设备）
         /// </summary>

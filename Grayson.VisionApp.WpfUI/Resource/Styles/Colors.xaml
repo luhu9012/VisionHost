@@ -36,6 +36,13 @@
     <Color x:Key="DangerColor">#FF3D00</Color>
     <Color x:Key="DangerLightColor">#FF5722</Color>
 
+    <!-- 禁用状态专用背景与文字色（适合深色工控风格） -->
+    <Color x:Key="DisabledBackgroundColor">#FF2A2A2D</Color>
+    <Color x:Key="DisabledBorderColor">#FF404040</Color>
+
+    <SolidColorBrush x:Key="DisabledBackgroundBrush" Color="{StaticResource DisabledBackgroundColor}"/>
+    <SolidColorBrush x:Key="DisabledBorderBrush" Color="{StaticResource DisabledBorderColor}"/>
+
     <!-- 对应画刷 -->
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
     <SolidColorBrush x:Key="DangerLightBrush" Color="{StaticResource DangerLightColor}" />

@@ -15,7 +15,7 @@ using IContractDevice = Grayson.Vision.Contracts.Devices.IDevice;
 
 namespace Plugins.Camera.Hikvision
 {
-    public class HikCamera : ICamera
+    public class HikCamera : ICamera, IIoDevice
     {
         #region IDevice 基础属性
         public string DeviceId { get; set; }
@@ -37,6 +37,14 @@ namespace Plugins.Camera.Hikvision
             }
         }
         public DeviceCategory Category { get; set; } = DeviceCategory.Camera;
+        // 高优先级：优先接管海康相机
+        public int Priority => 100;
+
+        public bool Supports(DeviceCategory category, string brand)
+        {
+            return category == DeviceCategory.Camera &&
+                   string.Equals(brand, BrandName, StringComparison.OrdinalIgnoreCase);
+        }
 
         /// <summary>本地 UI/配置层参数字典</summary>
         public Dictionary<string, object> ConfigParams = new Dictionary<string, object>();
@@ -793,6 +801,99 @@ namespace Plugins.Camera.Hikvision
         }
         #endregion
 
+
+        #region IIoDevice 硬件 GPIO 控制实现
+
+        /// <summary>
+        /// 读取相机的硬件输入 IO (DI)
+        /// channelIndex 0 对应 Line0, 1 对应 Line1...
+        /// </summary>
+        public Result<bool> ReadDi(int channelIndex)
+        {
+            if (State != DeviceState.Connected || m_MyCamera == null)
+            {
+                return Result<bool>.Fail("相机未连接，无法读取 DI 状态");
+            }
+
+            try
+            {
+                // 1. 选择对应的 Line 通道 (例如 Line0)
+                uint lineSelectorValue = (uint)channelIndex;
+                int nRet = m_MyCamera.SetEnumValue("LineSelector", lineSelectorValue);
+                if (nRet != CErrorDefine.MV_OK)
+                {
+                    return Result<bool>.Fail(Helper.ShowErrorMsg($"设置 LineSelector[{channelIndex}] 失败", nRet));
+                }
+
+                // 2. 读取当前 Line 的高低电平状态 (LineStatus)
+                bool lineStatus = false;
+                nRet = m_MyCamera.GetBoolValue("LineStatus", ref lineStatus);
+                if (nRet != CErrorDefine.MV_OK)
+                {
+                    return Result<bool>.Fail(Helper.ShowErrorMsg($"读取 LineStatus[{channelIndex}] 失败", nRet));
+                }
+
+                return Result<bool>.Ok(lineStatus);
+            }
+            catch (Exception ex)
+            {
+                return Result<bool>.Fail($"读取相机 Line0/{channelIndex} 异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 读取相机的硬件输出 IO (DO) 状态
+        /// </summary>
+        public Result<bool> ReadDo(int channelIndex)
+        {
+            // 对于工业相机，读取 DO 同样查询其 LineStatus 节点
+            return ReadDi(channelIndex);
+        }
+
+        /// <summary>
+        /// 控制相机的硬件输出 IO (DO)
+        /// channelIndex: 2 对应 Line2 (通常为 Strobe / UserOutput)
+        /// </summary>
+        public Result WriteDo(int channelIndex, bool state)
+        {
+            if (State != DeviceState.Connected || m_MyCamera == null)
+            {
+                return Result.Fail("相机未连接，无法写入 DO 状态");
+            }
+
+            try
+            {
+                // 1. 选择对应的 Line 通道 (例如 Line2 为通用输出/频闪控制)
+                uint lineSelectorValue = (uint)channelIndex;
+                int nRet = m_MyCamera.SetEnumValue("LineSelector", lineSelectorValue);
+                if (nRet != CErrorDefine.MV_OK)
+                {
+                    return Result.Fail(Helper.ShowErrorMsg($"设置 LineSelector[{channelIndex}] 失败", nRet));
+                }
+
+                // 2. 设置该 Line 的工作模式为 Output (部分海康型号需明确指定 LineMode)
+                m_MyCamera.SetEnumValue("LineMode", 1); // 1 代表 Output 模式
+
+                // 3. 将 LineSource 切换为 UserOutput，支持上位机软件直接控制
+                m_MyCamera.SetEnumValue("LineSource", 0); // 0 代表 UserOutput1
+
+                // 4. 写入 UserOutputValue 点位状态
+                nRet = m_MyCamera.SetBoolValue("UserOutputValue", state);
+                if (nRet != CErrorDefine.MV_OK)
+                {
+                    return Result.Fail(Helper.ShowErrorMsg($"写入 UserOutputValue[{channelIndex}] 失败", nRet));
+                }
+
+                return Result.Ok();
+            }
+            catch (Exception ex)
+            {
+                return Result.Fail($"控制相机 DO[{channelIndex}] 异常: {ex.Message}");
+            }
+        }
+
+        #endregion
+
         // 默认无参或带 SerialNumber 构造，支持离线/数据库恢复实例化
         public HikCamera(string deviceId)
         {
@@ -814,6 +915,14 @@ namespace Plugins.Camera.Hikvision
         public string BrandName => "Hikvision";
         public DeviceCategory Category => DeviceCategory.Camera;
         public string Version => "1.0.0";
+        // 高优先级：优先接管海康相机
+        public int Priority => 100;
+
+        public bool Supports(DeviceCategory category, string brand)
+        {
+            return category == DeviceCategory.Camera &&
+                   string.Equals(brand, BrandName, StringComparison.OrdinalIgnoreCase);
+        }
 
         public void Initialize() { }
 

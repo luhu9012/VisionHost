@@ -11,7 +11,7 @@ namespace Plugins.Motion.Zmc
     /// <summary>
     /// 正运动 (ZMC) 运动控制卡设备驱动实现
     /// </summary>
-    public class ZmcMotionCard : IMotionCard
+    public class ZmcMotionCard : IMotionCard, IIoDevice
     {
         #region IDevice 基础属性与字段
 
@@ -48,6 +48,27 @@ namespace Plugins.Motion.Zmc
                 }
             }
         }
+        #region IIoDevice 统一 IO 抽象接口实现
+
+        /// <summary>读取通用数字输入口 (DI)</summary>
+        public Result<bool> ReadDi(int channelIndex)
+        {
+            return GetInput(channelIndex); // 复用底层的 GetInput 方法[cite: 29]
+        }
+
+        /// <summary>读取通用数字输出口 (DO)</summary>
+        public Result<bool> ReadDo(int channelIndex)
+        {
+            return GetOutput(channelIndex); // 复用底层的 GetOutput 方法[cite: 29]
+        }
+
+        /// <summary>控制通用数字输出口 (DO)</summary>
+        public Result WriteDo(int channelIndex, bool state)
+        {
+            return SetOutput(channelIndex, state); // 复用底层的 SetOutput 方法[cite: 29]
+        }
+
+        #endregion
 
         /// <summary>扩展配置参数字典</summary>
         public Dictionary<string, object> ConfigParams { get; } = new Dictionary<string, object>();

@@ -158,7 +158,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             set => Set(ref _selectedMenuItem, value);
         }
 
-        private bool _isMenuCollapsed = true;
+        private bool _isMenuCollapsed = false;
         /// <summary>
         /// 菜单是否处于收起（窄屏仅图标）状态
         /// </summary>
@@ -251,7 +251,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         new MenuItemViewModel { IsSectionHeader = true, Title = "硬件设备池" },
         new MenuItemViewModel
         {
-            Icon = "🔌", Title = "设备与驱动", IsExpanded = false, RequiredRole = UserRole.Engineer,
+            Icon = "🔌", Title = "设备与驱动", IsExpanded = true, RequiredRole = UserRole.Engineer,
             Children = new ObservableCollection<MenuItemViewModel>
             {
                 new MenuItemViewModel { Icon = "⚙️", Title = "物理设备实例", PageType = PageType.DevicePool, RequiredRole = UserRole.Engineer },

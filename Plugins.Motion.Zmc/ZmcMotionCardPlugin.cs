@@ -19,6 +19,13 @@ namespace Plugins.Motion.Zmc
         public DeviceCategory Category => DeviceCategory.MotionCard;
 
         public string Version => "1.0.0";
+        public int Priority => 100;
+
+        public bool Supports(DeviceCategory category, string brand)
+        {
+            return category == DeviceCategory.MotionCard &&
+                   string.Equals(brand, BrandName, StringComparison.OrdinalIgnoreCase);
+        }
 
         public void Initialize()
         {

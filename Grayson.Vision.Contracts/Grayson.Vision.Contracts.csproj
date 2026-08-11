@@ -66,6 +66,7 @@
     <Compile Include="Core\Models\Result.cs" />
     <Compile Include="Core\Geometry\Pose3D.cs" />
     <Compile Include="Devices\Enums\DeviceCategory.cs" />
+    <Compile Include="Devices\Interfaces\IIoDevice.cs" />
     <Compile Include="Devices\Interfaces\IMotionCard.cs" />
     <Compile Include="Flow\Attributes\LogicalDeviceBindingAttribute.cs" />
     <Compile Include="Flow\Attributes\NodeAttribute.cs" />

@@ -6,7 +6,7 @@
         xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
         mc:Ignorable="d"
         Title="Grayson 工业视觉上位机系统"
-        Height="900" Width="1440"
+        Height="970" Width="1560"
         WindowStyle="None"
         ResizeMode="CanResize"
         AllowsTransparency="False"

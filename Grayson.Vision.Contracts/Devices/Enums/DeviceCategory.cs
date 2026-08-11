@@ -11,6 +11,7 @@ namespace Grayson.Vision.Contracts.Devices.Enums
         Camera,         // 工业相机
         MotionCard,     // 运动控制卡
         PLC,            // PLC 通信
-        LightController // 光源控制器
+        LightController, // 光源控制器
+        Generic         // 通用设备（适用于未知或自定义设备类型）
     }
 }

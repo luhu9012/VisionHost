@@ -87,6 +87,11 @@
     <Compile Include="Model\CommonModel.cs" />
     <Compile Include="ViewModel\DevicePoolViewModel.cs" />
     <Compile Include="ViewModel\HardwareConsoleViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\AxisControlViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\CameraDebugViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\CommDebugViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\HardwareModels.cs" />
+    <Compile Include="ViewModel\HardWareConsole\IoMonitorViewModel.cs" />
     <Compile Include="ViewModel\LoginViewModel.cs" />
     <Compile Include="Model\MockDataFactory.cs" />
     <Compile Include="ViewModel\PluginManageViewModel.cs" />
@@ -109,6 +114,18 @@
     </Compile>
     <Compile Include="View\HardwareConsoleView.xaml.cs">
       <DependentUpon>HardwareConsoleView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\AxisControlView.xaml.cs">
+      <DependentUpon>AxisControlView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\CameraDebugView.xaml.cs">
+      <DependentUpon>CameraDebugView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\CommDebugView.xaml.cs">
+      <DependentUpon>CommDebugView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\IoMonitorView.xaml.cs">
+      <DependentUpon>IoMonitorView.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\LoginView.xaml.cs">
       <DependentUpon>LoginView.xaml</DependentUpon>
@@ -168,6 +185,22 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\HardwareConsoleView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareConsole\AxisControlView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareConsole\CameraDebugView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareConsole\CommDebugView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareConsole\IoMonitorView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

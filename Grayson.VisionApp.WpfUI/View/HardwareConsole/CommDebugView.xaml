@@ -1,0 +1,133 @@
+﻿<UserControl x:Class="Grayson.Vision.WpfUI.View.HardwareConsole.CommDebugView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="LeftAlignedHeaderStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource ModernDataGridColumnHeaderStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="8,0,8,0"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部：设备与操作栏 -->
+        <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="280"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="目标通信设备:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding AllCommunicationDevices}" DisplayMemberPath="DeviceKey" SelectedItem="{Binding SelectedCommDevice}"/>
+
+                <!-- 连接状态指示与控制按钮 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="15,0,0,0" VerticalAlignment="Center">
+                    <!-- 状态指示灯 -->
+                    <Ellipse Width="12" Height="12" Margin="0,0,6,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="#DC3545"/>
+                                <!-- 默认未连接/离线：红灯 -->
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                        <Setter Property="Fill" Value="#28A745"/>
+                                        <!-- 已连接：绿灯 -->
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding ConnectionStatusText}" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+
+                    <Button Content="⚡ 连接" Command="{Binding ConnectCommand}" Style="{StaticResource SuccessButtonStyle}" Width="auto" Margin="0,0,6,0"/>
+                    <Button Content="⏹ 断开" Command="{Binding DisconnectCommand}" Style="{StaticResource DangerButtonStyle}" Width="auto"/>
+                </StackPanel>
+
+                <Button Grid.Column="4" Content="🗑 清空通信日志" Command="{Binding ClearCommLogCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
+            </Grid>
+        </Border>
+
+        <!-- 中间：通信日志 -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="0">
+            <!-- 增加 Style="{StaticResource ModernDataGridStyle}" -->
+            <DataGrid ItemsSource="{Binding CommLogs}" 
+              Style="{StaticResource ModernDataGridStyle}"
+              AutoGenerateColumns="False" 
+              IsReadOnly="True" 
+              ColumnHeaderStyle="{StaticResource LeftAlignedHeaderStyle}"
+              GridLinesVisibility="Horizontal" 
+              HeadersVisibility="Column" 
+              Background="Transparent" 
+              BorderThickness="0">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat='HH:mm:ss.fff'}" Width="110"/>
+                    <DataGridTemplateColumn Header="方向" Width="70">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="3" Padding="4,2" HorizontalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="#222"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Direction}" Value="TX">
+                                                    <Setter Property="Background" Value="#007ACC"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Direction}" Value="RX">
+                                                    <Setter Property="Background" Value="#28A745"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding Direction}" Foreground="White" FontWeight="Bold" FontSize="11"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="报文内容 / 命令" Binding="{Binding Content}" Width="*"/>
+                    <DataGridTextColumn Header="备注/状态" Binding="{Binding Remark}" Width="150"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+        <!-- 底部：控制台 -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                    <TextBlock Text="操作类型:" Style="{StaticResource FormLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding CommandTypeList}" SelectedItem="{Binding SelectedCmdType}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                    <TextBlock Text="地址 (Address):" Style="{StaticResource FormLabelStyle}"/>
+                    <TextBox Text="{Binding TargetAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Margin="0,0,8,0">
+                    <TextBlock Text="写入值 (Value):" Style="{StaticResource FormLabelStyle}"/>
+                    <TextBox Text="{Binding WriteValue, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                </StackPanel>
+
+                <TextBlock Grid.Column="3" Text="提示：点击发送将直接调用具体驱动的 Read/Write 方法并在上方观察报文" 
+                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="10,15,10,0"/>
+
+                <Button Grid.Column="4" Content="⚡ 执行" Command="{Binding SendCustomRawCommand}" Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Bottom"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

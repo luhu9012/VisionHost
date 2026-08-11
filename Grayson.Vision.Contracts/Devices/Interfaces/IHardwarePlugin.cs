@@ -18,6 +18,15 @@ namespace Grayson.Vision.Contracts.Devices
 
         /// <summary>插件版本号</summary>
         string Version { get; }
+        /// <summary>
+        /// 插件匹配优先级（数值越大越优先被匹配，如 SDK 插件为 100，通用兜底插件为 -100）
+        /// </summary>
+        int Priority { get; }
+
+        /// <summary>
+        /// 判断该插件是否能够处理指定类别与品牌的设备
+        /// </summary>
+        bool Supports(DeviceCategory category, string brand);
 
         /// <summary>初始化插件环境（加载品牌 C/C++ 原生 SDK 等）</summary>
         void Initialize();

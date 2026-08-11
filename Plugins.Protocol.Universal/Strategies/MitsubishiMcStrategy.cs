@@ -1,5 +1,6 @@
 ﻿using Grayson.Vision.Contracts.Communication;
 using Grayson.Vision.Contracts.Core;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using HslCommunication.Core.Net;
 using HslCommunication.Profinet.Melsec;
 using System;
@@ -11,17 +12,20 @@ namespace Plugins.Protocol.Universal.Strategies
     {
         public event EventHandler<CommunicationMessage> MessageTransmitted;
 
+        public string DeviceKey { get; set; } = "MitsubishiPLC";
+
         private void RaiseTransmitted(string direction, string content, bool isSuccess, string remark = "")
         {
             MessageTransmitted?.Invoke(this, new CommunicationMessage
             {
-                DeviceKey = "MitsubishiPLC",
+                DeviceKey = DeviceKey,
                 Direction = direction,
                 Content = content,
                 IsSuccess = isSuccess,
                 Remark = remark
             });
         }
+
         private MelsecMcNet _melsecNet;
         private MelsecMcAsciiNet _melsecAsciiNet;
         private bool _isAscii = false;
@@ -46,55 +50,87 @@ namespace Plugins.Protocol.Universal.Strategies
                 connectRes = _melsecNet.ConnectServer();
             }
 
-            return connectRes.IsSuccess
-                ? Result.Ok()
-                : Result.Fail($"三菱 MC 协议连接失败: {connectRes.Message}");
+            if (connectRes.IsSuccess)
+            {
+                LogBus.Info("Communication", $"三菱 MC 协议连接成功 [{ip}:{connectPort}] (ASCII: {_isAscii})");
+                return Result.Ok();
+            }
+
+            LogBus.Error("Communication", $"三菱 MC 协议连接失败 [{ip}:{connectPort}]: {connectRes.Message}");
+            return Result.Fail($"三菱 MC 协议连接失败: {connectRes.Message}");
         }
 
         public Result Disconnect()
         {
+            HslCommunication.OperateResult res = null;
             if (_isAscii)
             {
-                var res = _melsecAsciiNet?.ConnectClose();
+                res = _melsecAsciiNet?.ConnectClose();
                 _melsecAsciiNet = null;
-                return res?.IsSuccess == true ? Result.Ok() : Result.Fail(res?.Message ?? "断开失败");
             }
             else
             {
-                var res = _melsecNet?.ConnectClose();
+                res = _melsecNet?.ConnectClose();
                 _melsecNet = null;
-                return res?.IsSuccess == true ? Result.Ok() : Result.Fail(res?.Message ?? "断开失败");
             }
+
+            LogBus.Info("Communication", "三菱 PLC 已断开连接");
+            return res?.IsSuccess == true ? Result.Ok() : Result.Fail(res?.Message ?? "断开失败");
         }
 
         public async Task<Result<T>> ReadAsync<T>(string address)
         {
-            if (!IsConnected) return Result<T>.Fail("三菱 PLC 未连接");
-
+            if (!IsConnected)
+            {
+                LogBus.Warn("Communication", "三菱 PLC 未连接，放弃读取");
+                return Result<T>.Fail("三菱 PLC 未连接");
+            }
 
             Type t = typeof(T);
+            RaiseTransmitted("TX", $"READ <{t.Name}> Address:{address}", true);
+
+            HslCommunication.OperateResult<object> readObj = new HslCommunication.OperateResult<object>();
+
             if (t == typeof(bool))
             {
-                var read = _isAscii ? await _melsecAsciiNet.ReadBoolAsync(address) : await _melsecNet.ReadBoolAsync(address);
-                return read.IsSuccess ? Result<T>.Ok((T)(object)read.Content) : Result<T>.Fail(read.Message);
+                var r = _isAscii ? await _melsecAsciiNet.ReadBoolAsync(address) : await _melsecNet.ReadBoolAsync(address);
+                readObj.IsSuccess = r.IsSuccess; readObj.Message = r.Message; if (r.IsSuccess) readObj.Content = r.Content;
             }
-            if (t == typeof(int))
+            else if (t == typeof(int))
             {
-                var read = _isAscii ? await _melsecAsciiNet.ReadInt32Async(address) : await _melsecNet.ReadInt32Async(address);
-                return read.IsSuccess ? Result<T>.Ok((T)(object)read.Content) : Result<T>.Fail(read.Message);
+                var r = _isAscii ? await _melsecAsciiNet.ReadInt32Async(address) : await _melsecNet.ReadInt32Async(address);
+                readObj.IsSuccess = r.IsSuccess; readObj.Message = r.Message; if (r.IsSuccess) readObj.Content = r.Content;
             }
-            if (t == typeof(float))
+            else if (t == typeof(float))
             {
-                var read = _isAscii ? await _melsecAsciiNet.ReadFloatAsync(address) : await _melsecNet.ReadFloatAsync(address);
-                return read.IsSuccess ? Result<T>.Ok((T)(object)read.Content) : Result<T>.Fail(read.Message);
+                var r = _isAscii ? await _melsecAsciiNet.ReadFloatAsync(address) : await _melsecNet.ReadFloatAsync(address);
+                readObj.IsSuccess = r.IsSuccess; readObj.Message = r.Message; if (r.IsSuccess) readObj.Content = r.Content;
+            }
+            else
+            {
+                return Result<T>.Fail($"暂不支持的数据类型: {t.Name}");
             }
 
-            return Result<T>.Fail($"暂不支持的数据类型: {t.Name}");
+            if (readObj.IsSuccess)
+            {
+                RaiseTransmitted("RX", $"{readObj.Content}", true, "读取成功");
+                return Result<T>.Ok((T)readObj.Content);
+            }
+
+            RaiseTransmitted("RX", $"ERROR: {readObj.Message}", false, "读取失败");
+            LogBus.Error("Communication", $"三菱 PLC 读取点位 [{address}] 失败: {readObj.Message}");
+            return Result<T>.Fail(readObj.Message);
         }
 
         public async Task<Result> WriteAsync<T>(string address, T value)
         {
-            if (!IsConnected) return Result.Fail("三菱 PLC 未连接");
+            if (!IsConnected)
+            {
+                LogBus.Warn("Communication", "三菱 PLC 未连接，放弃写入");
+                return Result.Fail("三菱 PLC 未连接");
+            }
+
+            RaiseTransmitted("TX", $"WRITE <{typeof(T).Name}> Address:{address} Value:{value}", true);
 
             HslCommunication.OperateResult writeRes;
             switch (value)
@@ -112,55 +148,89 @@ namespace Plugins.Protocol.Universal.Strategies
                     return Result.Fail($"不支持写入类型: {typeof(T).Name}");
             }
 
-            return writeRes.IsSuccess ? Result.Ok() : Result.Fail(writeRes.Message);
+            if (writeRes.IsSuccess)
+            {
+                RaiseTransmitted("RX", "OK", true, "写入成功");
+                return Result.Ok();
+            }
+
+            RaiseTransmitted("RX", $"ERROR: {writeRes.Message}", false, "写入失败");
+            LogBus.Error("Communication", $"三菱 PLC 写入点位 [{address}] 失败: {writeRes.Message}");
+            return Result.Fail(writeRes.Message);
         }
 
         public async Task<Result<byte[]>> ReadBytesAsync(string address, ushort length)
         {
             if (!IsConnected) return Result<byte[]>.Fail("三菱 PLC 未连接");
-            // 记录发送 (TX)
-            RaiseTransmitted("TX", $"READ {address} Len:{length}", true);
 
+            RaiseTransmitted("TX", $"READ BYTES Address:{address} Len:{length}", true);
             var read = _isAscii ? await _melsecAsciiNet.ReadAsync(address, length) : await _melsecNet.ReadAsync(address, length);
 
-            // 记录接收 (RX)
             if (read.IsSuccess)
             {
                 string hexStr = BitConverter.ToString(read.Content).Replace("-", " ");
                 RaiseTransmitted("RX", hexStr, true, "读取成功");
                 return Result<byte[]>.Ok(read.Content);
             }
-            else
-            {
-                RaiseTransmitted("RX", $"ERROR: {read.Message}", false, "读取失败");
-                return Result<byte[]>.Fail(read.Message);
-            }
+
+            RaiseTransmitted("RX", $"ERROR: {read.Message}", false, "读取失败");
+            LogBus.Error("Communication", $"三菱 PLC 读取字节 [{address}] 失败: {read.Message}");
+            return Result<byte[]>.Fail(read.Message);
         }
 
         public async Task<Result> WriteBytesAsync(string address, byte[] data)
         {
             if (!IsConnected) return Result.Fail("三菱 PLC 未连接");
+
+            string hexStr = BitConverter.ToString(data).Replace("-", " ");
+            RaiseTransmitted("TX", $"WRITE BYTES Address:{address} Data:[{hexStr}]", true);
+
             var write = _isAscii ? await _melsecAsciiNet.WriteAsync(address, data) : await _melsecNet.WriteAsync(address, data);
-            return write.IsSuccess ? Result.Ok() : Result.Fail(write.Message);
+            if (write.IsSuccess)
+            {
+                RaiseTransmitted("RX", "OK", true, "写入成功");
+                return Result.Ok();
+            }
+
+            RaiseTransmitted("RX", $"ERROR: {write.Message}", false, "写入失败");
+            LogBus.Error("Communication", $"三菱 PLC 写入字节 [{address}] 失败: {write.Message}");
+            return Result.Fail(write.Message);
         }
 
         public async Task<Result<string>> ReadStringAsync(string address, ushort length)
         {
             if (!IsConnected) return Result<string>.Fail("三菱 PLC 未连接");
+
+            RaiseTransmitted("TX", $"READ STRING Address:{address} Len:{length}", true);
             var read = _isAscii ? await _melsecAsciiNet.ReadStringAsync(address, length) : await _melsecNet.ReadStringAsync(address, length);
-            return read.IsSuccess ? Result<string>.Ok(read.Content) : Result<string>.Fail(read.Message);
+
+            if (read.IsSuccess)
+            {
+                RaiseTransmitted("RX", read.Content, true, "读取成功");
+                return Result<string>.Ok(read.Content);
+            }
+
+            RaiseTransmitted("RX", $"ERROR: {read.Message}", false, "读取失败");
+            LogBus.Error("Communication", $"三菱 PLC 读取字符串 [{address}] 失败: {read.Message}");
+            return Result<string>.Fail(read.Message);
         }
 
         public async Task<Result> WriteStringAsync(string address, string value)
         {
             if (!IsConnected) return Result.Fail("三菱 PLC 未连接");
 
-            // HslCommunication 中写入字符串统一使用 WriteAsync 方法
-            var write = _isAscii
-                ? await _melsecAsciiNet.WriteAsync(address, value)
-                : await _melsecNet.WriteAsync(address, value);
+            RaiseTransmitted("TX", $"WRITE STRING Address:{address} Value:{value}", true);
+            var write = _isAscii ? await _melsecAsciiNet.WriteAsync(address, value) : await _melsecNet.WriteAsync(address, value);
 
-            return write.IsSuccess ? Result.Ok() : Result.Fail(write.Message);
+            if (write.IsSuccess)
+            {
+                RaiseTransmitted("RX", "OK", true, "写入成功");
+                return Result.Ok();
+            }
+
+            RaiseTransmitted("RX", $"ERROR: {write.Message}", false, "写入失败");
+            LogBus.Error("Communication", $"三菱 PLC 写入字符串 [{address}] 失败: {write.Message}");
+            return Result.Fail(write.Message);
         }
 
         public void Dispose() => Disconnect();

@@ -11,24 +11,29 @@ namespace Plugins.Protocol.Universal
 {
     public class UniversalProtocolPlugin : IHardwarePlugin
     {
-        public string BrandName => "UniversalPLC";
-        public DeviceCategory Category => DeviceCategory.PLC;
+        public string BrandName => "UniversalProtocol";
+        // 标记为通用驱动，不绑定单一类型
+        public DeviceCategory Category => DeviceCategory.Generic;
         public string Version => "1.0.0";
+        // 最低优先级：用于无匹配插件时的全局兜底
+        public int Priority => -100;
 
-        public void Initialize()
+        public bool Supports(DeviceCategory category, string brand)
         {
-            // 如果使用 HslCommunication 正式授权，在此处写入授权码：
-            // HslCommunication.Authorization.SetAuthorizationCode("YOUR_CODE");
+            // 兜底逻辑：支持所有通过 ConnectionString 配置的手动设备
+            return true;
         }
+
+        public void Initialize() { }
 
         public Result<List<DeviceInfo>> EnumerateDevices()
         {
-            // 手动设备不支持局域网广播扫描，返回空列表
             return Result<List<DeviceInfo>>.Ok(new List<DeviceInfo>());
         }
 
         public IDevice CreateDevice(string deviceId)
         {
+            // 内部根据传入参数或 Protocol 标记创建对应的物理协议设备对象
             return new UniversalPlcDevice(deviceId)
             {
                 BrandName = BrandName,

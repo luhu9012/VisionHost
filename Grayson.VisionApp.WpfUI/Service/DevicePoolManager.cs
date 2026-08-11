@@ -15,7 +15,7 @@ namespace Grayson.Vision.WpfUI.Service
 {
     /// <summary>
     /// 全局硬件设备池管理器（单例）
-    /// 负责：硬件驱动插件装载、物理设备扫描、内存设备池维护、LiteDB 数据库持久化同步
+    /// 负责：硬件驱动插件装载、动态优先级匹配路由、物理设备扫描、内存设备池维护、LiteDB 数据库持久化同步
     /// </summary>
     public class DevicePoolManager
     {
@@ -36,9 +36,9 @@ namespace Grayson.Vision.WpfUI.Service
         #region 内部容器
 
         /// <summary>
-        /// 保存已加载的所有品牌插件 key: BrandName_Category, value: IHardwarePlugin
+        /// 保存已加载的所有驱动插件实例集合（支持按 Priority 动态优先级查找）
         /// </summary>
-        private readonly ConcurrentDictionary<string, IHardwarePlugin> _plugins = new ConcurrentDictionary<string, IHardwarePlugin>();
+        private readonly ConcurrentBag<IHardwarePlugin> _plugins = new ConcurrentBag<IHardwarePlugin>();
 
         /// <summary>
         /// 设备池统一内存容器 key: DeviceKey (逻辑名称，如 Cam_Top_01), value: IDevice 实例
@@ -112,8 +112,12 @@ namespace Grayson.Vision.WpfUI.Service
                 if (Activator.CreateInstance(type) is IHardwarePlugin plugin)
                 {
                     plugin.Initialize();
-                    string key = $"{plugin.BrandName}_{plugin.Category}";
-                    _plugins[key] = plugin;
+
+                    // 防止重复加载相同类型的插件
+                    if (!_plugins.Any(p => p.GetType() == plugin.GetType()))
+                    {
+                        _plugins.Add(plugin);
+                    }
                 }
             }
         }
@@ -134,9 +138,24 @@ namespace Grayson.Vision.WpfUI.Service
                 }
                 catch
                 {
-                    // 忽略加裁失败的文件
+                    // 忽略加载失败的文件
                 }
             }
+        }
+
+        #endregion
+
+        #region 动态插件解析与路由核心
+
+        /// <summary>
+        /// 根据设备类型与品牌，按插件 Priority 优先级从高到低自动解析最佳驱动插件
+        /// （优先分配 SDK 专有驱动，找不到时自动由 UniversalProtocol 兜底）
+        /// </summary>
+        public IHardwarePlugin ResolvePlugin(DeviceCategory category, string brand)
+        {
+            return _plugins
+                .OrderByDescending(p => p.Priority) // 按 Priority 从高到低排序 (如 100 -> 0 -> -100)
+                .FirstOrDefault(p => p.Supports(category, brand));
         }
 
         #endregion
@@ -159,19 +178,18 @@ namespace Grayson.Vision.WpfUI.Service
                 {
                     if (_devicePool.ContainsKey(config.DeviceKey)) continue;
 
-                    string pluginKey = $"{config.BrandName}_{config.Category}";
+                    var plugin = ResolvePlugin(config.Category, config.BrandName);
 
-                    if (_plugins.TryGetValue(pluginKey, out var plugin))
+                    if (plugin != null)
                     {
                         try
                         {
                             // 1. 实例化设备对象
                             var device = plugin.CreateDevice(config.DeviceId);
 
-                            // 核心修复：增加 null 校验，防止 plugin.CreateDevice 返回空对象引发报空
                             if (device == null)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[DevicePool] 驱动插件 [{pluginKey}] 无法根据 DeviceId:[{config.DeviceId}] 创建设备实例，返回了 null。");
+                                System.Diagnostics.Debug.WriteLine($"[DevicePool] 驱动插件 [{plugin.BrandName}] 无法根据 DeviceId:[{config.DeviceId}] 创建设备实例，返回了 null。");
                                 continue;
                             }
 
@@ -200,13 +218,14 @@ namespace Grayson.Vision.WpfUI.Service
                 System.Diagnostics.Debug.WriteLine($"[DevicePool] 从数据库恢复设备配置失败: {ex.Message}");
             }
         }
+
         /// <summary>
         /// 扫描所有已加载插件下的在线物理硬件信息（只读模式，不修改内存池与数据库）
         /// </summary>
         public List<DeviceInfo> ScanAllPhysicalDevices()
         {
             var list = new List<DeviceInfo>();
-            foreach (var plugin in _plugins.Values)
+            foreach (var plugin in _plugins)
             {
                 try
                 {
@@ -238,8 +257,8 @@ namespace Grayson.Vision.WpfUI.Service
                 if (string.IsNullOrWhiteSpace(userDeviceKey)) return Result<IDevice>.Fail("逻辑名称不能为空!");
                 if (_devicePool.ContainsKey(userDeviceKey)) return Result<IDevice>.Fail($"已存在 Key 为 [{userDeviceKey}] 的内存设备!");
 
-                string pluginKey = $"{info.BrandName}_{info.Category}";
-                if (!_plugins.TryGetValue(pluginKey, out var plugin))
+                var plugin = ResolvePlugin(info.Category, info.BrandName);
+                if (plugin == null)
                 {
                     return Result<IDevice>.Fail($"未找到支持 [{info.BrandName}] - [{info.Category}] 的驱动插件!");
                 }
@@ -293,7 +312,7 @@ namespace Grayson.Vision.WpfUI.Service
         }
 
         /// <summary>
-        /// 手动创建设备（适用于 PLC、串口、网络网关等无自动广播扫描的设备）
+        /// 手动创建设备（自动通过 Priority 查找 SDK 插件或通用协议驱动）
         /// </summary>
         public async Task<Result<IDevice>> CreateAndSaveManualDeviceAsync(DeviceCategory category, string brand, string deviceKey, string connectionString)
         {
@@ -302,7 +321,8 @@ namespace Grayson.Vision.WpfUI.Service
                 if (string.IsNullOrWhiteSpace(deviceKey)) return Result<IDevice>.Fail("设备逻辑名称不能为空!");
                 if (_devicePool.ContainsKey(deviceKey)) return Result<IDevice>.Fail($"内存设备池中已存在名称为 [{deviceKey}] 的设备!");
 
-                var plugin = GetPluginByBrandAndCategory(brand, category);
+                // 核心重构优化：自动按 Priority 路由匹配最优驱动，优先使用专有 SDK 插件，没有则降级由通用协议驱动接管
+                var plugin = ResolvePlugin(category, brand);
                 if (plugin == null)
                 {
                     return Result<IDevice>.Fail($"未找到匹配品牌 [{brand}] 与类别 [{category}] 的驱动插件，请确保相关插件已正常加载！");
@@ -316,8 +336,7 @@ namespace Grayson.Vision.WpfUI.Service
 
                 try
                 {
-                    // 修正 DeviceId 生成，避免将 ConnectionString 赋给 DeviceId 导致 UI 显示混乱
-                    string manualDeviceId = $"PLC_{DateTime.Now:yyyyMMddHHmmss}_{new Random().Next(100, 999)}";
+                    string manualDeviceId = $"{category}_{brand}_{DateTime.Now:yyyyMMddHHmmss}";
 
                     var device = plugin.CreateDevice(manualDeviceId);
                     device.DeviceKey = deviceKey;
@@ -328,10 +347,10 @@ namespace Grayson.Vision.WpfUI.Service
 
                     var po = new DeviceConfigPo
                     {
-                        DeviceKey = deviceKey,
-                        DeviceId = manualDeviceId,
-                        BrandName = brand,
-                        Category = category,
+                        DeviceKey = deviceKey,        // 逻辑 Key（如 "Modbus_Sensor_01"）
+                        DeviceId = manualDeviceId,    // 物理全局唯一 ID
+                        BrandName = brand,            // 品牌名 / 插件标识
+                        Category = category,          // 用户选定的设备类别
                         IsEnabled = true,
                         ConnectionString = connectionString
                     };
@@ -376,8 +395,8 @@ namespace Grayson.Vision.WpfUI.Service
                             string autoKey = $"{info.BrandName}_{info.Category}_{info.DeviceId}";
                             if (_devicePool.ContainsKey(autoKey)) continue;
 
-                            string pluginKey = $"{info.BrandName}_{info.Category}";
-                            if (!_plugins.TryGetValue(pluginKey, out var plugin)) continue;
+                            var plugin = ResolvePlugin(info.Category, info.BrandName);
+                            if (plugin == null) continue;
 
                             try
                             {
@@ -532,23 +551,7 @@ namespace Grayson.Vision.WpfUI.Service
         /// <summary>
         /// 获取当前已加载的所有插件实例列表
         /// </summary>
-        public IEnumerable<IHardwarePlugin> GetAllPlugins() => _plugins.Values;
-
-        /// <summary>
-        /// 根据品牌与类别获取匹配的驱动插件
-        /// </summary>
-        private IHardwarePlugin GetPluginByBrandAndCategory(string brand, DeviceCategory category)
-        {
-            string key = $"{brand}_{category}";
-            if (_plugins.TryGetValue(key, out var plugin))
-            {
-                return plugin;
-            }
-
-            return _plugins.Values.FirstOrDefault(p =>
-                string.Equals(p.BrandName, brand, StringComparison.OrdinalIgnoreCase) &&
-                p.Category == category);
-        }
+        public IEnumerable<IHardwarePlugin> GetAllPlugins() => _plugins;
 
         #endregion
     }

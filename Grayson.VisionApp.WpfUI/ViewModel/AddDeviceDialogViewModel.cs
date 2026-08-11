@@ -1,5 +1,6 @@
 ﻿using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.WpfUI.Service;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -63,24 +64,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         private void UpdateAvailableBrands()
         {
-            List<string> brands;
-            switch (SelectedCategory)
+            var brands = new List<string>();
+
+            // 1. 从当前已加载的插件池获取对应 Category 的所有专有品牌
+            var loadedPlugins = DevicePoolManager.Instance.GetAllPlugins()
+                .Where(p => p.Category == SelectedCategory)
+                .Select(p => p.BrandName)
+                .ToList();
+
+            brands.AddRange(loadedPlugins);
+
+            // 2. 动态追加通用协议/网关选项（确保手动添加时随时可选）
+            if (!brands.Contains("UniversalProtocol"))
             {
-                case DeviceCategory.Camera:
-                    brands = new List<string> { "Hikvision", "Dahua", "Basler" };
-                    break;
-                case DeviceCategory.PLC:
-                    brands = new List<string> { "Siemens", "Omron", "ModbusTCP" };
-                    break;
-                case DeviceCategory.MotionCard:
-                    brands = new List<string> { "ZMotion", "Advantech" };
-                    break;
-                case DeviceCategory.LightController:
-                    brands = new List<string> { "OPT", "CST" };
-                    break;
-                default:
-                    brands = new List<string> { "Generic" };
-                    break;
+                brands.Add("UniversalProtocol");
             }
 
             AvailableBrands = brands;

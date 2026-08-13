@@ -4,6 +4,7 @@ using Grayson.Vison.FlowEdit.Converters;
 using Grayson.Vison.FlowEdit.ViewModels;
 using Grayson.Vison.FlowEdit.Views;
 using System;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -45,12 +46,56 @@ namespace Grayson.Vison.FlowEdit.Controls
             });
         }
 
+        // 在 NodeControl.cs 中增加监听
         private static void OnNodePropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            if (d is NodeControl control && e.NewValue is FlowNodeBase newNode)
+            if (d is NodeControl control)
             {
-                control.AutoLayoutNodePorts(newNode);
+                if (e.OldValue is FlowNodeBase oldNode)
+                {
+                    oldNode.InputPorts.CollectionChanged -= control.OnPortsChanged;
+                    oldNode.OutputPorts.CollectionChanged -= control.OnPortsChanged;
+                }
+                if (e.NewValue is FlowNodeBase newNode)
+                {
+                    newNode.InputPorts.CollectionChanged += control.OnPortsChanged;
+                    newNode.OutputPorts.CollectionChanged += control.OnPortsChanged;
+                    control.AutoLayoutNodePorts(newNode);
+                }
             }
+        }
+
+        private void OnPortsChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LOG-NodeControl] OnPortsChanged 触发! 动作: {e.Action}, 节点: {Node?.DisplayName}");
+
+            if (Node == null) return;
+
+            // 1. 重新计算并刷新端口 RelativeX / RelativeY 坐标及节点高度
+            AutoLayoutNodePorts(Node);
+
+            // 2. 刷新节点绑定的连线坐标（通知 ConnectionModel 更新 StartX/Y, EndX/Y）
+            //if (Node.InputPorts != null)
+            //{
+            //    foreach (var port in Node.InputPorts) port.RaisePositionChanged();
+            //}
+            //if (Node.OutputPorts != null)
+            //{
+            //    foreach (var port in Node.OutputPorts) port.RaisePositionChanged();
+            //}
+
+            // 3. 在 UI 线程进行平滑无感刷新，擦除旧视觉残影
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, new Action(() =>
+            {
+                // 刷新自身 Measure 和 Arrange
+                this.InvalidateMeasure();
+                this.InvalidateArrange();
+                this.InvalidateVisual();
+
+                // 通知祖先 FlowEditView 触发整个画布与连线 Path 擦除重绘
+                var parentView = GetParentFlowEditView();
+                parentView?.InvalidateCanvas();
+            }));
         }
 
         public void AutoLayoutNodePorts(FlowNodeBase node)
@@ -110,6 +155,7 @@ namespace Grayson.Vison.FlowEdit.Controls
                 port.RelativeX = (nodeWidth / (bottomPorts.Count + 1)) * (i + 1);
                 port.RelativeY = calculatedHeight;
             }
+            
         }
         private FlowEditView GetParentFlowEditView()
         {
@@ -348,5 +394,7 @@ namespace Grayson.Vison.FlowEdit.Controls
                 ReleaseMouseCapture();
             }
         }
+
+
     }
 }

@@ -1,14 +1,14 @@
 ﻿
+using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Station.Models;
-using Grayson.Vision.Contracts.Flow.Contexts;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-
 using ExecutionContext = Grayson.Vision.Contracts.Flow.Contexts.ExecutionContext;
 
 namespace Grayson.Vision.Contracts.Flow.Executants
@@ -44,6 +44,9 @@ namespace Grayson.Vision.Contracts.Flow.Executants
         /// <summary>
         /// 启动连续运行
         /// </summary>
+        /// <summary>
+        /// 启动连续运行
+        /// </summary>
         public async Task RunContinuousAsync()
         {
             if (State == ExecutionMode.Continuous) return;
@@ -54,6 +57,9 @@ namespace Grayson.Vision.Contracts.Flow.Executants
 
             ChainExecutionResult execResult = ChainExecutionResult.Success;
             Exception fatalException = null;
+
+            // 🌟 启动耗时计时器
+            var stopwatch = Stopwatch.StartNew();
 
             try
             {
@@ -100,9 +106,10 @@ namespace Grayson.Vision.Contracts.Flow.Executants
             }
             finally
             {
+                stopwatch.Stop();
                 Stop();
-                // 🌟 核心：通知上层执行链已结束
-                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(execResult, fatalException));
+                // 🌟 核心：通知上层执行链已结束，并传入总耗时 ExecutionTimeMs
+                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(execResult, fatalException, stopwatch.Elapsed.TotalMilliseconds));
             }
         }
         /// <summary>
@@ -120,13 +127,14 @@ namespace Grayson.Vision.Contracts.Flow.Executants
             if (_currentStepIndex >= execChain.Count)
             {
                 LogBus.Info("Engine", "🔄 单步执行到达末尾");
-                // 🌟 告知上层单步已到末尾
                 OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.StepEndReached));
                 return;
             }
 
             State = ExecutionMode.Step;
             _cts = new CancellationTokenSource();
+
+            var stopwatch = Stopwatch.StartNew();
 
             while (_currentStepIndex < execChain.Count)
             {
@@ -145,12 +153,13 @@ namespace Grayson.Vision.Contracts.Flow.Executants
                 }
             }
 
+            stopwatch.Stop();
             State = ExecutionMode.Paused;
 
-            // 🌟 如果单步刚好执行完最后一个节点，也触发完成通知
+            // 🌟 如果单步刚好执行完最后一个节点，触发完成通知并传入耗时
             if (_currentStepIndex >= execChain.Count)
             {
-                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.Success));
+                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.Success, null, stopwatch.Elapsed.TotalMilliseconds));
             }
         }
         /// <summary>

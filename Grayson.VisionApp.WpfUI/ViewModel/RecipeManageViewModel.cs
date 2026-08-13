@@ -46,6 +46,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OpenFlowEditCommand = new RelayCommand(_ => OnOpenFlowEdit(), _ => SelectedRecipe != null);
             RefreshDevicesCommand = new RelayCommand(_ => RefreshLogicalDevicesFromFlow(), _ => SelectedRecipe?.MainProcess != null);
         }
+        /// <summary>
+        /// 统一触发依赖设备状态的 RelayCommand 状态更新
+        /// </summary>
+        private void RaiseCommandsCanExecuteChanged()
+        {
+            ApplyRecipeCommand?.RaiseCanExecuteChanged();
+            DeleteRecipeCommand?.RaiseCanExecuteChanged();
+            SaveDetailCommand?.RaiseCanExecuteChanged();
+            OpenFlowEditCommand?.RaiseCanExecuteChanged();
+            RefreshDevicesCommand?.RaiseCanExecuteChanged();
+        }
 
         #region 属性绑定
 
@@ -73,6 +84,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     // 🌟 自动从 FlowEdit 递归提取最新的逻辑设备依赖
                     RefreshLogicalDevicesFromFlow();
+                    RaiseCommandsCanExecuteChanged();
                 }
             }
         }
@@ -105,13 +117,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #region 命令定义
 
-        public ICommand SearchCommand { get; }
-        public ICommand CreateRecipeCommand { get; }
-        public ICommand ApplyRecipeCommand { get; }
-        public ICommand DeleteRecipeCommand { get; }
-        public ICommand SaveDetailCommand { get; }
-        public ICommand OpenFlowEditCommand { get; }
-        public ICommand RefreshDevicesCommand { get; }
+        public RelayCommand SearchCommand { get; }
+        public RelayCommand CreateRecipeCommand { get; }
+        public RelayCommand ApplyRecipeCommand { get; }
+        public RelayCommand DeleteRecipeCommand { get; }
+        public RelayCommand SaveDetailCommand { get; }
+        public RelayCommand OpenFlowEditCommand { get; }
+        public RelayCommand RefreshDevicesCommand { get; }
 
         #endregion
 

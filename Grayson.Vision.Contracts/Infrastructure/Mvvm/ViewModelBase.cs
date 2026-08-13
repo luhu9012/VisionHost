@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Input;
 
 namespace Grayson.Vision.Contracts.Infrastructure.Mvvm
@@ -32,6 +33,7 @@ namespace Grayson.Vision.Contracts.Infrastructure.Mvvm
     public class RelayCommand : ICommand
     {
         private readonly Action<object> _execute;
+        private readonly Func<Task> _asyncExecute;
         private readonly Predicate<object> _canExecute;
 
         // 标准的事件定义，脱离 CommandManager
@@ -48,6 +50,15 @@ namespace Grayson.Vision.Contracts.Infrastructure.Mvvm
             _canExecute = canExecute;
         }
 
+        /// <summary>
+        /// 支持异步 Task 的命令构造函数，避免 async void 导致异常被吞
+        /// </summary>
+        public RelayCommand(Func<Task> execute, Func<bool> canExecute = null)
+        {
+            _asyncExecute = execute ?? throw new ArgumentNullException(nameof(execute));
+            _canExecute = canExecute == null ? (Predicate<object>)null : _ => canExecute();
+        }
+
         public bool CanExecute(object parameter)
         {
             return _canExecute == null || _canExecute(parameter);
@@ -55,7 +66,14 @@ namespace Grayson.Vision.Contracts.Infrastructure.Mvvm
 
         public void Execute(object parameter)
         {
-            _execute(parameter);
+            if (_asyncExecute != null)
+            {
+                _asyncExecute();
+            }
+            else
+            {
+                _execute?.Invoke(parameter);
+            }
         }
 
         /// <summary>

@@ -1,9 +1,9 @@
-﻿// 业务特性、数据模型命名空间引用
+﻿// 业务特性、数据模型与执行器命名空间引用
 using Grayson.Vision.Contracts.Flow.Attributes;
 using Grayson.Vision.Contracts.Flow.Enums;
-using Grayson.Vision.Contracts.Flow.Nodes;
-using Grayson.Vision.Contracts.Flow.Helpers;
 using Grayson.Vision.Contracts.Flow.Executants;
+using Grayson.Vision.Contracts.Flow.Helpers;
+using Grayson.Vision.Contracts.Flow.Nodes;
 
 using System;
 using System.Collections.Generic;
@@ -15,59 +15,58 @@ namespace Grayson.Vision.Contracts.Flow.Factories
     /// <summary>
     /// 流程节点工厂（全局单例静态工厂）
     /// 核心职责：
-    /// 1. 扫描程序集、自动读取节点[Node]特性，缓存所有节点元信息
-    /// 2. 生成UI工具箱所需的节点元数据UnitMeta
-    /// 3. 根据NodeType创建画布可视节点FlowNode（带端口、独立参数实例）
-    /// 4. 创建流程引擎执行器INodeExecutor，用于业务逻辑运行
-    /// 5. 支持插件动态手动注册节点类型，适配热加载插件架构
+    /// 1. 扫描程序集解析 [Node] 特性，缓存节点与其执行器的映射关系；
+    /// 2. 生成工具箱/菜单栏所需的节点元数据列表（UnitMeta）；
+    /// 3. 动态实例化画布可视节点（支持普通 FlowNode 与复合子流程 CompositeFlowNode）；
+    /// 4. 反射创建业务执行器 INodeExecutor 供流程引擎调度运行。
+    /// 💡 注意：本文件位于 Contracts 契约层，不依赖第三方 JSON 库与文件读写。
     /// </summary>
     public static class NodeFactory
     {
         /// <summary>
         /// 全局节点注册表缓存
-        /// Key：节点枚举类型NodeType
-        /// Value元组：(执行器类型, 参数配置实体类型, 节点特性元数据)
+        /// Key：节点类型枚举 NodeType
+        /// Value元组：(执行器Class类型, 参数配置Model类型, 节点特性元数据)
         /// </summary>
         private static readonly Dictionary<NodeType, (Type ExecutorType, Type ParamType, NodeAttribute Attribute)> _nodeRegistry
             = new Dictionary<NodeType, (Type, Type, NodeAttribute)>();
 
         /// <summary>
-        /// 节点端口缓存注册表
-        /// Key：节点枚举NodeType
-        /// Value：该节点所有输入输出端口特性配置集合
+        /// 节点端口配置缓存注册表
+        /// Key：节点类型枚举 NodeType
+        /// Value：该节点定义的所有输入/输出端口特性列表
         /// </summary>
         private static readonly Dictionary<NodeType, List<NodePortAttribute>> _portRegistry
             = new Dictionary<NodeType, List<NodePortAttribute>>();
 
         /// <summary>
-        /// 初始化标记，防止重复扫描程序集、重复注册节点
+        /// 初始化标记，防止多次扫描程序集造成的重复解析开销
         /// </summary>
         private static bool _isInitialized = false;
 
         /// <summary>
-        /// 批量初始化：扫描指定程序集，自动注册所有流程节点执行器
+        /// 批量扫描并初始化注册节点：反射读取程序集中实现了 INodeExecutor 接口的类
         /// </summary>
-        /// <param name="assembliesToScan">需要扫描的程序集；不传则扫描当前AppDomain所有加载程序集</param>
+        /// <param name="assembliesToScan">待扫描的程序集列表；若不传则默认扫描当前 AppDomain 已加载的所有程序集</param>
         public static void Initialize(params Assembly[] assembliesToScan)
         {
-            // 已初始化直接退出，避免重复反射扫描损耗性能
+            // 已初始化则直接跳过，避免重复反射扫描损耗性能
             if (_isInitialized) return;
 
-            // 判断是否传入指定程序集，无传入则取当前域全部程序集
+            // 未指定程序集时，默认获取当前应用域加载的所有程序集
             var assemblies = assembliesToScan != null && assembliesToScan.Length > 0
                 ? assembliesToScan
                 : AppDomain.CurrentDomain.GetAssemblies();
 
-            // 遍历每个程序集进行反射解析
+            // 遍历每个程序集提取节点执行器类
             foreach (var assembly in assemblies)
             {
                 try
                 {
-                    // 筛选条件：类、非抽象、实现了INodeExecutor节点执行器接口
+                    // 筛选条件：类、非抽象类、实现了 INodeExecutor 接口
                     var types = assembly.GetTypes()
                         .Where(t => t.IsClass && !t.IsAbstract && typeof(INodeExecutor).IsAssignableFrom(t));
 
-                    // 遍历筛选后的执行器类型，统一调用注册方法
                     foreach (var type in types)
                     {
                         RegisterExecutorType(type);
@@ -75,37 +74,38 @@ namespace Grayson.Vision.Contracts.Flow.Factories
                 }
                 catch
                 {
-                    // 反射读取程序集异常直接忽略（部分第三方dll无法反射解析）
+                    // 部分第三方 DLL 无法反射读取时直接忽略，保证主框架启动稳定
                 }
             }
 
-            // 标记初始化完成
+            // 标记完成初始化
             _isInitialized = true;
         }
 
         /// <summary>
-        /// 手动注册单个节点执行器类型（插件热加载专用）
-        /// 支持外部插件dll动态加载后，单独调用此方法注册节点，无需重新全量扫描程序集
+        /// 手动注册单个节点执行器类型（支持插件热加载）
+        /// 当外部动态加载新的 DLL 插件时，可单独调用此接口完成注册，无需重启全量扫描
         /// </summary>
-        /// <param name="executorType">节点执行器Type</param>
+        /// <param name="executorType">实现了 INodeExecutor 接口的类型</param>
         public static void RegisterExecutorType(Type executorType)
         {
-            // 过滤：不是INodeExecutor实现类直接返回
+            // 校验：必须实现 INodeExecutor 接口
             if (!typeof(INodeExecutor).IsAssignableFrom(executorType)) return;
 
-            // 读取类上标记的Node特性，无特性说明不是流程节点，跳过
+            // 校验：必须标注 [Node] 特性，否则说明不是可编排的流程节点
             var nodeAttr = executorType.GetCustomAttribute<NodeAttribute>();
             if (nodeAttr == null) return;
 
-            // 写入全局节点缓存：执行器类型、参数实体、节点展示配置
+            // 存入全局节点注册缓存：保存执行器 Type、参数实体 Type、节点元特性
             _nodeRegistry[nodeAttr.Type] = (executorType, nodeAttr.ParameterType, nodeAttr);
-            // 读取该节点所有端口特性，存入端口缓存
+
+            // 提取类上标注的所有端口特性（NodePortAttribute），存入端口缓存表
             _portRegistry[nodeAttr.Type] = executorType.GetCustomAttributes<NodePortAttribute>().ToList();
         }
 
         /// <summary>
-        /// 功能1：生成工具箱节点元数据集合
-        /// 💡 重构：从 NodeType 枚举上的反射特性动态解析 DisplayName、Description、Icon
+        /// 生成工具箱节点元数据列表（UnitMeta 集合）
+        /// 专服务于左侧工具箱/菜单栏渲染，避开节点的提前实例化
         /// </summary>
         public static List<UnitMeta> GenerateToolboxMetas()
         {
@@ -116,10 +116,10 @@ namespace Grayson.Vision.Contracts.Flow.Factories
                 var nodeType = kvp.Key;
                 var attr = kvp.Value.Attribute;
 
-                // 1. 通过反射从 NodeType 枚举字段提取 UI 信息
-                string displayName = nodeType.GetDescription(); // 从 [Description] 获取
+                // 从 NodeType 枚举字段特性中解析 DisplayName
+                string displayName = nodeType.GetDescription();
 
-                // 如果定义了 NodeFieldMetaAttribute (例如存储 Icon 和 Detailed Description)
+                // 提取附加元数据（如图标 Emoji、长文本描述等）
                 var metaAttr = nodeType.GetAttribute<NodeFieldMetaAttribute>();
                 string description = metaAttr?.Description ?? displayName;
                 string shortName = metaAttr?.ShortName ?? displayName;
@@ -138,31 +138,63 @@ namespace Grayson.Vision.Contracts.Flow.Factories
         }
 
         /// <summary>
-        /// 功能2：创建画布可视FlowNode节点对象
-        /// 每次调用都会生成全新独立节点实例，参数对象互不共享
+        /// 创建画布可视化节点实例（契约层核心工厂）
+        /// 根据 NodeType 区分实例化普通的 FlowNode 或子流程复合节点 CompositeFlowNode
         /// </summary>
-        /// <param name="type">节点枚举标识</param>
-        /// <param name="position">节点在画布上的坐标</param>
-        /// <param name="overrideDisplayName">可选：自定义节点显示名称，不传则使用特性默认名称</param>
-        /// <returns>画布可视化节点FlowNode</returns>
-        /// <summary>
-        /// 功能2：创建画布可视FlowNode节点对象
-        /// 每次调用都会生成全新独立节点实例，参数对象互不共享
-        /// </summary>
-        public static FlowNode CreateNodeInstance(NodeType type, Point2D position, string overrideDisplayName = null)
+        /// <param name="type">节点枚举类型标识</param>
+        /// <param name="position">节点放置在画布上的坐标</param>
+        /// <param name="overrideDisplayName">可选：覆盖显示的节点名称，若为空则取默认定义</param>
+        /// <param name="filePath">可选：如果节点为 CompositeFlow，传入模板相对/绝对文件路径</param>
+        /// <param name="subProcess">可选：由服务层反序列化好后传入的子流程实体 Model</param>
+        /// <returns>抽象基类 FlowNodeBase 实例（多态返回 FlowNode 或 CompositeFlowNode）</returns>
+        public static FlowNodeBase CreateNodeInstance(
+            NodeType type,
+            Point2D position,
+            string overrideDisplayName = null,
+            string filePath = null,
+            FlowProcessModel subProcess = null)
         {
             EnsureInitialized();
 
-            // 提取枚举定义上的默认 DisplayName 和 Description
+            // 解析枚举上的默认显示名称与描述
             string defaultDisplayName = type.GetDescription();
             var metaAttr = type.GetAttribute<NodeFieldMetaAttribute>();
             string defaultDescription = metaAttr?.Description ?? defaultDisplayName;
 
-            // 缓存中找不到对应节点类型，返回兜底默认节点
+            // =========================================================================
+            // 🌟 分支 1：处理复合子流程节点 (CompositeFlow)
+            // =========================================================================
+            if (type == NodeType.CompositeFlow)
+            {
+                string finalName = !string.IsNullOrEmpty(overrideDisplayName) ? overrideDisplayName : "复合子流程";
+
+                var compositeNode = new CompositeFlowNode
+                {
+                    DisplayName = finalName,
+                    RecipeFilePath = filePath,
+                    PosX = position.X,
+                    PosY = position.Y,
+                    Description = defaultDescription
+                };
+
+                // 如果外部应用服务层已经解出并传入了 SubProcess，直接挂载[cite: 9]
+                if (subProcess != null)
+                {
+                    compositeNode.SubProcess = subProcess;
+                }
+
+                return compositeNode;
+            }
+
+            // =========================================================================
+            // 🌟 分支 2：处理普通逻辑/算法节点 (FlowNode)
+            // =========================================================================
+
+            // 缓存查无此类型，创建安全兜底节点（防止未注册类型导致崩溃）[cite: 8]
             if (!_nodeRegistry.TryGetValue(type, out var regInfo))
             {
                 var fallback = new FlowNode(type, defaultDisplayName, NodeCategory.DeviceIO, position, defaultDescription);
-                fallback.Type = type; // 🌟 1. 给兜底节点赋值 NodeType
+                fallback.Type = type;
                 fallback.InputPorts.Add(new NodePort { PortName = "ExecIn", PortType = PortType.In, Category = PortCategory.Data });
                 fallback.OutputPorts.Add(new NodePort { PortName = "ExecOut", PortType = PortType.Out, Category = PortCategory.Data });
                 return fallback;
@@ -170,39 +202,34 @@ namespace Grayson.Vision.Contracts.Flow.Factories
 
             var attr = regInfo.Attribute;
 
-            // 独立实例化参数配置对象
+            // 通过反射独立实例化该节点的参数配置实体 (ParameterModel)[cite: 8]
             object paramInstance = regInfo.ParamType != null
                 ? Activator.CreateInstance(regInfo.ParamType)
                 : null;
 
-            // 优先使用外部传入的覆盖名称，其次取枚举上的默认展示名
             string finalDisplayName = !string.IsNullOrEmpty(overrideDisplayName) ? overrideDisplayName : defaultDisplayName;
 
-            // 实例化画布节点基础对象
+            // 实例化画布通用节点 FlowNode[cite: 8]
             var node = new FlowNode(attr.Type, finalDisplayName, attr.Category, position, defaultDescription, paramInstance);
 
-            // =========================================================================
-            // 🌟 核心修复位置：在这里统一挂载 NodeType、ExecutorType 与 Executor 实例！
-            // =========================================================================
-            node.Type = type; // 1. 设置枚举 NodeType
-            node.ExecutorType = regInfo.ExecutorType; // 2. 挂载执行器 Type
+            // 挂载节点类型与业务执行器类型[cite: 8]
+            node.Type = type;
+            node.ExecutorType = regInfo.ExecutorType;
 
-            // 3. 动态实例化执行器并赋值给 node.Executor 属性
+            // 动态创建执行器 INodeExecutor 实例[cite: 8]
             if (regInfo.ExecutorType != null)
             {
                 try
                 {
                     node.Executor = Activator.CreateInstance(regInfo.ExecutorType) as INodeExecutor;
                 }
-                catch (Exception ex)
+                catch
                 {
-                    // 异常兜底，记录或打印日志
-                    System.Diagnostics.Debug.WriteLine($"[NodeFactory] 实例化执行器 [{regInfo.ExecutorType.Name}] 失败: {ex.Message}");
+                    // 反射创建失败防崩溃兜底
                 }
             }
-            // =========================================================================
 
-            // 动态挂载输入输出端口
+            // 动态构建输入/输出端口集合[cite: 8]
             if (_portRegistry.TryGetValue(type, out var portAttrs))
             {
                 foreach (var pAttr in portAttrs)
@@ -223,43 +250,64 @@ namespace Grayson.Vision.Contracts.Flow.Factories
                 }
             }
 
+            // 🌟 【新增】处理动态端口的联动逻辑 🌟
+            if (paramInstance is IDynamicPortParam dynamicParam)
+            {
+                // 1. 初始化时先执行一次端口同步（根据反序列化出来的 Param 生成端口）
+                dynamicParam.SyncPorts(node);
+
+                // 2. 监听参数模型的属性变化，当 UI 修改参数时自动刷新端口
+                dynamicParam.PropertyChanged += (sender, e) =>
+                {
+                    // 调用接口的方法让 Param 自己去决定怎么增删节点端口
+                    // 注意：如果你在非 UI 线程修改了 Param，这里可能需要 Application.Current.Dispatcher.Invoke
+                    dynamicParam.SyncPorts(node);
+                };
+            }
+
             return node;
-        }
-        /// <summary>
-        /// 通过工具箱元数据快速创建画布节点
-        /// 拖拽工具箱节点时直接调用，自动携带工具箱定义的显示名称
-        /// </summary>
-        /// <param name="meta">工具箱节点元数据</param>
-        /// <param name="position">画布放置坐标</param>
-        /// <returns>画布FlowNode实例</returns>
-        public static FlowNode CreateFromMeta(UnitMeta meta, Point2D position)
-        {
-            // 封装调用创建节点方法，自动传入元数据内的显示名覆盖
-            return CreateNodeInstance(meta.Type, position, meta.DisplayName);
         }
 
         /// <summary>
-        /// 功能3：创建流程执行器INodeExecutor
-        /// 流程引擎运行时调用，生成真实业务逻辑执行对象
+        /// 通过工具箱元数据 (UnitMeta) 快速创建画布节点
         /// </summary>
-        /// <param name="type">节点枚举标识</param>
-        /// <returns>节点业务执行器实例，无匹配节点返回null</returns>
+        /// <param name="meta">工具箱单元元数据</param>
+        /// <param name="position">放置落点的画布坐标</param>
+        /// <param name="subProcess">可选：反序列化好的子流程对象</param>
+        public static FlowNodeBase CreateFromMeta(UnitMeta meta, Point2D position, FlowProcessModel subProcess = null)
+        {
+            if (meta == null) return null;
+
+            string filePath = meta.Type == NodeType.CompositeFlow ? meta.Description : null;
+            return CreateNodeInstance(meta.Type, position, meta.DisplayName, filePath, subProcess);
+        }
+
+        /// <summary>
+        /// 仅创建节点业务执行器 INodeExecutor
+        /// </summary>
         public static INodeExecutor CreateExecutor(NodeType type)
         {
             EnsureInitialized();
-            // 缓存存在则反射创建执行器实例并强转接口，不存在返回null
             return _nodeRegistry.TryGetValue(type, out var regInfo)
                 ? Activator.CreateInstance(regInfo.ExecutorType) as INodeExecutor
                 : null;
         }
 
         /// <summary>
-        /// 私有保障方法：如果未初始化，则自动执行一次全程序集扫描初始化
-        /// 所有对外公共方法入口统一调用，避免使用者忘记初始化导致缓存为空
+        /// 私有保护校验：确保工厂在使用前已完成反射扫描与缓存初始化
         /// </summary>
         private static void EnsureInitialized()
         {
             if (!_isInitialized) Initialize();
+        }
+
+        /// <summary>
+        /// 根据节点枚举类型，从注册表中获取其定义的参数 Model 类型 (ParamType)
+        /// </summary>
+        public static Type GetParameterType(NodeType type)
+        {
+            EnsureInitialized();
+            return _nodeRegistry.TryGetValue(type, out var regInfo) ? regInfo.ParamType : null;
         }
     }
 }

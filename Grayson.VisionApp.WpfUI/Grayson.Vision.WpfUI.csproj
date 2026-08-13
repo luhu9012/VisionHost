@@ -81,10 +81,14 @@
     <Compile Include="Service\INavigationAware.cs" />
     <Compile Include="Service\INavigationService.cs" />
     <Compile Include="Service\LiteDbAuthenticationService.cs" />
+    <Compile Include="Service\MockMesBridgeService.cs" />
     <Compile Include="Service\NavigationService.cs" />
+    <Compile Include="Service\StationConfigService.cs" />
+    <Compile Include="Service\WpfDialogService.cs" />
     <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\AlarmViewModel.cs" />
     <Compile Include="Model\CommonModel.cs" />
+    <Compile Include="ViewModel\DataTraceViewModel.cs" />
     <Compile Include="ViewModel\DevicePoolViewModel.cs" />
     <Compile Include="ViewModel\HardwareConsoleViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\AxisControlViewModel.cs" />
@@ -92,19 +96,26 @@
     <Compile Include="ViewModel\HardWareConsole\CommDebugViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\HardwareModels.cs" />
     <Compile Include="ViewModel\HardWareConsole\IoMonitorViewModel.cs" />
+    <Compile Include="ViewModel\LineOverviewViewModel.cs" />
     <Compile Include="ViewModel\LoginViewModel.cs" />
     <Compile Include="Model\MockDataFactory.cs" />
+    <Compile Include="ViewModel\MesBridgeViewModel.cs" />
     <Compile Include="ViewModel\PluginManageViewModel.cs" />
     <Compile Include="ViewModel\RecipeManageViewModel.cs" />
     <Compile Include="ViewModel\ScanDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\ShellViewModel.cs" />
     <Compile Include="ViewModel\StationManageViewModel.cs" />
+    <Compile Include="ViewModel\StationMonitorViewModel.cs" />
+    <Compile Include="ViewModel\SystemSettingViewModel.cs" />
     <Compile Include="ViewModel\UserManageViewModel.cs" />
     <Compile Include="View\AddDeviceDialog.xaml.cs">
       <DependentUpon>AddDeviceDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\AlarmView.xaml.cs">
       <DependentUpon>AlarmView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\DataTraceView.xaml.cs">
+      <DependentUpon>DataTraceView.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\DevicePoolView.xaml.cs">
       <DependentUpon>DevicePoolView.xaml</DependentUpon>
@@ -127,8 +138,14 @@
     <Compile Include="View\HardwareConsole\IoMonitorView.xaml.cs">
       <DependentUpon>IoMonitorView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="View\LineOverviewView.xaml.cs">
+      <DependentUpon>LineOverviewView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="View\LoginView.xaml.cs">
       <DependentUpon>LoginView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\MesBridgeView.xaml.cs">
+      <DependentUpon>MesBridgeView.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\PluginManageView.xaml.cs">
       <DependentUpon>PluginManageView.xaml</DependentUpon>
@@ -144,6 +161,12 @@
     </Compile>
     <Compile Include="View\StationManageView.xaml.cs">
       <DependentUpon>StationManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\StationMonitorView.xaml.cs">
+      <DependentUpon>StationMonitorView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\SystemSettingView.xaml.cs">
+      <DependentUpon>SystemSettingView.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\UserManageView.xaml.cs">
       <DependentUpon>UserManageView.xaml</DependentUpon>
@@ -176,6 +199,9 @@
     <Page Include="View\AlarmView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="View\DataTraceView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="View\DevicePoolView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -204,7 +230,13 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="View\LineOverviewView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="View\LoginView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\MesBridgeView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\PluginManageView.xaml">
@@ -224,6 +256,12 @@
     </Page>
     <Page Include="View\StationManageView.xaml">
       <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\StationMonitorView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\SystemSettingView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\UserManageView.xaml">

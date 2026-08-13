@@ -263,28 +263,21 @@ namespace Grayson.Vision.WpfUI.ViewModel
         // ------------------ 4. 数据与运维 ------------------
         new MenuItemViewModel { IsSectionHeader = true, Title = "数据与运维" },
         new MenuItemViewModel { Icon = "📈", Title = "本地追溯与防错", PageType = PageType.DataTrace, RequiredRole = UserRole.Operator },
-        new MenuItemViewModel { Icon = "🌐", Title = "MES 对接状态", PageType = PageType.MesBridge, RequiredRole = UserRole.Engineer },
+        //new MenuItemViewModel { Icon = "🌐", Title = "MES 对接状态", PageType = PageType.MesBridge, RequiredRole = UserRole.Engineer },
         new MenuItemViewModel { Icon = "👥", Title = "用户与权限", PageType = PageType.UserManage, RequiredRole = UserRole.Administrator },
         new MenuItemViewModel { Icon = "⚙️", Title = "系统与存储设置", PageType = PageType.SystemSetting, RequiredRole = UserRole.Administrator }
     };
 
             // 默认导航至 "产线拓扑总览"
-            var defaultItem = MenuItems.FirstOrDefault(m => !m.IsSectionHeader && !m.HasChildren);
+            var defaultItem = FindMenuItemByPageType(MenuItems, PageType.LineOverview);
 
             if (defaultItem != null)
-
             {
-
                 OnNavigate(defaultItem);
-
             }
-
             else if (MenuItems.Count > 1 && MenuItems[1].HasChildren)
-
             {
-
                 OnNavigate(MenuItems[1].Children.First());
-
             }
         }
         private void OnNavigate(object parameter)

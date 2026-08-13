@@ -1,0 +1,46 @@
+﻿<UserControl x:Class="Grayson.Vision.Nodes.All.FlowControl.WaitSignal.WaitSignalTemplateView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:Grayson.Vision.Nodes.All.FlowControl.WaitSignal"
+             mc:Ignorable="d"
+             d:DesignHeight="260" d:DesignWidth="300"
+             Background="#1E1E1E">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Grayson.Vision.Nodes;component/Themes/Generic.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate DataType="{x:Type local:WaitSignalParam}">
+                <StackPanel Margin="10,6">
+                    <Border Background="#252526" BorderBrush="#333337" BorderThickness="1" CornerRadius="4" Padding="8">
+                        <StackPanel>
+                            <TextBlock Text="信号标识 / 变量名" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding SignalName, UpdateSourceTrigger=PropertyChanged}" 
+                                     Style="{StaticResource NodeParamInputStyle}" Margin="0,0,0,8"/>
+
+                            <CheckBox Content="期待目标状态为 True (否贝等待 False)" 
+                                      IsChecked="{Binding ExpectedState, Mode=TwoWay}" 
+                                      Foreground="#DDD" Margin="0,0,0,8"/>
+
+                            <TextBlock Text="超时时间 (ms, &lt;=0 为无限等待)" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}" 
+                                     Style="{StaticResource NodeParamInputStyle}" Margin="0,0,0,8"/>
+
+                            <TextBlock Text="轮询轮询间隔 (ms)" Style="{StaticResource NodeParamHeaderLabel}" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding PollIntervalMs, UpdateSourceTrigger=PropertyChanged}" 
+                                     Style="{StaticResource NodeParamInputStyle}"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid d:DataContext="{d:DesignInstance Type=local:WaitSignalParam, IsDesignTimeCreatable=True}">
+        <ContentControl Content="{Binding}" Focusable="False" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+    </Grid>
+</UserControl>

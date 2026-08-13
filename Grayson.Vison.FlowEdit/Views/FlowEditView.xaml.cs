@@ -501,6 +501,16 @@ namespace Grayson.Vison.FlowEdit.Views
             _activeGroup = null;
         }
 
+        public void InvalidateCanvas()
+        {
+            // 强制刷新 ContentGrid (包含连线 Path 和 NodeControl 容器)
+            ContentGrid?.InvalidateArrange();
+            ContentGrid?.InvalidateVisual();
+
+            // 强制刷新 FlowCanvas 视觉重绘与擦除
+            FlowCanvas?.InvalidateArrange();
+            FlowCanvas?.InvalidateVisual();
+        }
 
     }
 }

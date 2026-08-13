@@ -1,24 +1,27 @@
 ﻿//===================================================================================
 // Copyright (c) 2026 Grayson.Vision. All rights reserved.
 // 文件名: StationManageViewModel.cs
-// 说 明: 产线工位管理 ViewModel (修复版本)
 //===================================================================================
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Input;
 
-// 🌟 解决 CS0104 命名空间冲突：明确指定使用的 Model 类型
 using RecipeModel = Grayson.Vision.Contracts.Recipe.Models.RecipeModel;
 using RecipeDeviceMappingModel = Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel;
+using ContractsStationConfig = Grayson.Vision.Contracts.Station.Models.StationConfigModel;
+using ContractsDeviceMapping = Grayson.Vision.Contracts.Station.Models.DeviceMappingModel;
+using ContractsLineConfig = Grayson.Vision.Contracts.Station.Models.LineConfigModel;
 
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Recipe.Services;
 using Grayson.Vision.Core.Client;
+using Grayson.Vision.Repository;
+using Grayson.Vision.Repository.Interfaces;
 using Grayson.Vision.WpfUI.Common;
+using Grayson.Vision.WpfUI.Service;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
@@ -30,6 +33,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string DeviceCode { get; set; }
         public string DeviceName { get; set; }
         public string DeviceType { get; set; }
+        public string BrandName { get; set; }
         public string ConnectionString { get; set; }
 
         private bool _isConnected;
@@ -51,6 +55,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
     public class StationModel : ViewModelBase
     {
+        public Action OnBoundRecipeChangedAction { get; set; }
+
+        private string _stationId;
+        public string StationId
+        {
+            get => _stationId;
+            set => Set(ref _stationId, value);
+        }
+
         private string _stationCode;
         public string StationCode
         {
@@ -83,7 +96,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public RecipeModel BoundRecipe
         {
             get => _boundRecipe;
-            set => Set(ref _boundRecipe, value);
+            set
+            {
+                if (Set(ref _boundRecipe, value))
+                {
+                    OnBoundRecipeChangedAction?.Invoke();
+                }
+            }
         }
 
         public ObservableCollection<HardwareDeviceModel> HardwareDevices { get; set; }
@@ -113,26 +132,30 @@ namespace Grayson.Vision.WpfUI.ViewModel
     public class StationManageViewModel : ViewModelBase
     {
         private readonly StationRuntimeManager _runtimeManager;
+        private readonly StationConfigService _configService;
+        private readonly IRecipeRepository _recipeRepo;
 
-        public StationManageViewModel(StationRuntimeManager runtimeManager = null)
+        public StationManageViewModel(
+            StationRuntimeManager runtimeManager = null,
+            StationConfigService configService = null,
+            IRecipeRepository recipeRepo = null)
         {
             _runtimeManager = runtimeManager ?? new StationRuntimeManager();
+            _configService = configService ?? new StationConfigService();
+            _recipeRepo = recipeRepo ?? StorageFactory.CreateRecipeRepository();
 
-            // 初始化集合
             GlobalHardwarePool = new ObservableCollection<HardwareDeviceModel>();
             AvailableRecipes = new ObservableCollection<RecipeModel>();
             ProductionLines = new ObservableCollection<LineModel>();
 
-            // 命令实例化 (解决 AsyncRelayCommand 未找到问题，统一使用 RelayCommand 包装 async 委托)
             AddLineCommand = new RelayCommand(_ => OnAddLine());
             AddStationCommand = new RelayCommand(_ => OnAddStation(), _ => SelectedLine != null);
             DeleteNodeCommand = new RelayCommand(_ => OnDeleteNode(), _ => SelectedLine != null || SelectedStation != null);
-
             AddHardwareCommand = new RelayCommand(_ => OnAddHardware(), _ => SelectedStation != null);
             RemoveHardwareCommand = new RelayCommand(_ => OnRemoveHardware(), _ => SelectedStation != null && SelectedHardware != null);
             SaveStationConfigCommand = new RelayCommand(async _ => await OnSaveStationConfigAsync(), _ => SelectedStation != null);
 
-            InitMockData();
+            InitializeFromServices();
         }
 
         #region 属性
@@ -148,7 +171,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public LineModel SelectedLine
         {
             get => _selectedLine;
-            set => Set(ref _selectedLine, value);
+            set
+            {
+                if (Set(ref _selectedLine, value))
+                {
+                    RefreshCommandStates();
+                }
+            }
         }
 
         private StationModel _selectedStation;
@@ -160,6 +189,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (Set(ref _selectedStation, value))
                 {
                     OnStationSelectedChanged();
+                    RefreshCommandStates();
                 }
             }
         }
@@ -168,7 +198,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public HardwareDeviceModel SelectedHardware
         {
             get => _selectedHardware;
-            set => Set(ref _selectedHardware, value);
+            set
+            {
+                if (Set(ref _selectedHardware, value))
+                {
+                    RefreshCommandStates();
+                }
+            }
         }
 
         public ObservableCollection<HardwareDeviceModel> GlobalHardwarePool { get; set; }
@@ -178,58 +214,35 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #region 命令定义
 
-        public ICommand AddLineCommand { get; }
-        public ICommand AddStationCommand { get; }
-        public ICommand DeleteNodeCommand { get; }
-        public ICommand AddHardwareCommand { get; }
-        public ICommand RemoveHardwareCommand { get; }
-        public ICommand SaveStationConfigCommand { get; }
+        public RelayCommand AddLineCommand { get; }
+        public RelayCommand AddStationCommand { get; }
+        public RelayCommand DeleteNodeCommand { get; }
+        public RelayCommand AddHardwareCommand { get; }
+        public RelayCommand RemoveHardwareCommand { get; }
+        public RelayCommand SaveStationConfigCommand { get; }
 
         #endregion
 
-        #region 对接 Core.Client 的保存与运行逻辑
+        #region 私有辅助方法
 
         /// <summary>
-        /// 🌟 对接 StationRuntimeManager: 创建并连接工位 Client
+        /// 主动刷新 UI 命令状态
         /// </summary>
-        private async Task OnSaveStationConfigAsync()
+        private void RefreshCommandStates()
         {
-            if (SelectedStation == null) return;
-
-            try
-            {
-                // 1. 调用对齐后的真实 API：CreateAndConnectStationAsync
-                if (_runtimeManager != null)
-                {
-                    // 嵌入式模式 (Embedded) 或 跨进程 IPC 模式 (RemoteIpc)
-                    var client = await _runtimeManager.CreateAndConnectStationAsync(
-                        SelectedStation.StationCode,
-                        WorkerConnectMode.Embedded
-                    );
-
-                    // 2. 如果绑定了配方且含有主流程，下发到工位运行期 Client
-                    if (SelectedStation.BoundRecipe?.MainProcess != null && client != null)
-                    {
-                        await client.LoadRecipeAsync(SelectedStation.BoundRecipe.MainProcess);
-                    }
-                }
-
-                MessageBox.Show($"工位 [{SelectedStation.StationName}] ({SelectedStation.StationCode}) 配置已保存并初始化 Client 成功！",
-                                "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"保存工位或连接 Core.Client 失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            AddStationCommand.RaiseCanExecuteChanged();
+            DeleteNodeCommand.RaiseCanExecuteChanged();
+            AddHardwareCommand.RaiseCanExecuteChanged();
+            RemoveHardwareCommand.RaiseCanExecuteChanged();
+            SaveStationConfigCommand.RaiseCanExecuteChanged();
         }
-
-        #endregion
-
-        #region 节点与硬件增删逻辑
 
         private void OnStationSelectedChanged()
         {
             if (SelectedStation == null) return;
+
+            // 订阅工位的配方切换回调
+            SelectedStation.OnBoundRecipeChangedAction = SyncRecipeMappings;
 
             if (SelectedStation.BoundRecipe != null && SelectedStation.RecipeDeviceMappings.Count == 0)
             {
@@ -246,24 +259,118 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 foreach (var logical in SelectedStation.BoundRecipe.LogicalDevices)
                 {
+                    var preferredHardware = SelectedStation.HardwareDevices
+                        .FirstOrDefault(h => h.DeviceType?.Equals(logical.LogicalDeviceType, StringComparison.OrdinalIgnoreCase) == true)
+                        ?? SelectedStation.HardwareDevices.FirstOrDefault()
+                        ?? GlobalHardwarePool.FirstOrDefault();
+
                     SelectedStation.RecipeDeviceMappings.Add(new RecipeDeviceMappingModel
                     {
                         LogicalDeviceId = logical.LogicalDeviceId,
                         LogicalDeviceName = logical.LogicalDeviceName,
                         LogicalDeviceType = logical.LogicalDeviceType,
                         RequiredSpec = logical.RequiredSpec,
-                        MappedDeviceId = SelectedStation.HardwareDevices.FirstOrDefault()?.DeviceId
+                        MappedDeviceId = preferredHardware?.DeviceId
                     });
                 }
             }
         }
+
+        #endregion
+
+        #region 对接 Core.Client 的保存与运行逻辑
+
+        private async Task OnSaveStationConfigAsync()
+        {
+            if (SelectedStation == null) return;
+
+            try
+            {
+                var stationConfig = ToStationConfigModel(SelectedStation);
+                _configService.SaveStation(stationConfig);
+
+                var client = await _runtimeManager.CreateAndConnectStationAsync(
+                    SelectedStation.StationCode,
+                    WorkerConnectMode.Embedded
+                );
+
+                if (SelectedStation.BoundRecipe?.MainProcess != null && client != null)
+                {
+                    await client.LoadRecipeAsync(SelectedStation.BoundRecipe.MainProcess);
+                }
+
+                MessageBox.Show($"工位 [{SelectedStation.StationName}] ({SelectedStation.StationCode}) 配置已保存并初始化 Client 成功！",
+                                "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"保存工位或连接 Core.Client 失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private ContractsStationConfig ToStationConfigModel(StationModel station)
+        {
+            var config = new ContractsStationConfig
+            {
+                StationId = string.IsNullOrEmpty(station.StationId) ? _configService.GenerateStationId() : station.StationId,
+                StationCode = station.StationCode,
+                StationName = station.StationName,
+                LineId = SelectedLine?.LineId,
+                LineName = SelectedLine?.LineName,
+                IsEnabled = station.IsEnabled,
+                TimeoutMs = station.TimeoutMs,
+                BoundRecipe = station.BoundRecipe
+            };
+
+            foreach (var hardware in station.HardwareDevices)
+            {
+                config.DeviceMappings.Add(new ContractsDeviceMapping
+                {
+                    LogicalDeviceId = hardware.DeviceId,
+                    LogicalDeviceName = hardware.DeviceName,
+                    LogicalDeviceType = hardware.DeviceType,
+                    MappedDeviceKey = hardware.DeviceId,
+                    MappedDeviceName = hardware.DeviceName
+                });
+            }
+
+            foreach (var mapping in station.RecipeDeviceMappings)
+            {
+                var existing = config.DeviceMappings.FirstOrDefault(d => d.LogicalDeviceId == mapping.LogicalDeviceId);
+                if (existing != null)
+                {
+                    existing.MappedDeviceKey = mapping.MappedDeviceId;
+                    var mappedHardware = GlobalHardwarePool.FirstOrDefault(h => h.DeviceId == mapping.MappedDeviceId);
+                    existing.MappedDeviceName = mappedHardware?.DeviceName;
+                }
+                else
+                {
+                    var mappedHardware = GlobalHardwarePool.FirstOrDefault(h => h.DeviceId == mapping.MappedDeviceId);
+                    config.DeviceMappings.Add(new ContractsDeviceMapping
+                    {
+                        LogicalDeviceId = mapping.LogicalDeviceId,
+                        LogicalDeviceName = mapping.LogicalDeviceName,
+                        LogicalDeviceType = mapping.LogicalDeviceType,
+                        RequiredSpec = mapping.RequiredSpec,
+                        MappedDeviceKey = mapping.MappedDeviceId,
+                        MappedDeviceName = mappedHardware?.DeviceName
+                    });
+                }
+            }
+
+            return config;
+        }
+
+        #endregion
+
+        #region 节点与硬件增删逻辑
 
         private void OnAddLine()
         {
             int count = ProductionLines.Count + 1;
             var newLine = new LineModel
             {
-                LineId = $"LINE_0{count}",
+                LineId = _configService.GenerateLineId(),
                 LineName = $"新产线_0{count}"
             };
             ProductionLines.Add(newLine);
@@ -281,6 +388,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             int count = SelectedLine.Stations.Count + 1;
             var newStation = new StationModel
             {
+                StationId = _configService.GenerateStationId(),
                 StationCode = $"ST_0{count}",
                 StationName = $"新工位_0{count}",
                 IsEnabled = true,
@@ -296,6 +404,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 if (MessageBox.Show($"确定要删除工位 [{SelectedStation.StationName}] 吗？", "删除确认", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                 {
+                    _configService.DeleteStation(SelectedStation.StationId);
                     SelectedLine.Stations.Remove(SelectedStation);
                     SelectedStation = SelectedLine.Stations.FirstOrDefault();
                 }
@@ -304,6 +413,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 if (MessageBox.Show($"确定要删除产线 [{SelectedLine.LineName}] 及其下属所有工位吗？", "删除确认", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
                 {
+                    _configService.DeleteLine(SelectedLine.LineId);
                     ProductionLines.Remove(SelectedLine);
                     SelectedLine = ProductionLines.FirstOrDefault();
                     SelectedStation = null;
@@ -357,42 +467,62 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #endregion
 
-        #region Mock 数据初始化
+        #region 真实数据初始化
 
-        private void InitMockData()
+        private void InitializeFromServices()
         {
             GlobalHardwarePool.Clear();
-            AvailableRecipes.Clear();
-            ProductionLines.Clear();
-
-            var dev1 = new HardwareDeviceModel { DeviceId = "DEV_01", DeviceCode = "CAM_TOP_01", DeviceName = "顶视扫码相机", DeviceType = "HikVision Camera", ConnectionString = "192.168.1.101", IsConnected = true, Remark = "海康 500万像素" };
-            var dev2 = new HardwareDeviceModel { DeviceId = "DEV_02", DeviceCode = "CAM_POS_01", DeviceName = "定位贴合相机", DeviceType = "Cognex Camera", ConnectionString = "192.168.1.102", IsConnected = true, Remark = "康耐视 智能相机" };
-
-            GlobalHardwarePool.Add(dev1);
-            GlobalHardwarePool.Add(dev2);
-
-            var recipe1 = new RecipeModel { RecipeCode = "RCP_01", RecipeName = "Phone_Cover_A10", Version = "V1.0.2" };
-            recipe1.LogicalDevices.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_CAM_01", LogicalDeviceName = "扫码识别相机", LogicalDeviceType = "2D Camera", RequiredSpec = "分辨率 >= 1080P" });
-
-            AvailableRecipes.Add(recipe1);
-
-            var station1 = new StationModel
+            foreach (var device in _configService.LoadAvailableHardwareDevices())
             {
-                StationCode = "ST_01",
-                StationName = "上料扫码工位",
-                IsEnabled = true,
-                TimeoutMs = 3000,
-                BoundRecipe = recipe1
+                GlobalHardwarePool.Add(device);
+            }
+
+            AvailableRecipes.Clear();
+            foreach (var recipe in _recipeRepo.GetAll().Select(r => r.Model))
+            {
+                AvailableRecipes.Add(recipe);
+            }
+
+            ProductionLines.Clear();
+            foreach (var lineConfig in _configService.LoadAllLines())
+            {
+                ProductionLines.Add(MapFromLineConfig(lineConfig));
+            }
+        }
+
+        private LineModel MapFromLineConfig(ContractsLineConfig lineConfig)
+        {
+            var line = new LineModel
+            {
+                LineId = lineConfig.LineId,
+                LineName = lineConfig.LineName
             };
-            station1.HardwareDevices.Add(dev1);
 
-            var line1 = new LineModel { LineId = "LINE_01", LineName = "A线 - 模组组装产线" };
-            line1.Stations.Add(station1);
+            foreach (var stationConfig in lineConfig.Stations ?? new List<ContractsStationConfig>())
+            {
+                var station = new StationModel
+                {
+                    StationId = stationConfig.StationId,
+                    StationCode = stationConfig.StationCode,
+                    StationName = stationConfig.StationName,
+                    IsEnabled = stationConfig.IsEnabled,
+                    TimeoutMs = stationConfig.TimeoutMs,
+                    BoundRecipe = stationConfig.BoundRecipe
+                };
 
-            ProductionLines.Add(line1);
+                foreach (var mapping in stationConfig.DeviceMappings ?? new List<ContractsDeviceMapping>())
+                {
+                    var hardware = GlobalHardwarePool.FirstOrDefault(h => h.DeviceId == mapping.MappedDeviceKey);
+                    if (hardware != null && !station.HardwareDevices.Any(h => h.DeviceId == hardware.DeviceId))
+                    {
+                        station.HardwareDevices.Add(hardware);
+                    }
+                }
 
-            SelectedLine = line1;
-            SelectedStation = station1;
+                line.Stations.Add(station);
+            }
+
+            return line;
         }
 
         #endregion

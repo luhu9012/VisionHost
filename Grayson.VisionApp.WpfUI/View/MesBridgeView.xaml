@@ -1,0 +1,73 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.MesBridgeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="720" d:DesignWidth="1280">
+    <Grid Background="{StaticResource BackgroundBrush}" Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="480"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- 左侧：连接配置 -->
+        <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="🌐 MES 对接状态" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,20"/>
+
+                <Grid Grid.Row="1" Margin="0,0,0,16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="MES 服务端地址" Style="{StaticResource FormLabelStyle}"/>
+                    <TextBox Grid.Row="1" Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                </Grid>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,16">
+                    <Button Content="连接" Style="{StaticResource SuccessButtonStyle}" Padding="16,6" Margin="0,0,8,0" Command="{Binding ConnectCommand}"/>
+                    <Button Content="断开" Style="{StaticResource DangerButtonStyle}" Padding="16,6" Margin="0,0,8,0" Command="{Binding DisconnectCommand}"/>
+                    <Button Content="心跳测试" Style="{StaticResource PrimaryButtonStyle}" Padding="16,6" Command="{Binding HeartbeatCommand}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,16">
+                    <TextBlock Text="连接状态: " Style="{StaticResource BodyTextStyle}" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding ConnectionStatusText}" Style="{StaticResource BodyTextStyle}" 
+                               Foreground="{Binding ConnectionStatusBrushKey}" FontWeight="Bold"/>
+                </StackPanel>
+
+                <Button Grid.Row="4" Content="📤 手动上传测试" Style="{StaticResource SecondaryButtonStyle}" Padding="16,6" HorizontalAlignment="Left" Command="{Binding UploadTestCommand}"/>
+
+                <TextBlock Grid.Row="5" Text="说明: 当前为 MES 接口占位实现，后续替换为实际 MES HTTP/SOAP/数据库直连服务。" 
+                           Style="{StaticResource BodyTextStyle}" 
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           TextWrapping="Wrap" VerticalAlignment="Bottom"/>
+            </Grid>
+        </Border>
+
+        <!-- 右侧：最近消息 -->
+        <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="操作消息" Style="{StaticResource SubTitleTextStyle}" Margin="12,12,12,8"/>
+                <TextBlock Grid.Row="1" Text="{Binding LastMessage}" Style="{StaticResource BodyTextStyle}" 
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           TextWrapping="Wrap" Margin="12"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -32,11 +32,16 @@ namespace Grayson.Vision.Contracts.Station.Models
     {
         public ChainExecutionResult Result { get; }
         public Exception Exception { get; }
+        /// <summary>
+        /// 执行链总耗时（毫秒）
+        /// </summary>
+        public double ExecutionTimeMs { get; }
 
-        public ChainCompletedEventArgs(ChainExecutionResult result, Exception exception = null)
+        public ChainCompletedEventArgs(ChainExecutionResult result, Exception exception = null, double executionTimeMs = 0)
         {
             Result = result;
             Exception = exception;
+            ExecutionTimeMs = executionTimeMs;
         }
     }
 

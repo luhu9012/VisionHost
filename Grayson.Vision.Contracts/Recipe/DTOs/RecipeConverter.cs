@@ -163,17 +163,67 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 foreach (var nodeDto in dto.Nodes)
                 {
                     var position = new Point2D(nodeDto.PosX, nodeDto.PosY);
-                    FlowNode node = NodeFactory.CreateNodeInstance(nodeDto.Type, position, nodeDto.DisplayName);
+                    FlowNodeBase node = NodeFactory.CreateNodeInstance(nodeDto.Type, position, nodeDto.DisplayName);
                     if (node == null) continue;
 
                     node.NodeId = nodeDto.NodeId;
                     node.Enable = nodeDto.Enable;
-                    if (nodeDto.ParameterModel != null)
+
+                    // 🌟 从 NodeFactory 注册表拿到该节点对应的真实 ParamType
+                    Type targetParamType = NodeFactory.GetParameterType(nodeDto.Type);
+
+                    if (targetParamType != null && nodeDto.ParameterModel != null)
                     {
-                        node.ParameterModel = nodeDto.ParameterModel;
+                        // 实例化干净的真实参数 Model 实例[cite: 18]
+                        var paramInstance = Activator.CreateInstance(targetParamType);
+                        var rawModel = nodeDto.ParameterModel;
+
+                        // 🌟 情况 1：rawModel 是 Newtonsoft.Json.Linq.JObject (JObject 实现了 IEnumerable)
+                        if (rawModel is System.Collections.IEnumerable enumerable && !(rawModel is string))
+                        {
+                            foreach (var item in enumerable)
+                            {
+                                // 反射读取 JProperty 的 Name 与 Value
+                                var itemType = item.GetType();
+                                var nameProp = itemType.GetProperty("Name");
+                                var valProp = itemType.GetProperty("Value");
+
+                                if (nameProp != null && valProp != null)
+                                {
+                                    string propName = nameProp.GetValue(item)?.ToString();
+                                    object jTokenVal = valProp.GetValue(item);
+
+                                    if (!string.IsNullOrEmpty(propName) && jTokenVal != null)
+                                    {
+                                        var targetProp = targetParamType.GetProperty(propName);
+                                        if (targetProp != null && targetProp.CanWrite)
+                                        {
+                                            TryAssignPropertyValue(targetProp, paramInstance, jTokenVal);
+                                        }
+                                    }
+                                }
+                            }
+                            node.ParameterModel = paramInstance;
+                        }
+                        // 🌟 情况 2：rawModel 已经是 IDictionary
+                        else if (rawModel is System.Collections.IDictionary dict)
+                        {
+                            foreach (var prop in targetParamType.GetProperties())
+                            {
+                                if (prop.CanWrite && dict.Contains(prop.Name))
+                                {
+                                    TryAssignPropertyValue(prop, paramInstance, dict[prop.Name]);
+                                }
+                            }
+                            node.ParameterModel = paramInstance;
+                        }
+                        // 🌟 情况 3：类型刚好一致
+                        else if (rawModel.GetType() == targetParamType)
+                        {
+                            node.ParameterModel = rawModel;
+                        }
                     }
 
-                    // 🌟【新增2】用 DTO 保存的端口数据恢复/覆写工厂创建的端口（匹配 PortId 并回填 RelativeX/Y）
                     RestoreNodePorts(node.InputPorts, nodeDto.InputPorts);
                     RestoreNodePorts(node.OutputPorts, nodeDto.OutputPorts);
 
@@ -181,7 +231,6 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                     nodeDict[node.NodeId] = node;
                 }
             }
-
             // 2. 还原连线及坐标绑定
             // RecipeConverter.cs -> ProcessToModel 中的连线还原部分
 
@@ -221,7 +270,63 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
 
             return process;
         }
+        /// <summary>
+        /// 安全的属性反射赋值（支持 JToken / 基础类型安全转换，兼容 .NET Framework 4.7.2）
+        /// </summary>
+        private static void TryAssignPropertyValue(System.Reflection.PropertyInfo prop, object targetObj, object rawValue)
+        {
+            if (prop == null || targetObj == null || rawValue == null) return;
 
+            try
+            {
+                // 如果 rawValue 是 JToken/JValue，通过反射调用 JToken.ToObject 或 Value
+                object actualValue = rawValue;
+                var rawType = rawValue.GetType();
+
+                if (rawType.Namespace != null && rawType.Namespace.StartsWith("Newtonsoft.Json"))
+                {
+                    // 通过反射调用 JToken.ToObject(prop.PropertyType)
+                    var toObjectMethod = rawType.GetMethods()
+                        .FirstOrDefault(m => m.Name == "ToObject" && m.IsGenericMethod && m.GetParameters().Length == 0);
+
+                    if (toObjectMethod != null)
+                    {
+                        var genericMethod = toObjectMethod.MakeGenericMethod(prop.PropertyType);
+                        actualValue = genericMethod.Invoke(rawValue, null);
+                    }
+                    else
+                    {
+                        // 兜底：获取 JValue.Value
+                        var valProp = rawType.GetProperty("Value");
+                        if (valProp != null)
+                        {
+                            actualValue = valProp.GetValue(rawValue);
+                        }
+                    }
+                }
+
+                if (actualValue != null)
+                {
+                    var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
+                    // 枚举类型转换
+                    if (targetType.IsEnum)
+                    {
+                        var enumVal = Enum.Parse(targetType, actualValue.ToString());
+                        prop.SetValue(targetObj, enumVal);
+                    }
+                    else
+                    {
+                        var convertedVal = Convert.ChangeType(actualValue, targetType);
+                        prop.SetValue(targetObj, convertedVal);
+                    }
+                }
+            }
+            catch
+            {
+                // 忽略复杂集合转换异常或无法转换的值
+            }
+        }
         /// <summary>
         /// 将 DTO 保存的端口信息同步/还原给工厂创建的 NodePort 列表
         /// </summary>

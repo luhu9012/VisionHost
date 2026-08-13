@@ -39,18 +39,17 @@
 
                 <!-- 产线-工位 树形视图 -->
                 <TreeView Grid.Row="2" Background="Transparent" BorderThickness="0"
-          ItemsSource="{Binding ProductionLines}"
-          SelectedItemChanged="TreeView_SelectedItemChanged">
+                          ItemsSource="{Binding ProductionLines}"
+                          SelectedItemChanged="TreeView_SelectedItemChanged">
                     <TreeView.ItemTemplate>
                         <!-- 1级：产线节点 -->
                         <HierarchicalDataTemplate ItemsSource="{Binding Stations}">
-                            <!-- 1级节点的 UI 布局 -->
                             <StackPanel Orientation="Horizontal" Margin="2,4">
                                 <TextBlock Text="🏭 " VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding LineName}" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
                             </StackPanel>
 
-                            <!-- 2级：工位节点的模板（直接放入 DataTemplate 即可） -->
+                            <!-- 2级：工位节点 -->
                             <HierarchicalDataTemplate.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="2,3">
@@ -67,7 +66,6 @@
         </Border>
 
         <!-- ==================== 右侧：工位详细配置与映射 ==================== -->
-        <!-- 2. 右侧配置主区 -->
         <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="12">
             <Grid>
                 <Grid.RowDefinitions>
@@ -109,7 +107,7 @@
                 <!-- 核心选项卡：物理硬件领用 vs 配方映射 -->
                 <TabControl Grid.Row="2" Style="{StaticResource ModernTabControlStyle}">
 
-                    <!-- Tab 1: 物理硬件领用 -->
+                    <!-- Tab 1: 物理硬件分配 -->
                     <TabItem Header="1. 物理硬件分配" Style="{StaticResource ModernTabItemStyle}">
                         <Grid Margin="8">
                             <Grid.RowDefinitions>
@@ -122,14 +120,14 @@
                                 <Button Content="移除所选硬件" Style="{StaticResource DangerButtonStyle}" Command="{Binding RemoveHardwareCommand}"/>
                             </StackPanel>
 
-                            <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}" 
+                            <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
                                       ItemsSource="{Binding SelectedStation.HardwareDevices}" SelectedItem="{Binding SelectedHardware}">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="设备编号" Binding="{Binding DeviceCode}" Width="120"/>
-                                    <DataGridTextColumn Header="硬件名称" Binding="{Binding DeviceName}" Width="150"/>
-                                    <DataGridTextColumn Header="驱动/类型" Binding="{Binding DeviceType}" Width="140"/>
-                                    <DataGridTextColumn Header="连接参数/IP" Binding="{Binding ConnectionString}" Width="160"/>
-                                    <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="80"/>
+                                    <DataGridTextColumn Header="设备编号" Binding="{Binding DeviceCode}" Width="120" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="硬件名称" Binding="{Binding DeviceName}" Width="150" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="驱动/类型" Binding="{Binding DeviceType}" Width="140" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="连接参数/IP" Binding="{Binding ConnectionString}" Width="160" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="80" IsReadOnly="True"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
@@ -154,7 +152,7 @@
                             <TextBlock Grid.Row="1" Text="💡 请将流程配方中要求的【逻辑设备】映射至下方【已分配的物理硬件】："
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
 
-                            <DataGrid Grid.Row="2" Style="{StaticResource ModernDataGridStyle}"
+                            <DataGrid Grid.Row="2" Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
                                       ItemsSource="{Binding SelectedStation.RecipeDeviceMappings}">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="配方逻辑设备" Binding="{Binding LogicalDeviceName}" Width="160" IsReadOnly="True"/>

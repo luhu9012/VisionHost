@@ -1,0 +1,89 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.DataTraceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="720" d:DesignWidth="1280">
+    <Grid Background="{StaticResource BackgroundBrush}" Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="📈 本地追溯与防错" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,12"/>
+
+        <!-- 筛选栏 -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="12" Background="{StaticResource SurfaceBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="工位:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <ComboBox Width="140" Style="{StaticResource ModernComboBoxStyle}" 
+                              ItemsSource="{Binding AvailableStations}" 
+                              SelectedItem="{Binding SelectedStationCode}" Margin="0,0,16,0"/>
+
+                    <TextBlock Text="条码:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Width="150" Style="{StaticResource ModernTextBoxStyle}" 
+                             Text="{Binding BatchIdFilter, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0"/>
+
+                    <TextBlock Text="开始:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <DatePicker SelectedDate="{Binding StartTime}" Margin="0,0,16,0"/>
+
+                    <TextBlock Text="结束:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <DatePicker SelectedDate="{Binding EndTime}" Margin="0,0,16,0"/>
+
+                    <Button Content="🔍 查询" Style="{StaticResource PrimaryButtonStyle}" Padding="14,5" Command="{Binding SearchCommand}"/>
+                    <Button Content="📤 导出" Style="{StaticResource SecondaryButtonStyle}" Padding="14,5" Margin="8,0,0,0" Command="{Binding ExportCommand}"/>
+                </StackPanel>
+
+                <!-- 统计指标 -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0">
+                    <TextBlock Text="{Binding TotalCount, StringFormat='总数: {0}'}" Style="{StaticResource BodyTextStyle}" Margin="0,0,24,0"/>
+                    <TextBlock Text="{Binding OkCount, StringFormat='OK: {0}'}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource SuccessBrush}" Margin="0,0,24,0"/>
+                    <TextBlock Text="{Binding NgCount, StringFormat='NG: {0}'}" Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource DangerBrush}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 追溯列表 -->
+        <Border Grid.Row="3" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Margin="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="检测记录" Style="{StaticResource SubTitleTextStyle}" Margin="12,8,12,8"/>
+
+                <!-- 核心改进：显式引用 Style="{StaticResource ModernDataGridStyle}" -->
+                <DataGrid Grid.Row="1" Margin="8" BorderThickness="0" 
+                          Style="{StaticResource ModernDataGridStyle}"
+                          ItemsSource="{Binding TraceEntries}" 
+                          SelectedItem="{Binding SelectedEntry}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="时间" Binding="{Binding InspectTime, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Width="160"/>
+                        <DataGridTextColumn Header="工位" Binding="{Binding StationId}" Width="110"/>
+                        <DataGridTextColumn Header="批次/条码" Binding="{Binding BatchId}" Width="150"/>
+                        <DataGridTextColumn Header="配方" Binding="{Binding RecipeName}" Width="140"/>
+                        <DataGridTextColumn Header="结果" Binding="{Binding Result}" Width="70">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{Binding ResultBrushKey, FallbackValue={StaticResource TextPrimaryBrush}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="节拍(ms)" Binding="{Binding CycleTimeMs, StringFormat='{}{0:F1}'}" Width="90"/>
+                        <DataGridTextColumn Header="错误信息" Binding="{Binding ErrorMessage}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

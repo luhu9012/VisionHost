@@ -205,13 +205,17 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
             new NodePluginLoader().LoadPlugins(pluginDir);
 
-            _recipeManager = new RecipeManager(new WpfDialogService());
-            _recipeManager.LoadCompositeRecipeTemplates(ToolBox);
+            
 
             // 3. 初始化工具箱与流程层级
             InitFullToolBox();
             Breadcrumbs.Add(RootProcess);
             CurrentProcess = RootProcess;
+
+
+            _recipeManager = new RecipeManager(new WpfDialogService());
+            _recipeManager.LoadCompositeRecipeTemplates(ToolBox);
+
 
             // 4. 初始化 Worker 客户端
             InitWorkerClient();
@@ -372,11 +376,40 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         private void OnSaveCurrentPipelineAsRecipe()
         {
-            string defaultName = CurrentProcess?.ProcessName ?? "新复合配方";
-            string recipeName = PromptDialog.Show("保存为复合模板", "请输入配方名称：", defaultName);
+            if (CurrentProcess == null) return;
+
+            // 🌟 1. 保存前校验拓扑完整性（如果不正确则弹窗并终止放行）[cite: 1]
+            if (!EnsureValidExecutionChain())
+            {
+                LogBus.Warn("Recipe", "当前流程拓扑或参数校验未通过，终止保存为复合模板！");
+                return;
+            }
+
+            // 🌟 2. 弹窗提示输入子流程名称[cite: 1]
+            string defaultName = CurrentProcess.ProcessName ?? "新复合流程";
+            string recipeName = PromptDialog.Show("保存为 CompositeFlow 模板", "请输入子流程/模板名称：", defaultName);
             if (string.IsNullOrWhiteSpace(recipeName)) return;
 
-            _recipeManager.SavePipelineAsRecipe(CurrentProcess, recipeName.Trim(), ToolBox);
+            recipeName = recipeName.Trim();
+            CurrentProcess.ProcessName = recipeName;
+
+            try
+            {
+                // 🌟 3. 调用 RecipeManager 存盘至 CompositeFlow 目录并刷工具箱（只在此处进行存盘与刷工具箱）[cite: 6]
+                _recipeManager.SavePipelineAsRecipe(CurrentProcess, recipeName, ToolBox);
+
+                // 不再挂载到 CurrentRecipe.SubProcesses[cite: 7]
+
+                MessageBox.Show($"流程 [{recipeName}] 校验通过，已成功保存至 CompositeFlow 目录并更新工具箱！",
+                                "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                IsDirty = true; // 标记画布变动[cite: 1]
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("Recipe", $"保存子流程模板失败: {ex.Message}", ex);
+                MessageBox.Show($"保存失败：{ex.Message}", "系统错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         #endregion
@@ -660,12 +693,47 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         public void AddNodeFromMeta(UnitMeta meta, Point2D pos)
         {
-            var node = NodeFactory.CreateFromMeta(meta, pos);
-            CurrentProcess.Nodes.Add(node);
-            SelectedNode = node;
-            OnPropertyChanged(nameof(CurrentRecipeInfo));
-            IsDirty = true; // 🌟 标记变更
-            LogBus.Info("Flow", $"新增节点: {node.DisplayName}");
+            if (meta == null || CurrentProcess == null) return;
+
+            FlowProcessModel subProcess = null;
+
+            // 🌟 1. 在 ViewModel/UI 层处理 CompositeFlow 模板 JSON 的读取与反序列化（契约层不操作文件与 JSON）
+            if (meta.Type == NodeType.CompositeFlow && !string.IsNullOrWhiteSpace(meta.Description))
+            {
+                string filePath = meta.Description; // 模板文件路径保存在 Description 中
+                if (System.IO.File.Exists(filePath))
+                {
+                    try
+                    {
+                        string json = System.IO.File.ReadAllText(filePath, System.Text.Encoding.UTF8);
+                        var dto = Newtonsoft.Json.JsonConvert.DeserializeObject<ProcessDto>(json);
+                        if (dto != null)
+                        {
+                            // 还原为 UI ViewModel 流程实体
+                            subProcess = RecipeConverter.ToProcessModel(dto);
+
+                            // 递归绑定并刷新子流程内的连线坐标与事件
+                            BindAndRefreshConnections(subProcess);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogBus.Error("FlowVm", $"拖拽加载复合节点模板 JSON 失败 [{filePath}]: {ex.Message}", ex);
+                    }
+                }
+            }
+
+            // 🌟 2. 将解析好的 subProcess 传入 NodeFactory
+            FlowNodeBase node = NodeFactory.CreateFromMeta(meta, pos, subProcess);
+
+            if (node != null)
+            {
+                CurrentProcess.Nodes.Add(node);
+                SelectedNode = node;
+                OnPropertyChanged(nameof(CurrentRecipeInfo));
+                IsDirty = true; // 🌟 标记变更
+                LogBus.Info("Flow", $"新增节点: {node.DisplayName}");
+            }
         }
 
         // ----------------------------------------------------------------------------------
@@ -740,7 +808,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     ParentFlowVm = this
                 };
                 win.ShowDialog();
+
             }
+
         }
 
         public void DrillDownCompositeNode(CompositeFlowNode compositeNode)
@@ -766,7 +836,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             }
         }
 
-        private void AutoLayout()
+        public void AutoLayout()
         {
             if (CurrentProcess == null || CurrentProcess.Nodes == null || CurrentProcess.Nodes.Count == 0) return;
 

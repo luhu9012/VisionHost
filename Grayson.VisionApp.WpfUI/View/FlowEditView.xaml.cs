@@ -16,9 +16,9 @@ namespace Grayson.Vision.WpfUI.View
         }
 
         /// <summary>
-        /// 🌟 ViewModel 快捷获取属性
+        /// 🌟 获取子控件 FlowEditorControl 的 ViewModel (FlowVm)
         /// </summary>
-        private FlowVm ViewModel => DataContext as FlowVm;
+        private FlowVm ViewModel => FlowEditorControl.DataContext as FlowVm;
 
         /// <summary>
         /// 🌟 跨界面跳转进入时触发参数接收与编辑器加载

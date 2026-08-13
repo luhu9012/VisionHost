@@ -21,7 +21,6 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             get => string.IsNullOrEmpty(_nodeId) ? Guid.NewGuid().ToString("N") : _nodeId;
             set => Set(ref _nodeId, value);
         }
-        // 节点全局唯一 ID，配方序列化标识节点
 
         // 节点全局唯一 ID，配方序列化标识节点
         public string Id
@@ -100,16 +99,11 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
         /// <summary>
         /// 全量端口集合（自动合并输入和输出端口，供 NodeControl 统一渲染）
         /// </summary>
-        public IEnumerable<NodePort> AllPorts
+        private ObservableCollection<NodePort> _allPorts = new ObservableCollection<NodePort>();
+        public ObservableCollection<NodePort> AllPorts
         {
-            get
-            {
-                if (InputPorts != null)
-                    foreach (var p in InputPorts) yield return p;
-
-                if (OutputPorts != null)
-                    foreach (var p in OutputPorts) yield return p;
-            }
+            get => _allPorts;
+            set => Set(ref _allPorts, value);
         }
 
         /// <summary>
@@ -131,6 +125,29 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             get => _hasError;
             set => Set(ref _hasError, value); // 🌟 触发 UI 绑定更新
         }
+        public FlowNodeBase()
+        {
+            // 🌟 监听输入/输出集合改变，实时同步到 AllPorts
+            InputPorts.CollectionChanged += (s, e) => RebuildAllPorts();
+            OutputPorts.CollectionChanged += (s, e) => RebuildAllPorts();
+        }
+        /// <summary>
+        /// 重新构建全量端口集合
+        /// </summary>
+        public void RebuildAllPorts()
+        {
+            AllPorts.Clear();
+            if (InputPorts != null)
+            {
+                foreach (var p in InputPorts) AllPorts.Add(p);
+            }
+            if (OutputPorts != null)
+            {
+                foreach (var p in OutputPorts) AllPorts.Add(p);
+            }
+            OnPropertyChanged(nameof(AllPorts));
+        }
+
 
     }
 }

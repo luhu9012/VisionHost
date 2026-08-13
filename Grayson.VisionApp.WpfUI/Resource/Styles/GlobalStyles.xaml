@@ -50,6 +50,17 @@
         <Setter Property="Foreground" Value="{StaticResource AccentLightBrush}"/>
     </Style>
 
+    <Style x:Key="BodyTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style x:Key="CaptionTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+    </Style>
+
     <!-- ========== 按钮样式 ========== -->
 
     <!-- 主按钮样�?-->

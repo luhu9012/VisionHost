@@ -173,8 +173,8 @@ namespace Grayson.Vision.WpfUI
             // 非模态窗口，打开后不阻塞程序其他逻辑
             shellView.Show();
 
-            // 程序登录成功默认跳转到【生产监控】页面
-            navigationService.NavigateTo(PageType.Alarm);
+            // 程序登录成功默认跳转到【产线拓扑总览】页面
+            navigationService.NavigateTo(PageType.LineOverview);
         }
 
         /// <summary>
@@ -186,6 +186,10 @@ namespace Grayson.Vision.WpfUI
         private void RegisterPages(NavigationService navigationService)
         {
 
+            // 产线拓扑总览页面
+            navigationService.RegisterPage(PageType.LineOverview, () => new LineOverviewView());
+            // 单工位监控页面
+            navigationService.RegisterPage(PageType.StationMonitor, () => new StationMonitorView());
             // 报警记录页面
             navigationService.RegisterPage(PageType.Alarm, () => new AlarmView());
             // 流程编辑页面
@@ -200,6 +204,12 @@ namespace Grayson.Vision.WpfUI
             navigationService.RegisterPage(PageType.DevicePool, () => new DevicePoolView());
             // 硬件控制台页面  
             navigationService.RegisterPage(PageType.HardwareConsole, () => new HardwareConsoleView());
+            // 数据追溯页面
+            navigationService.RegisterPage(PageType.DataTrace, () => new DataTraceView());
+            // MES 对接状态页面
+            navigationService.RegisterPage(PageType.MesBridge, () => new MesBridgeView());
+            // 系统与存储设置页面
+            navigationService.RegisterPage(PageType.SystemSetting, () => new SystemSettingView());
             // 用户权限管理页面
             navigationService.RegisterPage(PageType.UserManage, () => new UserManageView());
 

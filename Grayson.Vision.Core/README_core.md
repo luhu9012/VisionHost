@@ -1,8 +1,8 @@
-# Grayson.Vision.Core
+ # Grayson.Vision.Core
 
 `Grayson.Vision.Core` 是 **Grayson 视觉检测平台** 的工位级核心逻辑类库，承载配方执行、硬件设备映射、状态机与事件分发的纯业务核心。
 
-本层严格遵循 **零 UI 污染** 原则：不引用任何 WPF、WinForms 或图像控件程序集，可被 `Grayson.Vision.WorkerHost`（独立进程宿主）或 `Grayson.Vison.FlowEdit`（嵌入式线程宿主）复用。
+本层严格遵循 **零 UI 污染** 原则：不引用任何 WPF、WinForms 或图像控件程序集，可被 `Grayson.Vision.WorkerHost`（独立进程宿主）或 `Grayson.Vision.FlowEdit`（嵌入式线程宿主）复用。
 
 ---
 
@@ -23,7 +23,7 @@ Grayson.Vision.Contracts
 Grayson.Vision.Core  <- 本层（纯业务核心）
 	↑
 	├─ Grayson.Vision.WorkerHost   (独立进程宿主)
-	└─ Grayson.Vison.FlowEdit      (嵌入式线程宿主 / 观察者客户端)
+	└─ Grayson.Vision.FlowEdit      (嵌入式线程宿主 / 观察者客户端)
 ```
 
 依赖方向：**只允许上层引用 `Grayson.Vision.Core`，禁止 Core 反向依赖任何宿主或 UI 项目。**
@@ -34,13 +34,21 @@ Grayson.Vision.Core  <- 本层（纯业务核心）
 
 ```text
 Grayson.Vision.Core/
-├── StationWorker.cs          // 工位核心 Worker：遵循 PackML 状态机，管理配方与执行链
-├── StationContext.cs         // 工位级独立运行上下文：硬件设备池、数据管线
+├── StationWorker.cs                  // 工位核心 Worker：遵循 PackML 状态机，管理配方与执行链
+├── StationContext.cs                 // 工位级独立运行上下文：硬件设备池、数据管线
+├── Client/
+│   ├── StationRuntimeManager.cs      // 全局多工位运行时总管 / UI 直接门面
+│   ├── WorkerClientManager.cs        // 多工位 IWorkerClient 缓存与广播管理
+│   ├── StationProcessManager.cs      // 外部 WorkerHost.exe 生命周期管理
+│   ├── WorkerClientFactory.cs        // 嵌入式/远程 IPC 客户端工厂
+│   └── Proxy/
+│       ├── EmbeddedWorkerClientProxy.cs   // 同进程嵌入式 Worker 代理
+│       └── RemoteWorkerClientProxy.cs     // 跨进程命名管道 Worker 代理
 └── Properties/
 	└── AssemblyInfo.cs
 ```
 
-> 说明：当前 `Core` 只保留工位运行所必须的最小核心。未来可根据需要扩展 `StationManagers`、`RecipeLoaders` 等子目录。
+> 说明：`Core` 在保留纯业务核心的同时，新增 `Client` 命名空间，统一封装“嵌入式线程”与“远程 IPC 进程”两种工位访问方式。上层 UI（`WpfUI` / `FlowEdit`）只需面向 `IWorkerClient` 编程，无需关心内部是线程还是进程。
 
 ---
 
@@ -75,6 +83,51 @@ Grayson.Vision.Core/
 
 > 建议：配方中只记录逻辑设备名（`DeviceKey`），由 `StationContext` 在工位初始化时动态映射为真实硬件实例，实现同一配方在多工位间复用。
 
+### 3. Client（工位访问抽象层）
+
+`Client` 命名空间为上层 UI 提供统一的工位调用入口，屏蔽“同进程线程”与“跨进程 WorkerHost”两种运行模式差异。
+
+#### 3.1 StationRuntimeManager（全局运行时总管）
+
+面向 UI 调用者的顶层门面，负责一键拉起并连接工位：
+
+- `CreateAndConnectStationAsync(stationId, mode)`：根据 `WorkerConnectMode` 创建连接
+  - `Embedded`：直接实例化 `EmbeddedWorkerClientProxy`（同进程后台线程）
+  - `RemoteIpc`：通过 `StationProcessManager` 启动 `WorkerHost.exe` 后再建立命名管道连接
+- 内部缓存所有已连接 `IWorkerClient`，避免重复创建
+- `Dispose()` 时统一释放客户端并关闭外部进程
+
+#### 3.2 WorkerClientFactory（客户端工厂）
+
+根据 `WorkerConnectMode` 创建对应 `IWorkerClient` 实例：
+
+- `Embedded` → `EmbeddedWorkerClientProxy`
+- `RemoteIpc` → `RemoteWorkerClientProxy`
+
+#### 3.3 EmbeddedWorkerClientProxy（嵌入式代理）
+
+- 在调用方进程内直接实例化 `StationWorker`
+- 默认以 `WorkMode.Debug` 运行，适合 `FlowEdit` 快速调试、单工位单进程场景
+- 将 `StationWorker` 的所有业务事件原样转发为 `IWorkerClient` 事件
+
+#### 3.4 RemoteWorkerClientProxy（远程 IPC 代理）
+
+- 通过 `NamedPipeClientStream` 连接独立 `WorkerHost` 进程
+- 使用 `Newtonsoft.Json` 序列化 `IpcMessage`，完成命令下发与事件广播
+- 接收的远程事件包括：`OnStateChanged`、`OnFrameRendered`、`OnNodeExecuting`、`OnNodeExecuted`、`OnExecutionError`、`OnExecutionCompleted`
+
+#### 3.5 StationProcessManager（外部进程管理器）
+
+- 负责启动/停止/清理外部 `Grayson.Vision.WorkerHost.exe`
+- 启动参数：`--stationId={stationId}`
+- `Dispose()` 时终止所有仍存活的 WorkerHost 进程
+
+#### 3.6 WorkerClientManager（多工位缓存与广播）
+
+- 维护 `stationId → IWorkerClient` 的并发字典
+- 提供 `LoadRecipeToAllAsync(recipe)` 向所有已连接工位统一下发配方
+- 供 `WpfUI` / `FlowEdit` 在多工位场景下复用
+
 ---
 
 ## 工位状态流转
@@ -103,7 +156,8 @@ Stopped ──LoadRecipeAsync──> Idle ──StartAsync──> Running
 ## 依赖
 
 - `Grayson.Vision.Contracts`
-- `Newtonsoft.Json`（通过传递依赖，主要用于 WorkerHost 层序列化）
+- `Newtonsoft.Json`（`RemoteWorkerClientProxy` 的 IPC 命令/事件序列化）
+- `System` / `System.Core` / `System.IO.Pipes` / `System.Diagnostics`（Client 层进程与管道通信）
 
 ---
 

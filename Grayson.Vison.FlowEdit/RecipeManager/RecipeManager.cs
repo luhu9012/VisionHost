@@ -28,7 +28,7 @@ namespace Grayson.Vison.FlowEdit.Services
         public RecipeManager(IFileDialogService fileDialogService = null)
         {
             _fileDialogService = fileDialogService;
-            _recipesFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Recipes");
+            _recipesFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CompositeFlow");
 
             if (!Directory.Exists(_recipesFolderPath))
             {
@@ -58,7 +58,8 @@ namespace Grayson.Vison.FlowEdit.Services
                     toolBox.Add(new UnitMeta
                     {
                         NodeId = $"RECIPE_{fileName}",
-                        DisplayName = $"🧩 {fileName}",
+                        Icon = "🧩",
+                        DisplayName = $"{fileName}",
                         CategoryName = UnitMeta.GetEnumDescription(NodeCategory.CompositeGroup),
                         Category = NodeCategory.CompositeGroup,
                         Type = NodeType.CompositeFlow,

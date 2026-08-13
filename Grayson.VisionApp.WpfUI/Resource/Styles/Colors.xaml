@@ -71,7 +71,8 @@
     <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="BorderLightBrush" Color="{StaticResource BorderLightColor}"/>
 
-    <!-- ========== 面板背景色资源 PanelBackgroundBrush ========== -->
+    <!-- ========== 面板与表面背景色资源 ========== -->
     <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource BackgroundLightColor}"/>
+    <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource BackgroundCardColor}"/>
 
 </ResourceDictionary>

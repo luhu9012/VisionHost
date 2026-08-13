@@ -61,9 +61,10 @@ namespace Grayson.Vision.Repository
             }
         }
 
-        public static IRecipeRepository CreateRecipeRepository() => new LiteDbRecipeRepository();
-        public static IDeviceConfigRepository CreateDeviceConfigRepository() => new LiteDbDeviceConfigRepository();
-        public static IUserRepository CreateUserRepository() => new LiteDbUserRepository();
-        public static IInspectionLogRepository CreateInspectionLogRepository() => new LiteDbInspectionLogRepository();
-    }
+            public static IRecipeRepository CreateRecipeRepository() => new LiteDbRecipeRepository();
+            public static IDeviceConfigRepository CreateDeviceConfigRepository() => new LiteDbDeviceConfigRepository();
+            public static IUserRepository CreateUserRepository() => new LiteDbUserRepository();
+            public static IInspectionLogRepository CreateInspectionLogRepository() => new LiteDbInspectionLogRepository();
+            public static IStationRepository CreateStationRepository() => new LiteDbStationRepository();
+        }
 }

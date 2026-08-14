@@ -391,7 +391,7 @@ namespace Plugins.Motion.Zmc
         {
             uint state = 0;
             int ret = zmcaux.ZAux_Direct_GetIn(CardHandle, ioNum, ref state);
-            Console.WriteLine($"读取输入口 IN({ioNum}) 状态: {state}");
+            //Console.WriteLine($"读取输入口 IN({ioNum}) 状态: {state}");
             return ret == 0 ? Result<bool>.Ok(state == 1) : Result<bool>.Fail($"读取输入口 IN({ioNum}) 失败: {ret}");
         }
 

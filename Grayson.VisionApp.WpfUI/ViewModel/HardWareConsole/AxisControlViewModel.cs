@@ -8,13 +8,15 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 {
     public class AxisControlViewModel : ViewModelBase
     {
-        #region 属性定义
+        private DispatcherTimer _statusPollTimer;
+
+        #region 属性定义 - 板卡与轴
 
         public ObservableCollection<IMotionCard> MotionDeviceList { get; set; } = new ObservableCollection<IMotionCard>();
         public ObservableCollection<AxisInfoModel> AxisList { get; set; } = new ObservableCollection<AxisInfoModel>();
@@ -42,6 +44,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 if (Set(ref _selectedAxis, value))
                 {
                     RefreshCommandCanExecute();
+                    LoadSelectedAxisParam();
                 }
             }
         }
@@ -74,28 +77,76 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             set => Set(ref _isServoOn, value);
         }
 
-        private double _jogStep = 1.0;
-        public double JogStep
+        #endregion
+
+        #region 属性定义 - 通用 MotionParam 运动参数
+
+        private MotionParam _currentMotionParam = new MotionParam();
+        public MotionParam CurrentMotionParam
         {
-            get => _jogStep;
-            set => Set(ref _jogStep, value);
+            get => _currentMotionParam;
+            set => Set(ref _currentMotionParam, value);
         }
 
-        private double _axisSpeed = 10.0;
-        public double AxisSpeed
+        private float _positiveLimit = 99999f;
+        public float PositiveLimit
         {
-            get => _axisSpeed;
-            set => Set(ref _axisSpeed, value);
+            get => _positiveLimit;
+            set => Set(ref _positiveLimit, value);
         }
 
-        private double _axisXPos;
-        public double AxisXPos { get => _axisXPos; set => Set(ref _axisXPos, value); }
+        private float _negativeLimit = -99999f;
+        public float NegativeLimit
+        {
+            get => _negativeLimit;
+            set => Set(ref _negativeLimit, value);
+        }
 
-        private double _axisYPos;
-        public double AxisYPos { get => _axisYPos; set => Set(ref _axisYPos, value); }
+        #endregion
 
-        private double _axisZPos;
-        public double AxisZPos { get => _axisZPos; set => Set(ref _axisZPos, value); }
+        #region 属性定义 - 运动模式与定位测试
+
+        private int _moveModeIndex = 0; // 0: JOG 连续, 1: 相对移动, 2: 绝对定位
+        public int MoveModeIndex
+        {
+            get => _moveModeIndex;
+            set => Set(ref _moveModeIndex, value);
+        }
+
+        private float _targetDistance = 10.0f; // 相对移动距离/绝对目标坐标
+        public float TargetDistance
+        {
+            get => _targetDistance;
+            set => Set(ref _targetDistance, value);
+        }
+
+        #endregion
+
+        #region 属性定义 - 当前轴实时状态监控
+
+        private float _cmdPos;
+        public float CmdPos { get => _cmdPos; set => Set(ref _cmdPos, value); }
+
+        private float _feedbackPos;
+        public float FeedbackPos { get => _feedbackPos; set => Set(ref _feedbackPos, value); }
+
+        private float _currentSpeed;
+        public float CurrentSpeed { get => _currentSpeed; set => Set(ref _currentSpeed, value); }
+
+        private bool _isFwdLimit;
+        public bool IsFwdLimit { get => _isFwdLimit; set => Set(ref _isFwdLimit, value); }
+
+        private bool _isRevLimit;
+        public bool IsRevLimit { get => _isRevLimit; set => Set(ref _isRevLimit, value); }
+
+        private bool _isHomeSignal;
+        public bool IsHomeSignal { get => _isHomeSignal; set => Set(ref _isHomeSignal, value); }
+
+        private bool _isAlarm;
+        public bool IsAlarm { get => _isAlarm; set => Set(ref _isAlarm, value); }
+
+        private bool _isMoving;
+        public bool IsMoving { get => _isMoving; set => Set(ref _isMoving, value); }
 
         #endregion
 
@@ -105,8 +156,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         public RelayCommand ConnectCommand { get; private set; }
         public RelayCommand DisconnectCommand { get; private set; }
         public RelayCommand ToggleServoCommand { get; private set; }
+        public RelayCommand ApplyParamCommand { get; private set; }
+        public RelayCommand ZeroPositionCommand { get; private set; }
         public RelayCommand HomeAxisCommand { get; private set; }
-        public RelayCommand<string> JogCommand { get; private set; }
+        public RelayCommand<string> DirectionMoveCommand { get; private set; }
         public RelayCommand StopAxisCommand { get; private set; }
         public RelayCommand EmergencyStopCommand { get; private set; }
 
@@ -115,7 +168,18 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         public AxisControlViewModel()
         {
             InitCommands();
+            InitStatusTimer();
             LoadMotionDevices();
+        }
+
+        private void InitStatusTimer()
+        {
+            _statusPollTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(100)
+            };
+            _statusPollTimer.Tick += (s, e) => PollAxisStatus();
+            _statusPollTimer.Start();
         }
 
         private void InitCommands()
@@ -145,39 +209,60 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
                 bool nextState = !IsServoOn;
                 var res = SelectedMotionDevice.SetAxisEnable(SelectedAxis.AxisIndex, nextState);
-                if (res.Success)
-                {
-                    IsServoOn = nextState;
-                }
+                if (res.Success) IsServoOn = nextState;
+                else MessageBox.Show($"使能切换失败: {res.Message}", "硬件错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }, _ => SelectedMotionDevice != null && IsConnected && SelectedAxis != null);
+
+            // 下发运动参数与软限位
+            ApplyParamCommand = new RelayCommand(_ =>
+            {
+                if (SelectedMotionDevice == null || SelectedAxis == null || !IsConnected) return;
+
+                var resParam = SelectedMotionDevice.SetMotionParam(SelectedAxis.AxisIndex, CurrentMotionParam);
+                var resLimit = SelectedMotionDevice.SetSoftLimits(SelectedAxis.AxisIndex, PositiveLimit, NegativeLimit);
+
+                if (resParam.Success && resLimit.Success)
+                    MessageBox.Show("参数与限位下发成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 else
-                {
-                    MessageBox.Show($"设置使能失败: {res.Message}", "硬件通信失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
+                    MessageBox.Show($"下发失败: {resParam.Message} / {resLimit.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }, _ => SelectedMotionDevice != null && IsConnected && SelectedAxis != null);
+
+            // 指令位置清零 (SetCommandPosition)
+            ZeroPositionCommand = new RelayCommand(_ =>
+            {
+                if (SelectedMotionDevice == null || SelectedAxis == null || !IsConnected) return;
+                SelectedMotionDevice.SetCommandPosition(SelectedAxis.AxisIndex, 0f);
             }, _ => SelectedMotionDevice != null && IsConnected && SelectedAxis != null);
 
             HomeAxisCommand = new RelayCommand(_ =>
             {
                 if (SelectedMotionDevice == null || SelectedAxis == null || !IsConnected) return;
-
                 var res = SelectedMotionDevice.Home(SelectedAxis.AxisIndex, 4);
-                if (!res.Success)
-                {
-                    MessageBox.Show($"触发回零失败: {res.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                if (!res.Success) MessageBox.Show($"回零失败: {res.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }, _ => SelectedMotionDevice != null && IsConnected && SelectedAxis != null);
 
-            JogCommand = new RelayCommand<string>(param =>
+            // 方向运动 (支持 JOG / 相对 / 绝对)
+            DirectionMoveCommand = new RelayCommand<string>(dir =>
             {
                 if (SelectedMotionDevice == null || SelectedAxis == null || !IsConnected) return;
 
-                // 下发运动参数
-                var paramRes = SelectedMotionDevice.SetMotionParam(SelectedAxis.AxisIndex, new MotionParam { Speed = (float)AxisSpeed });
+                // 运动前确保参数生效
+                SelectedMotionDevice.SetMotionParam(SelectedAxis.AxisIndex, CurrentMotionParam);
 
-                int direction = (param != null && param.EndsWith("+")) ? 1 : -1;
-                var jogRes = SelectedMotionDevice.JogMove(SelectedAxis.AxisIndex, direction);
-                if (!jogRes.Success)
+                int direction = (dir != null && dir.Contains("+")) ? 1 : -1;
+
+                if (MoveModeIndex == 0) // JOG 点动
                 {
-                    MessageBox.Show($"启动 JOG 点动失败: {jogRes.Message}", "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    SelectedMotionDevice.JogMove(SelectedAxis.AxisIndex, direction);
+                }
+                else if (MoveModeIndex == 1) // 相对移动
+                {
+                    float dist = TargetDistance * direction;
+                    SelectedMotionDevice.MoveRelative(SelectedAxis.AxisIndex, dist, CurrentMotionParam.Speed);
+                }
+                else if (MoveModeIndex == 2) // 绝对定位
+                {
+                    SelectedMotionDevice.MoveAbsolute(SelectedAxis.AxisIndex, TargetDistance, CurrentMotionParam.Speed);
                 }
             }, _ => SelectedMotionDevice != null && IsConnected && SelectedAxis != null);
 
@@ -198,23 +283,15 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         {
             MotionDeviceList.Clear();
             var devices = DevicePoolManager.Instance.GetAllDevices().OfType<IMotionCard>();
-            foreach (var card in devices)
-            {
-                MotionDeviceList.Add(card);
-            }
-
+            foreach (var card in devices) MotionDeviceList.Add(card);
             SelectedMotionDevice = MotionDeviceList.FirstOrDefault();
         }
 
         private void OnSelectedDeviceChanged(IMotionCard oldDevice, IMotionCard newDevice)
         {
-            if (oldDevice != null)
-            {
-                oldDevice.StateChanged -= OnDeviceStateChanged;
-            }
+            if (oldDevice != null) oldDevice.StateChanged -= OnDeviceStateChanged;
 
             AxisList.Clear();
-
             if (newDevice == null)
             {
                 IsConnected = false;
@@ -224,7 +301,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             newDevice.StateChanged += OnDeviceStateChanged;
             IsConnected = newDevice.State == DeviceState.Connected;
 
-            // 装载选中板卡的操控轴列表
             LoadAxesForDevice(newDevice);
             RefreshCommandCanExecute();
         }
@@ -234,21 +310,65 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             AxisList.Clear();
             if (device == null) return;
 
-            // 预设通用轴索引，后续可根据硬件属性扩展
+           
             AxisList.Add(new AxisInfoModel { AxisIndex = 1, AxisName = "1号轴 (X轴)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 2, AxisName = "2号轴 (Y轴1)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 3, AxisName = "3号轴 (Y轴2)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 0, AxisName = "0号轴（Z轴）" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 2, AxisName = "2号轴 (Y1轴)" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 3, AxisName = "3号轴 (Y2轴)" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 0, AxisName = "0号轴 (Z轴)" });
 
             SelectedAxis = AxisList.FirstOrDefault();
         }
 
+        private void LoadSelectedAxisParam()
+        {
+            // 此处可从配置文件或硬件读取当前轴参数，此处赋默认/初始值
+            CurrentMotionParam = new MotionParam
+            {
+                Speed = 50f,
+                Accel = 50f,
+                Decel = 50f,
+                Lspeed = 50f,
+                Unit = 50f,
+                Sramp = 50f,
+                CreepSpeed = 10f
+            };
+        }
+
+        private void PollAxisStatus()
+        {
+            if (!IsConnected || SelectedMotionDevice == null || SelectedAxis == null) return;
+
+            int axis = SelectedAxis.AxisIndex;
+
+            // 读取 DPOS 与 MPOS
+            var dposRes = SelectedMotionDevice.GetCommandPosition(axis);
+            if (dposRes.Success) CmdPos = dposRes.Data;
+
+            var mposRes = SelectedMotionDevice.GetFeedbackPosition(axis);
+            if (mposRes.Success) FeedbackPos = mposRes.Data;
+
+            var speedRes = SelectedMotionDevice.GetCurrentSpeed(axis);
+            if (speedRes.Success) CurrentSpeed = speedRes.Data;
+
+            // 读取轴硬件状态与 Limit 标志
+            var statusRes = SelectedMotionDevice.GetAxisStatus(axis);
+            if (statusRes.Success)
+            {
+                var flags = statusRes.Data;
+                IsFwdLimit = flags.HasFlag(AxisStatusFlags.FwdLimit);
+                IsRevLimit = flags.HasFlag(AxisStatusFlags.RevLimit);
+                IsAlarm = flags.HasFlag(AxisStatusFlags.Alarm);
+                IsHomeSignal = flags.HasFlag(AxisStatusFlags.HomeSwitch);
+            }
+
+            // 读取轴空闲状态
+            var idleRes = SelectedMotionDevice.IsAxisIdle(axis);
+            if (idleRes.Success) IsMoving = !idleRes.Data;
+        }
+
         private void OnDeviceStateChanged(object sender, DeviceState state)
         {
-            Application.Current?.Dispatcher.Invoke(() =>
-            {
-                IsConnected = state == DeviceState.Connected;
-            });
+            Application.Current?.Dispatcher.Invoke(() => IsConnected = state == DeviceState.Connected);
         }
 
         private void RefreshCommandCanExecute()
@@ -256,8 +376,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             (ConnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (DisconnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ToggleServoCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ApplyParamCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ZeroPositionCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (HomeAxisCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (JogCommand as RelayCommand<string>)?.RaiseCanExecuteChanged();
+            (DirectionMoveCommand as RelayCommand<string>)?.RaiseCanExecuteChanged();
             (StopAxisCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (EmergencyStopCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }

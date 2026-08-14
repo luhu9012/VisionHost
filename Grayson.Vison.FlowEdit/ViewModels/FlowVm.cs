@@ -916,7 +916,29 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         {
             ToolBox.Clear();
             var metas = NodeFactory.GenerateToolboxMetas();
-            foreach (var meta in metas)
+
+            // ========= 业务流程分组权重定义：工业视觉标准业务流顺序 =========
+            // key: Category枚举，value:排序权重，数字越小越靠前
+            var categoryOrderDict = new Dictionary<NodeCategory, int>()
+            {
+                {NodeCategory.ImageInput, 10},        // 图像输入（相机采集、读图）
+                {NodeCategory.ImagePreprocess, 20},   // 图像预处理
+                {NodeCategory.CalibrationLocation, 30}, // 标定、模板匹配、位置补正
+                {NodeCategory.Identification, 40},    // 识别检测(OCR、条码、AI推理)
+                {NodeCategory.FlowControl, 50},       // 流程控制(if、循环、延时)
+                {NodeCategory.DeviceIO, 60},          // PLC、光源等外设IO通信
+                {NodeCategory.DataStorage, 70}        // 存图、存数据、MES上报
+            };
+
+            // 排序：先按分组权重；同分组内部可以再按Type或者DisplayName做次级排序
+            var sortedMetas = metas
+                .OrderBy(m => categoryOrderDict.ContainsKey(m.Category) ? categoryOrderDict[m.Category] : 999)
+                .ThenBy(m => m.Type)  // 同一分组内部节点按Type顺序排布，你也可以改成 ThenBy(m=>m.DisplayName)
+                .ToList();
+
+            //Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(sortedMetas, Newtonsoft.Json.Formatting.Indented));
+
+            foreach (var meta in sortedMetas)
             {
                 meta.CategoryName = GetCategoryDisplayName(meta.Category);
                 ToolBox.Add(meta);

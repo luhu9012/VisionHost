@@ -262,7 +262,44 @@ namespace Grayson.Vision.WpfUI.Common.Converters
         }
     }
 
+    /// <summary>bool → 启用 / 禁用</summary>
+    public class BoolToServoTextConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool b)
+            {
+                return b ? "⚡ 启用" : "⚡ 禁用";
+            }
+            return "⚡ 未知";
+        }
 
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class IntToBoolConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is int intVal && parameter != null && int.TryParse(parameter.ToString(), out int paramVal))
+            {
+                return intVal == paramVal;
+            }
+            return false;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool boolVal && boolVal && parameter != null && int.TryParse(parameter.ToString(), out int paramVal))
+            {
+                return paramVal;
+            }
+            return Binding.DoNothing;
+        }
+    }
 
 
 }

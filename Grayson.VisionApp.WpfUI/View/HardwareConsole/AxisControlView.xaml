@@ -1,112 +1,298 @@
 ﻿<UserControl x:Class="Grayson.Vision.WpfUI.View.HardwareConsole.AxisControlView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters">
+    <UserControl.Resources>
+        <!-- 引入正确类型的转换器 -->
+        <conv:BoolToServoTextConverter x:Key="BoolToServoTextConverter"/>
+        <conv:IntToBoolConverter x:Key="IntToBoolConverter"/>
+
+        <!-- 基础 LED 样式 -->
+        <Style x:Key="BaseLedStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Margin" Value="4,0,8,0"/>
+            <Setter Property="Fill" Value="#BDC3C7"/>
+            <!-- 默认灰色 -->
+        </Style>
+
+        <!-- 正限位 LED 样式 -->
+        <Style x:Key="FwdLedStyle" TargetType="Ellipse" BasedOn="{StaticResource BaseLedStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFwdLimit}" Value="True">
+                    <Setter Property="Fill" Value="#E74C3C"/>
+                    <!-- 触发亮红灯 -->
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 负限位 LED 样式 -->
+        <Style x:Key="RevLedStyle" TargetType="Ellipse" BasedOn="{StaticResource BaseLedStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRevLimit}" Value="True">
+                    <Setter Property="Fill" Value="#E74C3C"/>
+                    <!-- 触发亮红灯 -->
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 原点 LED 样式 -->
+        <Style x:Key="HomeLedStyle" TargetType="Ellipse" BasedOn="{StaticResource BaseLedStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsHomeSignal}" Value="True">
+                    <Setter Property="Fill" Value="#2ECC71"/>
+                    <!-- 触发亮绿灯 -->
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 报警 LED 样式 -->
+        <Style x:Key="AlarmLedStyle" TargetType="Ellipse" BasedOn="{StaticResource BaseLedStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsAlarm}" Value="True">
+                    <Setter Property="Fill" Value="#E74C3C"/>
+                    <!-- 触发亮红灯 -->
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 运行状态 LED 样式 -->
+        <Style x:Key="MovingLedStyle" TargetType="Ellipse" BasedOn="{StaticResource BaseLedStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMoving}" Value="True">
+                    <Setter Property="Fill" Value="#3498DB"/>
+                    <!-- 运行亮蓝灯 -->
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
     <Grid Margin="12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="340"/>
+            <ColumnDefinition Width="380"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- 左侧：板卡筛选、连接控制与参数控制 -->
+        <!-- 左侧：板卡连接、轴选择与 MotionParam 详细配置 -->
         <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,12,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="运动控制器选择" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,15"/>
+                    <TextBlock Text="运动控制器与选择轴" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,10"/>
 
-                    <TextBlock Text="目标运动控制器 (板卡):" Style="{StaticResource FormLabelStyle}"/>
-                    <Grid Margin="0,4,0,10">
+                    <TextBlock Text="目标运动控制器:" Style="{StaticResource FormLabelStyle}"/>
+                    <Grid Margin="0,4,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <ComboBox Grid.Column="0" 
-                                  ItemsSource="{Binding MotionDeviceList}" 
-                                  DisplayMemberPath="DeviceName" 
-                                  SelectedItem="{Binding SelectedMotionDevice}"/>
-                        <Button Grid.Column="1" 
-                                Content="🔄" 
-                                Command="{Binding RefreshDevicesCommand}" 
-                                Margin="6,0,0,0" 
-                                ToolTip="刷新设备列表" 
-                                Style="{StaticResource SecondaryButtonStyle}"/>
+                        <ComboBox ItemsSource="{Binding MotionDeviceList}" DisplayMemberPath="DeviceName" SelectedItem="{Binding SelectedMotionDevice}"/>
+                        <Button Grid.Column="1" Content="🔄" Command="{Binding RefreshDevicesCommand}" Margin="6,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/>
                     </Grid>
 
-                    <!-- 连接状态显示与动作按钮组 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <TextBlock Text="当前状态: " Style="{StaticResource FormLabelStyle}"/>
                         <TextBlock Text="{Binding ConnectionStatusText}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                     </StackPanel>
 
-                    <UniformGrid Columns="2" Margin="0,0,0,15">
+                    <UniformGrid Columns="2" Margin="0,0,0,10">
                         <Button Content="🔌 连接" Command="{Binding ConnectCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0"/>
                         <Button Content="❌ 断开" Command="{Binding DisconnectCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="4,0,0,0"/>
                     </UniformGrid>
 
-                    <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,15"/>
+                    <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,10"/>
 
-                    <!-- 操控轴选择与使能 -->
-                    <TextBlock Text="选择操控轴:" Style="{StaticResource FormLabelStyle}"/>
-                    <ComboBox ItemsSource="{Binding AxisList}" DisplayMemberPath="AxisName" SelectedItem="{Binding SelectedAxis}" Margin="0,4,0,10"/>
+                    <!-- 操控轴与使能 -->
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox ItemsSource="{Binding AxisList}" DisplayMemberPath="AxisName" SelectedItem="{Binding SelectedAxis}"/>
+                        <Button Grid.Column="1" Content="{Binding IsServoOn, Converter={StaticResource BoolToServoTextConverter}}"
+                                Command="{Binding ToggleServoCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="6,0,0,0" Width="90"/>
+                    </Grid>
 
-                    <Button Content="{Binding IsServoOn, StringFormat='⚡ 伺服使能: {0}'}" 
-                            Command="{Binding ToggleServoCommand}" 
-                            Style="{StaticResource SecondaryButtonStyle}" 
-                            Margin="0,0,0,15"/>
+                    <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,10"/>
 
-                    <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,15"/>
+                    <!-- 轴通用运动学参数 (MotionParam) -->
+                    <TextBlock Text="轴通用参数配置 (MotionParam)" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
 
-                    <!-- 运动参数编辑 -->
-                    <TextBlock Text="JOG 步长 (mm):" Style="{StaticResource FormLabelStyle}"/>
-                    <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding JogStep, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,15"/>
+                    <UniformGrid Columns="2">
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="运行速度 (Units/s):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Speed, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
 
-                    <TextBlock Text="运动速度 (mm/s):" Style="{StaticResource FormLabelStyle}"/>
-                    <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding AxisSpeed, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,20"/>
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="脉冲当量 (Pulse/Unit):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Unit, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
 
-                    <Button Content="🏠 选中轴回零 (Home)" Command="{Binding HomeAxisCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="加速度 (Units/s²):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Accel, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="减速度 (Units/s²):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Decel, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="起始速度 (Lspeed):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Lspeed, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="S曲线时间 (Sramp):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Sramp, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Margin="2,4">
+                            <TextBlock Text="回零慢速 (Creep):" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.CreepSpeed, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </UniformGrid>
+
+                    <!-- 软限位设置 -->
+                    <UniformGrid Columns="2" Margin="0,4,0,10">
+                        <StackPanel Margin="2,0">
+                            <TextBlock Text="负软限位:" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding NegativeLimit, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                        <StackPanel Margin="2,0">
+                            <TextBlock Text="正软限位:" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding PositiveLimit, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </UniformGrid>
+
+                    <Button Content="💾 下发/应用轴参数" Command="{Binding ApplyParamCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,4,0,10"/>
+                    <Button Content="🏠 触发轴回零 (Home)" Command="{Binding HomeAxisCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
                 </StackPanel>
             </ScrollViewer>
         </Border>
 
-        <!-- 右侧：JOG 方向手柄与实时坐标展示 -->
-        <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Margin="0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+        <!-- 右侧：实时信号/坐标监控与运动调试操控面板 -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-                <!-- 顶栏：急停控制 -->
-                <DockPanel Grid.Row="0">
-                    <TextBlock Text="JOG 点动操控与实时位姿" Style="{StaticResource SubTitleTextStyle}" VerticalAlignment="Center"/>
-                    <Button Content="🚨 全轴急停" Command="{Binding EmergencyStopCommand}" Background="#E74C3C" Foreground="White" FontWeight="Bold" Padding="12,6" HorizontalAlignment="Right"/>
-                </DockPanel>
+            <!-- 顶部卡片：状态信号灯与 DPOS/MPOS 位置仪表 -->
+            <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,10">
+                        <!-- 靠右的按钮，DockPanel.Dock="Right" 放最上面！DockPanel顺序很关键 -->
+                        <Button DockPanel.Dock="Right" 
+                            Content="🚨 全轴急停" 
+                            Command="{Binding EmergencyStopCommand}" 
+                            Background="#E74C3C" 
+                            Foreground="White" 
+                            FontWeight="Bold" 
+                            Padding="12,6"
+                            HorizontalAlignment="Right"/>
 
-                <!-- 中间：JOG 点动按键组 -->
-                <UniformGrid Grid.Row="1" Columns="3" Rows="3" Width="300" Height="300" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Border/>
-                    <Button Content="Y+ (正向)" Command="{Binding JogCommand}" CommandParameter="Y+" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Border/>
+                        <!-- 剩下全部空间给标题 -->
+                        <TextBlock Text="选中轴实时状态与坐标" 
+                       Style="{StaticResource SubTitleTextStyle}" 
+                       VerticalAlignment="Center"/>
+                    </DockPanel>
 
-                    <Button Content="X- (负向)" Command="{Binding JogCommand}" CommandParameter="X-" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Button Content="🛑 停止" Command="{Binding StopAxisCommand}" Background="#E67E22" Foreground="White" FontWeight="Bold"/>
-                    <Button Content="X+ (正向)" Command="{Binding JogCommand}" CommandParameter="X+" Style="{StaticResource PrimaryButtonStyle}"/>
+                    <!-- 硬件 IO 信号指示灯组 -->
+                    <WrapPanel Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                            <Ellipse Style="{StaticResource FwdLedStyle}"/>
+                            <TextBlock Text="正限位 (FWD)" VerticalAlignment="Center"/>
+                        </StackPanel>
 
-                    <Border/>
-                    <Button Content="Y- (负向)" Command="{Binding JogCommand}" CommandParameter="Y-" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Border/>
-                </UniformGrid>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                            <Ellipse Style="{StaticResource RevLedStyle}"/>
+                            <TextBlock Text="负限位 (REV)" VerticalAlignment="Center"/>
+                        </StackPanel>
 
-                <!-- 底部：坐标展示区 -->
-                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15,0,0">
-                    <TextBlock Text="X轴: " Style="{StaticResource FormLabelStyle}"/>
-                    <TextBlock Text="{Binding AxisXPos, StringFormat={}{0:F3} mm}" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" Margin="0,0,25,0"/>
-                    <TextBlock Text="Y轴: " Style="{StaticResource FormLabelStyle}"/>
-                    <TextBlock Text="{Binding AxisYPos, StringFormat={}{0:F3} mm}" Foreground="{StaticResource AccentBrush}" FontWeight="Bold" Margin="0,0,25,0"/>
-                    <TextBlock Text="Z轴: " Style="{StaticResource FormLabelStyle}"/>
-                    <TextBlock Text="{Binding AxisZPos, StringFormat={}{0:F3} mm}" Foreground="{StaticResource AccentBrush}" FontWeight="Bold"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                            <Ellipse Style="{StaticResource HomeLedStyle}"/>
+                            <TextBlock Text="原点信号 (ORG)" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,15,0">
+                            <Ellipse Style="{StaticResource AlarmLedStyle}"/>
+                            <TextBlock Text="伺服报警 (ALM)" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Style="{StaticResource MovingLedStyle}"/>
+                            <TextBlock Text="正在运行" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </WrapPanel>
+
+                    <!-- 坐标显示区：将 Padding 移至 Border 容器 -->
+                    <Border Background="#FF1A1A1A" Padding="12" CornerRadius="4">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="指令位置 (DPOS):" Foreground="#7F8C8D" FontSize="12"/>
+                                <TextBlock Text="{Binding CmdPos, StringFormat={}{0:F3} mm}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="反馈位置 (MPOS):" Foreground="#7F8C8D" FontSize="12"/>
+                                <TextBlock Text="{Binding FeedbackPos, StringFormat={}{0:F3} mm}" FontSize="18" FontWeight="Bold" Foreground="#27AE60"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="当前速度:" Foreground="#7F8C8D" FontSize="12"/>
+                                <TextBlock Text="{Binding CurrentSpeed, StringFormat={}{0:F2} mm/s}" FontSize="18" FontWeight="Bold" Foreground="#E67E22"/>
+                            </StackPanel>
+
+                            <Button Grid.Column="3" Content="🎯 位置清零 (Set DPOS=0)" Command="{Binding ZeroPositionCommand}" VerticalAlignment="Center" Style="{StaticResource SecondaryButtonStyle}"/>
+                        </Grid>
+                    </Border>
                 </StackPanel>
-            </Grid>
-        </Border>
+            </Border>
+
+            <!-- 底部卡片：模式选择与运动手柄 -->
+            <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 运动模式配置 -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,15">
+                        <TextBlock Text="运动模式: " Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <RadioButton Content="JOG 点动" IsChecked="{Binding MoveModeIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}" GroupName="MoveMode" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                        <RadioButton Content="相对移动 (Rel)" IsChecked="{Binding MoveModeIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}" GroupName="MoveMode" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                        <RadioButton Content="绝对定位 (Abs)" IsChecked="{Binding MoveModeIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}" GroupName="MoveMode" VerticalAlignment="Center" Margin="0,0,20,0"/>
+
+                        <TextBlock Text="距离/目标点:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding TargetDistance, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    </StackPanel>
+
+                    <!-- 手柄操控按钮区 -->
+                    <UniformGrid Grid.Row="1" Columns="3" Rows="3" Width="320" Height="280" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border/>
+                        <Button Content="Y+ / 正向 (Fwd)" Command="{Binding DirectionMoveCommand}" CommandParameter="+" Style="{StaticResource PrimaryButtonStyle}"/>
+                        <Border/>
+
+                        <Button Content="X- / 负向 (Rev)" Command="{Binding DirectionMoveCommand}" CommandParameter="-" Style="{StaticResource PrimaryButtonStyle}"/>
+                        <Button Content="🛑 停止" Command="{Binding StopAxisCommand}" Background="#E67E22" Foreground="White" FontWeight="Bold" FontSize="16"/>
+                        <Button Content="X+ / 正向 (Fwd)" Command="{Binding DirectionMoveCommand}" CommandParameter="+" Style="{StaticResource PrimaryButtonStyle}"/>
+
+                        <Border/>
+                        <Button Content="Y- / 负向 (Rev)" Command="{Binding DirectionMoveCommand}" CommandParameter="-" Style="{StaticResource PrimaryButtonStyle}"/>
+                        <Border/>
+                    </UniformGrid>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

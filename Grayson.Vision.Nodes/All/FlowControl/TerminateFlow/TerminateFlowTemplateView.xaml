@@ -1,9 +1,9 @@
-﻿<UserControl x:Class="Grayson.Vision.Nodes.All.CompositeGroup.TerminateFlow.TerminateFlowTemplateView"
+﻿<UserControl x:Class="Grayson.Vision.Nodes.All.FlowControl.TerminateFlow.TerminateFlowTemplateView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:local="clr-namespace:Grayson.Vision.Nodes.All.CompositeGroup.TerminateFlow"
+             xmlns:local="clr-namespace:Grayson.Vision.Nodes.All.FlowControl.TerminateFlow"
              mc:Ignorable="d"
              d:DesignHeight="220" d:DesignWidth="300"
              Background="#1E1E1E">

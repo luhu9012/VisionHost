@@ -49,9 +49,29 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="All\CompositeGroup\TerminateFlow\TerminateFlowExecutor.cs" />
-    <Compile Include="All\CompositeGroup\TerminateFlow\TerminateFlowParam.cs" />
-    <Compile Include="All\CompositeGroup\TerminateFlow\TerminateFlowTemplateView.xaml.cs">
+    <Compile Include="All\CalibrationLocation\ApplyFixture\ApplyFixtureExecutor.cs" />
+    <Compile Include="All\CalibrationLocation\ApplyFixture\ApplyFixtureParam.cs" />
+    <Compile Include="All\CalibrationLocation\ApplyFixture\ApplyFixtureTemplateView.xaml.cs">
+      <DependentUpon>ApplyFixtureTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\CalibrationLocation\CreateFixture\CreateFixtureExecutor.cs" />
+    <Compile Include="All\CalibrationLocation\CreateFixture\CreateFixtureParam.cs" />
+    <Compile Include="All\CalibrationLocation\CreateFixture\CreateFixtureTemplateView.xaml.cs">
+      <DependentUpon>CreateFixtureTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\CalibrationLocation\NccMatch\NccMatchExecutor.cs" />
+    <Compile Include="All\CalibrationLocation\NccMatch\NccMatchParam.cs" />
+    <Compile Include="All\CalibrationLocation\NccMatch\NccMatchTemplateView.xaml.cs">
+      <DependentUpon>NccMatchTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\CalibrationLocation\ShapeMatch\ShapeMatchExecutor.cs" />
+    <Compile Include="All\CalibrationLocation\ShapeMatch\ShapeMatchParam.cs" />
+    <Compile Include="All\CalibrationLocation\ShapeMatch\ShapeMatchTemplateView.xaml.cs">
+      <DependentUpon>ShapeMatchTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\FlowControl\TerminateFlow\TerminateFlowExecutor.cs" />
+    <Compile Include="All\FlowControl\TerminateFlow\TerminateFlowParam.cs" />
+    <Compile Include="All\FlowControl\TerminateFlow\TerminateFlowTemplateView.xaml.cs">
       <DependentUpon>TerminateFlowTemplateView.xaml</DependentUpon>
     </Compile>
     <Compile Include="All\DataStorage\MesReport\MesReportExecutor.cs" />
@@ -112,6 +132,26 @@
     <Compile Include="All\FlowControl\WhileLoop\WhileLoopTemplateView.xaml.cs">
       <DependentUpon>WhileLoopTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\Identification\ColorIdentify\ColorIdentifyExecutor.cs" />
+    <Compile Include="All\Identification\ColorIdentify\ColorIdentifyParam.cs" />
+    <Compile Include="All\Identification\ColorIdentify\ColorIdentifyTemplateView.xaml.cs">
+      <DependentUpon>ColorIdentifyTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\Identification\DlInference\DlInferenceExecutor.cs" />
+    <Compile Include="All\Identification\DlInference\DlInferenceParam.cs" />
+    <Compile Include="All\Identification\DlInference\DlInferenceTemplateView.xaml.cs">
+      <DependentUpon>DlInferenceTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\Identification\ReadBarcode\ReadBarcodeExecutor.cs" />
+    <Compile Include="All\Identification\ReadBarcode\ReadBarcodeParam.cs" />
+    <Compile Include="All\Identification\ReadBarcode\ReadBarcodeTemplateView.xaml.cs">
+      <DependentUpon>ReadBarcodeTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\Identification\ReadOCR\ReadOCRExecutor.cs" />
+    <Compile Include="All\Identification\ReadOCR\ReadOCRParam.cs" />
+    <Compile Include="All\Identification\ReadOCR\ReadOCRTemplateView.xaml.cs">
+      <DependentUpon>ReadOCRTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="All\ImageInput\ImageChannel\ImageChannelExecutor.cs" />
     <Compile Include="All\ImageInput\ImageChannel\ImageChannelParam.cs" />
     <Compile Include="All\ImageInput\ImageChannel\ImageChannelTemplateView.xaml.cs">
@@ -122,6 +162,26 @@
     <Compile Include="All\ImageInput\ReadImageFile\ReadImageFileTemplateView.xaml.cs">
       <DependentUpon>ReadImageFileTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\ImagePreprocess\AffineImage\AffineImageExecutor.cs" />
+    <Compile Include="All\ImagePreprocess\AffineImage\AffineImageParam.cs" />
+    <Compile Include="All\ImagePreprocess\AffineImage\AffineImageTemplateView.xaml.cs">
+      <DependentUpon>AffineImageTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\ImagePreprocess\ImageFilter\ImageFilterExecutor.cs" />
+    <Compile Include="All\ImagePreprocess\ImageFilter\ImageFilterParam.cs" />
+    <Compile Include="All\ImagePreprocess\ImageFilter\ImageFilterTemplateView.xaml.cs">
+      <DependentUpon>ImageFilterTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\ImagePreprocess\ImageThreshold\ImageThresholdExecutor.cs" />
+    <Compile Include="All\ImagePreprocess\ImageThreshold\ImageThresholdParam.cs" />
+    <Compile Include="All\ImagePreprocess\ImageThreshold\ImageThresholdTemplateView.xaml.cs">
+      <DependentUpon>ImageThresholdTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\ImagePreprocess\ROIOperation\ROIOperationExecutor.cs" />
+    <Compile Include="All\ImagePreprocess\ROIOperation\ROIOperationParam.cs" />
+    <Compile Include="All\ImagePreprocess\ROIOperation\ROIOperationTemplateView.xaml.cs">
+      <DependentUpon>ROIOperationTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Class1.cs" />
     <Compile Include="Common\NodeExecutorBase.cs" />
     <Compile Include="Common\ParamBase.cs" />
@@ -131,6 +191,7 @@
       <DependentUpon>AcquireImageTemplateView.xaml</DependentUpon>
     </Compile>
     <Compile Include="Converters\EnumToIntConverter.cs" />
+    <Compile Include="Converters\EnumToVisibilityConverter.cs" />
     <Compile Include="Converters\InverseBoolConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -139,11 +200,13 @@
       <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
       <Name>Grayson.Vision.Contracts</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper\Grayson.Vision.HalconWrapper.csproj">
+      <Project>{ecc73133-c99e-43f3-9206-1edc2cbda74a}</Project>
+      <Name>Grayson.Vision.HalconWrapper</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="All\CalibrationLocation\" />
-    <Folder Include="All\Identification\" />
-    <Folder Include="All\ImagePreprocess\" />
+    <Folder Include="All\CompositeGroup\" />
     <Folder Include="All\MathLogic\" />
     <Folder Include="All\Measurement2D\" />
   </ItemGroup>
@@ -155,7 +218,23 @@
     <None Include="参数传递.md" />
   </ItemGroup>
   <ItemGroup>
-    <Page Include="All\CompositeGroup\TerminateFlow\TerminateFlowTemplateView.xaml">
+    <Page Include="All\CalibrationLocation\ApplyFixture\ApplyFixtureTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\CalibrationLocation\CreateFixture\CreateFixtureTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\CalibrationLocation\NccMatch\NccMatchTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\CalibrationLocation\ShapeMatch\ShapeMatchTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\FlowControl\TerminateFlow\TerminateFlowTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -203,6 +282,22 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="All\Identification\ColorIdentify\ColorIdentifyTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Identification\DlInference\DlInferenceTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Identification\ReadBarcode\ReadBarcodeTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Identification\ReadOCR\ReadOCRTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="All\ImageInput\AcquireImage\AcquireImageTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -212,6 +307,22 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="All\ImageInput\ReadImageFile\ReadImageFileTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\ImagePreprocess\AffineImage\AffineImageTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\ImagePreprocess\ImageFilter\ImageFilterTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\ImagePreprocess\ImageThreshold\ImageThresholdTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\ImagePreprocess\ROIOperation\ROIOperationTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

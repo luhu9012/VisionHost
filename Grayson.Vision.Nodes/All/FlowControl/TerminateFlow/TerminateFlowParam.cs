@@ -1,6 +1,6 @@
 ﻿using Grayson.Vision.Nodes.Common;
 
-namespace Grayson.Vision.Nodes.All.CompositeGroup.TerminateFlow
+namespace Grayson.Vision.Nodes.All.FlowControl.TerminateFlow
 {
     public class TerminateFlowParam : ParamBase
     {

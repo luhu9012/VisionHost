@@ -5,6 +5,7 @@
     <!-- 1. 全局节点通用 ValueConverter -->
     <cvts:InverseBoolConverter x:Key="InverseBoolConverter"/>
     <cvts:EnumToIntConverter x:Key="EnumToIntConverter"/>
+    <cvts:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter"/>
 
     <!-- 2. 统一标题文本样式 -->
     <Style x:Key="NodeParamHeaderLabel" TargetType="TextBlock">

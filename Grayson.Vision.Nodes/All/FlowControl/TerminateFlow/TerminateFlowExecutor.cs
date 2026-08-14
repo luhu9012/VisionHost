@@ -8,9 +8,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Grayson.Vision.Nodes.All.CompositeGroup.TerminateFlow
+namespace Grayson.Vision.Nodes.All.FlowControl.TerminateFlow
 {
-    [Node(NodeType.TerminateFlow, NodeCategory.CompositeGroup, typeof(TerminateFlowParam))]
+    [Node(NodeType.TerminateFlow, NodeCategory.FlowControl, typeof(TerminateFlowParam))]
     [NodePort("Trigger", PortType.In, PortCategory.Data, dataType: "Object", colorHex: "#E74C3C")]
     [NodePort("ReasonIn", PortType.In, PortCategory.Data, dataType: "String", colorHex: "#3498DB")]
     public class TerminateFlowExecutor : NodeExecutorBase<TerminateFlowParam>

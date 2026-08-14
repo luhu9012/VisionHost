@@ -45,12 +45,22 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Calibration\Calib2DTool.cs" />
+    <Compile Include="Calibration\FixtureTool.cs" />
     <Compile Include="Class1.cs" />
     <Compile Include="Core\HalconGlobalHelper.cs" />
     <Compile Include="Core\HalconMemoryGuard.cs" />
+    <Compile Include="Identification\BarcodeTool.cs" />
+    <Compile Include="Identification\ColorTool.cs" />
+    <Compile Include="Identification\DeepLearningTool.cs" />
+    <Compile Include="Identification\OCRTool.cs" />
+    <Compile Include="ImageProc\AffineImageTool.cs" />
     <Compile Include="ImageProc\ImageBasicTool.cs" />
     <Compile Include="ImageProc\ImageFilterTool.cs" />
+    <Compile Include="ImageProc\ImagePreprocessTool.cs" />
     <Compile Include="ImageProc\ImageThresholdTool.cs" />
+    <Compile Include="ImageProc\RoiOperationTool.cs" />
+    <Compile Include="Match2D\MatchTool.cs" />
+    <Compile Include="Match2D\NccMatchTool.cs" />
     <Compile Include="Match2D\TemplateMatchTool.cs" />
     <Compile Include="Measure2D\EdgeMeasureTool.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -65,9 +75,8 @@
       <Name>Grayson.Vision.Contracts</Name>
     </ProjectReference>
   </ItemGroup>
-  <ItemGroup />
   <ItemGroup>
-    <None Include="README.md" />
+    <None Include="README_HalconWrapper.md" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

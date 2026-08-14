@@ -27,12 +27,16 @@ namespace Grayson.Vision.Contracts.Devices
     }
 
     /// <summary>基础运动参数配置</summary>
-    public struct MotionParam
+    public class MotionParam
     {
-        public float Speed { get; set; }        // 运行速度 (Units/s)
-        public float Accel { get; set; }        // 加速度 (Units/s^2)
-        public float Decel { get; set; }        // 减速度 (Units/s^2)
-        public float CreepSpeed { get; set; }   // 爬行速度/回零慢速 (Units/s)
+        public float Speed { get; set; } = 100.0f;        // 运行速度 (Units/s)
+        public float Accel { get; set; } = 500.0f;        // 加速度 (Units/s^2)
+        public float Decel { get; set; } = 500.0f;        // 减速度 (Units/s^2)
+
+        public float Lspeed { get; set; } = 100;           // 起始速度
+        public float Unit { get; set; } = 128;            // 脉冲当量
+        public float Sramp { get; set; } = 100;            // S曲线速度
+        public float CreepSpeed { get; set; } = 10.0f;   // 爬行速度/回零慢速 (Units/s)
     }
 
     /// <summary>插补轨迹坐标点结构</summary>

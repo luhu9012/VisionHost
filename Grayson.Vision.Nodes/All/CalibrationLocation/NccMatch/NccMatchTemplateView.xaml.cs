@@ -13,14 +13,14 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace Grayson.Vision.Nodes.All.CompositeGroup.TerminateFlow
+namespace Grayson.Vision.Nodes.All.CalibrationLocation.NccMatch
 {
     /// <summary>
-    /// TerminateFlowTemplateView.xaml 的交互逻辑
+    /// NccMatchTemplateView.xaml 的交互逻辑
     /// </summary>
-    public partial class TerminateFlowTemplateView : UserControl
+    public partial class NccMatchTemplateView : UserControl
     {
-        public TerminateFlowTemplateView()
+        public NccMatchTemplateView()
         {
             InitializeComponent();
         }

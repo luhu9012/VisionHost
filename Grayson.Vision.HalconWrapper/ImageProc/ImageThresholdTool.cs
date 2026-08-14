@@ -52,6 +52,26 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
                 return Result<HObject>.Fail("动态阈值异常", -1, ex);
             }
         }
+        /// <summary>
+        /// Otsu 自动阈值分割
+        /// </summary>
+        public static Result<HObject> OtsuThreshold(HObject grayImage)
+        {
+            if (grayImage == null || !grayImage.IsInitialized())
+                return Result<HObject>.Fail("灰度图无效");
+            try
+            {
+                HObject regionOut;
+                // 使用 Halcon 的 binary_threshold 算子实现 Otsu
+                HOperatorSet.BinaryThreshold(grayImage, out regionOut, "max_separability", "dark", out _);
+                return Result<HObject>.Ok(regionOut);
+            }
+            catch (Exception ex)
+            {
+                GlobalLogger.Error("Otsu阈值分割失败", ex, nameof(ImageThresholdTool));
+                return Result<HObject>.Fail("Otsu分割异常", -1, ex);
+            }
+        }
 
         /// <summary>
         /// 区域筛选：按面积过滤小噪点，保留指定面积区间轮廓

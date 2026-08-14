@@ -101,14 +101,14 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         #region 命令定义
 
-        public ICommand RefreshDevicesCommand { get; private set; }
-        public ICommand ConnectCommand { get; private set; }
-        public ICommand DisconnectCommand { get; private set; }
-        public ICommand ToggleServoCommand { get; private set; }
-        public ICommand HomeAxisCommand { get; private set; }
-        public ICommand JogCommand { get; private set; }
-        public ICommand StopAxisCommand { get; private set; }
-        public ICommand EmergencyStopCommand { get; private set; }
+        public RelayCommand RefreshDevicesCommand { get; private set; }
+        public RelayCommand ConnectCommand { get; private set; }
+        public RelayCommand DisconnectCommand { get; private set; }
+        public RelayCommand ToggleServoCommand { get; private set; }
+        public RelayCommand HomeAxisCommand { get; private set; }
+        public RelayCommand<string> JogCommand { get; private set; }
+        public RelayCommand StopAxisCommand { get; private set; }
+        public RelayCommand EmergencyStopCommand { get; private set; }
 
         #endregion
 
@@ -159,7 +159,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             {
                 if (SelectedMotionDevice == null || SelectedAxis == null || !IsConnected) return;
 
-                var res = SelectedMotionDevice.Home(SelectedAxis.AxisIndex, 0);
+                var res = SelectedMotionDevice.Home(SelectedAxis.AxisIndex, 4);
                 if (!res.Success)
                 {
                     MessageBox.Show($"触发回零失败: {res.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -235,9 +235,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             if (device == null) return;
 
             // 预设通用轴索引，后续可根据硬件属性扩展
-            AxisList.Add(new AxisInfoModel { AxisIndex = 0, AxisName = "0号轴 (X轴)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 1, AxisName = "1号轴 (Y轴)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 2, AxisName = "2号轴 (Z轴)" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 1, AxisName = "1号轴 (X轴)" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 2, AxisName = "2号轴 (Y轴1)" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 3, AxisName = "3号轴 (Y轴2)" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 0, AxisName = "0号轴（Z轴）" });
 
             SelectedAxis = AxisList.FirstOrDefault();
         }
@@ -256,7 +257,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             (DisconnectCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ToggleServoCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (HomeAxisCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (JogCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (JogCommand as RelayCommand<string>)?.RaiseCanExecuteChanged();
             (StopAxisCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (EmergencyStopCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }

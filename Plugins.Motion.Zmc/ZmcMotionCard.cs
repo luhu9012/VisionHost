@@ -4,6 +4,7 @@ using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Plugins.Motion.Zmc
@@ -123,7 +124,7 @@ namespace Plugins.Motion.Zmc
                 return Result.Ok();
 
             int ret = -1;
-            IntPtr handle = IntPtr.Zero;
+            IntPtr handle;
 
             switch (ConnectionOptions.ConnectionType)
             {
@@ -244,6 +245,11 @@ namespace Plugins.Motion.Zmc
             int ret2 = zmcaux.ZAux_Direct_SetAccel(CardHandle, axis, param.Accel);
             int ret3 = zmcaux.ZAux_Direct_SetDecel(CardHandle, axis, param.Decel);
             int ret4 = zmcaux.ZAux_Direct_SetCreep(CardHandle, axis, param.CreepSpeed);
+
+            //zmcaux.ZAux_Direct_SetAtype(CardHandle, axis, );//轴类型
+            zmcaux.ZAux_Direct_SetUnits(CardHandle, axis, param.Unit);//脉冲当量
+            zmcaux.ZAux_Direct_SetLspeed(CardHandle, axis, param.Lspeed);//起始速度
+            zmcaux.ZAux_Direct_SetSramp(CardHandle, axis, param.Sramp);//S曲线加减速
 
             if (ret1 == 0 && ret2 == 0 && ret3 == 0 && ret4 == 0)
                 return Result.Ok();
@@ -370,6 +376,8 @@ namespace Plugins.Motion.Zmc
         /// <summary>触发指定轴的原点回归 (Datum)</summary>
         public Result Home(int axis, int homeMode)
         {
+            zmcaux.ZAux_Direct_SetDatumIn(CardHandle, axis, 2); // 2 对应IO输入端口2；配置原点信号。ZMC系列默认OFF时信号有效，常开传感器需要反转输入口为ON
+            //zmcaux.ZAux_Direct_SetInvertIn(CardHandle, axis, 1);//常开常闭反转
             int ret = zmcaux.ZAux_Direct_Single_Datum(CardHandle, axis, homeMode);
             return ret == 0 ? Result.Ok() : Result.Fail($"轴 [{axis}] 回零触发失败: {ret}");
         }
@@ -383,6 +391,7 @@ namespace Plugins.Motion.Zmc
         {
             uint state = 0;
             int ret = zmcaux.ZAux_Direct_GetIn(CardHandle, ioNum, ref state);
+            Console.WriteLine($"读取输入口 IN({ioNum}) 状态: {state}");
             return ret == 0 ? Result<bool>.Ok(state == 1) : Result<bool>.Fail($"读取输入口 IN({ioNum}) 失败: {ret}");
         }
 

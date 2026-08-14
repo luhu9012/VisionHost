@@ -223,7 +223,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
                 case DeviceCategory.MotionCard:
                     // 运动控制卡通用板卡 IO 点位
-                    for (int i = 0; i < 8; i++)
+                     for (int i = 0; i < 16; i++)
                     {
                         InputIOList.Add(new IoPointModel { ChannelIndex = i, Name = $"IN{i:D2} (传感器/原点/限位_{i + 1})", Address = i.ToString(), IsActive = false });
                         OutputIOList.Add(new IoPointModel { ChannelIndex = i, Name = $"OUT{i:D2} (电磁阀/使能_{i + 1})", Address = i.ToString(), IsActive = false });

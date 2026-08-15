@@ -10,7 +10,7 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
     public enum StationState
     {
         Idle,       // 初始空闲状态
-        Stopped,    // 处于停止/空闲状态
+        Stopped,    // 处于停止状态
         Running,    // 正在运行/准备响应触发
         Paused,     // 已暂停
         Faulted     // 发生异常报错

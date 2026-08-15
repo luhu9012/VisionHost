@@ -96,6 +96,7 @@
     <Compile Include="ViewModel\HardWareConsole\CommDebugViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\HardwareModels.cs" />
     <Compile Include="ViewModel\HardWareConsole\IoMonitorViewModel.cs" />
+    <Compile Include="ViewModel\HardwareSelectViewModel.cs" />
     <Compile Include="ViewModel\LineOverviewViewModel.cs" />
     <Compile Include="ViewModel\LoginViewModel.cs" />
     <Compile Include="Model\MockDataFactory.cs" />
@@ -137,6 +138,9 @@
     </Compile>
     <Compile Include="View\HardwareConsole\IoMonitorView.xaml.cs">
       <DependentUpon>IoMonitorView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareSelectWindow.xaml.cs">
+      <DependentUpon>HardwareSelectWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\LineOverviewView.xaml.cs">
       <DependentUpon>LineOverviewView.xaml</DependentUpon>
@@ -227,6 +231,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\HardwareConsole\IoMonitorView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareSelectWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

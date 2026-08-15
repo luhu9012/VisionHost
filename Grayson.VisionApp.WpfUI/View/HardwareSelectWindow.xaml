@@ -1,0 +1,52 @@
+﻿<Window x:Class="Grayson.Vision.WpfUI.View.HardwareSelectWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="从全局硬件池领用设备" Height="480" Width="720"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="💡 请勾选需要领用分配到当前工位的全局硬件设备：" 
+                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+
+        <!-- 硬件列表表单 -->
+        <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}" 
+                  AutoGenerateColumns="False" ItemsSource="{Binding CandidateDevices}"
+                  CanUserAddRows="False">
+            <DataGrid.Columns>
+                <!-- 全选 / 多选 CheckBox 列 -->
+                <DataGridTemplateColumn Width="60">
+                    <DataGridTemplateColumn.Header>
+                        <CheckBox IsChecked="{Binding DataContext.IsSelectAll, RelativeSource={RelativeSource AncestorType=Window}}" 
+                                  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTextColumn Header="设备编号" Binding="{Binding Device.DeviceCode}" Width="120" IsReadOnly="True"/>
+                <DataGridTextColumn Header="硬件名称" Binding="{Binding Device.DeviceName}" Width="160" IsReadOnly="True"/>
+                <DataGridTextColumn Header="驱动/类型" Binding="{Binding Device.DeviceType}" Width="140" IsReadOnly="True"/>
+                <DataGridTextColumn Header="连接参数/IP" Binding="{Binding Device.ConnectionString}" Width="*" IsReadOnly="True"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- 底部控制按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="确认领用" Style="{StaticResource PrimaryButtonStyle}" 
+                    Command="{Binding ConfirmCommand}" Width="100" Margin="0,0,12,0"/>
+            <Button Content="取消" Style="{StaticResource SecondaryButtonStyle}" 
+                    Command="{Binding CancelCommand}" Width="80"/>
+        </StackPanel>
+    </Grid>
+</Window>

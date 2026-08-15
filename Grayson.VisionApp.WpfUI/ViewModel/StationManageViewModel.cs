@@ -421,24 +421,50 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
+  
+
         private void OnAddHardware()
         {
             if (SelectedStation == null) return;
 
-            var unassignedDevices = GlobalHardwarePool.Where(g => !SelectedStation.HardwareDevices.Any(h => h.DeviceId == g.DeviceId)).ToList();
+            // 1. 过滤出全局硬件池中尚未被当前工位领用的硬件
+            var unassignedDevices = GlobalHardwarePool
+                .Where(g => !SelectedStation.HardwareDevices.Any(h => h.DeviceId == g.DeviceId))
+                .ToList();
 
             if (!unassignedDevices.Any())
             {
-                MessageBox.Show("【全局硬件池】中的可供领用设备已全部加入本工位，或硬件池为空！", "领用提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("【全局硬件池】中的所有设备已全部领用，或当前无可用硬件设备！",
+                                "领用提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            var itemToAdd = unassignedDevices.First();
-            SelectedStation.HardwareDevices.Add(itemToAdd);
+            // 2. 实例化弹窗 View & ViewModel
+            var selectVm = new HardwareSelectViewModel(unassignedDevices);
+            var dialog = new View.HardwareSelectWindow(selectVm)
+            {
+                Owner = Application.Current.MainWindow
+            };
 
-            MessageBox.Show($"已成功将硬件设备 [{itemToAdd.DeviceName}] 领用加入到工位 [{SelectedStation.StationName}]！", "领用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            // 3. 打开模态弹窗并接收选中的硬件列表
+            if (dialog.ShowDialog() == true)
+            {
+                var selectedDevices = selectVm.GetSelectedDevices();
+                if (selectedDevices.Count == 0)
+                {
+                    MessageBox.Show("未勾选任何硬件设备。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                foreach (var device in selectedDevices)
+                {
+                    SelectedStation.HardwareDevices.Add(device);
+                }
+
+                MessageBox.Show($"已成功将 {selectedDevices.Count} 台硬件设备领用并添加到工位 [{SelectedStation.StationName}]！",
+                                "领用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
-
         private void OnRemoveHardware()
         {
             if (SelectedStation != null && SelectedHardware != null)

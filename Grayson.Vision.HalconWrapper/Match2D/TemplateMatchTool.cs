@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.HalconWrapper.Core;
 using HalconDotNet;
@@ -45,7 +45,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("创建Shape模板失败", ex, nameof(TemplateMatchTool));
+                LogBus.Error(nameof(TemplateMatchTool), "创建Shape模板失败", ex);
                 return Result<int>.Fail("模板创建异常", -1, ex);
             }
         }
@@ -82,7 +82,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("模板匹配查找失败", ex, nameof(TemplateMatchTool));
+                LogBus.Error(nameof(TemplateMatchTool), "模板匹配查找失败", ex);
                 return Result<TemplateMatchResult[]>.Fail("匹配运算异常", -1, ex);
             }
         }
@@ -97,7 +97,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("销毁模板失败", ex, nameof(TemplateMatchTool));
+                LogBus.Error(nameof(TemplateMatchTool), "销毁模板失败", ex);
                 return Result.Fail("模板释放异常", -1, ex);
             }
         }

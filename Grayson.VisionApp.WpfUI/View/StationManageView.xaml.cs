@@ -13,6 +13,7 @@ namespace Grayson.Vision.WpfUI.View
 
             // 显式指定 ViewModel，解决 DataContext 找不到的问题
             this.DataContext = new StationManageViewModel();
+
         }
 
         private void TreeView_SelectedItemChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<object> e)

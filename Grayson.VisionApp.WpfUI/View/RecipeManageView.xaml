@@ -2,9 +2,16 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
              mc:Ignorable="d" 
              d:DesignHeight="760" d:DesignWidth="1200">
+
+    <UserControl.Resources>
+        <conv:RecipeApprovalStatusToTextConverter x:Key="RecipeApprovalStatusToTextConverter"/>
+        <conv:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
 
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -21,27 +28,26 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="📦" FontSize="20" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBlock Text="配方与方案管理" Style="{StaticResource SubTitleTextStyle}"/>
+                    <TextBlock Text="配方与方案管理" Style="{StaticResource SubTitleTextStyle}" VerticalAlignment="Center"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="30,0,0,0">
-                    <TextBlock Text="搜索：" Style="{StaticResource FormLabelStyle}"/>
-                    <TextBox Style="{StaticResource ModernTextBoxStyle}" Width="200" Height="32" 
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="30,0,0,0">
+                    <TextBlock Text="搜索：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <TextBox Style="{StaticResource ModernTextBoxStyle}" Width="200" Height="32" VerticalContentAlignment="Center"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <!-- 🌟 增加目标工位选择 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="目标工位：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="110" Height="32" Margin="0,0,10,0"
-              ItemsSource="{Binding AvailableStations}" 
-              SelectedItem="{Binding SelectedTargetStationId}"/>
+                    <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="120" Height="32" Margin="0,0,12,0"
+                              ItemsSource="{Binding AvailableStations}" 
+                              SelectedItem="{Binding SelectedTargetStationId}"/>
 
-                    <Button Content="+ 新建配方" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding CreateRecipeCommand}" Margin="0,0,8,0"/>
-                    <Button Content="🚀 应用至工位" Style="{StaticResource SuccessButtonStyle}" Command="{Binding ApplyRecipeCommand}" Margin="0,0,8,0"/>
-                    <Button Content="🗑️ 删除" Style="{StaticResource DangerButtonStyle}" Command="{Binding DeleteRecipeCommand}"/>
+                    <Button Content="+ 新建配方" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding CreateRecipeCommand}" Margin="0,0,8,0" Height="32"/>
+                    <Button Content="🚀 应用至工位" Style="{StaticResource SuccessButtonStyle}" Command="{Binding ApplyRecipeCommand}" Margin="0,0,8,0" Height="32"/>
+                    <Button Content="🗑️ 删除" Style="{StaticResource DangerButtonStyle}" Command="{Binding DeleteRecipeCommand}" Height="32"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -51,22 +57,23 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3.5*"/>
                 <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="4.5*"/>
+                <ColumnDefinition Width="6.5*"/>
             </Grid.ColumnDefinitions>
 
             <!-- 左侧：配方列表卡片 -->
             <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}">
                 <DataGrid Style="{StaticResource ModernDataGridStyle}"
                           ItemsSource="{Binding FilteredRecipes}"
-                          SelectedItem="{Binding SelectedRecipe, Mode=TwoWay}">
+                          SelectedItem="{Binding SelectedRecipe, Mode=TwoWay}"
+                          AutoGenerateColumns="False" IsReadOnly="True">
                     <DataGrid.Columns>
-                        <DataGridTemplateColumn Header="状态" Width="50">
+                        <DataGridTemplateColumn Header="状态" Width="45">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <Ellipse Width="10" Height="10" HorizontalAlignment="Center">
                                         <Ellipse.Style>
                                             <Style TargetType="Ellipse">
-                                                <Setter Property="Fill" Value="#555555"/>
+                                                <Setter Property="Fill" Value="#888888"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsActive}" Value="True">
                                                         <Setter Property="Fill" Value="{StaticResource SuccessBrush}"/>
@@ -85,7 +92,7 @@
                 </DataGrid>
             </Border>
 
-            <!-- 右侧：属性编辑卡片区（上下划分） -->
+            <!-- 右侧：属性编辑与操作区 -->
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -93,95 +100,288 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- 右上卡片 1：元数据配置 -->
-                <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
-                    <StackPanel>
-                        <TextBlock Text="⚙️ 配方基础元信息" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
-                        
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="12"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Row="0" Grid.Column="0">
-                                <TextBlock Text="配方名称" Style="{StaticResource FormLabelStyle}"/>
-                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.RecipeName, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="0" Grid.Column="2">
-                                <TextBlock Text="产品类别" Style="{StaticResource FormLabelStyle}"/>
-                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.ProductCategory, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
-                                <TextBlock Text="创建/修改人" Style="{StaticResource FormLabelStyle}"/>
-                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.Author, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
-                                <TextBlock Text="版本号" Style="{StaticResource FormLabelStyle}"/>
-                                <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SelectedRecipe.Version, UpdateSourceTrigger=PropertyChanged}"/>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- 右中卡片：自动从 FlowEdit 拓扑分析出的逻辑设备 -->
-                <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="🔌 关联流程逻辑设备清单" Style="{StaticResource SectionTitleTextStyle}" VerticalAlignment="Center"/>
-                            <Button Content="🔄 从 Flow 重新分析提取" Style="{StaticResource SecondaryButtonStyle}" 
-            Command="{Binding RefreshDevicesCommand}" Padding="6,2" Margin="12,0,0,0" Height="26" FontSize="11"/>
-                        </StackPanel>
-
-                        <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}"
-                  ItemsSource="{Binding LogicalDevicesList}" AutoGenerateColumns="False" IsReadOnly="True">
-                            <DataGrid.Columns>
-                                <!-- 映射状态校验 -->
-                                <DataGridTemplateColumn Header="硬件映射" Width="75">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                <TextBlock Text="🟢 已绑定" Foreground="Green" FontSize="11"
-                                           Visibility="{Binding IsBoundToPhysical, Converter={StaticResource BoolToVisConverter}}"/>
-                                                <TextBlock Text="🔴 未绑定" Foreground="Red" FontSize="11"
-                                           Visibility="{Binding IsBoundToPhysical, Converter={StaticResource InverseBoolToVisConverter}}"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-
-                                <DataGridTextColumn Header="逻辑设备ID" Binding="{Binding LogicalDeviceId}" Width="120"/>
-                                <DataGridTextColumn Header="节点依赖名称" Binding="{Binding LogicalDeviceName}" Width="130"/>
-                                <DataGridTextColumn Header="设备类型" Binding="{Binding LogicalDeviceType}" Width="100"/>
-                                <DataGridTextColumn Header="需求规格要求" Binding="{Binding RequiredSpec}" Width="*"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                    </Grid>
-                </Border>
-                <!-- 右下卡片 3：操作按钮与跳转入口 -->
-                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="12">
+                <!-- 右顶部：核心快捷动作条 -->
+                <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="12" Margin="0,0,0,8">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="12"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="💾 保存配方修改" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SaveDetailCommand}" Height="34"/>
+                        <Button Grid.Column="2" Content="🎨 打开视觉流程编辑器" Style="{StaticResource SuccessButtonStyle}" Command="{Binding OpenFlowEditCommand}" Height="34"/>
+                    </Grid>
+                </Border>
 
-                        <Button Grid.Column="0" Content="💾 保存配方修改" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SaveDetailCommand}"/>
-                        <Button Grid.Column="2" Content="🎨 打开视觉流程编辑器 (FlowEdit)" Style="{StaticResource SuccessButtonStyle}" Command="{Binding OpenFlowEditCommand}"/>
+                <!-- 右中部：滚动参数面板 -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,8">
+                    <StackPanel Margin="0,0,4,0">
+                        <!-- 卡片 1：元数据配置 -->
+                        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="⚙️ 配方基础元信息" Style="{StaticResource SectionTitleTextStyle}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding ReadOnlyHint}"
+                                               Foreground="{StaticResource WarningBrush}" FontSize="11"
+                                               TextWrapping="Wrap" TextAlignment="Right" Margin="12,0,0,0"
+                                               Visibility="{Binding ShowReadOnlyHint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0">
+                                        <TextBlock Text="配方名称" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32" Text="{Binding SelectedRecipe.RecipeName, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="2">
+                                        <TextBlock Text="产品类别" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32" Text="{Binding SelectedRecipe.ProductCategory, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
+                                        <TextBlock Text="创建/修改人" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32" Text="{Binding SelectedRecipe.Author, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+                                        <TextBlock Text="版本号" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32" Text="{Binding SelectedRecipe.Version, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,8,0,0">
+                                        <TextBlock Text="审批状态" Style="{StaticResource FormLabelStyle}"/>
+                                        <Border Background="{StaticResource BackgroundLightBrush}" CornerRadius="3" Padding="6,3" Height="32" VerticalAlignment="Center">
+                                            <TextBlock FontWeight="Bold" FontSize="13" VerticalAlignment="Center"
+                                                       Text="{Binding SelectedRecipe.ApprovalStatus, Converter={StaticResource RecipeApprovalStatusToTextConverter}, FallbackValue='--'}"/>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="2" Grid.Column="2" Margin="0,8,0,0">
+                                        <TextBlock Text="审批人 / 时间" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBlock Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,8,0,0">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="{}{0} @ {1:yyyy-MM-dd HH:mm}">
+                                                    <Binding Path="SelectedRecipe.ApprovalInfo.ApprovedBy" FallbackValue="未审批"/>
+                                                    <Binding Path="SelectedRecipe.ApprovalInfo.ApprovedAt" FallbackValue=""/>
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                                        <TextBlock Text="审批意见 / 变更说明" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}"
+                                                 Text="{Binding SelectedRecipe.ApprovalInfo.ApprovalComment, UpdateSourceTrigger=PropertyChanged}"
+                                                 Height="48" TextWrapping="Wrap" VerticalContentAlignment="Top"
+                                                 IsReadOnly="{Binding CanEditRecipe, Converter={StaticResource InverseBooleanConverter}}"
+                                                 ToolTip="提交、批准或驳回时，将自动记录此意见到审批历史"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 2：工位运行配置 -->
+                        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="🎛️ 工位运行配置" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0">
+                                        <TextBlock Text="调度器类型" Style="{StaticResource FormLabelStyle}"/>
+                                        <ComboBox Style="{StaticResource ModernComboBoxStyle}" Height="32"
+                                                  SelectedValue="{Binding SelectedRecipe.RuntimeConfiguration.SchedulerType, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEnabled="{Binding CanEditRuntimeConfig}">
+                                            <ComboBoxItem Content="SimpleTrigger"/>
+                                            <ComboBoxItem Content="Pipeline"/>
+                                            <ComboBoxItem Content="EventDriven"/>
+                                        </ComboBox>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="2">
+                                        <TextBlock Text="默认工作模式" Style="{StaticResource FormLabelStyle}"/>
+                                        <ComboBox Style="{StaticResource ModernComboBoxStyle}" Height="32"
+                                                  SelectedValue="{Binding SelectedRecipe.RuntimeConfiguration.DefaultWorkMode, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEnabled="{Binding CanEditRuntimeConfig}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
+                                        <TextBlock Text="工单超时（毫秒）" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.RuntimeConfiguration.DefaultWorkOrderTimeoutMs, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditRuntimeConfig, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+                                        <TextBlock Text="最小节拍（毫秒）" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.RuntimeConfiguration.MinimumCycleTimeMs, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditRuntimeConfig, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,8,0,0">
+                                        <TextBlock Text="失败自动软复位" Style="{StaticResource FormLabelStyle}"/>
+                                        <CheckBox Content="启用" Margin="0,6,0,0"
+                                                  IsChecked="{Binding SelectedRecipe.RuntimeConfiguration.AutoSoftResetOnFailure}"
+                                                  IsEnabled="{Binding CanEditRuntimeConfig}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="2" Grid.Column="2" Margin="0,8,0,0">
+                                        <TextBlock Text="界面语言" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.RuntimeConfiguration.LanguageCode, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditRuntimeConfig, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 3：工艺参数集 -->
+                        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="🧪 工艺参数集" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0">
+                                        <TextBlock Text="参数集名称" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.ProcessParameters.Name, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditProcessParameters, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="2">
+                                        <TextBlock Text="适用产品类别" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.ProcessParameters.ProductCategory, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditProcessParameters, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,0,0">
+                                        <TextBlock Text="参数集版本" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.ProcessParameters.Version, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditProcessParameters, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+                                        <TextBlock Text="AI 模型路径" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.ProcessParameters.AiModelPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditProcessParameters, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                                        <TextBlock Text="标定数据路径" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding SelectedRecipe.ProcessParameters.CalibrationDataPath, UpdateSourceTrigger=PropertyChanged}"
+                                                 IsReadOnly="{Binding CanEditProcessParameters, Converter={StaticResource InverseBooleanConverter}}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 4：关联流程逻辑设备清单 -->
+                        <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock Text="🔌 关联流程逻辑设备清单" Style="{StaticResource SectionTitleTextStyle}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                                    <Button Content="🔄 从 Flow 重新分析提取" Style="{StaticResource SecondaryButtonStyle}" 
+                                            Command="{Binding RefreshDevicesCommand}" Padding="8,2" Height="26" FontSize="11" HorizontalAlignment="Right"/>
+                                </DockPanel>
+
+                                <DataGrid Style="{StaticResource ModernDataGridStyle}" Height="180"
+                                          ItemsSource="{Binding LogicalDevicesList}" AutoGenerateColumns="False" IsReadOnly="True">
+                                    <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="硬件映射" Width="75">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                        <TextBlock Text="🟢 已绑定" Foreground="Green" FontSize="11"
+                                                                   Visibility="{Binding IsBoundToPhysical, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                        <TextBlock Text="🔴 未绑定" Foreground="Red" FontSize="11"
+                                                                   Visibility="{Binding IsBoundToPhysical, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
+                                        <DataGridTextColumn Header="逻辑设备ID" Binding="{Binding LogicalDeviceId}" Width="110"/>
+                                        <DataGridTextColumn Header="节点依赖名称" Binding="{Binding LogicalDeviceName}" Width="120"/>
+                                        <DataGridTextColumn Header="设备类型" Binding="{Binding LogicalDeviceType}" Width="90"/>
+                                        <DataGridTextColumn Header="需求规格要求" Binding="{Binding RequiredSpec}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- 右底部：审批操作卡片（固定置底） -->
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5"
+                                   Text="{Binding ApprovalStateHint}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="11" Margin="0,0,0,8" TextTrimming="CharacterEllipsis"/>
+
+                        <Button Grid.Row="1" Grid.Column="0" Content="📤 提交审批"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding SubmitApprovalCommand}" Height="auto"
+                                ToolTip="工程师及以上可将当前配方提交审批，审批通过后才可下发到生产工位"/>
+                        <Button Grid.Row="1" Grid.Column="2" Content="✅ 审批通过"
+                                Style="{StaticResource SuccessButtonStyle}"
+                                Command="{Binding ApproveRecipeCommand}" Height="auto"
+                                ToolTip="管理员审批通过，允许下发"/>
+                        <Button Grid.Row="1" Grid.Column="4" Content="❌ 驳回"
+                                Style="{StaticResource DangerButtonStyle}"
+                                Command="{Binding RejectRecipeCommand}" Height="auto"
+                                ToolTip="管理员驳回审批，配方退回草稿状态并保留驳回原因"/>
                     </Grid>
                 </Border>
             </Grid>

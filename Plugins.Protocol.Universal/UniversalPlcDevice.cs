@@ -17,6 +17,13 @@ namespace Plugins.Protocol.Universal
         public string BrandName { get; set; } = "UniversalPLC";
         public DeviceCategory Category { get; set; } = DeviceCategory.PLC;
 
+        public DateTime LastHeartbeatAt { get; set; }
+
+        public Result Heartbeat()
+        {
+            return CheckStatus();
+        }
+
         public event EventHandler<DeviceState> StateChanged;
         // 2. 声明事件
         public event EventHandler<CommunicationMessage> MessageTransmitted;

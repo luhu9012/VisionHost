@@ -129,22 +129,11 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- 2. 进程与 WorkerHost 架构 -->
-            <TabItem Header="🚀 运行与 Worker 架构">
+            <!-- 2. 运行与工位策略 -->
+            <TabItem Header="🚀 运行与工位策略">
                 <Border Style="{StaticResource CardBorderStyle}" Padding="16" Margin="12">
                     <StackPanel>
-                        <TextBlock Text="WorkerHost 独立进程与架构配置" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,16"/>
-
-                        <Grid Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="默认 Worker 运行模式:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" 
-                                      ItemsSource="{Binding WorkerModes}" 
-                                      SelectedIndex="{Binding DefaultWorkerModeIndex}"/>
-                        </Grid>
+                        <TextBlock Text="Station 运行策略配置" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,16"/>
 
                         <CheckBox Content="程序启动后自动连接并启动所有启用工位" 
                                   IsChecked="{Binding AutoStartStations}"
@@ -153,17 +142,33 @@
 
                         <Grid Margin="0,0,0,16">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="240"/>
                                 <ColumnDefinition Width="120"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="IPC 通信超时时间 (毫秒):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Grid.Column="1" Text="{Binding IpcTimeoutMs}" Style="{StaticResource ModernTextBoxStyle}"/>
-                            <TextBlock Grid.Column="2" Text="* 控制 UI 与 WorkerHost 之间的管道通信响应超时" Foreground="{StaticResource TextSecondaryBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="工位启动超时时间 (毫秒):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding StationStartTimeoutMs}" Style="{StaticResource ModernTextBoxStyle}"/>
+                            <TextBlock Grid.Column="2" Text="* UI 等待 StationHost 完成初始化与配方加载的最大时间" Foreground="{StaticResource TextSecondaryBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="240"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="工单历史内存保留数量:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+            <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" SelectedIndex="{Binding WorkOrderHistoryCountIndex}">
+                                <ComboBoxItem Content="100"/>
+                                <ComboBoxItem Content="500"/>
+                                <ComboBoxItem Content="1000"/>
+                                <ComboBoxItem Content="5000"/>
+                            </ComboBox>
+                            <TextBlock Grid.Column="2" Text="* 每个运行工位 WorkOrderTracker 在内存中保留的最近工单数" Foreground="{StaticResource TextSecondaryBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
                         </Grid>
 
                         <Border Background="#1E1E1E" CornerRadius="4" Padding="12" Margin="0,12,0,0">
-                            <TextBlock Text="💡 提示: Embedded 模式在主进程线程运行，适合单机简单场景调试；RemoteIpc 模式每个工位拉起独立的 WorkerHost 控制台进程，抗崩能力强，适合产线多工位并行生产。" 
+                            <TextBlock Text="💡 提示: 当前版本 Station 统一作为同进程后台线程运行（Embedded 模式），由 StationHostRuntime 集中管理设备池与多工位 Worker。RemoteIpc/WorkerHost 独立进程架构已在代码中预留扩展点，但不在当前版本启用。" 
                                        Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                         </Border>
                     </StackPanel>

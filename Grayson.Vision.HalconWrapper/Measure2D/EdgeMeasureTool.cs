@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using HalconDotNet;
 
@@ -42,7 +42,7 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("直线距离测量失败", ex, nameof(EdgeMeasureTool));
+                LogBus.Error(nameof(EdgeMeasureTool), "直线距离测量失败", ex);
                 return Result<double>.Fail("测量异常", -1, ex);
             }
         }
@@ -64,7 +64,7 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("圆孔测量失败", ex, nameof(EdgeMeasureTool));
+                LogBus.Error(nameof(EdgeMeasureTool), "圆孔测量失败", ex);
                 return Result<double>.Fail("圆孔测量异常", -1, ex);
             }
         }

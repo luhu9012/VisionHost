@@ -1,4 +1,4 @@
-﻿using Grayson.Vision.Common.Logging;
+﻿using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using HalconDotNet;
 using System;
@@ -26,7 +26,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("高斯滤波执行失败", ex, nameof(ImageFilterTool));
+                LogBus.Error(nameof(ImageFilterTool), "高斯滤波执行失败", ex);
                 return Result<HObject>.Fail("高斯滤波异常", -1, ex);
             }
         }
@@ -42,7 +42,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("中值滤波失败", ex, nameof(ImageFilterTool));
+                LogBus.Error(nameof(ImageFilterTool), "中值滤波失败", ex);
                 return Result<HObject>.Fail("中值滤波异常", -1, ex);
             }
         }
@@ -107,7 +107,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error($"形态学运算{type}失败", ex, nameof(ImageFilterTool));
+                LogBus.Error(nameof(ImageFilterTool), $"形态学运算{type}失败", ex);
                 return Result<HObject>.Fail("形态学处理异常", -1, ex);
             }
         }

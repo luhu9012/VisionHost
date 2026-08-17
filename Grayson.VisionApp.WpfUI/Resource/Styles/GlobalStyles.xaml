@@ -508,6 +508,22 @@
     <Style TargetType="TabControl" BasedOn="{StaticResource ModernTabControlStyle}"/>
     <Style TargetType="TabItem" BasedOn="{StaticResource ModernTabItemStyle}"/>
 
+    <!-- ========== 警告操作按钮样式（橙色） ========== -->
+    <Style x:Key="WarningButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+        <Setter Property="Background" Value="{StaticResource WarningBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Opacity" Value="0.85"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Opacity" Value="0.7"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.45"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- ========== 成功操作按钮样式（绿色） ========== -->
     <Style x:Key="SuccessButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
         <Setter Property="Background" Value="{StaticResource SuccessBrush}"/>
@@ -580,6 +596,38 @@
                 <Setter Property="Background" Value="Transparent"/>
             </Trigger>
         </Style.Triggers>-->
+    </Style>
+
+    <!-- ========== 数据可视化样式 ========== -->
+
+    <!-- 百分比进度条（用于置信度显示） -->
+    <Style x:Key="DataVisualizationProgressBarStyle" TargetType="ProgressBar">
+        <Setter Property="Height" Value="20"/>
+        <Setter Property="Background" Value="{StaticResource BackgroundCardBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <!-- ========== 数据表格行样式 ========== -->
+
+    <!-- 表格数据单元格文本 -->
+    <Style x:Key="DataCellTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Padding" Value="5,0"/>
+    </Style>
+
+    <!-- ========== 工单图像查看器相关 ========== -->
+
+    <!-- 缩略图边框选中样式 -->
+    <Style x:Key="ThumbnailBorderStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Background" Value="{StaticResource BackgroundCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+        <Setter Property="BorderThickness" Value="2"/>
+        <Setter Property="Width" Value="80"/>
+        <Setter Property="Height" Value="60"/>
+        <Setter Property="Cursor" Value="Hand"/>
     </Style>
 
 </ResourceDictionary>

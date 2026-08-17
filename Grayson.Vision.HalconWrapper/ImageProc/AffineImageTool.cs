@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.HalconWrapper.Core;
 using HalconDotNet;
@@ -36,7 +36,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("图像旋转失败", ex, nameof(AffineImageTool));
+                LogBus.Error(nameof(AffineImageTool), "图像旋转失败", ex);
                 return Result<HObject>.Fail("图像旋转异常", -1, ex);
             }
         }

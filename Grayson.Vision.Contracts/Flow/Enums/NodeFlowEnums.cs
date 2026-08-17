@@ -136,6 +136,9 @@ namespace Grayson.Vision.Contracts.Flow.Enums
         [NodeFieldMeta("🎯", "#0077B6", "位置跟随", "应用位置补正矩阵到后续检测 ROI")]
         ApplyFixture,       // 将基准下的 ROI 映射到当前来料实际坐标
 
+        [NodeFieldMeta("📐", "#0077B6", "标定转换", "应用已保存的标定矩阵转换像素与物理坐标")]
+        CalibrationApply,    // 标定映射转换 (Pixel -> World)
+
         // ==========================================
         // 4. 📏 2D 几何测量与检测 (Measurement2D - #D97706 暖琥珀系)
         // ==========================================

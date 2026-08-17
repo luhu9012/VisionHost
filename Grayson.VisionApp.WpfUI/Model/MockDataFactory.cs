@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Grayson.Vision.Contracts.Recipe.Models;
 
 namespace Grayson.Vision.WpfUI.Model
 {
@@ -40,8 +41,8 @@ namespace Grayson.Vision.WpfUI.Model
                 ToleranceMm = 0.05,
                 ApplicableStationCodes = new ObservableCollection<string> { "ST_01", "ST_02" }
             };
-            rcp1.LogicalDevices.Add(new RecipeLogicalDeviceModel { LogicalDeviceId = "LOG_CAM_01", LogicalDeviceName = "扫码识别相机", LogicalDeviceType = "2D Camera", RequiredSpec = "分辨率 >= 1080P" });
-            rcp1.LogicalDevices.Add(new RecipeLogicalDeviceModel { LogicalDeviceId = "LOG_PLC_01", LogicalDeviceName = "工位顶升PLC", LogicalDeviceType = "PLC IO", RequiredSpec = "ModbusTCP" });
+            rcp1.LogicalDevices.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_CAM_01", LogicalDeviceName = "扫码识别相机", LogicalDeviceType = "2D Camera", RequiredSpec = "分辨率 >= 1080P" });
+            rcp1.LogicalDevices.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_PLC_01", LogicalDeviceName = "工位顶升PLC", LogicalDeviceType = "PLC IO", RequiredSpec = "ModbusTCP" });
 
             var rcp2 = new RecipeModel
             {
@@ -56,8 +57,8 @@ namespace Grayson.Vision.WpfUI.Model
                 ToleranceMm = 0.02,
                 ApplicableStationCodes = new ObservableCollection<string> { "ST_02" }
             };
-            rcp2.LogicalDevices.Add(new RecipeLogicalDeviceModel { LogicalDeviceId = "LOG_CAM_POS", LogicalDeviceName = "引导定位相机", LogicalDeviceType = "2D Camera", RequiredSpec = "500万黑白" });
-            rcp2.LogicalDevices.Add(new RecipeLogicalDeviceModel { LogicalDeviceId = "LOG_AXIS_XYZ", LogicalDeviceName = "对位模组控制卡", LogicalDeviceType = "Motion Card", RequiredSpec = "支持3轴插补" });
+            rcp2.LogicalDevices.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_CAM_POS", LogicalDeviceName = "引导定位相机", LogicalDeviceType = "2D Camera", RequiredSpec = "500万黑白" });
+            rcp2.LogicalDevices.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_AXIS_XYZ", LogicalDeviceName = "对位模组控制卡", LogicalDeviceType = "Motion Card", RequiredSpec = "支持3轴插补" });
 
             recipes = new ObservableCollection<RecipeModel> { rcp1, rcp2 };
 
@@ -74,8 +75,8 @@ namespace Grayson.Vision.WpfUI.Model
             st1.HardwareDevices.Add(globalHardwarePool[2]); // PLC_MAIN_01
 
             // 映射逻辑设备到工位已领用的硬件
-            st1.RecipeDeviceMappings.Add(new StationDeviceMappingModel { LogicalDeviceId = "LOG_CAM_01", LogicalDeviceName = "扫码识别相机", LogicalDeviceType = "2D Camera", RequiredSpec = "分辨率 >= 1080P", MappedDeviceId = "DEV_01" });
-            st1.RecipeDeviceMappings.Add(new StationDeviceMappingModel { LogicalDeviceId = "LOG_PLC_01", LogicalDeviceName = "工位顶升PLC", LogicalDeviceType = "PLC IO", RequiredSpec = "ModbusTCP", MappedDeviceId = "DEV_03" });
+            st1.RecipeDeviceMappings.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_CAM_01", LogicalDeviceName = "扫码识别相机", LogicalDeviceType = "2D Camera", RequiredSpec = "分辨率 >= 1080P", MappedDeviceId = "DEV_01" });
+            st1.RecipeDeviceMappings.Add(new RecipeDeviceMappingModel { LogicalDeviceId = "LOG_PLC_01", LogicalDeviceName = "工位顶升PLC", LogicalDeviceType = "PLC IO", RequiredSpec = "ModbusTCP", MappedDeviceId = "DEV_03" });
 
             var st2 = new StationModel
             {

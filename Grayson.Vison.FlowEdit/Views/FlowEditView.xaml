@@ -194,12 +194,12 @@
                         </StackPanel>
                     </Border>
 
-                    <Border Background="#252526" CornerRadius="4" Padding="6 2" BorderBrush="#3F3F46" BorderThickness="1" VerticalAlignment="Center">
+                    <!--<Border Background="#252526" CornerRadius="4" Padding="6 2" BorderBrush="#3F3F46" BorderThickness="1" VerticalAlignment="Center">
                         <CheckBox IsChecked="{Binding UseRemoteWorkerProcess, Mode=TwoWay}" Foreground="#AAA" FontSize="11" VerticalAlignment="Center" Cursor="Hand">
                             <TextBlock Text="{Binding UseRemoteWorkerProcess, Converter={StaticResource BoolToTextConverter}, FallbackValue='嵌入模式'}" 
                                        Foreground="{Binding UseRemoteWorkerProcess, Converter={StaticResource BoolToBrushConverter}}" FontSize="11" FontWeight="SemiBold"/>
                         </CheckBox>
-                    </Border>
+                    </Border>-->
                 </StackPanel>
 
                 <!-- 右侧：运行控制组 -->

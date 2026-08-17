@@ -31,6 +31,13 @@ namespace Plugins.Motion.Zmc
         /// <summary>设备大类</summary>
         public DeviceCategory Category { get; set; } = DeviceCategory.MotionCard;
 
+        public DateTime LastHeartbeatAt { get; set; }
+
+        public Result Heartbeat()
+        {
+            return CheckStatus();
+        }
+
         private DeviceState _state = DeviceState.Disconnected;
 
         /// <summary>设备状态变更事件</summary>

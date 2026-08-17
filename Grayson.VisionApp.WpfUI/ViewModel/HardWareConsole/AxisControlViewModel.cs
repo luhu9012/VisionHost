@@ -1,8 +1,9 @@
 ﻿using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Devices.Models;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
-using Grayson.Vision.WpfUI.Service;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -14,6 +15,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 {
     public class AxisControlViewModel : ViewModelBase
     {
+        private readonly IDevicePool _devicePool;
         private DispatcherTimer _statusPollTimer;
 
         #region 属性定义 - 板卡与轴
@@ -75,6 +77,29 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         {
             get => _isServoOn;
             set => Set(ref _isServoOn, value);
+        }
+
+        private bool _isActive = true;
+        /// <summary>
+        /// 表示当前轴调试 Tab 是否处于显示/激活状态。非激活时停止轮询。
+        /// </summary>
+        public bool IsActive
+        {
+            get => _isActive;
+            set
+            {
+                if (Set(ref _isActive, value))
+                {
+                    if (_isActive)
+                    {
+                        _statusPollTimer?.Start();
+                    }
+                    else
+                    {
+                        _statusPollTimer?.Stop();
+                    }
+                }
+            }
         }
 
         #endregion
@@ -167,6 +192,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         public AxisControlViewModel()
         {
+            _devicePool = App.StationHostRuntime?.DevicePool ?? throw new InvalidOperationException("DevicePool not initialized");
             InitCommands();
             InitStatusTimer();
             LoadMotionDevices();
@@ -282,9 +308,21 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         private void LoadMotionDevices()
         {
             MotionDeviceList.Clear();
-            var devices = DevicePoolManager.Instance.GetAllDevices().OfType<IMotionCard>();
+            var devices = _devicePool.GetAllDevices().OfType<IMotionCard>();
             foreach (var card in devices) MotionDeviceList.Add(card);
             SelectedMotionDevice = MotionDeviceList.FirstOrDefault();
+        }
+
+        /// <summary>
+        /// VM 释放或 Tab 隐藏时调用：停止轮询并释放事件订阅。
+        /// </summary>
+        public void Cleanup()
+        {
+            _statusPollTimer?.Stop();
+            if (SelectedMotionDevice != null)
+            {
+                SelectedMotionDevice.StateChanged -= OnDeviceStateChanged;
+            }
         }
 
         private void OnSelectedDeviceChanged(IMotionCard oldDevice, IMotionCard newDevice)

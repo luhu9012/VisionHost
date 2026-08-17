@@ -1,6 +1,17 @@
 # Grayson.VisionApp.WpfUI - 工业视觉上位机界面架构文档
 
-> **改造进度：✅ P0 + P1 已完成（2026-07-18）　　✅ P2 已完成（Worker 运行链路与 UI 接入完成）　　✅ P3 已完成（插件治理能力已落地）　　✅ P4 已完成（文档基线、独立治理页、硬件标准化与可观测性接入）**
+> **改造进度**：✅ P0-P4 已完成（2026-07）　　✅ P5 已完成（2026-08）：架构合规性治理，包含配方持久化收口、设备池依赖注入、全局急停与状态栏增强。　　🔧 P5+ 补全（当前）：修复配方设备绑定状态显示、新增配方审批 UI、StationMonitor 暂停/恢复、DataTrace 实时工单、StationManage 启用状态可视化。
+
+## P5 重点变更
+
+- **配方持久化由 Repository 接管**：`RecipeManageViewModel` 不再直接 `File.ReadAllText/WriteAllText`，统一使用 `IRecipeStorageService`（默认 JSON 文件实现，保留 `Recipes` 目录兼容性）。
+- **设备池依赖注入**：`DevicePoolViewModel` 与 `StationConfigService` 改为构造注入 `IDevicePool`，不再硬编码 `DevicePoolManager.Instance`（为兼容保留回退路径）。
+- **消除 Core 类型强转**：`StationManageViewModel` 中 `App.StationHostRuntime as StationHostRuntime` 改为 `as IStationHostRuntime`，支持未来 IPC/远端 Worker 宿主切换。
+- **全局急停与状态栏增强**：`ShellView.xaml` 标题栏新增“🚨 急停”按钮；状态栏新增当前用户角色与程序版本显示；`GlobalData` 提供 `CurrentUserRoleText` / `IsAuthenticated` / `ShowCriticalAlarm`。
+- **工位控制命令补齐**：`IWorkerClient` 与 `EmbeddedWorkerClientProxy` 增加 `PauseAsync` / `ResumeAsync` / `EmergencyStopAsync`，`StationMonitorViewModel` 已绑定 Pause/Resume 按钮；`StationManageView` 可启用/禁用单个工位并在拓扑树显示启用状态。
+- **配方审批流 UI**：`RecipeManageView` 显示审批状态、审批人/时间，并提供提交/通过/驳回按钮；仅审批通过的配方才允许下发到生产工位。
+- **实时工单追溯**：`DataTraceView` 新增“⚡ 实时工单”按钮，从 `IStationHostRuntime.GetWorkOrderTracker(stationId)` 读取工位最近工单并展示。
+- **角色门控急停**：`ShellView` 全局急停按钮使用 `RoleSatisfiesConverter` 仅对 Operator 及以上角色可见。
 
 ---
 
@@ -32,7 +43,9 @@
 - ✅ 菜单结构：Shell 二级菜单分为“运行操作区 / 核心工程配置 / 硬件设备池 / 数据与运维”四组，按角色控制可见性。
 - ✅ P2 接入：`StationWorkerRuntimeService` 已提供 Host/Worker 统一入口。
 - ✅ P4 硬件池：左侧新增“设备与驱动”分组，含物理设备实例、轴/IO/相机调试台、驱动插件管理。
-- ✅ 运行链路：可执行 Start/Stop、发布节拍信号、接收工位状态摘要。
+- ✅ 运行链路：可执行 Start/Stop/Pause/Resume、发布节拍信号、接收工位状态摘要；全局急停由 `ShellViewModel` 统一调用所有工位 `EmergencyStopAsync`。
+- ✅ 配方审批：配方提交→审批通过→工位下发链路已在 UI 中可运行。
+- ✅ 工单实时追溯：`DataTraceView` 支持从运行态 Worker 的 `WorkOrderTracker` 读取最近工单。
 - ⚠️ 真实设备与外部系统：当前仍以演示/Mock 数据为主，MES/数据库/真实相机链路待后续阶段深化。
 
 ### 关键运行约束
@@ -70,69 +83,113 @@
 
 ```
 Grayson.VisionApp.WpfUI/
+├── App.config                  # 应用程序配置
+├── App.xaml                    # 应用启动配置
+├── App.xaml.cs                 # 启动逻辑：日志、设备池、认证、页面注册
+├── packages.config             # NuGet 包配置
+├── MainWindow.xaml             # 保留入口（当前由 LoginView + ShellView 承载）
+├── MainWindow.xaml.cs
+│
 ├── Common/                     # 公共基础设施
-│   ├── ViewModelBase.cs        # ViewModel基类
+│   ├── ViewModelBase.cs        # ViewModel 基类
 │   ├── RelayCommand.cs         # 命令实现
 │   ├── Enums.cs                # 枚举定义（权限/报警等级/设备状态）
 │   ├── Converters.cs           # 值转换器集合
 │   └── GlobalData.cs           # 全局单例数据上下文
 │
-├── Service/                    # UI层服务
+├── Model/                      # UI 数据模型与 Mock 工厂
+│   ├── CommonModel.cs          # 页面/菜单等通用模型
+│   └── MockDataFactory.cs      # Mock 数据生成工厂
+│
+├── Properties/                 # 项目属性文件
+│   ├── AssemblyInfo.cs
+│   ├── Resources.resx
+│   ├── Resources.Designer.cs
+│   ├── Settings.settings
+│   └── Settings.Designer.cs
+│
+├── Resource/                   # 资源文件
+│   └── Styles/
+│       ├── Colors.xaml         # 工业风格配色方案
+│       └── GlobalStyles.xaml   # 全局样式定义
+│
+├── Service/                    # UI 层服务
 │   ├── INavigationService.cs   # 导航服务接口
 │   ├── NavigationService.cs    # 导航服务实现
+│   ├── INavigationAware.cs     # 页面导航感知接口
 │   ├── IDialogService.cs       # 对话框服务接口
-│   ├── IAuthenticationService.cs # 认证服务（Mock实现）
-│   ├── StationWorkerRuntimeService.cs # P2 运行时接入服务（Host/Worker 统一入口）
+│   ├── WpfDialogService.cs     # 对话框服务实现
+│   ├── IAuthenticationService.cs # 认证服务接口
+│   ├── LiteDbAuthenticationService.cs # 持久化认证实现
+│   ├── DevicePoolManager.cs    # 设备池管理器
+│   ├── DevicePoolManager.CoreBridge.cs # Core 层设备池桥接
 │   ├── StationConfigService.cs # 产线/工位配置与设备映射服务
 │   └── MockMesBridgeService.cs # MES 对接模拟服务
 │
-├── Resource/                   # 资源文件
-│   ├── Styles/
-│   │   ├── Colors.xaml         # 工业风格配色方案
-│   │   └── GlobalStyles.xaml   # 全局样式定义
-│   └── ...
-│
 ├── View/                       # 界面文件
-│   ├── LoginView.xaml          # 登录界面
-│   ├── ShellView.xaml          # 主框架窗口
+│   ├── LoginView.xaml          # ✅ 登录界面
+│   ├── ShellView.xaml          # ✅ 主框架窗口
+│   │
 │   ├── LineOverviewView.xaml   # ✅ 产线拓扑总览
 │   ├── StationMonitorView.xaml # ✅ 单工位监控
+│   │
 │   ├── StationManageView.xaml  # ✅ 产线工位与映射配置
 │   ├── RecipeManageView.xaml   # ✅ 配方管理模块
 │   ├── FlowEditView.xaml       # ✅ 视觉流程编辑器
+│   │
 │   ├── DevicePoolView.xaml     # ✅ 物理设备实例
 │   ├── HardwareConsoleView.xaml # ✅ 轴/IO/相机调试台
+│   │   └── HardwareConsole/         # 硬件调试子视图
+│   │       ├── AxisControlView.xaml       # 轴控制
+│   │       ├── CameraDebugView.xaml       # 相机调测
+│   │       ├── CommDebugView.xaml         # 通信调试
+│   │       └── IoMonitorView.xaml         # IO 监视
 │   ├── PluginManageView.xaml   # ✅ 驱动插件管理
+│   │
 │   ├── DataTraceView.xaml      # ✅ 本地追溯与防错
 │   ├── MesBridgeView.xaml      # ✅ MES 对接状态
 │   ├── SystemSettingView.xaml  # ✅ 系统与存储设置
+│   │
 │   ├── AlarmView.xaml          # ✅ 报警日志模块
 │   ├── UserManageView.xaml     # ✅ 用户管理模块
-│   ├── StatisticsView.xaml     #  数据统计模块
-│   └── SettingsView.xaml       #  系统设置模块
+│   │
+│   └── Dialogs & Windows/      # 弹窗与辅助窗口
+│       ├── AddDeviceDialog.xaml
+│       ├── ScanDeviceDialog.xaml
+│       └── HardwareSelectWindow.xaml
 │
-├── ViewModel/                  # 视图模型
-│   ├── LoginViewModel.cs
-│   ├── ShellViewModel.cs       # ✅ 分栏菜单、导航同步、菜单收起、报警横幅
-│   ├── LineOverviewViewModel.cs
-│   ├── StationMonitorViewModel.cs
-│   ├── StationManageViewModel.cs # ✅ 产线/工位/设备映射 CRUD
-│   ├── RecipeManageViewModel.cs  # ✅ 配方CRUD + 参数管理
-│   ├── FlowEditViewModel.cs
-│   ├── DevicePoolViewModel.cs
-│   ├── HardwareConsoleViewModel.cs
-│   ├── PluginManageViewModel.cs
-│   ├── DataTraceViewModel.cs
-│   ├── MesBridgeViewModel.cs
-│   ├── SystemSettingViewModel.cs
-│   ├── AlarmViewModel.cs       # ✅ 报警列表 + 确认 + 导出
-│   ├── UserManageViewModel.cs  # ✅ 用户增删改查 + 权限分配
-│   ├── StatisticsViewModel.cs  # ✅ 产量趋势 + 良率分析 + 缺陷分布
-│   └── SettingsViewModel.cs    # ✅ 路径/网络/通用/日志四类设置
-│
-├── App.xaml                    # 应用启动配置
-├── App.xaml.cs                 # 启动逻辑：日志、存储、设备池、登录窗、主窗口注册
-└── packages.config             # NuGet包配置
+└── ViewModel/                  # 视图模型
+    ├── LoginViewModel.cs
+    ├── ShellViewModel.cs       # ✅ 分栏菜单、导航同步、菜单收起、报警横幅
+    │
+    ├── LineOverviewViewModel.cs
+    ├── StationMonitorViewModel.cs
+    │
+    ├── StationManageViewModel.cs # ✅ 产线/工位/设备映射 CRUD
+    ├── RecipeManageViewModel.cs  # ✅ 配方 CRUD + 参数管理
+    ├── FlowEditViewModel.cs
+    │
+    ├── DevicePoolViewModel.cs
+    ├── HardwareConsoleViewModel.cs
+    │   └── HardWareConsole/         # 硬件调试子 ViewModel
+    │       ├── AxisControlViewModel.cs
+    │       ├── CameraDebugViewModel.cs
+    │       ├── CommDebugViewModel.cs
+    │       ├── HardwareModels.cs
+    │       └── IoMonitorViewModel.cs
+    ├── PluginManageViewModel.cs
+    │
+    ├── DataTraceViewModel.cs
+    ├── MesBridgeViewModel.cs
+    ├── SystemSettingViewModel.cs
+    │
+    ├── AlarmViewModel.cs       # ✅ 报警列表 + 确认 + 导出
+    ├── UserManageViewModel.cs  # ✅ 用户增删改查 + 权限分配
+    │
+    └── Dialogs & Windows/      # 弹窗与辅助窗口 ViewModel
+        ├── AddDeviceDialogViewModel.cs
+        ├── ScanDeviceDialogViewModel.cs
+        └── HardwareSelectViewModel.cs
 ```
 
 ## 🎯 核心模块说明
@@ -144,14 +201,14 @@ Grayson.VisionApp.WpfUI/
 
 ### 2️⃣ 主框架（ShellView / ShellViewModel）
 - 左侧二级菜单导航，按四组分栏：运行操作区、核心工程配置、硬件设备池、数据与运维。
-- 自定义标题栏（最小化/最大化/关闭）+ 菜单收起/展开（宽度 230↔60）。
+- 自定义标题栏（最小化/最大化/关闭）+ 菜单收起/展开（宽度 230↔60），标题栏右侧新增全局“🚨 急停”按钮。
 - 实时显示：当前用户、系统状态、未处理报警数；存在严重报警时弹出全局 Banner。
-- 权限控制：`RequiredRole` 与 `CurrentUserRole` 比较，`UserRole` 小的用户无法看到高权限菜单项。
+- 权限控制：`RequiredRole` 与 `CurrentUserRole` 比较，`UserRole` 小的用户无法看到高权限菜单项；急停按钮对 Operator 及以上角色可见。
 - 菜单选中状态与 `NavigationService.PageChanged` 双向同步，并自动展开父级菜单。
 
 ### 3️⃣ 生产看板
 - **产线拓扑总览（LineOverview）**: 产线级运行状态与 KPI 总览（对接中）。
-- **单工位监控（StationMonitor）**: 按 `LineId + StationId` 展示实时数据（总数/OK/NG/良率/节拍）。
+- **单工位监控（StationMonitor）**: 按 `LineId + StationId` 展示实时数据（总数/OK/NG/良率/节拍），提供 Start / Pause / Resume / Stop / Trigger Once / Reset 控制。
 
 ### 4️⃣ 报警与诊断（AlarmView） - ✅ 完整实现
 **功能：**
@@ -166,8 +223,8 @@ Grayson.VisionApp.WpfUI/
 **Mock数据：** 5条历史报警 + 自动生成新报警
 
 ### 5️⃣ 核心工程配置
-- **产线工位与映射（StationManage）**: 产线、工位、设备映射关系配置。
-- **配方管理（RecipeManage）**: 配方 CRUD、参数分组、加载到系统。
+- **产线工位与映射（StationManage）**: 产线、工位、设备映射关系配置；支持启用/禁用工位并在拓扑树实时显示启用状态。
+- **配方管理（RecipeManage）**: 配方 CRUD、参数分组、设备映射绑定状态、提交/审批/驳回流程，审批通过后方可下发到生产工位。
 - **视觉流程编辑器（FlowEdit）**: 视觉检测流程步骤编排与调试入口。
 
 ### 6️⃣ 硬件设备池（P4 新增）
@@ -320,7 +377,7 @@ Grayson.VisionApp.WpfUI/
 | 物理设备实例 | ❌ | ✅ | ✅ |
 | 轴/IO/相机调试台 | ❌ | ✅ | ✅ |
 | 驱动插件管理 | ❌ | ✅ | ✅ |
-| 本地追溯与防错 | 按实现 | 按实现 | 按实现 |
+| 本地追溯与防错 | 查询/实时工单 | 查询/实时工单 | 查询/实时工单 |
 | 用户管理 | ❌ | ❌ | ✅ |
 
 ## 🔧 后续扩展建议
@@ -387,7 +444,7 @@ Grayson.VisionApp.WpfUI/
 ## 🐛 已知问题
 
 1. **Mock数据**
-   - 报警、产线拓扑/单工位监控等当前仍使用 Mock 数据，需对接 Core 层实际数据。
+   - 报警、产线拓扑等当前仍使用 Mock 数据，需对接 Core 层实际数据；单工位监控与实时工单已接入 `IStationHostRuntime`。
 
 2. **未注册页面**
    - `PageType` 中已定义 `LineOverview`、`StationMonitor`、`DataTrace`、`MesBridge`、`SystemSetting` 等页面，但尚未在 `App.xaml.cs.RegisterPages()` 中注册 View 工厂，需在对应页面完成后补齐。
@@ -402,7 +459,7 @@ Grayson.VisionApp.WpfUI/
 
 - 项目作者: Grayson.VisionApp Team
 - 问题反馈: 创建Issue
-- 文档更新: 2026-07-18
+- 文档更新: 2026-08-22
 
 ---
 

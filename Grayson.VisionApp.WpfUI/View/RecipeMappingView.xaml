@@ -1,0 +1,45 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.RecipeMappingView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" d:DesignHeight="480" d:DesignWidth="800">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="绑定的产品配方：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+            <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="240"
+                      ItemsSource="{Binding AvailableRecipes}" DisplayMemberPath="RecipeName"
+                      SelectedItem="{Binding SelectedStation.BoundRecipe}"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" Text="💡 请将流程配方中要求的【逻辑设备】映射至下方【已分配的物理硬件】："
+                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+
+        <DataGrid Grid.Row="2" Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
+                  ItemsSource="{Binding SelectedStation.RecipeDeviceMappings}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="配方逻辑设备" Binding="{Binding LogicalDeviceName}" Width="160" IsReadOnly="True"/>
+                <DataGridTextColumn Header="要求设备类型" Binding="{Binding LogicalDeviceType}" Width="120" IsReadOnly="True"/>
+                <DataGridTextColumn Header="能力/规格需求" Binding="{Binding RequiredSpec}" Width="180" IsReadOnly="True"/>
+
+                <DataGridTemplateColumn Header="⚡ 绑定到物理硬件实体" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox Style="{StaticResource ModernComboBoxStyle}"
+                                      ItemsSource="{Binding DataContext.SelectedStation.HardwareDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      DisplayMemberPath="DeviceName"
+                                      SelectedValuePath="DeviceId"
+                                      SelectedValue="{Binding MappedDeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

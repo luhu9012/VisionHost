@@ -7,6 +7,7 @@
 //===================================================================================
 
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Infrastructure.Permission;
 
 using System;
 
@@ -41,8 +42,36 @@ namespace Grayson.Vision.WpfUI.Common
         public UserRole CurrentUserRole
         {
             get => _currentUserRole;
-            set => Set(ref _currentUserRole, value);
+            set
+            {
+                if (Set(ref _currentUserRole, value))
+                {
+                    OnPropertyChanged(nameof(CurrentUserRoleText));
+                }
+            }
         }
+
+        /// <summary>
+        /// 当前用户角色文本（状态栏绑定）
+        /// </summary>
+        public string CurrentUserRoleText
+        {
+            get
+            {
+                switch (CurrentUserRole)
+                {
+                    case UserRole.Administrator: return "管理员";
+                    case UserRole.Engineer: return "工程师";
+                    case UserRole.Operator: return "操作员";
+                    default: return "访客";
+                }
+            }
+        }
+
+        /// <summary>
+        /// 是否已有用户登录（急停等权限操作判断）
+        /// </summary>
+        public bool IsAuthenticated => !string.IsNullOrEmpty(CurrentUserName);
 
         #endregion
 
@@ -211,6 +240,14 @@ namespace Grayson.Vision.WpfUI.Common
             HasCriticalAlarm = true;
             AlarmCount++;
             NewAlarmRaised?.Invoke(this, message);
+        }
+
+        /// <summary>
+        /// 显示严重报警（带标题与详细消息）
+        /// </summary>
+        public void ShowCriticalAlarm(string title, string message)
+        {
+            RaiseCriticalAlarm($"{title}: {message}");
         }
 
         /// <summary>

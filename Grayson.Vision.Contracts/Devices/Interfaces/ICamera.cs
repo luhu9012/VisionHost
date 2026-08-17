@@ -30,7 +30,7 @@ namespace Grayson.Vision.Contracts.Devices
         Result GetExposureTime();
         Result SetGain(double value);
         Result GetGain();
-        Result SetTriggerMode(bool enable);
+        Result SetTriggerMode(int mode);
         Result SoftwareTrigger();
 
         /// <summary>软触发单次拍照</summary>

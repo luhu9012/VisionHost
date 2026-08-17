@@ -8,12 +8,14 @@
 
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Infrastructure.Permission;
+using Grayson.Vision.Contracts.Station.Services;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
-using System.Windows.Forms.Design;
 using System.Windows.Input;
 
 namespace Grayson.Vision.WpfUI.ViewModel
@@ -62,10 +64,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly INavigationService _navigationService;
         private readonly GlobalData _globalData;
 
-        public ShellViewModel(INavigationService navigationService)
+        private readonly IStationHostRuntime _hostRuntime;
+
+        public ShellViewModel(INavigationService navigationService, IStationHostRuntime hostRuntime = null)
         {
             _navigationService = navigationService;
+            _hostRuntime = hostRuntime ?? App.StationHostRuntime;
             _globalData = GlobalData.Instance;
+            ApplicationVersion = Assembly.GetExecutingAssembly().GetName()?.Version?.ToString() ?? "1.0.0";
 
             InitializeMenuItems();
 
@@ -77,6 +83,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             MinimizeCommand = new RelayCommand(_ => OnMinimize());
             MaximizeCommand = new RelayCommand(_ => OnMaximize());
             CloseCommand = new RelayCommand(_ => OnClose());
+            EmergencyStopCommand = new RelayCommand(async _ => await OnEmergencyStopAsync(), _ => _globalData.IsAuthenticated);
 
             NavigateToAlarmCommand = new RelayCommand(_ => OnNavigateToAlarm());
             DismissAlarmBannerCommand = new RelayCommand(_ => _globalData.DismissCriticalAlarm());
@@ -183,6 +190,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string ToggleMenuTooltip => IsMenuCollapsed ? "展开菜单" : "收起菜单";
 
         public string CurrentUserName => _globalData.CurrentUserName;
+        public string CurrentUserRole => _globalData.CurrentUserRoleText;
+        public string ApplicationVersion { get; }
         public DeviceStatus SystemStatus => _globalData.SystemStatus;
         public int AlarmCount => _globalData.AlarmCount;
         public bool HasAlarm => _globalData.HasAlarm;
@@ -198,6 +207,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand MinimizeCommand { get; }
         public ICommand MaximizeCommand { get; }
         public ICommand CloseCommand { get; }
+        public ICommand EmergencyStopCommand { get; }
         public ICommand NavigateToAlarmCommand { get; }
         public ICommand DismissAlarmBannerCommand { get; }
         public ICommand ToggleMenuCollapseCommand { get; }
@@ -209,6 +219,32 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private void ToggleMenuCollapse()
         {
             IsMenuCollapsed = !IsMenuCollapsed;
+        }
+
+        private async System.Threading.Tasks.Task OnEmergencyStopAsync()
+        {
+            var result = MessageBox.Show(
+                "确定要触发全局急停吗？\n所有处于运行/暂停状态的工位将立即进入 ErrorLocked 并停止运行。",
+                "全局急停确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            if (_hostRuntime != null)
+            {
+                foreach (var stationId in _hostRuntime.GetStationIds().ToList())
+                {
+                    var client = _hostRuntime.GetStationClient(stationId);
+                    if (client != null)
+                    {
+                        try { await client.EmergencyStopAsync("用户触发全局急停"); }
+                        catch { /* 尽力而为 */ }
+                    }
+                }
+            }
+
+            _globalData?.ShowCriticalAlarm("全局急停已触发", "用户手动触发全局急停，所有工位已停止。");
         }
 
         private void InitializeMenuItems()
@@ -228,10 +264,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
         },
         new MenuItemViewModel { Icon = "⚠️", Title = "报警与诊断", PageType = PageType.Alarm, RequiredRole = UserRole.Operator },
 
-        // ------------------ 2. 核心工程配置 ------------------
+     // ------------------ 2. 核心工程配置 ------------------
         new MenuItemViewModel { IsSectionHeader = true, Title = "核心工程配置" },
         new MenuItemViewModel { Icon = "🏭", Title = "产线工位与映射", PageType = PageType.StationManage, RequiredRole = UserRole.Engineer },
         new MenuItemViewModel { Icon = "📦", Title = "配方管理", PageType = PageType.RecipeManage, RequiredRole = UserRole.Engineer },
+        new MenuItemViewModel { Icon = "📐", Title = "标定管理", PageType = PageType.CalibrationManage, RequiredRole = UserRole.Engineer },
         new MenuItemViewModel { Icon = "🌿", Title = "视觉流程编辑器", PageType = PageType.FlowEdit, RequiredRole = UserRole.Engineer },
 
         // ------------------ 3. 硬件设备池 (插件驱动) ------------------

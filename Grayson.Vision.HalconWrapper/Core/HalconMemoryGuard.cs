@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using HalconDotNet;
 
 namespace Grayson.Vision.HalconWrapper.Core
@@ -36,7 +36,7 @@ namespace Grayson.Vision.HalconWrapper.Core
                 }
                 catch (Exception ex)
                 {
-                    GlobalLogger.Warn($"Halcon图像释放异常:{ex.Message}", nameof(HalconMemoryGuard));
+                    LogBus.Warn(nameof(HalconMemoryGuard), $"Halcon图像释放异常:{ex.Message}");
                 }
             }
             _managedImages.Clear();

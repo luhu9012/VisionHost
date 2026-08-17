@@ -39,8 +39,9 @@
                     <DatePicker SelectedDate="{Binding EndTime}" Margin="0,0,16,0"/>
 
                     <Button Content="🔍 查询" Style="{StaticResource PrimaryButtonStyle}" Padding="14,5" Command="{Binding SearchCommand}"/>
-                    <Button Content="📤 导出" Style="{StaticResource SecondaryButtonStyle}" Padding="14,5" Margin="8,0,0,0" Command="{Binding ExportCommand}"/>
-                </StackPanel>
+                        <Button Content="⚡ 实时工单" Style="{StaticResource SuccessButtonStyle}" Padding="14,5" Margin="8,0,0,0" Command="{Binding LoadLiveWorkOrdersCommand}"/>
+                        <Button Content="📤 导出" Style="{StaticResource SecondaryButtonStyle}" Padding="14,5" Margin="8,0,0,0" Command="{Binding ExportCommand}"/>
+                    </StackPanel>
 
                 <!-- 统计指标 -->
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0">
@@ -65,6 +66,11 @@
                           Style="{StaticResource ModernDataGridStyle}"
                           ItemsSource="{Binding TraceEntries}" 
                           SelectedItem="{Binding SelectedEntry}">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="打开检测图片" Command="{Binding OpenImageCommand}"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="时间" Binding="{Binding InspectTime, StringFormat='{}{0:yyyy-MM-dd HH:mm:ss}'}" Width="160"/>
                         <DataGridTextColumn Header="工位" Binding="{Binding StationId}" Width="110"/>

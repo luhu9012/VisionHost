@@ -54,6 +54,11 @@
     <Compile Include="All\CalibrationLocation\ApplyFixture\ApplyFixtureTemplateView.xaml.cs">
       <DependentUpon>ApplyFixtureTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\CalibrationLocation\CalibrationApply\CalibrationApplyExecutor.cs" />
+    <Compile Include="All\CalibrationLocation\CalibrationApply\CalibrationApplyParam.cs" />
+    <Compile Include="All\CalibrationLocation\CalibrationApply\CalibrationApplyTemplateView.xaml.cs">
+      <DependentUpon>CalibrationApplyTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="All\CalibrationLocation\CreateFixture\CreateFixtureExecutor.cs" />
     <Compile Include="All\CalibrationLocation\CreateFixture\CreateFixtureParam.cs" />
     <Compile Include="All\CalibrationLocation\CreateFixture\CreateFixtureTemplateView.xaml.cs">
@@ -211,14 +216,20 @@
     <Folder Include="All\Measurement2D\" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="AllNodesSummary.md" />
     <None Include="file1.md" />
     <None Include="packages.config" />
     <None Include="README.md" />
     <None Include="README_nodes.md" />
     <None Include="参数传递.md" />
+    <None Include="双机台业务流演示.md" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="All\CalibrationLocation\ApplyFixture\ApplyFixtureTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\CalibrationLocation\CalibrationApply\CalibrationApplyTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

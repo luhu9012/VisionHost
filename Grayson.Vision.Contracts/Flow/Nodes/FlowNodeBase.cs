@@ -125,6 +125,16 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             get => _hasError;
             set => Set(ref _hasError, value); // 🌟 触发 UI 绑定更新
         }
+
+        /// <summary>
+        /// 节点异常策略：节点失败时终止工单 / 跳过 / 重试 N 次
+        /// </summary>
+        public NodeExceptionPolicy ExceptionPolicy { get; set; } = NodeExceptionPolicy.AbortWorkOrder;
+
+        /// <summary>
+        /// 节点最大重试次数（当 ExceptionPolicy 为 RetryThenAbort 时生效）
+        /// </summary>
+        public int MaxRetryCount { get; set; } = 3;
         public FlowNodeBase()
         {
             // 🌟 监听输入/输出集合改变，实时同步到 AllPorts

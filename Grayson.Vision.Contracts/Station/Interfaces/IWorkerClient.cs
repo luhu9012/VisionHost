@@ -1,6 +1,7 @@
 ﻿using Grayson.Vision.Contracts.Station.Interfaces;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Station.Models;
+using Grayson.Vision.Contracts.Station.WorkOrderTracking;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using System;
 using System.Threading.Tasks;
@@ -25,8 +26,16 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         Task LoadRecipeAsync(FlowProcessModel recipe);
         Task StartAsync();
         Task StopAsync();
+        Task PauseAsync();
+        Task ResumeAsync();
         Task TriggerOnceAsync(string batchId = null);
         Task StepNodeAsync(FlowNodeBase node);
+        Task EmergencyStopAsync(string reason = null);
+
+        /// <summary>
+        /// 工单追踪器；可用于 UI 读取最近工单快照。
+        /// </summary>
+        IWorkOrderTracker WorkOrderTracker { get; }
 
         // 状态与渲染事件
         event EventHandler<StationState> OnStateChanged;

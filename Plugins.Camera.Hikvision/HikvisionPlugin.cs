@@ -37,6 +37,18 @@ namespace Plugins.Camera.Hikvision
             }
         }
         public DeviceCategory Category { get; set; } = DeviceCategory.Camera;
+
+        /// <summary>最后一次心跳/在线检测时间（UTC）</summary>
+        public DateTime LastHeartbeatAt { get; set; }
+
+        /// <summary>
+        /// 默认心跳检测：刷新心跳时间并返回当前在线状态。
+        /// 具体插件可重写以执行硬件级探测。
+        /// </summary>
+        public Result Heartbeat()
+        {
+            return CheckStatus();
+        }
         // 高优先级：优先接管海康相机
         public int Priority => 100;
 
@@ -114,9 +126,6 @@ namespace Plugins.Camera.Hikvision
 
         #region 海康 SDK 回调处理逻辑 (ImageCallbackEx)
 
-        /// <summary>
-        /// 海康 SDK 图像采集回调方法（运行在底层 SDK 独立线程中）
-        /// </summary>
         private void ImageCallbackEx(IntPtr pData, ref MV_FRAME_OUT_INFO_EX pFrameInfo, IntPtr pUser)
         {
             if (pData == IntPtr.Zero || pFrameInfo.nFrameLen == 0) return;
@@ -127,17 +136,72 @@ namespace Plugins.Camera.Hikvision
                 int height = pFrameInfo.nHeight;
                 MvGvspPixelType pixelType = pFrameInfo.enPixelType;
 
-                // 定义用于 UI 渲染的 Mono8 / RGB24 内存缓冲区
-                byte[] rawBuffer = new byte[pFrameInfo.nFrameLen];
-                Marshal.Copy(pData, rawBuffer, 0, (int)pFrameInfo.nFrameLen);
+                string typeStr = pixelType.ToString().ToUpperInvariant();
+                bool isBayer = typeStr.Contains("BAYER");
+                bool isMono = typeStr.Contains("MONO");
 
-                // 构建标准 FrameEventArgs 数据包并抛出事件
+                byte[] frameBuffer;
+                string outFormat;
+
+                if (isBayer)
+                {
+                    int rgbLen = width * height * 3; // BGR24 内存大小
+                    frameBuffer = new byte[rgbLen];
+
+                    // 锁定托管数组指针，避免分配非托管内存开销
+                    GCHandle handle = GCHandle.Alloc(frameBuffer, GCHandleType.Pinned);
+                    try
+                    {
+                        IntPtr pDstBuffer = handle.AddrOfPinnedObject();
+
+                        // 1. 实例化海康 SDK 高级封装类 CPixelConvertParam
+                        CPixelConvertParam convertParam = new CPixelConvertParam();
+
+                        // 2. 配置输入图像参数[cite: 11]
+                        convertParam.InImage.Width = (ushort)width;
+                        convertParam.InImage.Height = (ushort)height;
+                        convertParam.InImage.PixelType = pixelType;
+                        convertParam.InImage.ImageAddr = pData;
+                        convertParam.InImage.FrameLen = pFrameInfo.nFrameLen;
+
+                        // 3. 配置输出图像参数（直接绑定托管数组指针 pDstBuffer，防止 SDK 重复 AllocateUnmanagedMemory）
+                        convertParam.OutImage.PixelType = MvGvspPixelType.PixelType_Gvsp_BGR8_Packed;
+                        convertParam.OutImage.ImageAddr = pDstBuffer;
+                        convertParam.OutImage.ImageSize = (uint)rgbLen;
+
+                        // 4. 调用转码[cite: 11]
+                        int nRet = m_MyCamera.ConvertPixelType(ref convertParam); 
+        if (nRet == CErrorDefine.MV_OK)
+                        {
+                            outFormat = "BGR24";
+                        }
+                        else
+                        {
+                            // 转码失败时降级按原尺寸 Copy
+                            frameBuffer = new byte[pFrameInfo.nFrameLen];
+                            Marshal.Copy(pData, frameBuffer, 0, (int)pFrameInfo.nFrameLen);
+                            outFormat = typeStr;
+                        }
+                    }
+                    finally
+                    {
+                        handle.Free();
+                    }
+                }
+                else
+                {
+                    // Mono 或已是标准 RGB/BGR 格式
+                    frameBuffer = new byte[pFrameInfo.nFrameLen];
+                    Marshal.Copy(pData, frameBuffer, 0, (int)pFrameInfo.nFrameLen);
+                    outFormat = isMono ? "MONO8" : (typeStr.Contains("RGB") ? "RGB24" : "BGR24");
+                }
+
                 var frameArgs = new FrameEventArgs
                 {
                     Width = width,
                     Height = height,
-                    Buffer = rawBuffer,
-                    PixelFormat = pixelType.ToString(),
+                    Buffer = frameBuffer,
+                    PixelFormat = outFormat,
                     Timestamp = pFrameInfo.nDevTimeStampLow,
                     FrameNum = pFrameInfo.nFrameNum
                 };
@@ -147,20 +211,15 @@ namespace Plugins.Camera.Hikvision
                     _latestFrame = frameArgs;
                 }
 
-                // 缓存当前像素格式到字典，方便 UI 读取
-                ConfigParams["PixelFormat"] = pixelType.ToString();
-
                 OnFrameReceived(frameArgs);
             }
             catch (Exception ex)
             {
-                // 日志记录回调异常，避免底层崩溃
-                System.Diagnostics.Debug.WriteLine($"[HikCamera] 图像回调解析异常: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[HikCamera] 图像回调处理异常: {ex.Message}");
             }
         }
 
         #endregion
-
         /// <summary>
         /// 停止采集流
         /// </summary>
@@ -168,8 +227,10 @@ namespace Plugins.Camera.Hikvision
         {
             if (m_MyCamera != null)
             {
-                m_MyCamera.StopGrabbing();
-            }
+                m_MyCamera.StopGrabbing(); 
+        // 显式解绑回调函数，规避残余回调响应[cite: 11]
+        m_MyCamera.RegisterImageCallBackEx(null, IntPtr.Zero); 
+    }
             return Result.Ok();
         }
 
@@ -256,15 +317,24 @@ namespace Plugins.Camera.Hikvision
             ConfigParams["TriggerModeSelect"] = mode;
             return Result.Ok();
         }
+        /// <summary>
+        /// 设置触发模式（重载 2：契约层 Bool 开关）
+        /// </summary>
+        public Result SetTriggerMode(bool enable)
+        {
+            // enable 为 false 时切为连续采集(0)
+            if (!enable) return SetTriggerMode(0);
+
+            // enable 为 true 时，如果原本配置了硬触发(2)，保留硬触发；否则切为软触发(1)
+            int currentMode = ConfigParams.ContainsKey("TriggerModeSelect") ? Convert.ToInt32(ConfigParams["TriggerModeSelect"]) : 1;
+            int targetMode = (currentMode == 2) ? 2 : 1;
+
+            return SetTriggerMode(targetMode);
+        }
 
         /// <summary>
         /// 设置触发模式（重载 2：契约层 Bool 快捷开关）
         /// </summary>
-        public Result SetTriggerMode(bool enable)
-        {
-            // enable 为 true 默认开启软触发(1)，false 为连续模式(0)
-            return SetTriggerMode(enable ? 1 : 0);
-        }
 
         #endregion
 
@@ -276,7 +346,7 @@ namespace Plugins.Camera.Hikvision
 
         public Result GetExposureTime()
         {
-            return GetParam("ExposureTime");
+            return GetParam("ExposureTime") as Result<object>;
         }
 
         public Result SetGain(double value)
@@ -688,15 +758,26 @@ namespace Plugins.Camera.Hikvision
             if (State != DeviceState.Connected || m_MyCamera == null)
                 return Result.Fail("相机未连接，无法保存图像");
 
-            FrameEventArgs frame;
+            byte[] bufferCopy;
+            int width, height;
+            string pixelFormat;
+
+            // 1. 快速加锁完成【深拷贝快照】，随后立即解锁，绝不长时间占用锁
             lock (_latestFrameLock)
             {
-                frame = _latestFrame;
+                if (_latestFrame == null || _latestFrame.Buffer == null || _latestFrame.Buffer.Length == 0)
+                    return Result.Fail("当前没有可用图像帧");
+
+                width = _latestFrame.Width;
+                height = _latestFrame.Height;
+                pixelFormat = _latestFrame.PixelFormat;
+
+                // 执行深拷贝！防止后续连续采集写入冲刷此 Buffer
+                bufferCopy = new byte[_latestFrame.Buffer.Length];
+                Array.Copy(_latestFrame.Buffer, bufferCopy, _latestFrame.Buffer.Length);
             }
 
-            if (frame == null || frame.Buffer == null || frame.Buffer.Length == 0)
-                return Result.Fail("当前没有可用图像帧");
-
+            // 2. 匹配海康 SDK 格式枚举
             MV_SAVE_IAMGE_TYPE imageType;
             switch (format?.ToLowerInvariant())
             {
@@ -706,45 +787,48 @@ namespace Plugins.Camera.Hikvision
                 case "png": imageType = MV_SAVE_IAMGE_TYPE.MV_IMAGE_PNG; break;
                 case "tif":
                 case "tiff": imageType = MV_SAVE_IAMGE_TYPE.MV_IMAGE_TIF; break;
-                default:
-                    return Result.Fail($"不支持的保存格式: {format}");
+                default: return Result.Fail($"不支持的保存格式: {format}");
             }
+
+            MvGvspPixelType sdkPixelType;
+            string fmtUpper = (pixelFormat ?? "").ToUpperInvariant();
+            if (fmtUpper.Contains("BGR")) sdkPixelType = MvGvspPixelType.PixelType_Gvsp_BGR8_Packed;
+            else if (fmtUpper.Contains("RGB")) sdkPixelType = MvGvspPixelType.PixelType_Gvsp_RGB8_Packed;
+            else sdkPixelType = MvGvspPixelType.PixelType_Gvsp_Mono8;
 
             try
             {
-                // 构造 SDK 保存所需的 CImage
                 var cImage = new CImage
                 {
-                    Width = (ushort)frame.Width,
-                    Height = (ushort)frame.Height,
-                    FrameLen = (uint)frame.Buffer.Length,
-                    PixelType = (MvGvspPixelType)Enum.Parse(typeof(MvGvspPixelType), frame.PixelFormat)
+                    Width = (ushort)width,
+                    Height = (ushort)height,
+                    FrameLen = (uint)bufferCopy.Length,
+                    PixelType = sdkPixelType
                 };
 
-                // CImage 内部用 pBufAddr 字段保存非托管缓冲区指针，通过反射定位并写入
                 var imageField = typeof(CImage)
                     .GetFields(System.Reflection.BindingFlags.Public |
                                System.Reflection.BindingFlags.NonPublic |
                                System.Reflection.BindingFlags.Instance |
                                System.Reflection.BindingFlags.FlattenHierarchy)
-                    .FirstOrDefault(f => f.Name == "pBufAddr" && f.FieldType == typeof(IntPtr));
+                    .FirstOrDefault(f => (f.Name == "pBufAddr" || f.Name == "Image" || f.Name == "image") && f.FieldType == typeof(IntPtr));
 
-                if (imageField == null)
-                    return Result.Fail("无法定位 CImage.pBufAddr 字段，保存图像失败");
+                if (imageField == null) return Result.Fail("无法定位 CImage 指针字段");
 
-                IntPtr imageBuffer = Marshal.AllocHGlobal(frame.Buffer.Length);
+                IntPtr imageBuffer = Marshal.AllocHGlobal(bufferCopy.Length);
                 imageField.SetValue(cImage, imageBuffer);
 
                 try
                 {
-                    Marshal.Copy(frame.Buffer, 0, imageBuffer, frame.Buffer.Length);
+                    // 将深拷贝出的独立内存写入非托管区
+                    Marshal.Copy(bufferCopy, 0, imageBuffer, bufferCopy.Length);
 
                     var saveParam = new CSaveImgToFileParam
                     {
                         ImageType = imageType,
                         Image = cImage,
-                        Quality = format.ToLowerInvariant() == "jpg" || format.ToLowerInvariant() == "jpeg" ? (uint)80 : 0,
-                        MethodValue = 2,
+                        Quality = (format.ToLowerInvariant() == "jpg" || format.ToLowerInvariant() == "jpeg") ? (uint)80 : 0,
+                        MethodValue = 0,
                         ImagePath = filePath
                     };
 
@@ -765,7 +849,6 @@ namespace Plugins.Camera.Hikvision
                 return Result.Fail($"保存图像异常: {ex.Message}");
             }
         }
-
         #endregion
 
         #region IDisposable 资源释放

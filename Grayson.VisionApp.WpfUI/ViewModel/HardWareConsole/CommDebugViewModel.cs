@@ -1,9 +1,9 @@
 ﻿using Grayson.Vision.Contracts.Communication;
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
-using Grayson.Vision.WpfUI.Service;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -15,6 +15,8 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 {
     public class CommDebugViewModel : ViewModelBase
     {
+        private readonly IDevicePool _devicePool;
+
         public ObservableCollection<IDevice> AllCommunicationDevices { get; set; } = new ObservableCollection<IDevice>();
         public ObservableCollection<CommunicationMessage> CommLogs { get; set; } = new ObservableCollection<CommunicationMessage>();
 
@@ -90,6 +92,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         public CommDebugViewModel()
         {
+            _devicePool = App.StationHostRuntime?.DevicePool ?? throw new InvalidOperationException("DevicePool not initialized");
             InitCommands();
             LoadDevices();
         }
@@ -226,7 +229,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         private void LoadDevices()
         {
-            var all = DevicePoolManager.Instance.GetAllDevices().OfType<IPlc>();
+            var all = _devicePool.GetAllDevices().OfType<IPlc>();
             foreach (var item in all) AllCommunicationDevices.Add(item);
             SelectedCommDevice = AllCommunicationDevices.FirstOrDefault();
             //// 如果赋初值时 _selectedCommDevice 本身已经是该对象，Set() 不会触发，需要手动补充一次绑定

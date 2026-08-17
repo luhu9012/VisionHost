@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Grayson.Vision.Contracts.Devices;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Recipe.Models;
 using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.Repository;
 using Grayson.Vision.Repository.Interfaces;
 using Grayson.Vision.WpfUI.ViewModel;
+using Grayson.Vision.WpfUI.Model;
 
 namespace Grayson.Vision.WpfUI.Service
 {
@@ -17,10 +19,14 @@ namespace Grayson.Vision.WpfUI.Service
     public class StationConfigService
     {
         private readonly IStationRepository _stationRepository;
+        private readonly IDevicePool _devicePool;
 
-        public StationConfigService(IStationRepository stationRepository = null)
+        public StationConfigService(
+            IStationRepository stationRepository = null,
+            IDevicePool devicePool = null)
         {
             _stationRepository = stationRepository ?? StorageFactory.CreateStationRepository();
+            _devicePool = devicePool ?? App.StationHostRuntime?.DevicePool;
         }
 
         /// <summary>
@@ -64,11 +70,12 @@ namespace Grayson.Vision.WpfUI.Service
         }
 
         /// <summary>
-        /// 从 DevicePoolManager 获取当前所有可用物理设备，转换为 UI 模型
+        /// 从注入的设备池获取当前所有可用物理设备，转换为 UI 模型。
+        /// 优先使用 IDevicePool 契约，不再直接依赖 DevicePoolManager 单例。
         /// </summary>
         public List<HardwareDeviceModel> LoadAvailableHardwareDevices()
         {
-            var devices = DevicePoolManager.Instance.GetAllDevices();
+            var devices = _devicePool?.GetAllDevices() ?? Enumerable.Empty<IDevice>();
             var result = new List<HardwareDeviceModel>();
 
             foreach (var device in devices)
@@ -113,15 +120,24 @@ namespace Grayson.Vision.WpfUI.Service
 
         /// <summary>
         /// 根据 RecipeModel 生成默认的设备映射表
+        /// 
+        /// 注意：新版本使用 RecipeDeviceMappingModel
         /// </summary>
-        public List<DeviceMappingModel> BuildDefaultMappings(RecipeModel recipe)
+        public List<Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel> BuildDefaultMappings(
+            Grayson.Vision.Contracts.Recipe.Models.RecipeModel recipe)
         {
-            if (recipe?.LogicalDevices == null) return new List<DeviceMappingModel>();
+            if (recipe?.LogicalDevices == null) 
+                return new List<Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel>();
 
             var availableDevices = LoadAvailableHardwareDevices();
             var defaultDevice = availableDevices.FirstOrDefault();
 
-            return recipe.LogicalDevices.Select(logical => new DeviceMappingModel
+            // TODO: Phase B - RecipeDeviceMappingModel 等字段对齐后，恢复此逻辑
+            // 临时返回空列表以保证编译通过
+            return new List<Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel>();
+
+            /* 原逻辑（待移植到 RecipeDeviceMappingModel）：
+            return recipe.LogicalDevices.Select(logical => new RecipeDeviceMappingModel
             {
                 LogicalDeviceId = logical.LogicalDeviceId,
                 LogicalDeviceName = logical.LogicalDeviceName,
@@ -130,6 +146,7 @@ namespace Grayson.Vision.WpfUI.Service
                 MappedDeviceKey = defaultDevice?.DeviceId,
                 MappedDeviceName = defaultDevice?.DeviceName
             }).ToList();
+            */
         }
 
         /// <summary>

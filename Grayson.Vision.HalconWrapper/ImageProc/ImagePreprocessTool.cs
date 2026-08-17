@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using HalconDotNet;
 

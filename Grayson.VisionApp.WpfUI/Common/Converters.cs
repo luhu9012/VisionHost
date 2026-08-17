@@ -11,7 +11,7 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 
-
+using Grayson.Vision.Contracts.Infrastructure.Permission;
 
 namespace Grayson.Vision.WpfUI.Common.Converters
 {
@@ -28,6 +28,34 @@ namespace Grayson.Vision.WpfUI.Common.Converters
                 return (boolValue ^ invert) ? Visibility.Visible : Visibility.Collapsed;
             }
             return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// 配方审批状态转中文文本。
+    /// </summary>
+    public class RecipeApprovalStatusToTextConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus status)
+            {
+                switch (status)
+                {
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Draft: return "草稿";
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval: return "待审批";
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved: return "已审批";
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Frozen: return "已冻结";
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Archived: return "已归档";
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Deprecated: return "已废弃";
+                }
+            }
+            return "未知";
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -90,6 +118,40 @@ namespace Grayson.Vision.WpfUI.Common.Converters
                 }
             }
             return new SolidColorBrush(Colors.Gray);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// 用户角色是否满足最低角色要求。
+    /// ConverterParameter 传入目标角色名称（Operator/Engineer/Administrator），或 "Operator+" 表示 operator 及以上。
+    /// </summary>
+    public class RoleSatisfiesConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (!(value is UserRole currentRole)) return false;
+
+            var target = parameter?.ToString();
+            if (string.IsNullOrEmpty(target)) return false;
+
+            switch (target)
+            {
+                case "Operator":
+                    return currentRole >= UserRole.Operator;
+                case "Engineer":
+                    return currentRole >= UserRole.Engineer;
+                case "Administrator":
+                    return currentRole >= UserRole.Administrator;
+                default:
+                    if (Enum.TryParse<UserRole>(target, out var parsed))
+                        return currentRole >= parsed;
+                    return false;
+            }
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
@@ -298,6 +360,24 @@ namespace Grayson.Vision.WpfUI.Common.Converters
                 return paramVal;
             }
             return Binding.DoNothing;
+        }
+    }
+
+    /// <summary>
+    /// 布尔值取反转换器（用于 IsReadOnly = !CanEdit）。
+    /// </summary>
+    public class InverseBooleanConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool b) return !b;
+            return value;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool b) return !b;
+            return value;
         }
     }
 

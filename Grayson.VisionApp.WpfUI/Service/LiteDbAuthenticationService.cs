@@ -6,9 +6,9 @@
 
 using System;
 using System.Threading.Tasks;
+using Grayson.Vision.Contracts.Infrastructure.Permission;
 using Grayson.Vision.Repository;
 using Grayson.Vision.Repository.Interfaces;
-using Grayson.Vision.WpfUI.Common;
 
 namespace Grayson.Vision.WpfUI.Service
 {
@@ -72,8 +72,8 @@ namespace Grayson.Vision.WpfUI.Service
                         return result;
                     }
 
-                    // 4. 转换 Role 权限映射 (Grayson.Vision.Contracts.Infrastructure.Permission.UserRole -> WpfUI.Common.UserRole)
-                    UserRole appRole = MapToUIUserRole(userPo.Role);
+                    // 4. 直接使用 Contracts 层统一的 UserRole（与仓库层同义）
+                    UserRole appRole = userPo.Role;
 
                     // 5. 更新认证状态
                     _isAuthenticated = true;
@@ -117,22 +117,6 @@ namespace Grayson.Vision.WpfUI.Service
                     builder.Append(bytes[i].ToString("x2"));
                 }
                 return builder.ToString();
-            }
-        }
-
-        /// <summary>
-        /// 将仓储层 Role 转换为 UI 层枚举
-        /// </summary>
-        private UserRole MapToUIUserRole(Grayson.Vision.Contracts.Infrastructure.Permission.UserRole repoRole)
-        {
-            switch (repoRole)
-            {
-                case Grayson.Vision.Contracts.Infrastructure.Permission.UserRole.Administrator:
-                    return UserRole.Administrator;
-                case Grayson.Vision.Contracts.Infrastructure.Permission.UserRole.Engineer:
-                    return UserRole.Engineer;
-                default:
-                    return UserRole.Operator;
             }
         }
 

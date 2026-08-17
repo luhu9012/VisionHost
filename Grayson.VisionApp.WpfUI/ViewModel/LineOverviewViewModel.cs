@@ -2,11 +2,14 @@ using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Interfaces;
 using Grayson.Vision.Contracts.Station.Models;
+using Grayson.Vision.Contracts.Station.Services;
 using Grayson.Vision.Core.Client;
+using Grayson.Vision.Core.Station;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -102,6 +105,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly StationRuntimeManager _runtimeManager;
         private readonly StationConfigService _configService;
         private readonly HalconImageRenderService _renderService;
+        private readonly IStationHostRuntime _hostRuntime;
+        private readonly HashSet<string> _subscribedStationCodes = new HashSet<string>();
         private DateTime _lastThumbnailUpdate = DateTime.MinValue;
         private int _gridColumns = 3;
         /// <summary>
@@ -168,11 +173,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
 
 
-        public LineOverviewViewModel(StationRuntimeManager runtimeManager = null, StationConfigService configService = null)
+        public LineOverviewViewModel(StationRuntimeManager runtimeManager = null, StationConfigService configService = null, IStationHostRuntime hostRuntime = null)
         {
             _runtimeManager = runtimeManager ?? new StationRuntimeManager();
             _configService = configService ?? new StationConfigService();
             _renderService = new HalconImageRenderService();
+            _hostRuntime = hostRuntime ?? App.StationHostRuntime;
 
             Lines = new ObservableCollection<string>();
             StationCards = new ObservableCollection<StationStatusCardModel>();
@@ -249,19 +255,21 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     StationCards.Add(card);
                 }
 
-                // 获取并挂载事件驱动
-                var client = _runtimeManager.GetClient(stationConfig.StationCode);
+                // 优先从 Core StationHostRuntime 获取客户端，确保与全局运行时一致
+                var client = _hostRuntime?.GetStationClient(stationConfig.StationCode)
+                             ?? _runtimeManager.GetClient(stationConfig.StationCode);
                 if (client != null)
                 {
                     card.IsConnected = client.IsConnected;
                     card.State = client.CurrentState.ToString();
 
-                    // 重新挂载事件通知（防重挂）
-                    client.OnStateChanged -= Client_OnStateChanged;
-                    client.OnStateChanged += Client_OnStateChanged;
-
-                    client.OnFrameRendered -= Client_OnFrameRendered;
-                    client.OnFrameRendered += Client_OnFrameRendered;
+                    // 每个工位只挂载一次事件，避免重复
+                    if (!_subscribedStationCodes.Contains(stationConfig.StationCode))
+                    {
+                        _subscribedStationCodes.Add(stationConfig.StationCode);
+                        client.OnStateChanged += Client_OnStateChanged;
+                        client.OnFrameRendered += Client_OnFrameRendered;
+                    }
                 }
                 else
                 {
@@ -269,7 +277,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     card.State = "NotConnected";
                 }
             }
+
+            // 清理已不在目标列表中的订阅
+            CleanRemovedSubscriptions(targetStations.Select(s => s.StationCode));
+
             await Task.CompletedTask;
+        }
+
+        private void CleanRemovedSubscriptions(IEnumerable<string> activeStationCodes)
+        {
+            var activeSet = new HashSet<string>(activeStationCodes);
+            var removed = _subscribedStationCodes.Where(c => !activeSet.Contains(c)).ToList();
+            foreach (var stationCode in removed)
+            {
+                var client = _hostRuntime?.GetStationClient(stationCode) ?? _runtimeManager.GetClient(stationCode);
+                if (client != null)
+                {
+                    client.OnStateChanged -= Client_OnStateChanged;
+                    client.OnFrameRendered -= Client_OnFrameRendered;
+                }
+                _subscribedStationCodes.Remove(stationCode);
+            }
         }
 
         private void Client_OnStateChanged(object sender, StationState e)

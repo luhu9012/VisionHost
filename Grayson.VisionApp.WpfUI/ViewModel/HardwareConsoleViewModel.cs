@@ -18,5 +18,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
             IoMonitorVM = new IoMonitorViewModel();
             CommDebugVM = new CommDebugViewModel();
         }
+
+        /// <summary>
+        /// 页面隐藏或导航离开时调用，停止所有调试面板的轮询/采集并释放事件。
+        /// </summary>
+        public void Cleanup()
+        {
+            CameraDebugVM?.Cleanup();
+            AxisControlVM?.Cleanup();
+            IoMonitorVM?.Cleanup();
+        }
     }
 }

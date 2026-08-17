@@ -6,7 +6,7 @@
 //===================================================================================
 
 using System.Threading.Tasks;
-using Grayson.Vision.WpfUI.Common;
+using Grayson.Vision.Contracts.Infrastructure.Permission;
 
 namespace Grayson.Vision.WpfUI.Service
 {

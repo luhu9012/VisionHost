@@ -132,8 +132,10 @@
                     </Border>
 
                     <!-- 控制按钮区 -->
-                    <UniformGrid Grid.Row="2" Columns="1" Rows="4">
+                    <UniformGrid Grid.Row="2" Columns="1" Rows="6">
                         <Button Content="▶ 启动工位" Style="{StaticResource SuccessButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding StartCommand}"/>
+                        <Button Content="⏸ 暂停工位" Style="{StaticResource WarningButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding PauseCommand}"/>
+                        <Button Content="▶ 恢复工位" Style="{StaticResource PrimaryButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding ResumeCommand}"/>
                         <Button Content="⏹ 停止工位" Style="{StaticResource DangerButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding StopCommand}"/>
                         <Button Content="▶| 单次触发" Style="{StaticResource PrimaryButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding TriggerOnceCommand}"/>
                         <Button Content="↺ 复位工位" Style="{StaticResource SecondaryButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding ResetCommand}"/>

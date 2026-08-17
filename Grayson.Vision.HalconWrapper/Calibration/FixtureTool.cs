@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using HalconDotNet;
 
@@ -38,7 +38,7 @@ namespace Grayson.Vision.HalconWrapper.Calibration
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("建立位置补正矩阵失败", ex, nameof(FixtureTool));
+                LogBus.Error(nameof(FixtureTool),"建立位置补正矩阵失败", ex);
                 return Result<FixtureData>.Fail("建立位置补正失败: " + ex.Message);
             }
         }

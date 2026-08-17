@@ -75,7 +75,7 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
-    <Compile Include="Service\DevicePoolManager.cs" />
+    <Compile Include="Selectors\Step3DataTemplateSelector.cs" />
     <Compile Include="Service\IAuthenticationService.cs" />
     <Compile Include="Service\IDialogService.cs" />
     <Compile Include="Service\INavigationAware.cs" />
@@ -88,8 +88,16 @@
     <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\AlarmViewModel.cs" />
     <Compile Include="Model\CommonModel.cs" />
+    <Compile Include="ViewModel\CalibrationManagerViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\CalibrationWizardViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\CheckerboardCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\HandEyeWithRotationCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\ICalibrationStepStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\NinePointCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\PixelScaleCalibrationStrategy.cs" />
     <Compile Include="ViewModel\DataTraceViewModel.cs" />
     <Compile Include="ViewModel\DevicePoolViewModel.cs" />
+    <Compile Include="ViewModel\HardwareAllocationViewModel.cs" />
     <Compile Include="ViewModel\HardwareConsoleViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\AxisControlViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\CameraDebugViewModel.cs" />
@@ -103,17 +111,25 @@
     <Compile Include="ViewModel\MesBridgeViewModel.cs" />
     <Compile Include="ViewModel\PluginManageViewModel.cs" />
     <Compile Include="ViewModel\RecipeManageViewModel.cs" />
+    <Compile Include="ViewModel\RecipeMappingViewModel.cs" />
     <Compile Include="ViewModel\ScanDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\ShellViewModel.cs" />
     <Compile Include="ViewModel\StationManageViewModel.cs" />
     <Compile Include="ViewModel\StationMonitorViewModel.cs" />
     <Compile Include="ViewModel\SystemSettingViewModel.cs" />
     <Compile Include="ViewModel\UserManageViewModel.cs" />
+    <Compile Include="ViewModel\WorkOrderDetailDialogViewModel.cs" />
     <Compile Include="View\AddDeviceDialog.xaml.cs">
       <DependentUpon>AddDeviceDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\AlarmView.xaml.cs">
       <DependentUpon>AlarmView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\CalibrationManagerView.xaml.cs">
+      <DependentUpon>CalibrationManagerView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\Calibration\CalibrationWizardWindow.xaml.cs">
+      <DependentUpon>CalibrationWizardWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\DataTraceView.xaml.cs">
       <DependentUpon>DataTraceView.xaml</DependentUpon>
@@ -123,6 +139,9 @@
     </Compile>
     <Compile Include="View\FlowEditView.xaml.cs">
       <DependentUpon>FlowEditView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareAllocationView.xaml.cs">
+      <DependentUpon>HardwareAllocationView.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\HardwareConsoleView.xaml.cs">
       <DependentUpon>HardwareConsoleView.xaml</DependentUpon>
@@ -157,6 +176,9 @@
     <Compile Include="View\RecipeManageView.xaml.cs">
       <DependentUpon>RecipeManageView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="View\RecipeMappingView.xaml.cs">
+      <DependentUpon>RecipeMappingView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="View\ScanDeviceDialog.xaml.cs">
       <DependentUpon>ScanDeviceDialog.xaml</DependentUpon>
     </Compile>
@@ -174,6 +196,9 @@
     </Compile>
     <Compile Include="View\UserManageView.xaml.cs">
       <DependentUpon>UserManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\WorkOrderDetailDialog.xaml.cs">
+      <DependentUpon>WorkOrderDetailDialog.xaml</DependentUpon>
     </Compile>
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
@@ -203,6 +228,28 @@
     <Page Include="View\AlarmView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="View\CalibrationManagerView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\CalibrationWizardWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\Templates\CheckerboardStepViews.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\Templates\HandEyeWithRotationStepViews.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\Templates\NinePointStepViews.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\Templates\PixelScaleStepViews.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="View\DataTraceView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -212,6 +259,9 @@
     </Page>
     <Page Include="View\FlowEditView.xaml">
       <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareAllocationView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\HardwareConsoleView.xaml">
@@ -255,6 +305,9 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="View\RecipeMappingView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="View\ScanDeviceDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -273,6 +326,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\UserManageView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\WorkOrderDetailDialog.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>
@@ -329,6 +385,10 @@
       <Project>{7a6b5c44-8d7e-4f2a-9b1c-3d8e4f5a6b7c}</Project>
       <Name>Grayson.Vision.HalconWrapper.Wpf</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper\Grayson.Vision.HalconWrapper.csproj">
+      <Project>{ecc73133-c99e-43f3-9206-1edc2cbda74a}</Project>
+      <Name>Grayson.Vision.HalconWrapper</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Grayson.Vision.Nodes\Grayson.Vision.Nodes.csproj">
       <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>
       <Name>Grayson.Vision.Nodes</Name>
@@ -354,5 +414,6 @@
       <Name>Plugins.Protocol.Universal</Name>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

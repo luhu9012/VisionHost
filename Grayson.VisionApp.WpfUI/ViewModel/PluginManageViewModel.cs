@@ -2,7 +2,7 @@
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
-using Grayson.Vision.WpfUI.Service; // 引入 DevicePoolManager 命名空间
+// 直接使用 Contracts 中的 IDevicePool（通过 App.StationHostRuntime 获取），避免依赖本地 DevicePoolManager
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -97,11 +97,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             try
             {
-                // 1. 调用现有的自动扫描加载插件函数
-                DevicePoolManager.Instance.AutoLoadAllPlugins();
+                var pool = App.StationHostRuntime?.DevicePool;
+                // 1. 触发插件自动加载（如果底层实现支持）
+                pool?.PluginManager?.AutoLoadAllPlugins();
 
-                // 2. 获取当前已加载的插件集合
-                var plugins = DevicePoolManager.Instance.GetAllPlugins();
+                // 2. 读取已加载插件集合
+                var plugins = pool?.PluginManager?.LoadedPlugins ?? Array.Empty<Grayson.Vision.Contracts.Devices.IHardwarePlugin>();
 
                 foreach (var plugin in plugins)
                 {

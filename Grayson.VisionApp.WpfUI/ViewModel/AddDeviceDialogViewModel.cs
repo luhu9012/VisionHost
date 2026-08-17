@@ -1,6 +1,6 @@
 ﻿using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
-using Grayson.Vision.WpfUI.Service;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +11,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 {
     public class AddDeviceDialogViewModel : ViewModelBase
     {
+        private readonly IDevicePool _devicePool;
+
         public List<DeviceCategory> Categories { get; } = Enum.GetValues(typeof(DeviceCategory)).Cast<DeviceCategory>().ToList();
 
         private DeviceCategory _selectedCategory = DeviceCategory.Camera;
@@ -58,6 +60,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public AddDeviceDialogViewModel()
         {
+            _devicePool = App.StationHostRuntime?.DevicePool ?? throw new InvalidOperationException("DevicePool not initialized");
             SaveCommand = new RelayCommand(OnSave);
             UpdateAvailableBrands();
         }
@@ -67,10 +70,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var brands = new List<string>();
 
             // 1. 从当前已加载的插件池获取对应 Category 的所有专有品牌
-            var loadedPlugins = DevicePoolManager.Instance.GetAllPlugins()
+            var loadedPlugins = _devicePool.PluginManager?.LoadedPlugins
                 .Where(p => p.Category == SelectedCategory)
                 .Select(p => p.BrandName)
-                .ToList();
+                .ToList() ?? new List<string>();
 
             brands.AddRange(loadedPlugins);
 

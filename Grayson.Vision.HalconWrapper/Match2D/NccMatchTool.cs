@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.HalconWrapper.Core;
 using HalconDotNet;
@@ -31,7 +31,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("创建 NCC 模板失败", ex, nameof(NccMatchTool));
+                LogBus.Error(nameof(NccMatchTool), "创建 NCC 模板失败", ex);
                 return Result<int>.Fail("NCC 模板创建异常", -1, ex);
             }
         }
@@ -62,7 +62,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("NCC 模板匹配查找失败", ex, nameof(NccMatchTool));
+                LogBus.Error(nameof(NccMatchTool), "NCC 模板匹配查找失败", ex);
                 return Result<TemplateMatchResult[]>.Fail("NCC 匹配运算异常", -1, ex);
             }
         }
@@ -77,7 +77,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("销毁 NCC 模板失败", ex, nameof(NccMatchTool));
+                LogBus.Error(nameof(NccMatchTool), "销毁 NCC 模板失败", ex);
                 return Result.Fail("NCC 模板释放异常", -1, ex);
             }
         }

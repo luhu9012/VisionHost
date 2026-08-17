@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using HalconDotNet;
 
@@ -27,7 +27,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("固定阈值分割失败", ex, nameof(ImageThresholdTool));
+                LogBus.Error(nameof(ImageThresholdTool), "固定阈值分割失败", ex);
                 return Result<HObject>.Fail("阈值分割异常", -1, ex);
             }
         }
@@ -48,7 +48,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("动态阈值分割失败", ex, nameof(ImageThresholdTool));
+                LogBus.Error(nameof(ImageThresholdTool), "动态阈值分割失败", ex);
                 return Result<HObject>.Fail("动态阈值异常", -1, ex);
             }
         }
@@ -68,7 +68,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("Otsu阈值分割失败", ex, nameof(ImageThresholdTool));
+                LogBus.Error(nameof(ImageThresholdTool), "Otsu阈值分割失败", ex);
                 return Result<HObject>.Fail("Otsu分割异常", -1, ex);
             }
         }
@@ -86,7 +86,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("区域面积筛选失败", ex, nameof(ImageThresholdTool));
+                LogBus.Error(nameof(ImageThresholdTool), "区域面积筛选失败", ex);
                 return Result<HObject>.Fail("区域筛选异常", -1, ex);
             }
         }

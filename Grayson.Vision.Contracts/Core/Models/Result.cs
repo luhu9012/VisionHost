@@ -20,6 +20,8 @@ namespace Grayson.Vision.Contracts.Core
         /// <summary>原始异常对象，用于日志详细排查</summary>
         public Exception Exception { get; set; }
 
+
+
         /// <summary>快捷构建成功结果</summary>
         public static Result Ok()
         {

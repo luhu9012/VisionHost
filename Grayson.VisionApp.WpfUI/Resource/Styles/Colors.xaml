@@ -75,4 +75,85 @@
     <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource BackgroundLightColor}"/>
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource BackgroundCardColor}"/>
 
+    <!-- ========== ContextMenu & MenuItem 工业深色主题样式 ========== -->
+
+    <!-- MenuItem 样式 -->
+    <Style x:Key="ModernMenuItemStyle" TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="ItemBorder" 
+                            Background="{TemplateBinding Background}" 
+                            CornerRadius="3" 
+                            Padding="{TemplateBinding Padding}"
+                            Margin="2,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Icon"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 图标渲染区 -->
+                            <ContentPresenter x:Name="Icon" 
+                                              ContentSource="Icon" 
+                                              Margin="0,0,8,0" 
+                                              VerticalAlignment="Center"/>
+
+                            <!-- 文本 Header 区 -->
+                            <ContentPresenter Grid.Column="1" 
+                                              ContentSource="Header" 
+                                              VerticalAlignment="Center" 
+                                              RecognizesAccessKey="True"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 鼠标悬停/高亮状态 -->
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource PrimaryLightBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                        <!-- 禁用状态 -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource TextDisabledBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ContextMenu 样式 -->
+    <Style x:Key="ModernContextMenuStyle" TargetType="ContextMenu">
+        <Setter Property="Background" Value="{StaticResource BackgroundCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="4"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="Grid.IsSharedSizeScope" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4" 
+                            Padding="{TemplateBinding Padding}">
+                        <ScrollViewer SnapsToDevicePixels="True">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 隐式样式绑定：让全局所有 ContextMenu 和 MenuItem 自动生效 -->
+    <Style TargetType="ContextMenu" BasedOn="{StaticResource ModernContextMenuStyle}"/>
+    <Style TargetType="MenuItem" BasedOn="{StaticResource ModernMenuItemStyle}"/>
+
+
 </ResourceDictionary>

@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.HalconWrapper.Core;
 using HalconDotNet;
@@ -26,7 +26,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("生成 Mask 掩膜失败", ex, nameof(RoiOperationTool));
+                LogBus.Error(nameof(RoiOperationTool), "生成 Mask 掩膜失败", ex);
                 return Result<HObject>.Fail("掩膜生成异常", -1, ex);
             }
         }
@@ -59,7 +59,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("ROI 集合运算失败", ex, nameof(RoiOperationTool));
+                LogBus.Error(nameof(RoiOperationTool), "ROI 集合运算失败", ex);
                 return Result<HObject>.Fail("ROI 集合运算异常", -1, ex);
             }
         }

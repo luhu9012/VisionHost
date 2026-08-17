@@ -1,8 +1,9 @@
 ﻿using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Devices.Models;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
-using Grayson.Vision.WpfUI.Service;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -15,6 +16,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 {
     public class IoMonitorViewModel : ViewModelBase
     {
+        private readonly IDevicePool _devicePool;
         private CancellationTokenSource _pollingCts;
         private readonly object _ioLock = new object();
 
@@ -91,11 +93,24 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         public IoMonitorViewModel()
         {
+            _devicePool = App.StationHostRuntime?.DevicePool ?? throw new InvalidOperationException("DevicePool not initialized");
             ConnectCommand = new RelayCommand(async () => await ConnectAsync(), () => SelectedIoDevice != null && !IsConnected);
             DisconnectCommand = new RelayCommand(async () => await DisconnectAsync(), () => SelectedIoDevice != null && IsConnected);
             ToggleOutputCommand = new RelayCommand<IoPointModel>(async (ioPoint) => await ExecuteToggleOutputAsync(ioPoint));
 
             LoadIoDevices();
+        }
+
+        /// <summary>
+        /// VM 释放或 Tab 隐藏时调用：停止轮询并释放所有事件订阅。
+        /// </summary>
+        public void Cleanup()
+        {
+            StopIoPolling();
+            if (SelectedIoDevice != null)
+            {
+                SelectedIoDevice.StateChanged -= OnDeviceStateChanged;
+            }
         }
 
         private void UpdateConnectionState()
@@ -142,8 +157,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         public void LoadIoDevices()
         {
             IoDeviceList.Clear();
-            var devices1 = DevicePoolManager.Instance.GetAllDevices();
-            var devices = DevicePoolManager.Instance.GetAllDevices()
+            var devices = _devicePool.GetAllDevices()
                 .Where(d => d.Category == DeviceCategory.Camera ||
                             d.Category == DeviceCategory.MotionCard ||
                             d.Category == DeviceCategory.Generic||

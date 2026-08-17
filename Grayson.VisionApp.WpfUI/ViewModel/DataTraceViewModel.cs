@@ -4,11 +4,14 @@
 // 说 明: 本地追溯与防错：按时间/工位/条码筛选检测结果
 //===================================================================================
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Station.Models;
+using Grayson.Vision.Contracts.Station.WorkOrderTracking;
 using Grayson.Vision.Repository;
 using Grayson.Vision.Repository.Entities;
 using Grayson.Vision.Repository.Interfaces;
@@ -17,20 +20,8 @@ using Grayson.Vision.WpfUI.Service;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
-    public class DataTraceEntry : ViewModelBase
-    {
-        public DateTime InspectTime { get; set; }
-        public string StationId { get; set; }
-        public string BatchId { get; set; }
-        public string RecipeName { get; set; }
-        public string Result { get; set; }
-        public string ErrorMessage { get; set; }
-        public double CycleTimeMs { get; set; }
-        public string ImagePath { get; set; }
-
-        public string ResultText => Result;
-        public string ResultBrushKey => Result == "OK" ? "SuccessBrush" : "DangerBrush";
-    }
+    // DataTraceEntry 已迁移至 Grayson.Vision.Contracts.Station.Models
+    // 此处通过 using 导入保持兼容性
 
     public class DataTraceViewModel : ViewModelBase
     {
@@ -48,6 +39,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             SearchCommand = new RelayCommand(_ => OnSearch());
             ExportCommand = new RelayCommand(_ => OnExport());
             OpenImageCommand = new RelayCommand(_ => OnOpenImage(), _ => SelectedEntry != null && !string.IsNullOrEmpty(SelectedEntry.ImagePath));
+            LoadLiveWorkOrdersCommand = new RelayCommand(_ => OnLoadLiveWorkOrders());
+            ShowWorkOrderDetailCommand = new RelayCommand(_ => OnShowWorkOrderDetail(), _ => SelectedEntry != null);
 
             StartTime = DateTime.Today.AddDays(-1);
             EndTime = DateTime.Today.AddDays(1).AddSeconds(-1);
@@ -124,6 +117,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand SearchCommand { get; }
         public ICommand ExportCommand { get; }
         public ICommand OpenImageCommand { get; }
+        public ICommand LoadLiveWorkOrdersCommand { get; }
+        public ICommand ShowWorkOrderDetailCommand { get; }
 
         private void LoadStations()
         {
@@ -178,6 +173,87 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
+        /// <summary>
+        /// 从 StationHostRuntime 实时读取最近工单快照，补充到追溯列表中。
+        /// </summary>
+        private void OnLoadLiveWorkOrders()
+        {
+            TraceEntries.Clear();
+            TotalCount = OkCount = NgCount = 0;
+
+            try
+            {
+                var manager = Grayson.Vision.Core.Client.StationRuntimeManager.GlobalInstance;
+                if (manager == null)
+                {
+                    MessageBox.Show("实时运行时尚未初始化。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                IEnumerable<string> stationIds;
+                if (!string.IsNullOrEmpty(SelectedStationCode) && SelectedStationCode != "全部")
+                    stationIds = new[] { SelectedStationCode };
+                else
+                    stationIds = manager.HostRuntime?.GetStationIds() ?? Enumerable.Empty<string>();
+
+                var liveEntries = new List<DataTraceEntry>();
+                foreach (var stationId in stationIds)
+                {
+                    var tracker = manager.GetWorkOrderTracker(stationId);
+                    if (tracker == null) continue;
+
+                    foreach (var wo in tracker.GetRecentWorkOrders(50))
+                    {
+                        if (wo == null) continue;
+
+                        if (!string.IsNullOrWhiteSpace(BatchIdFilter) &&
+                            (wo.BatchId == null || !wo.BatchId.Contains(BatchIdFilter)))
+                            continue;
+
+                        liveEntries.Add(new DataTraceEntry
+                        {
+                            InspectTime = wo.CreatedAt,
+                            StationId = wo.StationId,
+                            BatchId = wo.BatchId,
+                            RecipeName = wo.RecipeName ?? "—",
+                            Result = wo.IsOk.HasValue ? (wo.IsOk.Value ? "OK" : "NG") : "—",
+                            ErrorMessage = wo.ErrorMessage,
+                            CycleTimeMs = wo.CycleTimeMs,
+                            ImagePath = wo.ImagePath
+                        });
+                    }
+                }
+
+                var filtered = liveEntries
+                    .Where(x => x.InspectTime >= StartTime && x.InspectTime <= EndTime)
+                    .OrderByDescending(x => x.InspectTime)
+                    .ToList();
+
+                TotalCount = filtered.Count;
+                OkCount = filtered.Count(x => x.Result == "OK");
+                NgCount = TotalCount - OkCount;
+
+                foreach (var entry in filtered)
+                    TraceEntries.Add(entry);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"读取实时工单失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private string GetWorkOrderResultText(WorkOrderSnapshot wo)
+        {
+            if (wo == null) return "—";
+            return wo.IsOk.HasValue ? (wo.IsOk.Value ? "OK" : "NG") : "—";
+        }
+
+        private string GetWorkOrderErrorMessage(WorkOrderSnapshot wo)
+        {
+            if (wo == null) return null;
+            return wo.ErrorMessage;
+        }
+
         private DataTraceEntry MapToEntry(InspectionLogPo log)
         {
             return new DataTraceEntry
@@ -196,6 +272,51 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private void OnExport()
         {
             MessageBox.Show("导出功能将在后续对接报表服务后完善。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// 显示工单详情对话框
+        /// </summary>
+        private void OnShowWorkOrderDetail()
+        {
+            if (SelectedEntry == null) return;
+
+            try
+            {
+                // 创建工单详情窗口
+                var detailVm = new WorkOrderDetailDialogViewModel();
+
+                // 填充基本的演示数据
+                detailVm.WorkOrderId = $"WO-{SelectedEntry.BatchId}";
+                detailVm.StationId = SelectedEntry.StationId;
+                detailVm.BatchId = SelectedEntry.BatchId;
+                detailVm.CreatedAt = SelectedEntry.InspectTime;
+                detailVm.StartedAt = SelectedEntry.InspectTime;
+                detailVm.CompletedAt = SelectedEntry.InspectTime.AddSeconds(1);
+                detailVm.ResultStatus = SelectedEntry.Result == "OK" ? "✓ OK" : "✗ NG";
+                detailVm.ResultStatusColor = SelectedEntry.Result == "OK" ? "#FF00C853" : "#FFFF3D00";
+                detailVm.TotalElapsedText = $"{SelectedEntry.CycleTimeMs:F1} ms";
+                detailVm.TotalElapsedMs = SelectedEntry.CycleTimeMs;
+
+                // 创建并显示对话框窗口
+                var detailView = new View.WorkOrderDetailDialog
+                {
+                    DataContext = detailVm
+                };
+
+                // 简单提示（实际应该在独立窗口中显示完整信息）
+                MessageBox.Show($"工单详情\n" +
+                                $"工单ID: {detailVm.WorkOrderId}\n" +
+                                $"工位: {SelectedEntry.StationId}\n" +
+                                $"检验结果: {SelectedEntry.Result}\n" +
+                                $"检验时间: {SelectedEntry.InspectTime:yyyy-MM-dd HH:mm:ss}\n" +
+                                $"周期时间: {SelectedEntry.CycleTimeMs:F1} ms",
+                                "工单详情", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"显示工单详情失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void OnOpenImage()

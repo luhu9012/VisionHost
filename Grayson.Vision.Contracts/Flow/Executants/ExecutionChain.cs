@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.Contracts.Flow.Validation;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
 
 namespace Grayson.Vision.Contracts.Flow.Executants
@@ -27,6 +29,11 @@ namespace Grayson.Vision.Contracts.Flow.Executants
         /// 校验失败时，无法参与拓扑排序的异常节点集合（环形依赖内的节点）
         /// </summary>
         public List<FlowNodeBase> InvalidNodes { get; set; } = new List<FlowNodeBase>();
+
+        /// <summary>
+        /// 端口类型不兼容的连线列表，用于 UI 高亮提示
+        /// </summary>
+        public List<ConnectionModel> TypeMismatchedConnections { get; set; } = new List<ConnectionModel>();
 
         /// <summary>
         /// 校验通过后生成的有序拓扑执行链；校验失败时该字段为空
@@ -155,6 +162,30 @@ namespace Grayson.Vision.Contracts.Flow.Executants
                 result.ErrorMessage = $"检测到流程中存在环形逻辑/死锁，涉及 {unvisitedNodes.Count} 个节点无法排序！";
                 result.InvalidNodes = unvisitedNodes;
                 return result;
+            }
+            #endregion
+
+            #region 扩展校验：端口类型兼容性检查
+            var validator = Grayson.Vision.Contracts.Flow.Validation.DefaultPortTypeValidator.Instance;
+            foreach (var conn in connections.Where(c => c.Category == PortCategory.Data))
+            {
+                var sourcePort = conn.SourceNode?.OutputPorts?.FirstOrDefault(p => p.PortId == conn.SourcePortId);
+                var targetPort = conn.TargetNode?.InputPorts?.FirstOrDefault(p => p.PortId == conn.TargetPortId);
+
+                if (sourcePort == null || targetPort == null) continue;
+
+                var sourceType = validator.Parse(sourcePort.DataType);
+                var targetType = validator.Parse(targetPort.DataType);
+
+                if (!validator.IsCompatible(sourceType, targetType))
+                {
+                    result.IsSuccess = false;
+                    result.TypeMismatchedConnections.Add(conn);
+                    result.ErrorMessage = $"端口类型不匹配：" +
+                        $"{conn.SourceNode?.DisplayName}.{sourcePort.PortName}({sourcePort.DataType}) -> " +
+                        $"{conn.TargetNode?.DisplayName}.{targetPort.PortName}({targetPort.DataType})";
+                    return result;
+                }
             }
             #endregion
 

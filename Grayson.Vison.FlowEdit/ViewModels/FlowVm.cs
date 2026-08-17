@@ -1,5 +1,5 @@
-﻿using Grayson.Vision.Core.Client.Proxy;
-using Grayson.Vision.Contracts.Flow.Contexts;
+﻿using Grayson.Vision.Contracts.Flow.Contexts;
+using Grayson.Vision.Contracts.Station.Services;
 using Grayson.Vision.Contracts.Flow.Executants;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Station.Models;
@@ -416,6 +416,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         #region 6. Worker 客户端通信与运行控制
 
+        private IStationHostRuntime _stationHostRuntime;
+
         private async void InitWorkerClient()
         {
             if (_workerClient != null)
@@ -428,10 +430,15 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 _workerClient.Dispose();
             }
 
-            if (UseRemoteWorkerProcess)
-                _workerClient = new RemoteWorkerClientProxy("Station_01");
-            else
-                _workerClient = new EmbeddedWorkerClientProxy("Station_01");
+            // 优先使用统一的 StationHostRuntime（同一进程内共享设备池与工位实例）
+            _stationHostRuntime = App.StationHostRuntime;
+            if (_stationHostRuntime == null)
+            {
+                throw new InvalidOperationException(
+                    "未找到可用的 StationHostRuntime。独立运行请在 App.OnStartup 初始化；嵌入 WpfUI 时请由宿主 App 注入。");
+            }
+            await _stationHostRuntime.InitializeAsync();
+            _workerClient = await _stationHostRuntime.CreateEmbeddedStationAsync("FlowEditStation");
 
             _workerClient.OnFrameRendered += WorkerClient_OnFrameRendered;
             _workerClient.OnNodeExecuting += Worker_OnNodeExecuting;
@@ -621,10 +628,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (_workerClient == null) return;
             await _workerClient.LoadRecipeAsync(CurrentProcess);
 
-            if (_workerClient is EmbeddedWorkerClientProxy embeddedProxy)
-                await embeddedProxy.StepNodeAsync(SelectedNode);
-            else
-                await _workerClient.StepNodeAsync(SelectedNode);
+            // StationHostRuntime 已统一创建 EmbeddedWorkerClientProxy，直接调用接口即可
+            await _workerClient.StepNodeAsync(SelectedNode);
         }
 
         private async Task StopWorkerAsync()

@@ -84,12 +84,10 @@
     <Compile Include="Converters\ValueConverters.cs" />
     <Compile Include="Helpers\NodeMetaRegistry.cs" />
     <Compile Include="RecipeManager\RecipeManager.cs" />
-    <Compile Include="Services\EmbeddedWorkerClientProxy.cs" />
     <Compile Include="Services\IDialogService.cs" />
     <Compile Include="Services\IWorkerClient.cs" />
     <Compile Include="Services\LayoutService.cs" />
     <Compile Include="Services\NodePluginLoader.cs" />
-    <Compile Include="Services\RemoteWorkerClientProxy.cs" />
     <Compile Include="ViewModels\FlowVm.cs" />
     <Compile Include="Views\FlowEditView.xaml.cs">
       <DependentUpon>FlowEditView.xaml</DependentUpon>
@@ -173,6 +171,10 @@
     <ProjectReference Include="..\Grayson.Vision.Nodes\Grayson.Vision.Nodes.csproj">
       <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>
       <Name>Grayson.Vision.Nodes</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Repository\Grayson.Vision.Repository.csproj">
+      <Project>{a909af73-e5d5-4cbc-8a86-7a7ed579fb49}</Project>
+      <Name>Grayson.Vision.Repository</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

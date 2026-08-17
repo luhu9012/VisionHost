@@ -9,11 +9,13 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
     /// </summary>
     public enum StationState
     {
-        Idle,       // 初始空闲状态
-        Stopped,    // 处于停止状态
-        Running,    // 正在运行/准备响应触发
-        Paused,     // 已暂停
-        Faulted     // 发生异常报错
+        Idle,           // 初始空闲状态
+        Stopped,        // 处于停止状态
+        Running,        // 正在运行/准备响应触发
+        Paused,         // 已暂停
+        Faulted,        // 发生异常报错（软错误，可复位恢复）
+        Resetting,      // 工位软复位中（运行 ResetBlueprint）
+        ErrorLocked     // 硬件不可恢复故障或急停，已上锁，需人工确认
     }
 
     /// <summary>
@@ -51,6 +53,36 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         /// 触发单次节拍运行 (如接收到 PLC 触发信号或手动测试)
         /// </summary>
         Task TriggerOnceAsync(string batchId = null);
+
+        /// <summary>
+        /// 工位软复位（生产复位）：运行 ResetBlueprint，回安全点、IO 复位、清空队列，不重新初始化硬件句柄
+        /// </summary>
+        Task SoftResetAsync();
+
+        /// <summary>
+        /// 硬件全复位：关闭所有设备句柄并重新 Open，用于断连后恢复
+        /// </summary>
+        Task HardwareResetAsync();
+
+        /// <summary>
+        /// 急停信号触发，进入 ErrorLocked 并终止所有工单
+        /// </summary>
+        Task EmergencyStopAsync(string reason = null);
+
+        /// <summary>
+        /// 单步执行指定节点（调试用）。
+        /// </summary>
+        Task StepNodeAsync(FlowNodeBase node);
+
+        /// <summary>
+        /// 暂停工位（保持当前状态，不响应新触发）。
+        /// </summary>
+        Task PauseAsync();
+
+        /// <summary>
+        /// 从暂停状态恢复。
+        /// </summary>
+        Task ResumeAsync();
 
         /// <summary>
         /// 工位状态变更事件通知

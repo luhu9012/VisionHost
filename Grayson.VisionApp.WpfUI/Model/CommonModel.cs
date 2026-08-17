@@ -1,4 +1,5 @@
 ﻿using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Recipe.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -17,6 +18,7 @@ namespace Grayson.Vision.WpfUI.Model
         public string DeviceCode { get; set; }
         public string DeviceName { get; set; }
         public string DeviceType { get; set; }
+        public string BrandName { get; set; }
         public string ConnectionString { get; set; }
 
         private bool _isConnected;
@@ -35,79 +37,133 @@ namespace Grayson.Vision.WpfUI.Model
     }
 
     /// <summary>
-    /// 配方逻辑设备模型 (配方对硬件的能力需求)
-    /// </summary>
-    public class RecipeLogicalDeviceModel : ViewModelBase
-    {
-        public string LogicalDeviceId { get; set; }
-        public string LogicalDeviceName { get; set; }
-        public string LogicalDeviceType { get; set; }
-        public string RequiredSpec { get; set; }
-    }
-
-    /// <summary>
-    /// 工位配方逻辑设备 -> 物理设备映射项
-    /// </summary>
-    public class StationDeviceMappingModel : ViewModelBase
-    {
-        public string LogicalDeviceId { get; set; }
-        public string LogicalDeviceName { get; set; }
-        public string LogicalDeviceType { get; set; }
-        public string RequiredSpec { get; set; }
-
-        private string _mappedDeviceId;
-        /// <summary>
-        /// 绑定的工位物理硬件ID
-        /// </summary>
-        public string MappedDeviceId
-        {
-            get => _mappedDeviceId;
-            set => Set(ref _mappedDeviceId, value);
-        }
-    }
-
-    /// <summary>
     /// 配方模型 (支持关联多个工位)
+    /// 使用 Contracts.Recipe.Models.RecipeModel 并添加 UI 同步字段
     /// </summary>
     public class RecipeModel : ViewModelBase
     {
-        private string _recipeCode;
-        public string RecipeCode { get => _recipeCode; set => Set(ref _recipeCode, value); }
+        private Grayson.Vision.Contracts.Recipe.Models.RecipeModel _contractsModel =
+            new Grayson.Vision.Contracts.Recipe.Models.RecipeModel();
 
-        private string _recipeName;
-        public string RecipeName { get => _recipeName; set => Set(ref _recipeName, value); }
+        /// <summary>获取底层契约模型（用于存储/API 通信）</summary>
+        public Grayson.Vision.Contracts.Recipe.Models.RecipeModel Contract => _contractsModel;
 
-        private string _productCategory;
-        public string ProductCategory { get => _productCategory; set => Set(ref _productCategory, value); }
+        /// <summary>配方代码 - 绑定到 UI</summary>
+        public string RecipeCode
+        {
+            get => _contractsModel.RecipeCode;
+            set
+            {
+                if (_contractsModel.RecipeCode != value)
+                {
+                    _contractsModel.RecipeCode = value;
+                    OnPropertyChanged(nameof(RecipeCode));
+                }
+            }
+        }
 
-        private string _version;
-        public string Version { get => _version; set => Set(ref _version, value); }
+        /// <summary>配方名称</summary>
+        public string RecipeName
+        {
+            get => _contractsModel.RecipeName;
+            set
+            {
+                if (_contractsModel.RecipeName != value)
+                {
+                    _contractsModel.RecipeName = value;
+                    OnPropertyChanged(nameof(RecipeName));
+                }
+            }
+        }
 
-        private string _flowName;
-        public string FlowName { get => _flowName; set => Set(ref _flowName, value); }
+        /// <summary>产品类别</summary>
+        public string ProductCategory
+        {
+            get => _contractsModel.ProductCategory;
+            set
+            {
+                if (_contractsModel.ProductCategory != value)
+                {
+                    _contractsModel.ProductCategory = value;
+                    OnPropertyChanged(nameof(ProductCategory));
+                }
+            }
+        }
 
-        private bool _isActive;
-        public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
+        /// <summary>版本</summary>
+        public string Version
+        {
+            get => _contractsModel.Version;
+            set
+            {
+                if (_contractsModel.Version != value)
+                {
+                    _contractsModel.Version = value;
+                    OnPropertyChanged(nameof(Version));
+                }
+            }
+        }
 
-        private string _description;
-        public string Description { get => _description; set => Set(ref _description, value); }
+        /// <summary>流程名称</summary>
+        public string FlowName { get; set; }
 
+        /// <summary>是否激活</summary>
+        public bool IsActive
+        {
+            get => _contractsModel.IsActive;
+            set
+            {
+                if (_contractsModel.IsActive != value)
+                {
+                    _contractsModel.IsActive = value;
+                    OnPropertyChanged(nameof(IsActive));
+                }
+            }
+        }
+
+        /// <summary>描述</summary>
+        public string Description
+        {
+            get => _contractsModel.Description;
+            set
+            {
+                if (_contractsModel.Description != value)
+                {
+                    _contractsModel.Description = value;
+                    OnPropertyChanged(nameof(Description));
+                }
+            }
+        }
+
+        /// <summary>更新时间</summary>
         private DateTime _updatedTime = DateTime.Now;
-        public DateTime UpdatedTime { get => _updatedTime; set => Set(ref _updatedTime, value); }
+        public DateTime UpdatedTime
+        {
+            get => _updatedTime;
+            set => Set(ref _updatedTime, value);
+        }
 
+        /// <summary>相机曝光时间</summary>
         public double ExposureTime { get; set; } = 1000;
+
+        /// <summary>相机增益</summary>
         public double Gain { get; set; } = 1.0;
+
+        /// <summary>公差（单位毫米）</summary>
         public double ToleranceMm { get; set; } = 0.05;
 
         /// <summary>
         /// 配方定义的逻辑设备要求列表
+        /// 改用 Contracts 中的 RecipeDeviceMappingModel
         /// </summary>
-        public ObservableCollection<RecipeLogicalDeviceModel> LogicalDevices { get; set; } = new ObservableCollection<RecipeLogicalDeviceModel>();
+        public ObservableCollection<RecipeDeviceMappingModel> LogicalDevices { get; set; } = 
+            new ObservableCollection<RecipeDeviceMappingModel>();
 
         /// <summary>
         /// 关联的工位 Code/ID 列表 (多对多)
         /// </summary>
-        public ObservableCollection<string> ApplicableStationCodes { get; set; } = new ObservableCollection<string>();
+        public ObservableCollection<string> ApplicableStationCodes { get; set; } = 
+            new ObservableCollection<string>();
     }
 
     /// <summary>
@@ -144,8 +200,10 @@ namespace Grayson.Vision.WpfUI.Model
 
         /// <summary>
         /// 本工位针对当前配方的逻辑设备 -> 物理设备映射关系
+        /// 改用 Contracts 中的 RecipeDeviceMappingModel
         /// </summary>
-        public ObservableCollection<StationDeviceMappingModel> RecipeDeviceMappings { get; set; } = new ObservableCollection<StationDeviceMappingModel>();
+        public ObservableCollection<RecipeDeviceMappingModel> RecipeDeviceMappings { get; set; } = 
+            new ObservableCollection<RecipeDeviceMappingModel>();
     }
 
     /// <summary>

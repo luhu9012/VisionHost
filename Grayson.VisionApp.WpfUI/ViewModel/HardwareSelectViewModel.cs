@@ -2,6 +2,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.WpfUI.Model;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {

@@ -18,6 +18,14 @@ namespace Grayson.Vision.Contracts.Infrastructure.Mvvm
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
+        /// <summary>
+        /// 允许外部显式触发属性变更通知；用于组合属性的依赖刷新。
+        /// </summary>
+        public void RaisePropertyChanged(string propertyName)
+        {
+            OnPropertyChanged(propertyName);
+        }
+
         protected bool Set<T>(ref T field, T value, [CallerMemberName] string propertyName = null)
         {
             if (Equals(field, value)) return false;

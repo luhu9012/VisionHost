@@ -27,11 +27,19 @@ Grayson.Vision.HalconWrapper
 │  ├─ RoiOperationTool.cs       Region 转 Mask、ROI 集合运算
 │  └─ ImagePreprocessTool.cs    面向 UI/节点的 object 类型统一预处理入口
 ├─ Match2D
+│  ├─ MatchTool.cs              通用匹配封装（按策略分发）
+│  ├─ NccMatchTool.cs           NCC 互相关匹配实现
 │  └─ TemplateMatchTool.cs      shape_model 创建、查找、释放
+├─ Identification
+│  ├─ BarcodeTool.cs            条码/二维码检测与解码
+│  ├─ ColorTool.cs              颜色分割/颜色判断相关工具
+│  ├─ OCRTool.cs                OCR 识别封装（接口层）
+│  └─ DeepLearningTool.cs       深度学习推理/模型加载（占位/封装）
 ├─ Measure2D
 │  └─ EdgeMeasureTool.cs        卡尺测量（边缘、圆孔，预留接口）
 └─ Calibration
-   └─ Calib2DTool.cs            九点标定、像素↔世界坐标换算
+   ├─ Calib2DTool.cs            九点标定、像素↔世界坐标换算
+   └─ FixtureTool.cs            夹具/位置补正、点/区域的仿射映射
 ```
 
 ## 3. 设计原则
@@ -142,20 +150,32 @@ Calib2DTool.LoadHomMatFromFile("calib.tup");
 
 | 文件 | 主要能力 |
 |------|----------|
-| `TemplateMatchTool` | `CreateShapeModel`、`FindShapeModel`、`ClearShapeModel` |
+| `MatchTool` | 匹配策略分发、统一结果封装（支持不同匹配算法切换） |
+| `NccMatchTool` | 基于 NCC 的模板匹配实现，适用于亮度/对比稳定的场景 |
+| `TemplateMatchTool` | `CreateShapeModel`、`FindShapeModel`、`ClearShapeModel`（基于 Halcon shape_model） |
 | `TemplateMatchResult` | `PixelRow`、`PixelCol`、`RotateDegree`、`Score` |
 
-### 5.4 Measure2D
+### 5.4 Identification
+
+| 文件 | 主要能力 |
+|------|----------|
+| `BarcodeTool` | 条码/二维码检测与解码，返回位置与内容 |
+| `ColorTool` | 基于颜色的分割与判定工具，支持 HSV/RGB 查询 |
+| `OCRTool` | OCR 接口封装（占位），上层可注入具体 OCR 引擎实现 |
+| `DeepLearningTool` | 深度学习模型加载与推理封装（占位/接口层） |
+
+### 5.5 Measure2D
 
 | 文件 | 主要能力 |
 |------|----------|
 | `EdgeMeasureTool` | `MeasureLineDistance`、`MeasureCircleDiameter`（当前为骨架，后续按需实现） |
 
-### 5.5 Calibration
+### 5.6 Calibration
 
 | 文件 | 主要能力 |
 |------|----------|
 | `Calib2DTool` | `CalcNinePointHomMat`、`SaveHomMatToFile`、`LoadHomMatFromFile` |
+| `FixtureTool` | `CreateFixture`（建立位置补正矩阵）、`ApplyFixtureToPoint`、`ApplyFixtureToRegion`（将补正应用于点或区域） |
 
 ## 6. 使用规范
 
@@ -166,6 +186,7 @@ Calib2DTool.LoadHomMatFromFile("calib.tup");
 
 ## 7. 更新记录
 
-- 更新目录结构以匹配真实源码文件（新增 `AffineImageTool`、`RoiOperationTool`、`ImagePreprocessTool`）。
+- 更新目录结构以匹配真实源码文件（新增 `AffineImageTool`、`RoiOperationTool`、`ImagePreprocessTool`、Identification 模块、Match2D 多种实现）。
+- 在 API 一览中补充 `MatchTool`、`NccMatchTool`、`BarcodeTool`、`ColorTool`、`OCRTool`、`DeepLearningTool` 等条目以反映当前源码。
 - 调整基础配置说明为 `.NET Framework 4.7.2 x64`。
 - 补充使用示例与 API 一览表，减少 README 中直接内嵌完整源码的比重。

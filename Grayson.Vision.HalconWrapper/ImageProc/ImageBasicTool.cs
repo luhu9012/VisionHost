@@ -1,5 +1,5 @@
 ﻿using System;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.HalconWrapper.Core;
 using HalconDotNet;
@@ -25,7 +25,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error($"读取图片失败:{filePath}", ex, nameof(ImageBasicTool));
+                LogBus.Error(nameof(ImageBasicTool), $"读取图片失败:{filePath}", ex);
                 return Result<HObject>.Fail("图片读取异常", -1, ex);
             }
         }
@@ -44,7 +44,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error($"保存图片失败:{filePath}", ex, nameof(ImageBasicTool));
+                LogBus.Error(nameof(ImageBasicTool), $"保存图片失败:{filePath}", ex);
                 return Result.Fail("图像保存失败", -1, ex);
             }
         }
@@ -64,7 +64,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("彩色转灰度失败", ex, nameof(ImageBasicTool));
+                LogBus.Error(nameof(ImageBasicTool), "彩色转灰度失败", ex);
                 return Result<HObject>.Fail("灰度转换异常", -1, ex);
             }
         }
@@ -93,7 +93,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error("图像ROI裁剪失败", ex, nameof(ImageBasicTool));
+                LogBus.Error(nameof(ImageBasicTool), "图像ROI裁剪失败", ex);
                 return Result<HObject>.Fail("裁剪异常", -1, ex);
             }
         }

@@ -134,8 +134,13 @@
                     </Border>
                 </StackPanel>
 
-                <!-- 右侧: 窗口控制按钮 -->
+                <!-- 右侧: 全局急停与窗口控制按钮 -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="🚨 急停" Command="{Binding EmergencyStopCommand}" 
+                            Background="{StaticResource ErrorBrush}" Foreground="White" FontWeight="Bold"
+                            Style="{StaticResource IconButtonStyle}" Padding="12,0" Height="40" Margin="0,5,5,5"
+                            Visibility="{Binding CurrentUserRole, Converter={StaticResource RoleSatisfiesConverter}, ConverterParameter=Operator}"
+                            ToolTip="触发全局急停，所有运行/暂停工位立即停止"/>
                     <Button Content="−" Command="{Binding MinimizeCommand}" Style="{StaticResource IconButtonStyle}" Width="45" Height="50" FontSize="20" Foreground="White"/>
                     <Button Content="□" Command="{Binding MaximizeCommand}" Style="{StaticResource IconButtonStyle}" Width="45" Height="50" FontSize="16" Foreground="White"/>
                     <Button Content="✕" Command="{Binding CloseCommand}" Style="{StaticResource IconButtonStyle}" Width="45" Height="50" FontSize="18" Foreground="White"/>

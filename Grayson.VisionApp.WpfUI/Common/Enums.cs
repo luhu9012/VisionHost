@@ -7,20 +7,8 @@
 
 namespace Grayson.Vision.WpfUI.Common
 {
-    /// <summary>
-    /// 用户权限等级
-    /// </summary>
-    public enum UserRole
-    {
-        /// <summary>操作员 - 仅可查看生产监控,操作运行/停止</summary>
-        Operator = 1,
-
-        /// <summary>工程师 - 可调整参数,配置硬件,查看报警</summary>
-        Engineer = 2,
-
-        /// <summary>管理员 - 全部权限,包括用户管理</summary>
-        Administrator = 3
-    }
+    // 注意：UserRole 统一使用 Grayson.Vision.Contracts.Infrastructure.Permission.UserRole，
+    // 避免 UI 层与 Contracts 层重复定义造成歧义与维护负担。
 
     /// <summary>
     /// 报警等级
@@ -92,6 +80,7 @@ namespace Grayson.Vision.WpfUI.Common
         LineOverview,
         StationMonitor,
         RecipeManage,
+        CalibrationManage,
         DevicePool,
         HardwareConsole,
         PluginManage,

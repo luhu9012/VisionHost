@@ -3,11 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
-             xmlns:converter="clr-namespace:Grayson.Vision.WpfUI.Common.Converters" 
+            xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             xmlns:views="clr-namespace:Grayson.Vision.WpfUI.View"
              mc:Ignorable="d" 
              d:DesignHeight="720" d:DesignWidth="1280">
     <UserControl.Resources>
-        <converter:BoolToStatusBrushConverter x:Key="BoolToStatusBrushConverter"/>
+        <converters:BoolToStatusBrushConverter x:Key="BoolToStatusBrushConverter"/>
     </UserControl.Resources>
 
     <Grid Background="{StaticResource BackgroundBrush}" Margin="12">
@@ -32,9 +33,9 @@
 
                 <!-- 操作按钮栏 -->
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-                    <Button Content="+ 产线" Style="{StaticResource PrimaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding AddLineCommand}"/>
-                    <Button Content="+ 工位" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding AddStationCommand}"/>
-                    <Button Content="删除" Style="{StaticResource DangerButtonStyle}" Padding="10,5" Command="{Binding DeleteNodeCommand}"/>
+                    <Button Content="+ 产线" Style="{StaticResource PrimaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding DataContext.AddLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    <Button Content="+ 工位" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding DataContext.AddStationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    <Button Content="删除" Style="{StaticResource DangerButtonStyle}" Padding="10,5" Command="{Binding DataContext.DeleteNodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                 </StackPanel>
 
                 <!-- 产线-工位 树形视图 -->
@@ -56,6 +57,10 @@
                                         <TextBlock Text="⚙️ " VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding StationName}" Foreground="{StaticResource TextSecondaryBrush}"/>
                                         <TextBlock Text="{Binding StationCode, StringFormat=' ({0})'}" Foreground="{StaticResource TextDisabledBrush}" FontSize="11"/>
+                                        <TextBlock Text=" | 启用" FontSize="11" Margin="4,0,0,0" Foreground="Green"
+                                                   Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        <TextBlock Text=" | 禁用" FontSize="11" Margin="4,0,0,0" Foreground="Gray"
+                                                   Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </HierarchicalDataTemplate.ItemTemplate>
@@ -79,14 +84,21 @@
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="120"/>
-                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="12"/>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="160"/>
-                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="12"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <!-- 快捷按钮列 -->
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
@@ -99,8 +111,26 @@
                         <TextBlock Grid.Column="6" Text="超时(ms):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
                         <TextBox Grid.Column="7" Text="{Binding SelectedStation.TimeoutMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                        <Button Grid.Column="9" Content="💾 保存工位并同步 Runtime Client" 
-                                Style="{StaticResource SuccessButtonStyle}" Command="{Binding SaveStationConfigCommand}"/>
+                        <CheckBox Grid.Column="9"
+                                  Content="启用工位"
+                                  IsChecked="{Binding SelectedStation.IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                  VerticalContentAlignment="Center"
+                                  Foreground="{StaticResource TextSecondaryBrush}"
+                                  ToolTip="启用的工位可在单工位监控中连接，禁用工位不会被保存到 Runtime"/>
+
+                        <!-- 🎯 新增：从当前工位直达标定中心的快捷入口 -->
+                        <Button Grid.Column="12" 
+                        Content="🎯 标定中心" 
+                        Style="{StaticResource SecondaryButtonStyle}" 
+                        Margin="8,0,0,0"
+                        ToolTip="快速打开标定管理中心并自动定位至当前工位"
+                        Command="{Binding OpenCalibrationCenterCommand}"/>
+
+                        <Button Grid.Column="13" 
+                        Content="💾 保存工位并同步 Runtime Client" 
+                        Style="{StaticResource SuccessButtonStyle}" 
+                        Margin="8,0,0,0"
+                        Command="{Binding SaveStationConfigCommand}"/>
                     </Grid>
                 </Border>
 
@@ -132,6 +162,8 @@
                             </DataGrid>
                         </Grid>
                     </TabItem>
+
+
 
                     <!-- Tab 2: 配方绑定的逻辑 -> 物理映射 -->
                     <TabItem Header="2. 配方逻辑设备映射" Style="{StaticResource ModernTabItemStyle}">
@@ -175,6 +207,11 @@
                             </DataGrid>
                         </Grid>
                     </TabItem>
+
+                    <!-- Tab 3: 标定管理 -->
+                    <!--<TabItem Header="3. 标定管理" Style="{StaticResource ModernTabItemStyle}">
+                        <views:CalibrationManagerView DataContext="{Binding DataContext.CalibrationManagerVm, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    </TabItem>-->
                 </TabControl>
             </Grid>
         </Border>

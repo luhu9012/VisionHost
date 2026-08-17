@@ -1,6 +1,6 @@
 ﻿using System;
 using Grayson.Vision.Contracts.Core;
-using Grayson.Vision.Common.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using HalconDotNet;
 
 namespace Grayson.Vision.HalconWrapper.Core
@@ -24,7 +24,7 @@ namespace Grayson.Vision.HalconWrapper.Core
         {
             if (hPose == null || hPose.Length != PoseElementCount)
             {
-                GlobalLogger.Warn($"Halcon Pose长度异常，当前:{hPose?.Length ?? 0}，需=6", nameof(HalconGlobalHelper));
+                LogBus.Warn(nameof(HalconGlobalHelper), $"Halcon Pose长度异常，当前:{hPose?.Length ?? 0}，需=6");
                 return new Pose3D(0, 0, 0, 0, 0, 0);
             }
 
@@ -53,7 +53,7 @@ namespace Grayson.Vision.HalconWrapper.Core
         {
             if (calibHomMat2D == null || calibHomMat2D.Length != 9)
             {
-                GlobalLogger.Error($"标定矩阵非法，要求长度9，实际:{calibHomMat2D?.Length ?? 0}",null, nameof(HalconGlobalHelper));
+                LogBus.Error(nameof(HalconGlobalHelper), $"标定矩阵非法，要求长度9，实际:{calibHomMat2D?.Length ?? 0}");
                 return (0, 0);
             }
 
@@ -65,12 +65,12 @@ namespace Grayson.Vision.HalconWrapper.Core
             }
             catch (MissingMethodException)
             {
-                GlobalLogger.Warn("当前Halcon版本无AffineTransPoint2d，降级手动矩阵计算", nameof(HalconGlobalHelper));
+                LogBus.Warn(nameof(HalconGlobalHelper), "当前Halcon版本无AffineTransPoint2d，降级手动矩阵计算");
                 return CalcPixelToWorldByMatrix(pixelX, pixelY, calibHomMat2D);
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error($"像素转世界异常 PixX:{pixelX:F2},PixY:{pixelY:F2}", ex, nameof(HalconGlobalHelper));
+                LogBus.Error(nameof(HalconGlobalHelper), $"像素转世界异常 PixX:{pixelX:F2},PixY:{pixelY:F2}", ex);
                 return CalcPixelToWorldByMatrix(pixelX, pixelY, calibHomMat2D);
             }
         }
@@ -83,7 +83,7 @@ namespace Grayson.Vision.HalconWrapper.Core
         {
             if (calibHomMat2D == null || calibHomMat2D.Length != 9)
             {
-                GlobalLogger.Error($"标定矩阵非法，要求长度9，实际:{calibHomMat2D?.Length ?? 0}",null, nameof(HalconGlobalHelper));
+                LogBus.Error(nameof(HalconGlobalHelper), $"标定矩阵非法，要求长度9，实际:{calibHomMat2D?.Length ?? 0}");
                 return (0, 0);
             }
 
@@ -96,12 +96,12 @@ namespace Grayson.Vision.HalconWrapper.Core
             }
             catch (MissingMethodException)
             {
-                GlobalLogger.Warn("无AffineTransPoint2d，降级手动逆矩阵计算", nameof(HalconGlobalHelper));
+                LogBus.Warn(nameof(HalconGlobalHelper), "无AffineTransPoint2d，降级手动逆矩阵计算");
                 return CalcWorldToPixelByMatrix(worldX, worldY, calibHomMat2D);
             }
             catch (Exception ex)
             {
-                GlobalLogger.Error($"世界转像素异常 WX:{worldX:F2},WY:{worldY:F2}", ex, nameof(HalconGlobalHelper));
+                LogBus.Error(nameof(HalconGlobalHelper), $"世界转像素异常 WX:{worldX:F2},WY:{worldY:F2}", ex);
                 return CalcWorldToPixelByMatrix(worldX, worldY, calibHomMat2D);
             }
         }
@@ -155,7 +155,7 @@ namespace Grayson.Vision.HalconWrapper.Core
             }
             catch (Exception ex)
             {
-                GlobalLogger.Warn($"绘制十字失败 X:{x:F2} Y:{y:F2},{ex.Message}",  nameof(HalconGlobalHelper));
+                LogBus.Warn(nameof(HalconGlobalHelper), $"绘制十字失败 X:{x:F2} Y:{y:F2},{ex.Message}");
             }
         }
         #endregion

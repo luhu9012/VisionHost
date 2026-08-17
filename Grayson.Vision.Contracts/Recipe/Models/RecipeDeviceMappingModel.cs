@@ -1,4 +1,5 @@
 ﻿using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Recipe.Enums;
 
 namespace Grayson.Vision.Contracts.Recipe.Models
 {
@@ -13,11 +14,27 @@ namespace Grayson.Vision.Contracts.Recipe.Models
         public string LogicalDeviceType { get; set; }
         public string RequiredSpec { get; set; }
 
+        /// <summary>
+        /// 设备在配方中的角色：主设备 / 备用 / 校准 / 参考。
+        /// </summary>
+        public DeviceRole Role { get; set; } = DeviceRole.Primary;
+
         private string _mappedDeviceId;
         public string MappedDeviceId
         {
             get => _mappedDeviceId;
-            set => Set(ref _mappedDeviceId, value);
+            set
+            {
+                if (Set(ref _mappedDeviceId, value))
+                {
+                    OnPropertyChanged(nameof(IsBoundToPhysical));
+                }
+            }
         }
+
+        /// <summary>
+        /// 是否已绑定到物理设备（用于 UI 映射状态指示）。
+        /// </summary>
+        public bool IsBoundToPhysical => !string.IsNullOrWhiteSpace(_mappedDeviceId);
     }
 }

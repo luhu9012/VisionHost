@@ -64,17 +64,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public bool AutoPurgeOnLowDisk { get => _autoPurgeOnLowDisk; set { Set(ref _autoPurgeOnLowDisk, value); MarkDirty(); } }
         #endregion
 
-        #region 2. 运行与 Worker 架构属性
+        #region 2. 运行与工位策略属性
         private bool _autoStartStations;
         public bool AutoStartStations { get => _autoStartStations; set { Set(ref _autoStartStations, value); MarkDirty(); } }
 
-        private int _defaultWorkerModeIndex;
-        public int DefaultWorkerModeIndex { get => _defaultWorkerModeIndex; set { Set(ref _defaultWorkerModeIndex, value); MarkDirty(); } }
+        private int _stationStartTimeoutMs;
+        public int StationStartTimeoutMs { get => _stationStartTimeoutMs; set { Set(ref _stationStartTimeoutMs, value); MarkDirty(); } }
 
-        private int _ipcTimeoutMs;
-        public int IpcTimeoutMs { get => _ipcTimeoutMs; set { Set(ref _ipcTimeoutMs, value); MarkDirty(); } }
+        private int _workOrderHistoryCountIndex;
+        public int WorkOrderHistoryCountIndex { get => _workOrderHistoryCountIndex; set { Set(ref _workOrderHistoryCountIndex, value); MarkDirty(); } }
 
-        public string[] WorkerModes { get; } = { "Embedded (同进程线程)", "RemoteIpc (独立 WorkerHost 进程)" };
+        public int[] WorkOrderHistoryCounts { get; } = { 100, 500, 1000, 5000 };
         #endregion
 
         #region 3. 渲染性能属性
@@ -110,14 +110,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             DataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
 
             AutoStartStations = string.Equals(ReadAppSetting("AutoStartStations"), "true", StringComparison.OrdinalIgnoreCase);
-            DefaultWorkerModeIndex = string.Equals(ReadAppSetting("DefaultWorkerMode"), "RemoteIpc", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            StationStartTimeoutMs = ParseInt(ReadAppSetting("StationStartTimeoutMs"), 5000);
+            WorkOrderHistoryCountIndex = ParseInt(ReadAppSetting("WorkOrderHistoryCountIndex"), 2);
 
             ImageSaveModeIndex = ParseInt(ReadAppSetting("ImageSaveModeIndex"), 0);
             ImageRetentionDays = ParseInt(ReadAppSetting("ImageRetentionDays"), 30);
             DiskWarningThreshold = ParseInt(ReadAppSetting("DiskWarningThreshold"), 15);
             AutoPurgeOnLowDisk = !string.Equals(ReadAppSetting("AutoPurgeOnLowDisk"), "false", StringComparison.OrdinalIgnoreCase);
 
-            IpcTimeoutMs = ParseInt(ReadAppSetting("IpcTimeoutMs"), 3000);
             RenderFpsIndex = ParseInt(ReadAppSetting("RenderFpsIndex"), 1);
             OptimizeOverlays = !string.Equals(ReadAppSetting("OptimizeOverlays"), "false", StringComparison.OrdinalIgnoreCase);
 
@@ -148,14 +148,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 SetXmlAppSetting(appSettings, "LogPath", LogPath);
                 SetXmlAppSetting(appSettings, "ImageStorePath", ImageStorePath);
                 SetXmlAppSetting(appSettings, "AutoStartStations", AutoStartStations ? "true" : "false");
-                SetXmlAppSetting(appSettings, "DefaultWorkerMode", DefaultWorkerModeIndex == 1 ? "RemoteIpc" : "Embedded");
+                SetXmlAppSetting(appSettings, "StationStartTimeoutMs", StationStartTimeoutMs.ToString());
+                SetXmlAppSetting(appSettings, "WorkOrderHistoryCountIndex", WorkOrderHistoryCountIndex.ToString());
 
                 SetXmlAppSetting(appSettings, "ImageSaveModeIndex", ImageSaveModeIndex.ToString());
                 SetXmlAppSetting(appSettings, "ImageRetentionDays", ImageRetentionDays.ToString());
                 SetXmlAppSetting(appSettings, "DiskWarningThreshold", DiskWarningThreshold.ToString());
                 SetXmlAppSetting(appSettings, "AutoPurgeOnLowDisk", AutoPurgeOnLowDisk ? "true" : "false");
 
-                SetXmlAppSetting(appSettings, "IpcTimeoutMs", IpcTimeoutMs.ToString());
                 SetXmlAppSetting(appSettings, "RenderFpsIndex", RenderFpsIndex.ToString());
                 SetXmlAppSetting(appSettings, "OptimizeOverlays", OptimizeOverlays ? "true" : "false");
 

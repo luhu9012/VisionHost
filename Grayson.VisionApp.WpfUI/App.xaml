@@ -19,6 +19,8 @@
             <converters:DeviceStatusToBrushConverter x:Key="DeviceStatusToBrushConverter"/>
             <converters:InspectionResultToBrushConverter x:Key="InspectionResultToBrushConverter"/>
             <converters:NullToBoolConverter x:Key="NullToBoolConverter"/>
+            <converters:RecipeApprovalStatusToTextConverter x:Key="RecipeApprovalStatusToTextConverter"/>
+            <converters:RoleSatisfiesConverter x:Key="RoleSatisfiesConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

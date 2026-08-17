@@ -45,24 +45,50 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Client\Proxy\EmbeddedWorkerClientProxy.cs" />
-    <Compile Include="Client\Proxy\RemoteWorkerClientProxy.cs" />
-    <Compile Include="Client\StationProcessManager.cs" />
     <Compile Include="Client\StationRuntimeManager.cs" />
     <Compile Include="Client\WorkerClientFactory.cs" />
     <Compile Include="Client\WorkerClientManager.cs" />
+    <Compile Include="Devices\DeviceLease.cs" />
+    <Compile Include="Devices\DeviceManager.cs" />
+    <Compile Include="Devices\\DevicePool.cs" />
+    <Compile Include="Devices\\DevicePluginManager.cs" />
+    <Compile Include="Devices\DevicePoolService.cs" />
+    <Compile Include="Flow\Validation\DefaultPortTypeValidator.cs" />
+    <Compile Include="Flow\WorkOrderExecutionContext.cs" />
+    <Compile Include="Infrastructure\Alarm\AlarmBus.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Recipe\RecipeDeviceExtractor.cs" />
+    <Compile Include="Scheduling\SimpleTriggerScheduler.cs" />
     <Compile Include="StationWorker.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="StationContext.cs" />
+    <Compile Include="Station\DefaultStationParameterService.cs" />
+    <Compile Include="Station\\StationHostRuntime.cs" />
+    <Compile Include="Station\WorkOrderTracker.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
       <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
       <Name>Grayson.Vision.Contracts</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Repository\Grayson.Vision.Repository.csproj">
+      <Project>{a909af73-e5d5-4cbc-8a86-7a7ed579fb49}</Project>
+      <Name>Grayson.Vision.Repository</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="README_core.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

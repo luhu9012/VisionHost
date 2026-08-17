@@ -48,11 +48,18 @@ Grayson.Vision.Contracts
 │
 ├─ Station                             // 工位与 Worker 宿主契约
 │  ├─ Interfaces
-│  │  ├─ IStationWorkerHost.cs         // 工位 Worker 宿主契约
-│  │  └─ IStationWorkerEvents.cs       // 工位事件暴露接口
+│  │  ├─ IStationWorkerHost.cs         // 工位 Worker 宿主契约（含 Pause/Resume）
+│  │  ├─ IStationWorkerEvents.cs       // 工位事件暴露接口
+│  │  ├─ IWorkflowScheduler.cs         // 工作流调度器契约
+│  │  └─ ISafetyInterlockService.cs    // 安全联锁服务契约
 │  ├─ Models
 │  │  ├─ ImageRenderEventArgs.cs       // 图像渲染推送事件参数
-│  │  └─ ChainCompletedEventArgs.cs    // 执行链完成事件参数
+│  │  ├─ ChainCompletedEventArgs.cs    // 执行链完成事件参数
+│  │  ├─ WorkOrder.cs                  // 工单生命周期（含 ResultData / QualityData）
+│  │  ├─ WorkOrderResultData.cs        // 工单结果数据（OK/NG/缺陷/测量值/图像路径）
+│  │  └─ WorkOrderQualityData.cs       // 工单质量统计（SPC/OEE 数据）
+│  ├─ Services
+│  │  └─ IStationHostRuntime.cs        // StationHost 全局运行时契约
 │  └─ Enums
 │     ├─ StationState.cs               // 工位运行状态枚举
 │     └─ WorkMode.cs                   // 工位运行模式（Debug / Production）
@@ -83,8 +90,19 @@ Grayson.Vision.Contracts
 │     └─ EnumExtensions.cs             // 枚举 Description / Attribute 扩展
 │
 ├─ Recipe                              // 配方与流程模型
+│  ├─ Enums
+│  │  ├─ RecipeApprovalStatus.cs       // 配方审批生命周期
+│  │  └─ DeviceRole.cs                 // 配方逻辑设备角色
 │  ├─ Models
-│  │  └─ RecipeModel.cs                // 配方业务模型
+│  │  ├─ RecipeModel.cs                // 配方业务模型
+│  │  ├─ RecipeApprovalInfo.cs         // 配方审批记录（提交/审批/电子签名）
+│  │  ├─ RecipeDeviceMappingModel.cs   // 配方逻辑设备映射
+│  │  ├─ SafetyInterlockConfiguration.cs // 安全联锁配置（光栅/安全门/急停）
+│  │  └─ StationRuntimeConfiguration.cs // 工位运行配置
+│  ├─ Traceability
+│  │  └─ RecipeTraceabilityEntry.cs    // 配方追溯快照
+│  ├─ Services
+│  │  └─ IRecipeStorageService.cs      // 配方存储服务契约
 │  └─ DTOs
 │     ├─ RecipeDto.cs                  // 配方持久化数据传输对象
 │     └─ RecipeConverter.cs            // 配方 DTO 与业务模型互转

@@ -23,7 +23,10 @@ namespace Grayson.Vision.Contracts.Devices
         /// <summary>当前硬件在线状态</summary>
         DeviceState State { get; set; }
         // 设备大类
-        DeviceCategory Category { get; set; }       
+        DeviceCategory Category { get; set; }
+
+        /// <summary>最后一次心跳/在线检测时间（UTC）</summary>
+        DateTime LastHeartbeatAt { get; set; }
 
         /// <summary>连接硬件设备</summary>
         Result Connect();
@@ -39,6 +42,11 @@ namespace Grayson.Vision.Contracts.Devices
 
         /// <summary>读取硬件参数</summary>
         Result<object> GetParam(string key);
+
+        /// <summary>
+        /// 心跳/在线检测。实现者应刷新 LastHeartbeatAt 与 State。
+        /// </summary>
+        Result Heartbeat();
 
         // 状态变更事件
         event EventHandler<DeviceState> StateChanged;

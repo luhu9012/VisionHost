@@ -9,6 +9,8 @@
 using Grayson.Vision.Repository;
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
+using Grayson.Vision.Contracts.Station.Services;
+using Grayson.Vision.Core.Station;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using Grayson.Vision.WpfUI.View;
@@ -18,6 +20,9 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Windows;
+
+// FlowEdit 嵌入 WpfUI 时，其自身 App 不会启动，需共享运行时
+using FlowEditApp = Grayson.Vison.FlowEdit.App;
 
 
 namespace Grayson.Vision.WpfUI
@@ -39,6 +44,11 @@ namespace Grayson.Vision.WpfUI
         /// 全局文件日志服务实例，负责将 LogBus 日志落盘到本地磁盘
         /// </summary>
         private FileLogSink _fileLogSink;
+
+        /// <summary>
+        /// 全局 StationHost 运行时（Core 唯一入口），程序生命周期内共享。
+        /// </summary>
+        public static IStationHostRuntime StationHostRuntime { get; private set; }
 
         /// <summary>
         /// 应用程序启动入口事件，程序打开时第一个执行的方法
@@ -84,10 +94,26 @@ namespace Grayson.Vision.WpfUI
             // Dispatcher：捕获UI主线程控件绑定、页面操作产生的异常（等同于前端全局errorHandler捕获界面错误）
             DispatcherUnhandledException += OnDispatcherUnhandledException;
 
-            // 🚀 在程序启动时，自动扫描并加载海康、西门子等所有硬件插件
-            //DevicePoolManager.Instance.AutoLoadAllPlugins();
-            // 2. 初始化设备池（异步）
-            await DevicePoolManager.Instance.InitializeAsync();
+            // 🚀 在程序启动时，通过统一的 StationHostRuntime 初始化设备池与 Core 运行时
+            var runtimeInstance = new Grayson.Vision.Core.Station.StationHostRuntime();
+            StationHostRuntime = runtimeInstance;
+            Grayson.Vision.Core.Station.StationHostRuntime.GlobalInstance = runtimeInstance;
+
+            // 统一 StationRuntimeManager 也指向同一运行时，保证 UI 各 VM 读取到一致状态
+            Grayson.Vision.Core.Client.StationRuntimeManager.GlobalInstance = new Grayson.Vision.Core.Client.StationRuntimeManager(runtimeInstance);
+
+            await StationHostRuntime.InitializeAsync();
+
+            // FlowEdit 作为 UserControl 嵌入 WpfUI 时其 App.OnStartup 不会执行，
+            // 因此把 WpfUI 的 StationHostRuntime 共享给 FlowEdit，使其 FlowVm 可正常初始化。
+            try
+            {
+                FlowEditApp.StationHostRuntime = StationHostRuntime;
+            }
+            catch
+            {
+                // FlowEditApp 类型不可用时不影响主程序启动
+            }
 
             // 3. 程序启动默认弹出登录窗口，登录校验通过后再加载主业务界面
             ShowLoginWindow();
@@ -198,6 +224,8 @@ namespace Grayson.Vision.WpfUI
             navigationService.RegisterPage(PageType.StationManage, () => new StationManageView());
             // 配方管理页面
             navigationService.RegisterPage(PageType.RecipeManage, () => new RecipeManageView());
+            // 校准管理页面
+            navigationService.RegisterPage(PageType.CalibrationManage, () => new CalibrationManagerView());
             // 插件管理页面
             navigationService.RegisterPage(PageType.PluginManage, () => new PluginManageView());
             //设备池页面 
@@ -238,6 +266,22 @@ namespace Grayson.Vision.WpfUI
                 "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             // 告知框架异常已人工处理，不再向上抛出导致程序崩溃
             e.Handled = true;
+        }
+
+        /// <summary>
+        /// 程序退出时统一释放 StationHostRuntime 与全局设备池资源。
+        /// </summary>
+        protected override void OnExit(ExitEventArgs e)
+        {
+            try
+            {
+                StationHostRuntime?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 退出释放资源异常: {ex.Message}");
+            }
+            base.OnExit(e);
         }
     }
 }

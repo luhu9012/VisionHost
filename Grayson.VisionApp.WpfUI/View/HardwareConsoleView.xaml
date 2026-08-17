@@ -4,9 +4,10 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:subViews="clr-namespace:Grayson.Vision.WpfUI.View.HardwareConsole"
-             mc:Ignorable="d" d:DesignHeight="700" d:DesignWidth="1000">
+             mc:Ignorable="d" d:DesignHeight="700" d:DesignWidth="1000"
+             Unloaded="OnUnloaded">
     <Grid Background="{StaticResource BackgroundBrush}">
-        <TabControl Style="{StaticResource ModernTabControlStyle}">
+        <TabControl x:Name="HardwareTabControl" Style="{StaticResource ModernTabControlStyle}" SelectionChanged="OnTabSelectionChanged">
 
             <!-- 1. 相机调试 Panel -->
             <TabItem Header="📷 相机调试" Style="{StaticResource ModernTabItemStyle}">

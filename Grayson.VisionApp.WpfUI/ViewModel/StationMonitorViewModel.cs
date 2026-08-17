@@ -44,6 +44,54 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private int _okCount;
         public int OkCount { get => _okCount; set { if (Set(ref _okCount, value)) OnPropertyChanged(nameof(YieldText)); } }
 
+        private int _errorCount;
+        /// <summary>
+        /// 异常/错误工单数（从 StationStatistics 获取）
+        /// </summary>
+        public int ErrorCount { get => _errorCount; set { if (Set(ref _errorCount, value)) OnPropertyChanged(nameof(YieldText)); } }
+
+        private int _faultCount;
+        /// <summary>
+        /// 故障次数（从 StationStatistics 获取）
+        /// 用于监控设备可靠性
+        /// </summary>
+        public int FaultCount { get => _faultCount; set => Set(ref _faultCount, value); }
+
+        private DateTime? _firstDefectTime;
+        /// <summary>
+        /// 本周期首次缺陷出现时间（从 StationStatistics 获取）
+        /// 用于快速定位问题起点
+        /// </summary>
+        public DateTime? FirstDefectTime { get => _firstDefectTime; set => Set(ref _firstDefectTime, value); }
+
+        private string _lastDefectDescription;
+        /// <summary>
+        /// 最后一次缺陷描述（从 StationStatistics 获取）
+        /// 示例："尺寸超差 5mm", "表面划伤"
+        /// </summary>
+        public string LastDefectDescription { get => _lastDefectDescription; set => Set(ref _lastDefectDescription, value); }
+
+        private string _runtimeStatusSummary;
+        /// <summary>
+        /// 运行状态文字摘要（从 StationRuntimeStatus 获取）
+        /// 用于快速判断设备健康状态
+        /// </summary>
+        public string RuntimeStatusSummary { get => _runtimeStatusSummary; set => Set(ref _runtimeStatusSummary, value); }
+
+        private string _lastErrorMessage;
+        /// <summary>
+        /// 最后错误信息（从 StationRuntimeStatus 获取）
+        /// 显示最近发生的问题
+        /// </summary>
+        public string LastErrorMessage { get => _lastErrorMessage; set => Set(ref _lastErrorMessage, value); }
+
+        private double _averageCycleTimeMs;
+        /// <summary>
+        /// 平均周期时间（从 StationStatistics 获取）
+        /// 用于评估产能和对标标准周期时间
+        /// </summary>
+        public double AverageCycleTimeMs { get => _averageCycleTimeMs; set => Set(ref _averageCycleTimeMs, value); }
+
         private int _ngCount;
         public int NgCount { get => _ngCount; set { if (Set(ref _ngCount, value)) OnPropertyChanged(nameof(YieldText)); } }
 
@@ -82,10 +130,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
             Logs = new ObservableCollection<StationLogEntry>();
             Results = new ObservableCollection<StationResultEntry>();
 
-            StartCommand = new RelayCommand(async _ => await StartAsync(), _ => ActiveClient != null && State != "Running");
-            StopCommand = new RelayCommand(async _ => await StopAsync(), _ => ActiveClient != null);
-            TriggerOnceCommand = new RelayCommand(async _ => await TriggerOnceAsync(), _ => ActiveClient != null);
-            ResetCommand = new RelayCommand(async _ => await ResetAsync(), _ => ActiveClient != null && State == "Faulted");
+            StartCommand = new RelayCommand(async _ => await StartAsync(), _ => ActiveClient != null && (State == "Idle" || State == "Stopped"));
+            StopCommand = new RelayCommand(async _ => await StopAsync(), _ => ActiveClient != null && (State == "Running" || State == "Paused"));
+            PauseCommand = new RelayCommand(async _ => await PauseAsync(), _ => ActiveClient != null && State == "Running");
+            ResumeCommand = new RelayCommand(async _ => await ResumeAsync(), _ => ActiveClient != null && State == "Paused");
+            TriggerOnceCommand = new RelayCommand(async _ => await TriggerOnceAsync(), _ => ActiveClient != null && (State == "Idle" || State == "Running" || State == "Paused"));
+            ResetCommand = new RelayCommand(async _ => await ResetAsync(), _ => ActiveClient != null && (State == "Faulted" || State == "ErrorLocked"));
             ClearLogsCommand = new RelayCommand(_ => Logs.Clear());
 
             LoadAvailableStations();
@@ -164,6 +214,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public ICommand StartCommand { get; }
         public ICommand StopCommand { get; }
+        public ICommand PauseCommand { get; }
+        public ICommand ResumeCommand { get; }
         public ICommand TriggerOnceCommand { get; }
         public ICommand ResetCommand { get; }
         public ICommand ClearLogsCommand { get; }
@@ -276,6 +328,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (ActiveClient == null) return;
             try { await ActiveClient.StopAsync(); }
             catch (Exception ex) { AddLog("ERROR", $"停止失败: {ex.Message}"); }
+        }
+
+        private async Task PauseAsync()
+        {
+            if (ActiveClient == null) return;
+            try { await ActiveClient.PauseAsync(); }
+            catch (Exception ex) { AddLog("ERROR", $"暂停失败: {ex.Message}"); }
+        }
+
+        private async Task ResumeAsync()
+        {
+            if (ActiveClient == null) return;
+            try { await ActiveClient.ResumeAsync(); }
+            catch (Exception ex) { AddLog("ERROR", $"恢复失败: {ex.Message}"); }
         }
 
         private async Task TriggerOnceAsync()

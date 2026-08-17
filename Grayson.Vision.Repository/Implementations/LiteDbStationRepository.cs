@@ -74,8 +74,8 @@ namespace Grayson.Vision.Repository.Implementations
                 existing.IsEnabled = station.IsEnabled;
                 existing.TimeoutMs = station.TimeoutMs;
                 existing.Model = station;
-                existing.DeviceKeys = station.DeviceMappings?.Select(d => d.MappedDeviceKey).Where(k => !string.IsNullOrEmpty(k)).ToList()
-                    ?? new List<string>();
+                // TODO: 与 RecipeDeviceMappingModel 等字段对齐后，恢复此逻辑
+                existing.DeviceKeys = new List<string>();  // 临时清空，待与 RecipeDeviceMappingModel 对齐
                 existing.UpdatedTime = DateTime.Now;
                 return col.Update(existing);
             }
@@ -90,8 +90,8 @@ namespace Grayson.Vision.Repository.Implementations
                 IsEnabled = station.IsEnabled,
                 TimeoutMs = station.TimeoutMs,
                 Model = station,
-                DeviceKeys = station.DeviceMappings?.Select(d => d.MappedDeviceKey).Where(k => !string.IsNullOrEmpty(k)).ToList()
-                    ?? new List<string>()
+                // TODO: 与 RecipeDeviceMappingModel 等字段对齐后，恢复此逻辑
+                DeviceKeys = new List<string>()  // 临时清空，待与 RecipeDeviceMappingModel 对齐
             };
 
             if (string.IsNullOrEmpty(po.Id))

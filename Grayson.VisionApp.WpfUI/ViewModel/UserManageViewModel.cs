@@ -6,6 +6,8 @@
 //===================================================================================
 
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Infrastructure.Permission;
+using Grayson.Vision.Contracts.Infrastructure.Permission.Models;
 using Grayson.Vision.WpfUI.Common;
 using System;
 using System.Collections.Generic;
@@ -16,67 +18,8 @@ using System.Windows.Input;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
-    /// <summary>
-    /// 用户信息数据模型
-    /// </summary>
-    public class UserModel : ViewModelBase
-    {
-        private string _userName;
-        public string UserName
-        {
-            get => _userName;
-            set => Set(ref _userName, value);
-        }
-
-        private string _displayName;
-        public string DisplayName
-        {
-            get => _displayName;
-            set => Set(ref _displayName, value);
-        }
-
-        private UserRole _role;
-        public UserRole Role
-        {
-            get => _role;
-            set => Set(ref _role, value);
-        }
-
-        private string _roleDisplayName;
-        public string RoleDisplayName
-        {
-            get => _roleDisplayName;
-            set => Set(ref _roleDisplayName, value);
-        }
-
-        private bool _isEnabled;
-        public bool IsEnabled
-        {
-            get => _isEnabled;
-            set => Set(ref _isEnabled, value);
-        }
-
-        private DateTime _createTime;
-        public DateTime CreateTime
-        {
-            get => _createTime;
-            set => Set(ref _createTime, value);
-        }
-
-        private DateTime _lastLoginTime;
-        public DateTime LastLoginTime
-        {
-            get => _lastLoginTime;
-            set => Set(ref _lastLoginTime, value);
-        }
-
-        private string _remark;
-        public string Remark
-        {
-            get => _remark;
-            set => Set(ref _remark, value);
-        }
-    }
+    // UserModel 已迁移至 Grayson.Vision.Contracts.Infrastructure.Permission.Models
+    // 此处通过 using 导入保持兼容性
 
     /// <summary>
     /// 用户管理 ViewModel，提供用户增删改查和权限分配功能

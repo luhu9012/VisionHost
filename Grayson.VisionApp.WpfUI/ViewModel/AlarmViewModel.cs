@@ -5,7 +5,9 @@
 // 说 明: 报警日志界面的 ViewModel
 //===================================================================================
 
+using Grayson.Vision.Contracts.Infrastructure.Alarm;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Core.Infrastructure.Alarm;
 using Grayson.Vision.WpfUI.Common;
 using System;
 using System.Collections.ObjectModel;
@@ -60,22 +62,63 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
     }
 
-    public class AlarmViewModel : ViewModelBase
+    public class AlarmViewModel : ViewModelBase, IAlarmSink
     {
-        private System.Windows.Threading.DispatcherTimer _timer;
-
         public AlarmViewModel()
         {
-
-
             AcknowledgeCommand = new RelayCommand(OnAcknowledge);
             AcknowledgeAllCommand = new RelayCommand(_ => OnAcknowledgeAll());
             ClearHistoryCommand = new RelayCommand(_ => OnClearHistory());
             ExportCommand = new RelayCommand(_ => OnExport());
 
-            InitializeMockData();
+            AlarmList = new ObservableCollection<AlarmRecordModel>();
+            AlarmList.CollectionChanged += (s, e) => UpdateAlarmCounts();
 
-            StartMockAlarmTimer();
+            // 注册为 Core 告警总线的 UI Sink
+            AlarmBus.Instance.RegisterSink(this);
+        }
+
+        /// <summary>
+        /// 页面离开或 VM 释放时，从 AlarmBus 注销，避免内存泄漏。
+        /// </summary>
+        public void Dispose()
+        {
+            AlarmBus.Instance.UnregisterSink(this);
+        }
+
+        /// <summary>
+        /// Core 告警总线回调入口。
+        /// </summary>
+        public void Raise(AlarmItem alarm)
+        {
+            if (alarm == null) return;
+
+            Application.Current?.Dispatcher.InvokeAsync(() =>
+            {
+                var record = new AlarmRecordModel
+                {
+                    Time = alarm.Timestamp.ToLocalTime(),
+                    Level = MapSeverity(alarm.Severity),
+                    Source = string.IsNullOrEmpty(alarm.StationId)
+                        ? alarm.Source
+                        : $"[{alarm.StationId}] {alarm.Source}",
+                    Message = $"[{alarm.FaultCode}] {alarm.Message}",
+                    IsAcknowledged = false
+                };
+
+                AlarmList.Insert(0, record);
+                UpdateAlarmCounts();
+            });
+        }
+
+        private static AlarmLevel MapSeverity(AlarmSeverity severity)
+        {
+            switch (severity)
+            {
+                case AlarmSeverity.Warning: return AlarmLevel.Warning;
+                case AlarmSeverity.Fault: return AlarmLevel.Error;
+                default: return AlarmLevel.Info;
+            }
         }
 
         #region 属性
@@ -111,48 +154,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
         #endregion
 
         #region 方法
-
-        private void InitializeMockData()
-        {
-            AlarmList = new ObservableCollection<AlarmRecordModel>
-            {
-                new AlarmRecordModel { Time = DateTime.Now.AddMinutes(-45), Level = AlarmLevel.Critical, Source = "相机2-检测工位", Message = "相机连接断开,无法采集图像", IsAcknowledged = false },
-                new AlarmRecordModel { Time = DateTime.Now.AddMinutes(-30), Level = AlarmLevel.Error, Source = "运动控制卡", Message = "X轴运动超限,触发硬限位", IsAcknowledged = false },
-                new AlarmRecordModel { Time = DateTime.Now.AddMinutes(-20), Level = AlarmLevel.Warning, Source = "视觉检测", Message = "连续10个产品检测NG,请检查配方参数", IsAcknowledged = true, AcknowledgedBy = "admin" },
-                new AlarmRecordModel { Time = DateTime.Now.AddMinutes(-15), Level = AlarmLevel.Error, Source = "PLC通信", Message = "PLC通信超时,3秒未收到响应", IsAcknowledged = false },
-                new AlarmRecordModel { Time = DateTime.Now.AddMinutes(-10), Level = AlarmLevel.Warning, Source = "光源控制", Message = "光源1亮度异常,实际亮度低于设定值", IsAcknowledged = true, AcknowledgedBy = "engineer" }
-            };
-
-            AlarmList.CollectionChanged += (s, e) => UpdateAlarmCounts();
-        }
-
-        private void StartMockAlarmTimer()
-        {
-            _timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-            _timer.Tick += (s, e) =>
-            {
-                var random = new Random();
-                if (random.Next(100) < 30)
-                {
-                    var levels = new[] { AlarmLevel.Info, AlarmLevel.Warning, AlarmLevel.Error };
-                    var sources = new[] { "相机1", "相机2", "PLC", "运动卡", "视觉算法" };
-                    var messages = new[] { "设备通信延迟", "参数超限", "检测异常", "连接不稳定" };
-
-                    var newAlarm = new AlarmRecordModel
-                    {
-                        Time = DateTime.Now,
-                        Level = levels[random.Next(levels.Length)],
-                        Source = sources[random.Next(sources.Length)],
-                        Message = messages[random.Next(messages.Length)],
-                        IsAcknowledged = false
-                    };
-
-                    AlarmList.Insert(0, newAlarm);
-                    GlobalData.Instance.AlarmCount = AlarmList.Count(a => !a.IsAcknowledged);
-                }
-            };
-            _timer.Start();
-        }
 
         private void OnAcknowledge(object parameter)
         {

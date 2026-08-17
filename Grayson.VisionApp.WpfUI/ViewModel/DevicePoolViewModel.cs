@@ -3,7 +3,7 @@ using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
-using Grayson.Vision.WpfUI.Service; // 引入统一服务层
+//using Grayson.Vision.WpfUI.Service; // 引入统一服务层
 using Grayson.Vision.WpfUI.View;
 using System;
 using System.Collections.Generic;
@@ -103,6 +103,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
     }
     public class DevicePoolViewModel : ViewModelBase
     {
+        private readonly Contracts.Devices.Services.IDevicePool _devicePool;
+
         public ObservableCollection<DeviceItemViewModel> Devices { get; } = new ObservableCollection<DeviceItemViewModel>();
 
         private DeviceItemViewModel _selectedDevice;
@@ -140,9 +142,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public RelayCommand ConnectCommand { get; }
         public RelayCommand DisconnectCommand { get; }
 
-        public DevicePoolViewModel()
+        public DevicePoolViewModel(Contracts.Devices.Services.IDevicePool devicePool = null)
         {
-            RefreshCommand = new RelayCommand(_ => LoadFromManager());
+            _devicePool = App.StationHostRuntime?.DevicePool;
+             
+
+            RefreshCommand = new RelayCommand(_ => LoadFromPool());
             ManualAddDeviceCommand = new RelayCommand(_ => OnManualAddDevice());
             ScanHardwareCommand = new RelayCommand(async _ => await OnScanHardwareAsync());
             SaveConfigCommand = new RelayCommand(async _ => await OnSaveConfigAsync(), _ => SelectedDevice != null);
@@ -151,7 +156,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             ConnectCommand = new RelayCommand(_ => OnConnect(), _ => SelectedDevice != null && !SelectedDevice.IsConnected);
             DisconnectCommand = new RelayCommand(_ => OnDisconnect(), _ => SelectedDevice != null && SelectedDevice.IsConnected);
 
-            LoadFromManager();
+            LoadFromPool();
         }
         /// <summary>
         /// 当选中设备的属性（如 IsConnected、State）发生变化时调用
@@ -187,7 +192,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (dialog.ShowDialog() == true)
             {
                 // 手动配置实例化存入底层
-                var res = await DevicePoolManager.Instance.CreateAndSaveManualDeviceAsync(
+                var res = await _devicePool.CreateAndSaveManualDeviceAsync(
                     dialogVm.SelectedCategory,
                     dialogVm.SelectedBrand,
                     dialogVm.DeviceKey,
@@ -195,7 +200,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 if (res.Success)
                 {
-                    LoadFromManager();
+                    LoadFromPool();
                     SelectedDevice = Devices.FirstOrDefault(d => d.DeviceKey == dialogVm.DeviceKey);
                 }
                 else
@@ -211,7 +216,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private async Task OnScanHardwareAsync()
         {
             // 1. 执行扫描
-            var scannedInfos = await Task.Run(() => DevicePoolManager.Instance.ScanAllPhysicalDevices());
+            var scannedInfos = await Task.Run(() => _devicePool.ScanAllPhysicalDevices());
 
             if (!scannedInfos.Any())
             {
@@ -229,7 +234,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 int addedCount = 0;
                 foreach (var item in dialogVm.ScannedDevices.Where(x => x.IsSelected))
                 {
-                    var res = await DevicePoolManager.Instance.AddDeviceToPoolAndSaveAsync(item.RawInfo, item.TargetDeviceKey);
+                    var res = await _devicePool.AddDeviceToPoolAndSaveAsync(item.RawInfo, item.TargetDeviceKey);
                     if (res.Success)
                     {
                         addedCount++;
@@ -242,17 +247,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 if (addedCount > 0)
                 {
-                    // 4. 重新从底层 Manager 载入最新设备列表并刷 UI
-                    LoadFromManager();
+                    // 4. 重新从设备池载入最新设备列表并刷 UI
+                    LoadFromPool();
                     MessageBox.Show($"成功添加并保存了 {addedCount} 个设备！", "完成", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
         }
 
-        public void LoadFromManager()
+        public void LoadFromPool()
         {
             Devices.Clear();
-            foreach (var dev in DevicePoolManager.Instance.GetAllDevices())
+            foreach (var dev in _devicePool.GetAllDevices())
             {
                 Devices.Add(new DeviceItemViewModel(dev));
             }
@@ -262,7 +267,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private async Task OnSaveConfigAsync()
         {
             if (SelectedDevice == null) return;
-            var res = await DevicePoolManager.Instance.UpdateDeviceMappingAsync(SelectedDevice.Model);
+            var res = await _devicePool.UpdateDeviceMappingAsync(SelectedDevice.Model);
             if (res.Success)
                 MessageBox.Show("设备配置更新成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             else
@@ -276,7 +281,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             if (SelectedDevice != null && MessageBox.Show($"确定要移除设备 '{SelectedDevice.DeviceKey}' 吗?", "确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
             {
-                if (DevicePoolManager.Instance.RemoveDevice(SelectedDevice.DeviceKey))
+                if (_devicePool.RemoveDevice(SelectedDevice.DeviceKey))
                 {
                     Devices.Remove(SelectedDevice);
                     SelectedDevice = Devices.FirstOrDefault();

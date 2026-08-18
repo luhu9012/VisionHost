@@ -50,8 +50,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OpenFlowEditCommand = new RelayCommand(_ => OnOpenFlowEdit(), _ => SelectedRecipe != null && SelectedRecipe.IsEditable);
             RefreshDevicesCommand = new RelayCommand(_ => RefreshLogicalDevicesFromFlow(), _ => SelectedRecipe?.MainProcess != null && SelectedRecipe.IsEditable);
             SubmitApprovalCommand = new RelayCommand(_ => OnSubmitApproval(), _ => CanSubmitApproval());
-            ApproveRecipeCommand = new RelayCommand(_ => OnApproveRecipe(), _ => CanApproveOrReject());
-            RejectRecipeCommand = new RelayCommand(_ => OnRejectRecipe(), _ => CanApproveOrReject());
+            ApproveRecipeCommand = new RelayCommand(_ => OnApproveRecipe(), _ => CanApproveRecipe());
+            RejectRecipeCommand = new RelayCommand(_ => OnRejectRecipe(), _ => CanRejectRecipe());
 
             // 增加：当 GlobalData 的用户角色发生变化时刷新审批命令可用性
             GlobalData.Instance.PropertyChanged += (s, e) =>
@@ -188,6 +188,21 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 // 反射拓扑提取
                 var extractedDevices = RecipeDeviceExtractor.ExtractLogicalDevices(SelectedRecipe.MainProcess);
+
+                // 合并保留已有的 MappedDeviceId，避免从 Flow 重提取后丢失工位映射关系
+                var existingMappings = SelectedRecipe.LogicalDevices?
+                    .Where(d => !string.IsNullOrEmpty(d.LogicalDeviceId))
+                    .ToDictionary(d => d.LogicalDeviceId, d => d.MappedDeviceId)
+                    ?? new Dictionary<string, string>();
+
+                foreach (var device in extractedDevices)
+                {
+                    if (existingMappings.TryGetValue(device.LogicalDeviceId, out var mappedId))
+                    {
+                        device.MappedDeviceId = mappedId;
+                    }
+                }
+
                 SelectedRecipe.LogicalDevices = extractedDevices;
             }
 
@@ -378,11 +393,19 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Rejected);
         }
 
-        private bool CanApproveOrReject()
+        private bool CanApproveRecipe()
         {
             return SelectedRecipe != null &&
                    GlobalData.Instance.CurrentUserRole == UserRole.Administrator &&
                    SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval;
+        }
+
+        private bool CanRejectRecipe()
+        {
+            return SelectedRecipe != null &&
+                   GlobalData.Instance.CurrentUserRole == UserRole.Administrator &&
+                   (SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval ||
+                    SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved);
         }
 
         /// <summary>
@@ -411,7 +434,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval)
                     return "待审批：等待管理员审批";
                 if (SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved)
-                    return SelectedRecipe.IsEffective ? "✅ 已批准并已生效，可下发" : "已批准，等待生效时间";
+                    return SelectedRecipe.IsEffective ? "✅ 已批准并已生效，可下发；如需修改可由管理员驳回后编辑" : "已批准，等待生效时间；如需修改可由管理员驳回后编辑";
                 if (SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Rejected)
                     return "已驳回：请根据意见修改后重新提交";
                 return SelectedRecipe.ApprovalStatus.ToString();
@@ -489,7 +512,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             _recipeStorage.SaveRecipe(SelectedRecipe);
 
             RaiseCommandsCanExecuteChanged();
-            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已被驳回，请修改后重新提交。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已驳回并回退到可编辑状态，请修改后重新提交。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         private void EnsureApprovalInfo()

@@ -250,7 +250,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         StationCode = stationConfig.StationCode,
                         StationName = stationConfig.StationName,
                         LineId = stationConfig.LineId,
-                        CurrentRecipeName = stationConfig.BoundRecipe?.RecipeName
+                        CurrentRecipeName = stationConfig.BoundRecipeName
                     };
                     StationCards.Add(card);
                 }

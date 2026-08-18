@@ -14,6 +14,13 @@ namespace Grayson.Vision.Repository.Services
     /// </summary>
     public class RecipeStorageService : IRecipeStorageService
     {
+        private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
+        {
+            TypeNameHandling = TypeNameHandling.Auto,
+            Formatting = Formatting.Indented,
+            NullValueHandling = NullValueHandling.Ignore
+        };
+
         private readonly string _recipesFolderPath;
 
         public RecipeStorageService(string recipesFolderPath = null)
@@ -36,7 +43,7 @@ namespace Grayson.Vision.Repository.Services
                 try
                 {
                     string json = File.ReadAllText(file);
-                    var recipe = JsonConvert.DeserializeObject<RecipeModel>(json);
+                    var recipe = JsonConvert.DeserializeObject<RecipeModel>(json, JsonSettings);
                     if (recipe != null) list.Add(recipe);
                 }
                 catch { /* 兼容旧文件或损坏文件，静默跳过 */ }
@@ -54,7 +61,7 @@ namespace Grayson.Vision.Repository.Services
                 try
                 {
                     string json = File.ReadAllText(recipeIdOrPath);
-                    return JsonConvert.DeserializeObject<RecipeModel>(json);
+                    return JsonConvert.DeserializeObject<RecipeModel>(json, JsonSettings);
                 }
                 catch { return null; }
             }
@@ -74,7 +81,7 @@ namespace Grayson.Vision.Repository.Services
 
             try
             {
-                string json = JsonConvert.SerializeObject(recipe, Formatting.Indented);
+                string json = JsonConvert.SerializeObject(recipe, JsonSettings);
                 File.WriteAllText(filePath, json);
                 return true;
             }
@@ -129,7 +136,7 @@ namespace Grayson.Vision.Repository.Services
                     }
                     else
                     {
-                        var recipe = JsonConvert.DeserializeObject<RecipeModel>(json);
+                        var recipe = JsonConvert.DeserializeObject<RecipeModel>(json, JsonSettings);
 
                         // 2. 核心字段缺失判定（如配方 ID、编号或名称同时为空，视为损坏脏数据）
                         if (recipe == null ||

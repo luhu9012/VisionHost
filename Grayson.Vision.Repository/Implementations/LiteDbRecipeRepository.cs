@@ -39,4 +39,19 @@ namespace Grayson.Vision.Repository.Implementations
             return Update(recipe);
         }
     }
+
+    public class LiteDbCalibrationProfileRepository : LiteDbRepositoryBase<CalibrationProfilePo>, ICalibrationProfileRepository
+    {
+        protected override string CollectionName => "calibration_profiles";
+
+        public CalibrationProfilePo GetByName(string profileName)
+        {
+            return Find(x => x.ProfileName == profileName).FirstOrDefault();
+        }
+
+        public CalibrationProfilePo GetByStationCode(string stationCode)
+        {
+            return Find(x => x.BoundStationCode == stationCode).FirstOrDefault();
+        }
+    }
 }

@@ -3,12 +3,16 @@
 // 说 明: 基于 Halcon 的图像渲染服务实现。
 //===================================================================================
 
+using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Imaging;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
 using HalconDotNet;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
 
 namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
@@ -41,8 +45,17 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
                     LogBus.Debug("Halcon", $"通过路径加载 HImage: {filePath}");
                     hImage = new HImage(filePath);
                 }
-                // 3. 如果是 Bitmap
-                else if (nativeImage is System.Drawing.Bitmap bitmap)
+                // 3. 如果是相机帧对象
+                else if (nativeImage is FrameEventArgs frame)
+                {
+                    LogBus.Debug("Halcon", "通过 FrameEventArgs 转换 HImage...");
+                    using (var bitmap = CreateBitmapFromFrame(frame))
+                    {
+                        hImage = ConvertBitmapToHImage(bitmap);
+                    }
+                }
+                // 4. 如果是 Bitmap
+                else if (nativeImage is Bitmap bitmap)
                 {
                     LogBus.Debug("Halcon", "通过 Bitmap 锁内存转换 HImage...");
                     hImage = ConvertBitmapToHImage(bitmap);
@@ -66,7 +79,81 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
             }
         }
 
-        private HImage ConvertBitmapToHImage(System.Drawing.Bitmap bitmap)
+        public WpfImageRenderContext CreateRenderContextFromFrame(FrameEventArgs frame, string nodeName, string nodeId = null)
+        {
+            if (frame?.Buffer == null || frame.Width <= 0 || frame.Height <= 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                using (var bitmap = CreateBitmapFromFrame(frame))
+                {
+                    var renderImage = WrapImage(bitmap);
+                    if (renderImage == null)
+                    {
+                        return null;
+                    }
+
+                    return new WpfImageRenderContext
+                    {
+                        NodeId = string.IsNullOrWhiteSpace(nodeId) ? Guid.NewGuid().ToString("N") : nodeId,
+                        NodeName = string.IsNullOrWhiteSpace(nodeName) ? "CameraFrame" : nodeName,
+                        Image = renderImage,
+                        Thumbnail = CreateThumbnail(renderImage)
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("Halcon", $"CreateRenderContextFromFrame 异常: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        private Bitmap CreateBitmapFromFrame(FrameEventArgs frame)
+        {
+            string fmtStr = (frame.PixelFormat ?? string.Empty).ToUpperInvariant();
+            bool isColor = fmtStr.Contains("BGR") || fmtStr.Contains("RGB");
+            int bytesPerPixel = isColor ? 3 : 1;
+            int rawStride = frame.Width * bytesPerPixel;
+            var pixelFormat = isColor ? PixelFormat.Format24bppRgb : PixelFormat.Format8bppIndexed;
+            var bitmap = new Bitmap(frame.Width, frame.Height, pixelFormat);
+
+            if (!isColor)
+            {
+                ColorPalette palette = bitmap.Palette;
+                for (int i = 0; i < palette.Entries.Length; i++)
+                {
+                    palette.Entries[i] = Color.FromArgb(i, i, i);
+                }
+                bitmap.Palette = palette;
+            }
+
+            BitmapData bmpData = null;
+            try
+            {
+                bmpData = bitmap.LockBits(new Rectangle(0, 0, frame.Width, frame.Height), ImageLockMode.WriteOnly, pixelFormat);
+                for (int row = 0; row < frame.Height; row++)
+                {
+                    IntPtr dest = IntPtr.Add(bmpData.Scan0, row * bmpData.Stride);
+                    int srcOffset = row * rawStride;
+                    Marshal.Copy(frame.Buffer, srcOffset, dest, Math.Min(rawStride, frame.Buffer.Length - srcOffset));
+                }
+            }
+            finally
+            {
+                if (bmpData != null)
+                {
+                    bitmap.UnlockBits(bmpData);
+                }
+            }
+
+            return bitmap;
+        }
+
+        private HImage ConvertBitmapToHImage(Bitmap bitmap)
         {
             if (bitmap == null) return null;
 

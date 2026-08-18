@@ -42,6 +42,11 @@
                 <TreeView Grid.Row="2" Background="Transparent" BorderThickness="0"
                           ItemsSource="{Binding ProductionLines}"
                           SelectedItemChanged="TreeView_SelectedItemChanged">
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem">
+                            <Setter Property="IsExpanded" Value="True"/>
+                        </Style>
+                    </TreeView.ItemContainerStyle>
                     <TreeView.ItemTemplate>
                         <!-- 1级：产线节点 -->
                         <HierarchicalDataTemplate ItemsSource="{Binding Stations}">
@@ -177,8 +182,14 @@
                             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="绑定的产品配方：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
                                 <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="240"
-                                          ItemsSource="{Binding AvailableRecipes}" DisplayMemberPath="RecipeName"
-                                          SelectedItem="{Binding SelectedStation.BoundRecipe}"/>
+                                          ItemsSource="{Binding AvailableRecipes}" 
+                                          SelectedItem="{Binding SelectedStation.BoundRecipe}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding RecipeName}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
                             </StackPanel>
 
                             <TextBlock Grid.Row="1" Text="💡 请将流程配方中要求的【逻辑设备】映射至下方【已分配的物理硬件】："
@@ -197,9 +208,15 @@
                                             <DataTemplate>
                                                 <ComboBox Style="{StaticResource ModernComboBoxStyle}"
                                                           ItemsSource="{Binding DataContext.SelectedStation.HardwareDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                          DisplayMemberPath="DeviceName"
+                                                        
                                                           SelectedValuePath="DeviceId"
-                                                          SelectedValue="{Binding MappedDeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                          SelectedValue="{Binding MappedDeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding DeviceId}" />
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>

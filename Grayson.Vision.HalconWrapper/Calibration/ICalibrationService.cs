@@ -1,4 +1,6 @@
 using Grayson.Vision.Contracts.Core;
+using System.Collections.Generic;
+using Grayson.Vision.Contracts.Calibration.Models;
 
 namespace Grayson.Vision.HalconWrapper.Calibration
 {
@@ -16,6 +18,10 @@ namespace Grayson.Vision.HalconWrapper.Calibration
 
     public interface ICalibrationService
     {
+        /// <summary>
+        /// 获取系统中所有标定方案配置
+        /// </summary>
+        Result<List<CalibrationProfile>> GetAllProfiles();
         /// <summary>
         /// 九点标定计算HomMat2D单应矩阵
         /// </summary>
@@ -45,5 +51,16 @@ namespace Grayson.Vision.HalconWrapper.Calibration
         /// 物理坐标逆转换像素坐标 (World -> Pixel)
         /// </summary>
         Result<(double PixelX, double PixelY)> MapWorldToPixel(string matrixFilePath, double wx, double wy);
+        /// <summary>
+        /// 高级手眼坐标转换：考虑像素、物理旋转中心与角度补正
+        /// </summary>
+        Result<(double FinalWorldX, double FinalWorldY)> MapPixelToWorldWithOffset(
+           string matrixFilePath,
+           double px, double py,
+           double rotateAngleDeg,
+           double centerWx, double centerWy,
+           EyeMode eyeMode,
+           (double RobotX, double RobotY) currentRobotPos);
+
     }
 }

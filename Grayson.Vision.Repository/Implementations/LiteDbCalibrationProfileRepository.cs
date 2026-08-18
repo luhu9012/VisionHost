@@ -1,0 +1,1 @@
+// LiteDbCalibrationProfileRepository 已合并到 Implementations/LiteDbRecipeRepository.cs，保留文件仅避免项目项失效。

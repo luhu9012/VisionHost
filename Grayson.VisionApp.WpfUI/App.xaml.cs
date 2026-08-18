@@ -219,7 +219,7 @@ namespace Grayson.Vision.WpfUI
             // 报警记录页面
             navigationService.RegisterPage(PageType.Alarm, () => new AlarmView());
             // 流程编辑页面
-            navigationService.RegisterPage(PageType.FlowEdit, () => new FlowEditView());
+            navigationService.RegisterPage(PageType.FlowEdit, () => new FlowEditViewWrapper());
             // 工位管理页面
             navigationService.RegisterPage(PageType.StationManage, () => new StationManageView());
             // 配方管理页面

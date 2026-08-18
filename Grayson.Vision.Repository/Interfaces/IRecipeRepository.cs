@@ -8,4 +8,10 @@ namespace Grayson.Vision.Repository.Interfaces
         RecipePo GetActiveRecipe(string productCategory);
         bool SetActive(string id);
     }
+
+    public interface ICalibrationProfileRepository : IRepository<CalibrationProfilePo, string>
+    {
+        CalibrationProfilePo GetByName(string profileName);
+        CalibrationProfilePo GetByStationCode(string stationCode);
+    }
 }

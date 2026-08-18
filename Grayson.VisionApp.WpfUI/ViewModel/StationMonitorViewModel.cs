@@ -35,6 +35,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
     {
         private readonly StationRuntimeManager _runtimeManager;
         private readonly StationConfigService _configService;
+        private readonly Grayson.Vision.Contracts.Recipe.Services.IRecipeStorageService _recipeStorage;
         private IWorkerClient _activeClient;
         private readonly HalconImageRenderService _renderService;
 
@@ -117,10 +118,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
-        public StationMonitorViewModel(StationRuntimeManager runtimeManager = null, StationConfigService configService = null)
+        public StationMonitorViewModel(
+            StationRuntimeManager runtimeManager = null,
+            StationConfigService configService = null,
+            Grayson.Vision.Contracts.Recipe.Services.IRecipeStorageService recipeStorage = null)
         {
             _runtimeManager = runtimeManager ?? new StationRuntimeManager();
             _configService = configService ?? new StationConfigService();
+            _recipeStorage = recipeStorage ?? Grayson.Vision.Repository.Services.RecipeStorageFactory.CreateRecipeStorageService();
 
             // 1. 初始化图像展示 ViewModel
             _renderService = new HalconImageRenderService();
@@ -285,7 +290,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var stationConfig = _configService.LoadAllLines()
                 .SelectMany(l => l.Stations)
                 .FirstOrDefault(s => s.StationCode == stationCode);
-            CurrentRecipeName = stationConfig?.BoundRecipe?.RecipeName;
+            var recipe = !string.IsNullOrEmpty(stationConfig?.BoundRecipeId)
+                ? _recipeStorage.LoadRecipe(stationConfig.BoundRecipeId)
+                : null;
+            CurrentRecipeName = recipe?.RecipeName ?? stationConfig?.BoundRecipeName;
 
             AddLog("INFO", $"已连接工位 {stationCode}，当前状态: {State}");
         }
@@ -360,9 +368,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 var config = _configService.LoadAllLines()
                     .SelectMany(l => l.Stations)
                     .FirstOrDefault(s => s.StationCode == SelectedStationCode);
-                if (config?.BoundRecipe?.MainProcess != null)
+                var resetRecipe = !string.IsNullOrEmpty(config?.BoundRecipeId)
+                    ? _recipeStorage.LoadRecipe(config.BoundRecipeId)
+                    : null;
+                if (resetRecipe?.MainProcess != null)
                 {
-                    await ActiveClient.LoadRecipeAsync(config.BoundRecipe.MainProcess);
+                    await ActiveClient.LoadRecipeAsync(resetRecipe.MainProcess);
                 }
                 State = ActiveClient.CurrentState.ToString();
                 AddLog("INFO", "工位已复位");

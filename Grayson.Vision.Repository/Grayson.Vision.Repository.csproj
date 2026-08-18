@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -52,18 +52,21 @@
   <ItemGroup>
     <Compile Include="Core\BaseEntity.cs" />
     <Compile Include="Core\DbContext.cs" />
-    <Compile Include="Entities\DeviceConfigPo.cs" />
+    <Compile Include="Entities\CalibrationProfilePo.cs" />
+   <Compile Include="Entities\DeviceConfigPo.cs" />
     <Compile Include="Entities\InspectionLogPo.cs" />
     <Compile Include="Entities\RecipePo.cs" />
     <Compile Include="Entities\StationConfigPo.cs" />
     <Compile Include="Entities\UserPo.cs" />
-    <Compile Include="Implementations\LiteDbDeviceConfigRepository.cs" />
+    <Compile Include="Implementations\LiteDbCalibrationProfileRepository.cs" />
+  <Compile Include="Implementations\LiteDbDeviceConfigRepository.cs" />
     <Compile Include="Implementations\LiteDbInspectionLogRepository.cs" />
     <Compile Include="Implementations\LiteDbRecipeRepository.cs" />
     <Compile Include="Implementations\LiteDbRepositoryBase.cs" />
     <Compile Include="Implementations\LiteDbStationRepository.cs" />
     <Compile Include="Implementations\LiteDbUserRepository.cs" />
-    <Compile Include="Interfaces\IDeviceConfigRepository.cs" />
+    <Compile Include="Interfaces\ICalibrationProfileRepository.cs" />
+   <Compile Include="Interfaces\IDeviceConfigRepository.cs" />
     <Compile Include="Interfaces\IInspectionLogRepository.cs" />
     <Compile Include="Interfaces\IRecipeRepository.cs" />
     <Compile Include="Interfaces\IStationRepository.cs" />
@@ -83,8 +86,9 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="README_repository.md" />
-    <None Include="目录.md" />
+    <None Include="鐩綍.md" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
+

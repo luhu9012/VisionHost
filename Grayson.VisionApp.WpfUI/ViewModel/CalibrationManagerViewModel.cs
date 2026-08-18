@@ -9,7 +9,11 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Calibration.Models;
 using Grayson.Vision.HalconWrapper.Calibration;
+using Grayson.Vision.Repository;
+using Grayson.Vision.Repository.Entities;
+using Grayson.Vision.Repository.Interfaces;
 using Grayson.Vision.WpfUI.Service;
 using Grayson.Vision.WpfUI.View;
 
@@ -17,45 +21,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 {
 
 
-    public class CalibrationProfile : ViewModelBase
-    {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
-        public string Name { get; set; }
-        public string BoundStationCode { get; set; }
-        public string BoundDeviceId { get; set; }
-        public string BindingInfo { get; set; }
-        public string CameraId { get; set; } = "Cam_01";
-        public string AxisId { get; set; } = "Axis_X";
-        public DateTime UpdatedAt { get; set; } = DateTime.Now;
-
-        private bool _isCalibrated;
-        public bool IsCalibrated
-        {
-            get => _isCalibrated;
-            set => Set(ref _isCalibrated, value);
-        }
-
-        private double _rmsError;
-        public double RmsError
-        {
-            get => _rmsError;
-            set => Set(ref _rmsError, value);
-        }
-
-        private string _homMatFilePath;
-        public string HomMatFilePath
-        {
-            get => _homMatFilePath;
-            set => Set(ref _homMatFilePath, value);
-        }
-
-        private CalibrationType _type = CalibrationType.NinePointHandEye;
-        public CalibrationType Type
-        {
-            get => _type;
-            set => Set(ref _type, value);
-        }
-    }
+ 
 
     /// <summary>
     /// 工位跳转导航参数载体
@@ -70,6 +36,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
     public class CalibrationManagerViewModel : ViewModelBase, INavigationAware
     {
         private readonly ICalibrationService _calibService;
+        private readonly ICalibrationProfileRepository _profileRepository;
 
         #region 绑定属性
 
@@ -125,6 +92,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public CalibrationManagerViewModel(ICalibrationService calibService = null)
         {
             _calibService = calibService ?? new CalibrationService();
+            _profileRepository = StorageFactory.CreateCalibrationProfileRepository();
 
             NewProfileCommand = new RelayCommand(p =>
             {
@@ -141,7 +109,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             SaveToRecipeCommand = new RelayCommand(_ => SaveToRecipe());
             TestMapCommand = new RelayCommand(_ => ExecuteTestMap());
 
-            LoadDefaultProfiles();
+            LoadProfiles();
         }
 
         #region INavigationAware 接口实现
@@ -167,6 +135,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     };
                     CalibrationProfiles.Add(newProfile);
                     SelectedCalibrationProfile = newProfile;
+                    SaveProfileToRepository(newProfile);
                 }
             }
         }
@@ -177,16 +146,37 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #endregion
 
-        private void LoadDefaultProfiles()
+        private void LoadProfiles()
         {
             CalibrationProfiles.Clear();
-            CalibrationProfiles.Add(new CalibrationProfile
+
+            try
             {
-                Name = "工位1_Top相机九点标定",
-                Type = CalibrationType.NinePointHandEye,
-                BindingInfo = "工位: ST_01 / 平台1",
-                IsCalibrated = false
-            });
+                foreach (var po in _profileRepository.GetAll().OrderBy(x => x.ProfileName))
+                {
+                    if (po.Model != null)
+                    {
+                        CalibrationProfiles.Add(po.Model);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("加载标定方案失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            if (CalibrationProfiles.Count == 0)
+            {
+                CalibrationProfiles.Add(new CalibrationProfile
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Name = "工位1_Top相机九点标定",
+                    Type = CalibrationType.NinePointHandEye,
+                    BindingInfo = "工位: ST_01 / 平台1",
+                    IsCalibrated = false
+                });
+            }
+
             SelectedCalibrationProfile = CalibrationProfiles.FirstOrDefault();
         }
 
@@ -209,6 +199,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             CalibrationProfiles.Add(newProfile);
             SelectedCalibrationProfile = newProfile;
+            SaveProfileToRepository(newProfile);
         }
 
         private string GetDefaultNameForType(CalibrationType type, string station)
@@ -217,12 +208,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 case CalibrationType.NinePointHandEye:
                     return $"{station}_九点手眼标定";
+                case CalibrationType.HandEyeWithRotation:
+                    return $"{station}_12/15点含旋转手眼标定";
                 case CalibrationType.Checkerboard2D:
                     return $"{station}_2D棋盘格标定";
+                case CalibrationType.CameraLensDistortion:
+                    return $"{station}_相机畸变内参标定";
                 case CalibrationType.PixelScale:
                     return $"{station}_像素比例标定";
-                case CalibrationType.HandEyeWithRotation:
-                    return $"{station}_12/15点手眼标定";
                 default:
                     return $"{station}_标定方案";
             }
@@ -240,6 +233,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 var profileToRemove = SelectedCalibrationProfile;
                 int currentIndex = CalibrationProfiles.IndexOf(profileToRemove);
+
+                if (!string.IsNullOrWhiteSpace(profileToRemove.Id))
+                {
+                    _profileRepository.Delete(profileToRemove.Id);
+                }
 
                 CalibrationProfiles.Remove(profileToRemove);
 
@@ -267,10 +265,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 if (win.ShowDialog() == true && win.DataContext is CalibrationWizardViewModel wizardVm)
                 {
+                    SelectedCalibrationProfile = wizardVm.TargetProfile;
                     SelectedCalibrationProfile.IsCalibrated = true;
                     SelectedCalibrationProfile.RmsError = wizardVm.CalculatedRms;
                     SelectedCalibrationProfile.HomMatFilePath = wizardVm.OutputHomMatPath;
-
+                    SaveProfileToRepository(SelectedCalibrationProfile);
                     OnPropertyChanged(nameof(SelectedCalibrationProfile));
                     ExecuteTestMap();
                 }
@@ -320,11 +319,46 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (saveRes.Success)
             {
                 SelectedCalibrationProfile.HomMatFilePath = targetFile;
+                SaveProfileToRepository(SelectedCalibrationProfile);
                 MessageBox.Show($"标定矩阵已成功保存并应用：\n{targetFile}", "应用成功", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
                 MessageBox.Show($"保存矩阵失败：" + saveRes.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SaveProfileToRepository(CalibrationProfile profile)
+        {
+            if (profile == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(profile.Id))
+            {
+                profile.Id = Guid.NewGuid().ToString("N");
+            }
+
+            var po = new CalibrationProfilePo
+            {
+                Id = profile.Id,
+                ProfileName = profile.Name,
+                CalibrationType = profile.Type,
+                BoundStationCode = profile.BoundStationCode,
+                BoundDeviceId = profile.BoundDeviceId,
+                IsCalibrated = profile.IsCalibrated,
+                Model = profile
+            };
+
+            var existing = _profileRepository.GetById(po.Id) ?? _profileRepository.GetByName(profile.Name);
+            if (existing == null)
+            {
+                _profileRepository.Insert(po);
+            }
+            else
+            {
+                _profileRepository.Update(po);
             }
         }
     }

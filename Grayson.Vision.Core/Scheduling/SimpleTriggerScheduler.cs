@@ -120,6 +120,7 @@ namespace Grayson.Vision.Core.Scheduling
                 // workOrderContext.BindRecipeTraceability(_stationContext.CurrentRecipe?.CreateTraceabilitySnapshot());
 
                 var nodeExecContext = workOrderContext.CreateNodeContext(_stationContext.ResolveDevice);
+                _executor.SetNodeExecutionContext(nodeExecContext);
 
                 await _executor.StepAsync().ConfigureAwait(false);
 

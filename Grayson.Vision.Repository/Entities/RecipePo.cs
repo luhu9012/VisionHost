@@ -1,4 +1,5 @@
 ﻿// Entities/RecipePo.cs
+using Grayson.Vision.Contracts.Calibration.Models;
 using Grayson.Vision.Contracts.Recipe.Models;
 using Grayson.Vision.Repository.Core;
 
@@ -17,5 +18,15 @@ namespace Grayson.Vision.Repository.Entities
         /// 直接包含 Contracts 层定义的 RecipeModel 完整结构
         /// </summary>
         public RecipeModel Model { get; set; }
+    }
+
+    public class CalibrationProfilePo : BaseEntity
+    {
+        public string ProfileName { get; set; }
+        public CalibrationType CalibrationType { get; set; }
+        public string BoundStationCode { get; set; }
+        public string BoundDeviceId { get; set; }
+        public bool IsCalibrated { get; set; }
+        public CalibrationProfile Model { get; set; }
     }
 }

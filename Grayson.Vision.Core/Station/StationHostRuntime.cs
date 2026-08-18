@@ -122,38 +122,43 @@ namespace Grayson.Vision.Core.Station
             var client = await CreateEmbeddedStationAsync(stationId);
             var worker = _workers[stationId];
 
-            if (deviceMappings != null)
+            var recipeMappings = (deviceMappings ?? recipe?.LogicalDevices)?.ToList();
+            if (recipeMappings != null)
             {
-                // TODO: Phase B - RecipeDeviceMappingModel 等字段对齐后，恢复此逻辑
-                // 临时注释以保证编译通过
-                /*
-                foreach (var mapping in deviceMappings)
+                foreach (var mapping in recipeMappings)
                 {
-                    // 先尝试领用设备
-                    if (!string.IsNullOrEmpty(mapping.MappedDeviceKey))
+                    if (mapping == null) continue;
+
+                    var mappedDeviceKey = mapping.MappedDeviceId;
+                    var logicalDeviceKey = !string.IsNullOrWhiteSpace(mapping.LogicalDeviceId)
+                        ? mapping.LogicalDeviceId
+                        : mapping.LogicalDeviceName;
+
+                    if (string.IsNullOrWhiteSpace(mappedDeviceKey) || string.IsNullOrWhiteSpace(logicalDeviceKey))
+                        continue;
+
+                    if (!DevicePool.ContainsDevice(mappedDeviceKey))
                     {
-                        if (!DevicePool.ContainsDevice(mapping.MappedDeviceKey))
+                        System.Diagnostics.Debug.WriteLine($"[StationHost] 工位 [{stationId}] 绑定失败：设备池不存在 [{mappedDeviceKey}]");
+                        continue;
+                    }
+
+                    bool leasedToMe = DevicePool.GetLeasedDeviceKeys(stationId).Any(k => k == mappedDeviceKey);
+                    if (!leasedToMe)
+                    {
+                        if (!DevicePool.LeaseDeviceToStation(mappedDeviceKey, stationId))
                         {
-                            System.Diagnostics.Debug.WriteLine($"[StationHost] 工位 [{stationId}] 绑定失败：设备池不存在 [{mapping.MappedDeviceKey}]");
+                            System.Diagnostics.Debug.WriteLine($"[StationHost] 工位 [{stationId}] 领用设备 [{mappedDeviceKey}] 失败：已被其他工位占用");
                             continue;
                         }
+                    }
 
-                        bool leasedToMe = DevicePool.GetLeasedDeviceKeys(stationId).Any(k => k == mapping.MappedDeviceKey);
-                        if (!leasedToMe)
-                        {
-                            if (!DevicePool.LeaseDeviceToStation(mapping.MappedDeviceKey, stationId))
-                            {
-                                System.Diagnostics.Debug.WriteLine($"[StationHost] 工位 [{stationId}] 领用设备 [{mapping.MappedDeviceKey}] 失败：已被其他工位占用");
-                                continue;
-                            }
-                        }
-
-                        var device = DevicePool.GetDevice(mapping.MappedDeviceKey);
-                        if (device != null)
-                            worker.Context.RegisterDevice(mapping.LogicalDeviceId, device);
+                    var device = DevicePool.GetDevice(mappedDeviceKey);
+                    if (device != null)
+                    {
+                        worker.Context.RegisterDevice(logicalDeviceKey, device);
                     }
                 }
-                */
             }
 
             worker.Mode = mode;

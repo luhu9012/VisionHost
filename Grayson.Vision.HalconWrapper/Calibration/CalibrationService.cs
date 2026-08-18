@@ -1,6 +1,10 @@
-using System;
+using Grayson.Vision.Contracts.Calibration.Models;
 using Grayson.Vision.Contracts.Core;
 using HalconDotNet;
+using System;
+using Newtonsoft.Json;
+using System.Collections.Generic;
+using System.IO;
 
 namespace Grayson.Vision.HalconWrapper.Calibration
 {
@@ -110,6 +114,84 @@ namespace Grayson.Vision.HalconWrapper.Calibration
             catch (Exception ex)
             {
                 return Result<(double, double)>.Fail("坐标逆转换失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 高级手眼坐标转换：考虑像素、物理旋转中心与角度补正
+        /// </summary>
+        public Result<(double FinalWorldX, double FinalWorldY)> MapPixelToWorldWithOffset(
+            string matrixFilePath,
+            double px, double py,
+            double rotateAngleDeg,
+            double centerWx, double centerWy,
+            EyeMode eyeMode,
+            (double RobotX, double RobotY) currentRobotPos)
+        {
+            // 1. 基础仿射变换 (Px, Py -> Wx, Wy)
+            var rawRes = MapPixelToWorld(matrixFilePath, px, py);
+            if (!rawRes.Success) return Result<(double, double)>.Fail(rawRes.Message);
+
+            double wx = rawRes.Data.WorldX;
+            double wy = rawRes.Data.WorldY;
+
+            if (eyeMode == EyeMode.EyeInHand)
+            {
+                // 眼在手上：叠加机器人当前位置
+                wx += currentRobotPos.RobotX;
+                wy += currentRobotPos.RobotY;
+            }
+
+            // 2. 如果存在旋转角度补正
+            if (Math.Abs(rotateAngleDeg) > 0.0001)
+            {
+                double rad = rotateAngleDeg * Math.PI / 180.0;
+                double dx = wx - centerWx;
+                double dy = wy - centerWy;
+
+                double rotatedX = dx * Math.Cos(rad) - dy * Math.Sin(rad) + centerWx;
+                double rotatedY = dx * Math.Sin(rad) + dy * Math.Cos(rad) + centerWy;
+
+                return Result<(double, double)>.Ok((rotatedX, rotatedY));
+            }
+
+            return Result<(double, double)>.Ok((wx, wy));
+        }
+
+        /// <summary>
+        /// 从磁盘配置文件目录加载所有已创建的标定 Profile 方案
+        /// </summary>
+        /// // 标定方案 Json 配置默认存储路径
+        private readonly string _configDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "Calibrations");
+        public CalibrationService()
+        {
+            if (!Directory.Exists(_configDirectory))
+            {
+                Directory.CreateDirectory(_configDirectory);
+            }
+        }
+        public Result<List<CalibrationProfile>> GetAllProfiles()
+        {
+            try
+            {
+                var list = new List<CalibrationProfile>();
+                var jsonFiles = Directory.GetFiles(_configDirectory, "*.json");
+
+                foreach (var file in jsonFiles)
+                {
+                    string json = File.ReadAllText(file);
+                    var profile = JsonConvert.DeserializeObject<CalibrationProfile>(json);
+                    if (profile != null)
+                    {
+                        list.Add(profile);
+                    }
+                }
+
+                return Result<List<CalibrationProfile>>.Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return Result<List<CalibrationProfile>>.Fail("获取标定方案失败: " + ex.Message, -1, ex);
             }
         }
     }

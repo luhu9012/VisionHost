@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:halcon="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf"
         xmlns:selectors="clr-namespace:Grayson.VisionApp.WpfUI.Selectors"
+        xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
         Title="通用视觉标定向导" Height="720" Width="1100"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}"
@@ -18,6 +19,9 @@
 			</ResourceDictionary.MergedDictionaries>
 
 			<BooleanToVisibilityConverter x:Key="BoolToVis"/>
+            <conv:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
+
+           
 
 			<selectors:Step3DataTemplateSelector x:Key="Step3Selector"
 				NinePointTemplate="{StaticResource NinePointStep3Template}"
@@ -77,52 +81,126 @@
 				</Style>
 			</TabControl.ItemContainerStyle>
 
-			<!-- Step 0: 硬件与设备绑定 -->
-			<TabItem>
-				<Border Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="20">
-					<StackPanel MaxWidth="600" HorizontalAlignment="Center" VerticalAlignment="Center">
-						<TextBlock Text="步骤 1：选择关联的相机与运动轴平台" FontSize="16" FontWeight="Bold" Margin="0,0,0,20"/>
+            <!-- Step 0: 硬件与物理场景绑定 -->
+            <TabItem>
+                <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="20">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="650" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="步骤 1：物理场景与硬件绑定" FontSize="16" FontWeight="Bold" Margin="0,0,0,20"/>
 
-						<Grid Margin="0,8">
-							<Grid.ColumnDefinitions>
-								<ColumnDefinition Width="120"/>
-								<ColumnDefinition Width="*"/>
-							</Grid.ColumnDefinitions>
-							<TextBlock Text="关联相机设备:" VerticalAlignment="Center"/>
-							<ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" SelectedIndex="0">
-								<ComboBoxItem Content="Cam_Top_01 (海康工业相机)"/>
-							</ComboBox>
-						</Grid>
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="关联相机设备:" VerticalAlignment="Center"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding CameraDeviceList}"
+                                          SelectedItem="{Binding SelectedCameraDevice}">
+                                    <!-- 下拉列表每一项 -->
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DeviceKey}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
 
-						<Grid Margin="0,8">
-							<Grid.ColumnDefinitions>
-								<ColumnDefinition Width="120"/>
-								<ColumnDefinition Width="*"/>
-							</Grid.ColumnDefinitions>
-							<TextBlock Text="关联运动控制器:" VerticalAlignment="Center"/>
-							<ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" SelectedIndex="0">
-								<ComboBoxItem Content="ZMotion_Card_01 (正运动4轴卡)"/>
-							</ComboBox>
-						</Grid>
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="关联运动控制器:" VerticalAlignment="Center"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                                          ItemsSource="{Binding MotionDeviceList}"
+                                                          SelectedItem="{Binding SelectedMotionDevice}">
+                                    <!-- 下拉列表每一项 -->
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DeviceKey}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
 
-						<Grid Margin="0,8">
-							<Grid.ColumnDefinitions>
-								<ColumnDefinition Width="120"/>
-								<ColumnDefinition Width="*"/>
-							</Grid.ColumnDefinitions>
-							<TextBlock Text="网格走位步长(mm):" VerticalAlignment="Center"/>
-							<StackPanel Grid.Column="1" Orientation="Horizontal">
-								<TextBlock Text="X步长: " VerticalAlignment="Center"/>
-								<TextBox Width="80" Text="{Binding GridStepX}" Margin="4,0,16,0"/>
-								<TextBlock Text="Y步长: " VerticalAlignment="Center"/>
-								<TextBox Width="80" Text="{Binding GridStepY}"/>
-							</StackPanel>
-						</Grid>
-					</StackPanel>
-				</Border>
-			</TabItem>
+                                </ComboBox>
+                            </Grid>
 
-			<!-- Step 1: 算法特征配置 -->
+                            <Border Margin="0,10,0,4" Padding="12,10" Background="{DynamicResource CardBackgroundBrush}" CornerRadius="4">
+                                <StackPanel>
+                                    <TextBlock Text="当前绑定摘要" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding HardwareBindingSummary}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Margin="0,6,0,0" Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Text="{Binding StepGuideTip}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Separator Margin="0,12" Background="{DynamicResource BorderBrush}"/>
+
+                            <!-- 物理场景配置 (核心优化) -->
+                            <TextBlock Text="物理场景设置" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource PrimaryBrush}"/>
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="相机安装方式:" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <RadioButton Content="眼在手外 (Eye-to-Hand 相机固定)" 
+                                     IsChecked="{Binding TargetProfile.EyeMode, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=EyeToHand}" 
+                                     Margin="0,0,16,0" VerticalAlignment="Center"/>
+                                    <RadioButton Content="眼在手上 (Eye-in-Hand 相机随动)" 
+                                     IsChecked="{Binding TargetProfile.EyeMode, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=EyeInHand}" 
+                                     VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="末端夹具/吸嘴:" VerticalAlignment="Center"/>
+                                <CheckBox Grid.Column="1" Content="轴末端带旋转工具 (开启 TCP 旋转中心拟合)" 
+                              IsChecked="{Binding TargetProfile.HasToolOffset}" VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="绑定前置畸变标定:" VerticalAlignment="Center"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" 
+          ItemsSource="{Binding AvailableDistortionProfiles}" 
+          SelectedValue="{Binding TargetProfile.BoundDistortionProfileId}"
+          SelectedValuePath="Id">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="走位网格步长(mm):" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <TextBlock Text="X: " VerticalAlignment="Center"/>
+                                    <TextBox Width="70" Text="{Binding GridStepX}" Margin="4,0,12,0"/>
+                                    <TextBlock Text="Y: " VerticalAlignment="Center"/>
+                                    <TextBox Width="70" Text="{Binding GridStepY}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </TabItem>
+            <!-- Step 1: 算法特征配置 -->
 			<TabItem>
 				<Grid>
 					<Grid.ColumnDefinitions>
@@ -132,7 +210,7 @@
 					</Grid.ColumnDefinitions>
 
 					<Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="4">
-						<halcon:HalconImageDisplayHost x:Name="HalconDisplayStep1"/>
+						<halcon:HalconImageDisplayHost x:Name="HalconDisplayStep1" DataContext="{Binding CalibrationImageDisplay}"/>
 					</Border>
 
 					<Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="16">
@@ -169,15 +247,31 @@
 						<Border Background="{DynamicResource CardBackgroundBrush}" Padding="16" CornerRadius="6">
 							<StackPanel>
 								<TextBlock Text="计算评估指标：" FontWeight="Bold" Margin="0,0,0,8"/>
-								<Grid Margin="0,4">
-									<TextBlock Text="重投影均方根误差 (RMS Error):"/>
-									<TextBlock Text="{Binding CalculatedRms, StringFormat={}{0:F5} mm}" HorizontalAlignment="Right" FontWeight="Bold" Foreground="#FF0078D4"/>
-								</Grid>
-								<Grid Margin="0,4">
-									<TextBlock Text="矩阵文件暂存路径:"/>
-									<TextBlock Text="{Binding OutputHomMatPath}" HorizontalAlignment="Right" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" MaxWidth="350"/>
-								</Grid>
-							</StackPanel>
+                                <!-- 1. 重投影 RMS 误差 -->
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="重投影均方根误差 (RMS Error):" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding CalculatedRms, StringFormat={}{0:F5} mm}" 
+               FontWeight="Bold" Foreground="#FF0078D4" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <!-- 2. 矩阵文件路径 -->
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="矩阵文件暂存路径:" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding OutputHomMatPath}" 
+               HorizontalAlignment="Right" Foreground="{DynamicResource TextSecondaryBrush}" 
+               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
 						</Border>
 					</StackPanel>
 				</Border>

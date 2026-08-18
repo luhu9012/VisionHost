@@ -137,8 +137,8 @@
     <Compile Include="View\DevicePoolView.xaml.cs">
       <DependentUpon>DevicePoolView.xaml</DependentUpon>
     </Compile>
-    <Compile Include="View\FlowEditView.xaml.cs">
-      <DependentUpon>FlowEditView.xaml</DependentUpon>
+    <Compile Include="View\FlowEditViewWrapper.xaml.cs">
+      <DependentUpon>FlowEditViewWrapper.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\HardwareAllocationView.xaml.cs">
       <DependentUpon>HardwareAllocationView.xaml</DependentUpon>
@@ -257,7 +257,7 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="View\FlowEditView.xaml">
+    <Page Include="View\FlowEditViewWrapper.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -356,6 +356,7 @@
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
     </None>
     <None Include="README_wpfui.md" />
+    <None Include="View\Calibration\使用文档.md" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

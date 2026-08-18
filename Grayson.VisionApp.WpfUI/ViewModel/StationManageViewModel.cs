@@ -28,6 +28,7 @@ using Grayson.Vision.Repository.Interfaces;
 using Grayson.Vision.Repository.Services;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
+using Newtonsoft.Json;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
@@ -295,6 +296,75 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #endregion
 
+        #region 纯数据库保存（不涉及 Runtime 操作）
+
+        /// <summary>
+        /// 仅保存工位配置到数据库，不涉及 Runtime 操作和硬件同步。
+        /// 用于添加/删除硬件后立即保存，避免触发 Runtime 同步导致数据丢失。
+        /// </summary>
+        private async Task SaveStationToDatabaseAsync()
+        {
+            if (SelectedStation == null) return;
+
+            try
+            {
+                // 在仅保存数据库时同样回写映射并持久化配方，避免配方视图状态滞后
+                if (!SyncMappingsBackToBoundRecipe(SelectedStation, _recipeStorage))
+                {
+                    MessageBox.Show("保存配方设备映射信息失败！", "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var stationConfig = ToStationConfigModel(SelectedStation);
+                if (!_configService.SaveStation(stationConfig))
+                {
+                    MessageBox.Show("工位配置保存到数据库失败！", "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // 仅显示保存成功提示，不进行 Runtime 操作
+                // (Runtime 操作由用户显式点击"保存工位并同步 Runtime"按钮时触发)
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"保存工位配置失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 把工位侧最新的 RecipeDeviceMappings 同步回写到 BoundRecipe.LogicalDevices，
+        /// 并调用 recipe 存储持久化，确保配方管理视图中的 IsBoundToPhysical 状态与工位侧保持一致。
+        /// </summary>
+        private static bool SyncMappingsBackToBoundRecipe(
+            StationModel station,
+            IRecipeStorageService recipeStorage)
+        {
+            var recipe = station?.BoundRecipe;
+            if (recipe == null) return true;
+
+            if (recipe.LogicalDevices == null)
+            {
+                recipe.LogicalDevices = new List<RecipeDeviceMappingModel>();
+            }
+
+            var stationMappings = station.RecipeDeviceMappings
+                ?.Where(m => !string.IsNullOrEmpty(m.LogicalDeviceId))
+                .ToDictionary(m => m.LogicalDeviceId, m => m.MappedDeviceId)
+                ?? new Dictionary<string, string>();
+
+            foreach (var logical in recipe.LogicalDevices.Where(l => !string.IsNullOrEmpty(l.LogicalDeviceId)))
+            {
+                if (stationMappings.TryGetValue(logical.LogicalDeviceId, out var mappedId))
+                {
+                    logical.MappedDeviceId = mappedId;
+                }
+            }
+
+            return recipeStorage?.SaveRecipe(recipe) ?? true;
+        }
+
+        #endregion
+
         #region 对接 Core 的保存与运行逻辑
 
         private async Task OnSaveStationConfigAsync()
@@ -303,15 +373,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             try
             {
-                // 1. 先持久化配置到数据库
+                // 1. 将 station 侧更新的设备映射回写到绑定的配方模型并持久化，保证 RecipeManageView 显示一致
+                if (!SyncMappingsBackToBoundRecipe(SelectedStation, _recipeStorage))
+                {
+                    MessageBox.Show("保存配方设备映射信息失败！", "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // 2. 先持久化配置到数据库（包括 LeaseDeviceIds 和 DeviceMappings）
                 var stationConfig = ToStationConfigModel(SelectedStation);
+                //Console.WriteLine(JsonConvert.SerializeObject(stationConfig));
                 if (!_configService.SaveStation(stationConfig))
                 {
                     MessageBox.Show("工位配置保存到数据库失败！", "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                // 2. 同步 Core 运行时：移除旧的运行时站点并重建新的租赁与配方绑定
+                // 3. 同步 Core 运行时：按 BoundRecipeId 加载完整配方，避免 StationConfigPo 过深嵌套
+                var boundRecipe = !string.IsNullOrEmpty(stationConfig.BoundRecipeId)
+                    ? _recipeStorage.LoadRecipe(stationConfig.BoundRecipeId)
+                    : null;
+
                 var hostRuntime = App.StationHostRuntime as IStationHostRuntime
                                   ?? StationHostRuntime.GlobalInstance;
 
@@ -325,29 +407,31 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     client = await hostRuntime.CreateStationWithRecipeAsync(
                         SelectedStation.StationCode,
-                        SelectedStation.BoundRecipe,
+                        boundRecipe,
                         stationConfig.DeviceMappings,
                         WorkMode.Production);
                 }
 
-                    if (client == null)
+                if (client == null)
+                {
+                    // 3. 如果 Core 站点创建失败，尝试兼容旧路径
+                    client = await _runtimeManager.CreateAndConnectStationAsync(
+                        SelectedStation.StationCode,
+                        WorkerConnectMode.Embedded);
+
+                    if (boundRecipe?.MainProcess != null && client != null)
                     {
-                        // 3. 如果 Core 站点创建失败，尝试兼容旧路径
-                        client = await _runtimeManager.CreateAndConnectStationAsync(
-                            SelectedStation.StationCode,
-                            WorkerConnectMode.Embedded);
-
-                        if (SelectedStation.BoundRecipe?.MainProcess != null && client != null)
-                        {
-                            await client.LoadRecipeAsync(SelectedStation.BoundRecipe.MainProcess);
-                        }
+                        await client.LoadRecipeAsync(boundRecipe.MainProcess);
                     }
+                }
 
-                    // 4. 把 UI 中本地硬件集合同步为当前 Core 实际租赁给该工位的设备
-                    SyncHardwareFromRuntimeLeases(hostRuntime, SelectedStation);
+                // 注意：不调用 SyncHardwareFromRuntimeLeases，因为：
+                // 1. UI 中的 HardwareDevices 已经通过 LeaseDeviceIds 持久化到数据库
+                // 2. Runtime 中的租赁关系是实时的，不应该用来覆盖用户在 UI 中的配置
+                // 3. 如果从 Runtime 租赁同步，反而会丢失硬件列表（当 Runtime 中没有租赁时）
 
-                    MessageBox.Show($"工位 [{SelectedStation.StationName}] ({SelectedStation.StationCode}) 配置已保存并初始化 Core 站点成功！",
-                                    "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show($"工位 [{SelectedStation.StationName}] ({SelectedStation.StationCode}) 配置已保存并初始化 Core 站点成功！",
+                                "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -366,12 +450,29 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 LineName = SelectedLine?.LineName,
                 IsEnabled = station.IsEnabled,
                 TimeoutMs = station.TimeoutMs,
-                BoundRecipe = station.BoundRecipe
+                BoundRecipeId = station.BoundRecipe?.RecipeId,
+                BoundRecipeName = station.BoundRecipe?.RecipeName
             };
 
-            // TODO: Phase B - RecipeDeviceMappingModel 等字段对齐后，恢复此逻辑
-            // 临时使用空列表保证编译通过
+            // 保存工位领用的硬件设备 ID 列表
+            config.LeaseDeviceIds = new List<string>();
+            if (station.HardwareDevices != null)
+            {
+                foreach (var device in station.HardwareDevices)
+                {
+                    config.LeaseDeviceIds.Add(device.DeviceId);
+                }
+            }
+
+            // 保存配方中逻辑设备映射关系
             config.DeviceMappings = new List<RecipeDeviceMappingModel>();
+            if (station.RecipeDeviceMappings != null)
+            {
+                foreach (var mapping in station.RecipeDeviceMappings)
+                {
+                    config.DeviceMappings.Add(mapping);
+                }
+            }
 
             return config;
         }
@@ -454,7 +555,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
   
 
-        private void OnAddHardware()
+        private async void OnAddHardware()
         {
             if (SelectedStation == null) return;
 
@@ -494,9 +595,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 MessageBox.Show($"已成功将 {selectedDevices.Count} 台硬件设备领用并添加到工位 [{SelectedStation.StationName}]！",
                                 "领用成功", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // 4. 仅保存到数据库，不涉及 Runtime 操作（避免触发 SyncHardwareFromRuntimeLeases 清空数据）
+                await SaveStationToDatabaseAsync();
             }
         }
-        private void OnRemoveHardware()
+        private async void OnRemoveHardware()
         {
             if (SelectedStation != null && SelectedHardware != null)
             {
@@ -505,6 +609,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 SelectedHardware = null;
 
                 MessageBox.Show($"硬件设备 [{devName}] 已从本工位领用列表中移除！", "移除成功", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                // 仅保存到数据库，不涉及 Runtime 操作（避免触发 SyncHardwareFromRuntimeLeases 清空数据）
+                await SaveStationToDatabaseAsync();
             }
         }
 
@@ -584,21 +691,32 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     StationName = stationConfig.StationName,
                     IsEnabled = stationConfig.IsEnabled,
                     TimeoutMs = stationConfig.TimeoutMs,
-                    BoundRecipe = stationConfig.BoundRecipe
+                    BoundRecipe = !string.IsNullOrEmpty(stationConfig.BoundRecipeId)
+                        ? AvailableRecipes.FirstOrDefault(r => r.RecipeId == stationConfig.BoundRecipeId)
+                        : null
                 };
 
-                // TODO: Phase B - RecipeDeviceMappingModel 等字段对齐后，恢复此逻辑
-                // 临时注释以保证编译通过
-                /*
-                foreach (var mapping in stationConfig.DeviceMappings ?? new List<RecipeDeviceMappingModel>())
+                // 从持久化数据恢复工位领用的硬件设备列表
+                if (stationConfig.LeaseDeviceIds != null && stationConfig.LeaseDeviceIds.Count > 0)
                 {
-                    var hardware = GlobalHardwarePool.FirstOrDefault(h => h.DeviceId == mapping.MappedDeviceKey);
-                    if (hardware != null && !station.HardwareDevices.Any(h => h.DeviceId == hardware.DeviceId))
+                    foreach (var deviceId in stationConfig.LeaseDeviceIds)
                     {
-                        station.HardwareDevices.Add(hardware);
+                        var hardware = GlobalHardwarePool.FirstOrDefault(h => h.DeviceId == deviceId);
+                        if (hardware != null && !station.HardwareDevices.Any(h => h.DeviceId == deviceId))
+                        {
+                            station.HardwareDevices.Add(hardware);
+                        }
                     }
                 }
-                */
+
+                // 从持久化数据恢复配方中的逻辑设备映射关系
+                if (stationConfig.DeviceMappings != null)
+                {
+                    foreach (var mapping in stationConfig.DeviceMappings)
+                    {
+                        station.RecipeDeviceMappings.Add(mapping);
+                    }
+                }
 
                 line.Stations.Add(station);
             }

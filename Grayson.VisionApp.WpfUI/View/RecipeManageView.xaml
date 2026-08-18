@@ -381,7 +381,7 @@
                         <Button Grid.Row="1" Grid.Column="4" Content="❌ 驳回"
                                 Style="{StaticResource DangerButtonStyle}"
                                 Command="{Binding RejectRecipeCommand}" Height="auto"
-                                ToolTip="管理员驳回审批，配方退回草稿状态并保留驳回原因"/>
+                                ToolTip="管理员可驳回待审批或已审批配方，配方回退到可编辑状态并保留驳回原因"/>
                     </Grid>
                 </Border>
             </Grid>

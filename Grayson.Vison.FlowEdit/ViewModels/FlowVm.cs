@@ -147,19 +147,56 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         /// <summary>
         /// 顶部配方关键信息摘要（供 Header 绑定显示）
         /// </summary>
+        //public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")} | 工位: {CurrentStationDisplayName} | 当前层级: {CurrentProcess?.ProcessName} | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
         public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")} | 当前层级: {CurrentProcess?.ProcessName} | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
 
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
         public ObservableCollection<string> ExecutionLogs { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<FlowProcessModel> Breadcrumbs { get; set; } = new ObservableCollection<FlowProcessModel>();
         public ObservableCollection<UnitMeta> ToolBox { get; set; } = new ObservableCollection<UnitMeta>();
+        public ObservableCollection<StationOptionItem> AvailableStations { get; } = new ObservableCollection<StationOptionItem>();
         public ICollectionView ToolBoxGrouped { get; set; }
         public ImageDisplayVm ImageDisplayVm { get; set; }
         public ExecutionChain CurrentExecutionChain { get; private set; }
 
+        private string _selectedStationId;
+        private bool _isApplyingStationContext;
+        private readonly Dictionary<string, StationConfigModel> _stationConfigLookup =
+            new Dictionary<string, StationConfigModel>(StringComparer.OrdinalIgnoreCase);
+
+        public string SelectedStationId
+        {
+            get => _selectedStationId;
+            set
+            {
+                if (Set(ref _selectedStationId, value))
+                {
+                    OnPropertyChanged(nameof(CurrentStationDisplayName));
+                    OnPropertyChanged(nameof(CurrentRecipeInfo));
+
+                    if (!_isApplyingStationContext)
+                    {
+                        SwitchWorkerStationAsync();
+                    }
+                }
+            }
+        }
+
+        public string CurrentStationDisplayName
+        {
+            get
+            {
+                var current = AvailableStations.FirstOrDefault(s => string.Equals(s.StationId, SelectedStationId, StringComparison.OrdinalIgnoreCase));
+                if (current != null) return current.DisplayName;
+                return string.IsNullOrWhiteSpace(SelectedStationId) ? "未选择工位" : SelectedStationId;
+            }
+        }
+
         #endregion
 
         #region 2. 服务代理与事件生命周期
+
+        private const string DefaultEditorStationId = "FlowEditStation";
 
         private IWorkerClient _workerClient;
         private readonly HalconImageRenderService _renderService;
@@ -168,6 +205,12 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public event Action<FlowNodeBase> OnNodeExecuting;
         public event Action<FlowNodeBase> OnNodeExecuted;
         public event Action<FlowNodeBase, Exception> OnExecutionError;
+
+        /// <summary>
+        /// 宿主可注入统一配方保存委托（如 WpfUI 保存到 RecipeStorage）；
+        /// 未注入时回退到编辑器内置“导出文件”保存模式。
+        /// </summary>
+        public Func<RecipeModel, bool> HostRecipeSaveHandler { get; set; }
 
         #endregion
 
@@ -296,17 +339,31 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (CurrentRecipe != null)
                 {
+                    CurrentRecipe.MainProcess = RootProcess;
                     CurrentRecipe.LastModifiedTime = DateTime.Now;
                 }
 
-                // 2. 🌟 将当前 RootProcess 通过 DTO 导出
                 string recipeName = CurrentRecipe?.RecipeName ?? RootProcess.ProcessName;
-                bool isSuccess = _recipeManager.ExportRecipe(CurrentRecipe);
+                bool isSuccess;
+
+                // 2. 优先走宿主注入的统一配方存储；未注入则回退为导出文件
+                if (HostRecipeSaveHandler != null)
+                {
+                    isSuccess = HostRecipeSaveHandler(CurrentRecipe);
+                    if (!isSuccess)
+                    {
+                        LogBus.Warn("Recipe", $"宿主保存配方 [{recipeName}] 失败。");
+                    }
+                }
+                else
+                {
+                    isSuccess = _recipeManager.ExportRecipe(CurrentRecipe);
+                }
 
                 if (isSuccess)
                 {
                     IsDirty = false;
-                    LogBus.Info("Recipe", $"配方 [{recipeName}] 极简 DTO 保存成功！");
+                    LogBus.Info("Recipe", $"配方 [{recipeName}] 保存成功。");
                 }
             }
             catch (Exception ex)
@@ -420,33 +477,81 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         private async void InitWorkerClient()
         {
-            if (_workerClient != null)
+            await RebindWorkerClientAsync(GetEffectiveStationId());
+        }
+
+        private async void SwitchWorkerStationAsync()
+        {
+            var stationId = GetEffectiveStationId();
+            if (_workerClient != null && string.Equals(_workerClient.StationId, stationId, StringComparison.OrdinalIgnoreCase))
             {
-                _workerClient.OnFrameRendered -= WorkerClient_OnFrameRendered;
-                _workerClient.OnNodeExecuting -= Worker_OnNodeExecuting;
-                _workerClient.OnNodeExecuted -= Worker_OnNodeExecuted;
-                _workerClient.OnExecutionError -= Worker_OnExecutionError;
-                _workerClient.OnExecutionCompleted -= Worker_OnExecutionCompleted;
-                _workerClient.Dispose();
+                return;
             }
 
-            // 优先使用统一的 StationHostRuntime（同一进程内共享设备池与工位实例）
-            _stationHostRuntime = App.StationHostRuntime;
-            if (_stationHostRuntime == null)
+            await RebindWorkerClientAsync(stationId);
+        }
+
+        private string GetEffectiveStationId()
+        {
+            if (!string.IsNullOrWhiteSpace(SelectedStationId))
             {
-                throw new InvalidOperationException(
-                    "未找到可用的 StationHostRuntime。独立运行请在 App.OnStartup 初始化；嵌入 WpfUI 时请由宿主 App 注入。");
+                return SelectedStationId;
             }
-            await _stationHostRuntime.InitializeAsync();
-            _workerClient = await _stationHostRuntime.CreateEmbeddedStationAsync("FlowEditStation");
 
-            _workerClient.OnFrameRendered += WorkerClient_OnFrameRendered;
-            _workerClient.OnNodeExecuting += Worker_OnNodeExecuting;
-            _workerClient.OnNodeExecuted += Worker_OnNodeExecuted;
-            _workerClient.OnExecutionError += Worker_OnExecutionError;
-            _workerClient.OnExecutionCompleted += Worker_OnExecutionCompleted;
+            var firstAvailable = AvailableStations.FirstOrDefault()?.StationId;
+            return string.IsNullOrWhiteSpace(firstAvailable) ? DefaultEditorStationId : firstAvailable;
+        }
 
-            await _workerClient.LoadRecipeAsync(CurrentProcess);
+        private async Task RebindWorkerClientAsync(string stationId)
+        {
+            try
+            {
+                DetachWorkerClient();
+
+                _stationHostRuntime = App.StationHostRuntime;
+                if (_stationHostRuntime == null)
+                {
+                    throw new InvalidOperationException(
+                        "未找到可用的 StationHostRuntime。独立运行请在 App.OnStartup 初始化；嵌入 WpfUI 时请由宿主 App 注入。");
+                }
+
+                var stationConfig = ResolveStationConfig(stationId);
+                var runtimeStationKey = ResolveRuntimeStationKey(stationId, stationConfig);
+                var deviceMappings = ResolveEffectiveDeviceMappings(stationConfig);
+
+                await _stationHostRuntime.InitializeAsync();
+                _workerClient = await _stationHostRuntime.CreateStationWithRecipeAsync(runtimeStationKey, CurrentRecipe, deviceMappings);
+
+                _workerClient.OnFrameRendered += WorkerClient_OnFrameRendered;
+                _workerClient.OnNodeExecuting += Worker_OnNodeExecuting;
+                _workerClient.OnNodeExecuted += Worker_OnNodeExecuted;
+                _workerClient.OnExecutionError += Worker_OnExecutionError;
+                _workerClient.OnExecutionCompleted += Worker_OnExecutionCompleted;
+
+                if (CurrentProcess != null)
+                {
+                    await _workerClient.LoadRecipeAsync(CurrentProcess);
+                }
+
+                LogBus.Info("FlowVm", $"执行目标工位已切换为: {runtimeStationKey}");
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("FlowVm", $"初始化工位 Worker 失败: {ex.Message}", ex);
+            }
+        }
+
+        private void DetachWorkerClient()
+        {
+            if (_workerClient == null) return;
+
+            _workerClient.OnFrameRendered -= WorkerClient_OnFrameRendered;
+            _workerClient.OnNodeExecuting -= Worker_OnNodeExecuting;
+            _workerClient.OnNodeExecuted -= Worker_OnNodeExecuted;
+            _workerClient.OnExecutionError -= Worker_OnExecutionError;
+            _workerClient.OnExecutionCompleted -= Worker_OnExecutionCompleted;
+            _workerClient.Dispose();
+            _workerClient = null;
         }
 
         private void Worker_OnNodeExecuting(object sender, NodeEventArgs e)
@@ -984,6 +1089,106 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         #endregion
         #region 9🌟 跨界面/外部对接接口 (供 View 界面调用)
 
+        public void ConfigureStationContext(IEnumerable<StationConfigModel> stations, string preferredStationId = null)
+        {
+            var normalizedStations = (stations ?? Enumerable.Empty<StationConfigModel>())
+                .Where(station => station != null && !string.IsNullOrWhiteSpace(station.StationId))
+                .GroupBy(station => station.StationId, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+
+            _stationConfigLookup.Clear();
+            foreach (var station in normalizedStations)
+            {
+                _stationConfigLookup[station.StationId] = station;
+            }
+
+            var stationItems = normalizedStations
+                .Select(station => new StationOptionItem
+                {
+                    StationId = station.StationId,
+                    DisplayName = BuildStationDisplayName(station),
+                    IsEnabled = station.IsEnabled
+                })
+                .OrderBy(item => item.DisplayName)
+                .ToList();
+
+            _isApplyingStationContext = true;
+            try
+            {
+                AvailableStations.Clear();
+                foreach (var item in stationItems)
+                {
+                    AvailableStations.Add(item);
+                }
+
+                var targetStationId = !string.IsNullOrWhiteSpace(preferredStationId)
+                    ? preferredStationId
+                    : AvailableStations.FirstOrDefault()?.StationId;
+
+                SelectedStationId = targetStationId;
+            }
+            finally
+            {
+                _isApplyingStationContext = false;
+            }
+
+            OnPropertyChanged(nameof(CurrentStationDisplayName));
+            OnPropertyChanged(nameof(CurrentRecipeInfo));
+        }
+
+        private StationConfigModel ResolveStationConfig(string stationId)
+        {
+            if (string.IsNullOrWhiteSpace(stationId)) return null;
+            _stationConfigLookup.TryGetValue(stationId, out var stationConfig);
+            return stationConfig;
+        }
+
+        private static string ResolveRuntimeStationKey(string stationId, StationConfigModel stationConfig)
+        {
+            if (!string.IsNullOrWhiteSpace(stationConfig?.StationCode))
+            {
+                return stationConfig.StationCode;
+            }
+
+            return stationId;
+        }
+
+        private IEnumerable<RecipeDeviceMappingModel> ResolveEffectiveDeviceMappings(StationConfigModel stationConfig)
+        {
+            var stationMappings = stationConfig?.DeviceMappings?
+                .Where(mapping => mapping != null
+                    && !string.IsNullOrWhiteSpace(mapping.MappedDeviceId)
+                    && (!string.IsNullOrWhiteSpace(mapping.LogicalDeviceId) || !string.IsNullOrWhiteSpace(mapping.LogicalDeviceName)))
+                .ToList();
+
+            if (stationMappings?.Count > 0)
+            {
+                return stationMappings;
+            }
+
+            return CurrentRecipe?.LogicalDevices;
+        }
+
+        private static string BuildStationDisplayName(StationConfigModel station)
+        {
+            var core = !string.IsNullOrWhiteSpace(station.StationCode)
+                ? station.StationCode
+                : station.StationId;
+
+            if (!string.IsNullOrWhiteSpace(station.StationName))
+            {
+                core += $" - {station.StationName}";
+            }
+
+            if (!station.IsEnabled)
+            {
+                core += " (未启用)";
+            }
+
+            return core;
+        }
+
         /// <summary>
         /// 外部加载配方实体统一入口
         /// </summary>
@@ -1035,15 +1240,19 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public RecipeModel ExportCurrentRecipe()
         {
             // 在退出或切换前同步当前编辑的流程数据
-            if (CurrentRecipe != null && CurrentProcess != null)
+            if (CurrentRecipe != null && RootProcess != null)
             {
-                // 如果在主流程编辑，更新 MainProcess
-                if (CurrentProcess == RootProcess)
-                {
-                    CurrentRecipe.MainProcess = CurrentProcess;
-                }
+                CurrentRecipe.MainProcess = RootProcess;
+                CurrentRecipe.LastModifiedTime = DateTime.Now;
             }
             return CurrentRecipe;
+        }
+
+        public sealed class StationOptionItem
+        {
+            public string StationId { get; set; }
+            public string DisplayName { get; set; }
+            public bool IsEnabled { get; set; }
         }
 
         #endregion

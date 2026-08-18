@@ -29,6 +29,7 @@ namespace Grayson.Vision.Contracts.Flow.Executants
         private readonly ExecutionChain _executionChain;
         private readonly ExecutionContext _context;
         private CancellationTokenSource _cts;
+        private NodeExecutionContext _runtimeNodeContext;
 
         private int _currentStepIndex = 0;
         public ExecutionMode State { get; private set; } = ExecutionMode.Stopped;
@@ -39,6 +40,11 @@ namespace Grayson.Vision.Contracts.Flow.Executants
         {
             _executionChain = executionChain ?? throw new ArgumentNullException(nameof(executionChain));
             _context = context ?? throw new ArgumentNullException(nameof(context));
+        }
+
+        public void SetNodeExecutionContext(NodeExecutionContext nodeExecutionContext)
+        {
+            _runtimeNodeContext = nodeExecutionContext;
         }
 
         /// <summary>
@@ -153,6 +159,8 @@ namespace Grayson.Vision.Contracts.Flow.Executants
                 }
             }
 
+            _runtimeNodeContext = null;
+
             stopwatch.Stop();
             State = ExecutionMode.Paused;
 
@@ -178,7 +186,7 @@ namespace Grayson.Vision.Contracts.Flow.Executants
                 PrepareNodeInputs(node);
 
                 // 2. 构建节点运行上下文并触发业务逻辑
-                var nodeExecContext = new NodeExecutionContext(_context, new FrameCycleContext());
+                var nodeExecContext = _runtimeNodeContext ?? new NodeExecutionContext(_context, new FrameCycleContext());
 
                 LogBus.Debug("Engine", $"正在触发节点 [{node.DisplayName}] 的核心业务逻辑 (ExecuteAsync)...");
 

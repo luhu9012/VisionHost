@@ -187,6 +187,30 @@
                         <TextBlock Text="Grayson Vision" FontWeight="Bold" Foreground="#F1F1F1" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>-->
 
+                 
+
+                    <Border Background="#252526" CornerRadius="4" Padding="6 2" BorderBrush="#3F3F46" BorderThickness="1" VerticalAlignment="Center" Margin="0 0 8 0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="工位" Foreground="#AAAAAA" FontSize="11" Margin="0 0 6 0" VerticalAlignment="Center"/>
+                            <ComboBox Width="220"
+                                      ItemsSource="{Binding AvailableStations}"
+                                    
+                                      SelectedValuePath="StationId"
+                                      SelectedValue="{Binding SelectedStationId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      Background="#1E1E1E"
+                                      Foreground="#DDDDDD"
+                                      BorderBrush="#3F3F46"
+                                      BorderThickness="1"
+                                      Padding="4 2"
+                                      FontSize="11">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
                     <Border Background="#2D2D30" CornerRadius="4" Padding="8 4" Margin="0 0 12 0" BorderBrush="#3F3F46" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="6" Height="6" Fill="{Binding IsDirty, Converter={StaticResource BoolToBrushConverter}, FallbackValue=#00FF66}" Margin="0 0 6 0" VerticalAlignment="Center"/>

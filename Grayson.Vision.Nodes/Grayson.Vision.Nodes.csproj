@@ -157,6 +157,7 @@
     <Compile Include="All\Identification\ReadOCR\ReadOCRTemplateView.xaml.cs">
       <DependentUpon>ReadOCRTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\ImageInput\AcquireImage\AcquireImageExecutor.cs" />
     <Compile Include="All\ImageInput\ImageChannel\ImageChannelExecutor.cs" />
     <Compile Include="All\ImageInput\ImageChannel\ImageChannelParam.cs" />
     <Compile Include="All\ImageInput\ImageChannel\ImageChannelTemplateView.xaml.cs">
@@ -190,7 +191,6 @@
     <Compile Include="Class1.cs" />
     <Compile Include="Common\NodeExecutorBase.cs" />
     <Compile Include="Common\ParamBase.cs" />
-    <Compile Include="All\ImageInput\AcquireImage\AcquireImageExecutor.cs" />
     <Compile Include="All\ImageInput\AcquireImage\AcquireImageParam.cs" />
     <Compile Include="All\ImageInput\AcquireImage\AcquireImageTemplateView.xaml.cs">
       <DependentUpon>AcquireImageTemplateView.xaml</DependentUpon>

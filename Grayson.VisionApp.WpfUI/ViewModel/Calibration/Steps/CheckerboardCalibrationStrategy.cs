@@ -8,23 +8,35 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
         {
             switch (step)
             {
-                case 1: return "请确保棋盘格标定板完整位于相机视野中央且表面无光斑过度曝光。";
-                case 2: return "设置棋盘格的内角点行列数 (Row x Col) 与角点实际物理间距 (mm)。";
-                case 3: return "拍摄标定图并全自动提取亚像素角点。";
+                case 1: return "请选择棋盘格标定使用的相机，并确保标定板处于视野中央。";
+                case 2: return "点击抓图按钮，确认 Halcon 视图显示当前棋盘格图像。";
+                case 3: return "拍摄标定图并执行对应的棋盘格角点提取动作。";
                 case 4: return "计算相机畸变参数与投影变换矩阵。";
                 default: return "请按照提示操作。";
             }
         }
 
-        public void InitializePoints(CalibrationWizardViewModel context) { }
+        public void InitializePoints(CalibrationWizardViewModel context)
+        {
+        }
 
         public void TriggerSample(CalibrationWizardViewModel context)
         {
+            if (context.CurrentStep <= 1)
+            {
+                context.CaptureFeatureFrame("棋盘格预览");
+                return;
+            }
+
+            context.CaptureCheckerboardSample();
             context.AppendLog($"提取棋盘格角点: 阵列 [{context.CheckerboardRows}x{context.CheckerboardCols}], 间距 [{context.CheckerboardSpacingMm}mm]");
-            MessageBox.Show("角点提取成功！亚像素精细提取点数：" + (context.CheckerboardRows * context.CheckerboardCols), "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("棋盘格图像已采集，可继续接入角点检测算法。", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        public void AutoRunAll(CalibrationWizardViewModel context) => TriggerSample(context);
+        public void AutoRunAll(CalibrationWizardViewModel context)
+        {
+            TriggerSample(context);
+        }
 
         public void ExecuteCalibration(CalibrationWizardViewModel context)
         {
@@ -34,7 +46,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
                 new double[] { 100, 100, 100, 200, 200, 200, 300, 300, 300 },
                 new double[] { 0, 10, 20, 0, 10, 20, 0, 10, 20 },
                 new double[] { 0, 0, 0, 10, 10, 10, 20, 20, 20 });
-
             context.ProcessCalibrationResult(res);
         }
     }

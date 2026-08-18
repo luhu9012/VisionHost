@@ -1,6 +1,7 @@
 ﻿using System.Windows;
 using System.Windows.Controls;
 using Grayson.Vision.HalconWrapper.Calibration;
+using Grayson.Vision.Contracts.Calibration.Models;
 using Grayson.Vision.WpfUI.ViewModel;
 
 namespace Grayson.VisionApp.WpfUI.Selectors

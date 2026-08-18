@@ -9,21 +9,33 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
             switch (step)
             {
                 case 1: return "绑定待标定的相机设备。";
-                case 2: return "使用标尺工具在图像中绘制一条已知尺寸的标准物料特征。";
+                case 2: return "点击抓图，确认 Halcon 视图中已显示待测标准件画面。";
                 case 3: return "输入测得的图像像素距离与实际已知物理距离 (mm)。";
                 case 4: return "导出计算得到的单像素当量 Scale (mm/pixel)。";
                 default: return "请按照提示操作。";
             }
         }
 
-        public void InitializePoints(CalibrationWizardViewModel context) { }
+        public void InitializePoints(CalibrationWizardViewModel context)
+        {
+        }
 
         public void TriggerSample(CalibrationWizardViewModel context)
         {
+            if (context.CurrentStep <= 1)
+            {
+                context.CaptureFeatureFrame("像素当量预览");
+                return;
+            }
+
+            context.CapturePixelScaleSample();
             context.AppendLog("已自动测得特征像素跨度: " + context.MeasuredPixelDistance + " Px");
         }
 
-        public void AutoRunAll(CalibrationWizardViewModel context) => TriggerSample(context);
+        public void AutoRunAll(CalibrationWizardViewModel context)
+        {
+            TriggerSample(context);
+        }
 
         public void ExecuteCalibration(CalibrationWizardViewModel context)
         {

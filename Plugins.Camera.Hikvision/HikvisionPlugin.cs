@@ -92,7 +92,10 @@ namespace Plugins.Camera.Hikvision
         /// <summary>
         /// 开启采集流
         /// </summary>
-      // 声明海康 SDK 委托变量（必须保存为成员变量，防止被 GC 垃圾回收）
+        // 声明海康 SDK 委托变量（必须保存为成员变量，防止被 GC 垃圾回收）
+        //        StartGrabbing() → m_ImageCallback == null → 创建委托 → 注册 SDK → 开启采集
+        //          ↓（多次调用 StartGrabbing 只重启采集流，不覆盖委托）
+        //      StopGrabbing()  → SDK 解绑 → m_ImageCallback = null → 允许下次重建
         private cbOutputExdelegate m_ImageCallback;
 
         #region 开启/停止采集流
@@ -104,16 +107,22 @@ namespace Plugins.Camera.Hikvision
                 return Result.Fail("相机未连接，无法开启采集！");
             }
 
-            // 1. 实例化并注册 SDK 图像回调函数
-            m_ImageCallback = new cbOutputExdelegate(ImageCallbackEx);
-            int nRet = m_MyCamera.RegisterImageCallBackEx(m_ImageCallback, IntPtr.Zero);
-            if (nRet != CErrorDefine.MV_OK)
+            // 仅在首次或回调已被清空时才创建并注册委托，
+            // 避免每次调用都覆盖旧委托引用，导致 SDK 底层函数指针
+            // 指向已被 GC 回收的委托（CallbackOnCollectedDelegate）
+            if (m_ImageCallback == null)
             {
-                return Result.Fail(Helper.ShowErrorMsg("注册图像回调失败", nRet));
+                m_ImageCallback = new cbOutputExdelegate(ImageCallbackEx);
+                int regRet = m_MyCamera.RegisterImageCallBackEx(m_ImageCallback, IntPtr.Zero);
+                if (regRet != CErrorDefine.MV_OK)
+                {
+                    m_ImageCallback = null;
+                    return Result.Fail(Helper.ShowErrorMsg("注册图像回调失败", regRet));
+                }
             }
 
-            // 2. 开启 SDK 采集流
-            nRet = m_MyCamera.StartGrabbing();
+            // 开启 SDK 采集流
+            int nRet = m_MyCamera.StartGrabbing();
             if (nRet != CErrorDefine.MV_OK)
             {
                 return Result.Fail(Helper.ShowErrorMsg("开启采集流失败", nRet));
@@ -227,10 +236,12 @@ namespace Plugins.Camera.Hikvision
         {
             if (m_MyCamera != null)
             {
-                m_MyCamera.StopGrabbing(); 
-        // 显式解绑回调函数，规避残余回调响应[cite: 11]
-        m_MyCamera.RegisterImageCallBackEx(null, IntPtr.Zero); 
-    }
+                m_MyCamera.StopGrabbing();
+                // 显式解绑回调函数，规避残余回调响应
+                m_MyCamera.RegisterImageCallBackEx(null, IntPtr.Zero);
+                // 清空委托引用，允许下次 StartGrabbing 重新注册
+                m_ImageCallback = null;
+            }
             return Result.Ok();
         }
 
@@ -450,7 +461,35 @@ namespace Plugins.Camera.Hikvision
             return Result.Ok();
         }
 
-        public Result CheckStatus() => Result.Ok();
+        public Result CheckStatus()
+        {
+            LastHeartbeatAt = DateTime.UtcNow;
+
+            if (m_MyCamera == null || State != DeviceState.Connected)
+            {
+                State = DeviceState.Disconnected;
+                return Result.Fail("相机未连接");
+            }
+
+            try
+            {
+                var widthValue = new CIntValue();
+                int nRet = m_MyCamera.GetIntValue("Width", ref widthValue);
+                if (nRet != CErrorDefine.MV_OK)
+                {
+                    State = DeviceState.Disconnected;
+                    return Result.Fail(Helper.ShowErrorMsg("相机在线状态检查失败", nRet));
+                }
+
+                State = DeviceState.Connected;
+                return Result.Ok();
+            }
+            catch (Exception ex)
+            {
+                State = DeviceState.Disconnected;
+                return Result.Fail($"相机在线状态检查异常: {ex.Message}");
+            }
+        }
 
         /// <summary>
         /// 更新本地字典里的参数值（UI修改时调用）

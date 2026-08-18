@@ -57,23 +57,13 @@ namespace Grayson.Vision.Core
 
         /// <summary>
         /// 硬件解析委托 API (由 NodeExecutionContext 调用)
-        /// 兼容旧委托签名：仅返回租赁中或已注册设备的物理实例。
-        /// 建议新节点通过执行上下文获取 IDeviceLease 以避免绕过资源管理。
+        /// 按逻辑设备 Key 返回已注册的设备实例，不在解析阶段触发租赁。
         /// </summary>
         public object ResolveDevice(string logicalName)
         {
-            if (string.IsNullOrEmpty(logicalName)) return null;
+            if (string.IsNullOrWhiteSpace(logicalName)) return null;
 
-            var states = DeviceManager.GetDeviceStates();
-            if (!states.ContainsKey(logicalName)) return null;
-
-            var leaseResult = DeviceManager.AcquireAsync(null, logicalName).GetAwaiter().GetResult();
-            if (leaseResult?.Success == true && leaseResult.Data != null)
-            {
-                return leaseResult.Data.Device;
-            }
-
-            return null;
+            return DeviceManager.GetDeviceInstance(logicalName);
         }
     }
 }

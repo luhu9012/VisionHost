@@ -83,18 +83,16 @@ namespace Grayson.Vision.Contracts.Station.Models
         public int TimeoutMs { get; set; } = 3000;
 
         /// <summary>
-        /// 当前绑定配方的完整模型
-        /// 
-        /// 关系：N 个工位可以共用 1 个配方，但每个工位同时只绑定 1 个配方
-        /// 
-        /// 用途:
-        /// - UI 显示当前工位的配方信息
-        /// - 初始化工位时加载配方参数
-        /// - 工单执行时引用配方版本（用于追溯）
-        /// 
-        /// null 表示工位还未绑定任何配方（工位不可用）
+        /// 当前绑定配方的唯一标识（RecipeId）。
+        /// 完整 RecipeModel 由 <see cref="IRecipeStorageService.LoadRecipe(string)"/> 按需加载，
+        /// 避免在工位配置中冗余嵌入整个配方导致文档嵌套过深。
         /// </summary>
-        public RecipeModel BoundRecipe { get; set; }
+        public string BoundRecipeId { get; set; }
+
+        /// <summary>
+        /// 当前绑定配方的显示名称冗余字段，便于 UI 列表/概览直接展示。
+        /// </summary>
+        public string BoundRecipeName { get; set; }
 
         /// <summary>
         /// 配方中的逻辑设备 → 物理设备的映射列表
@@ -112,6 +110,23 @@ namespace Grayson.Vision.Contracts.Station.Models
         /// </summary>
         public List<Recipe.Models.RecipeDeviceMappingModel> DeviceMappings { get; set; } 
             = new List<Recipe.Models.RecipeDeviceMappingModel>();
+
+        /// <summary>
+        /// 工位从设备池领用的物理硬件设备 ID 列表
+        /// 
+        /// 注意：这与 DeviceMappings 是独立的概念：
+        /// - LeaseDeviceIds：工位领用了哪些物理设备（比如：领用3个摄像头）
+        /// - DeviceMappings：配方中的逻辑设备映射到工位设备的关系（比如：配方只需要1个摄像头）
+        /// 
+        /// 用途：
+        /// - UI 层展示工位已领用的硬件列表
+        /// - 工位配置持久化：保存工位与设备的领用关系
+        /// - 初始化时恢复 HardwareDevices 列表
+        /// 
+        /// 说明：设备 ID 来自全局设备池（IDevicePool.GetAllDevices()）
+        /// </summary>
+        public List<string> LeaseDeviceIds { get; set; } 
+            = new List<string>();
 
         /// <summary>
         /// 运行期参数（可扩展：如触发模式、调试/生产模式等）

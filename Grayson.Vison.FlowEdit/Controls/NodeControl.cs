@@ -61,6 +61,7 @@ namespace Grayson.Vison.FlowEdit.Controls
                     newNode.InputPorts.CollectionChanged += control.OnPortsChanged;
                     newNode.OutputPorts.CollectionChanged += control.OnPortsChanged;
                     control.AutoLayoutNodePorts(newNode);
+                    control.RefreshConnectionsAfterLayout();
                 }
             }
         }
@@ -73,18 +74,9 @@ namespace Grayson.Vison.FlowEdit.Controls
 
             // 1. 重新计算并刷新端口 RelativeX / RelativeY 坐标及节点高度
             AutoLayoutNodePorts(Node);
+            RefreshConnectionsAfterLayout();
 
-            // 2. 刷新节点绑定的连线坐标（通知 ConnectionModel 更新 StartX/Y, EndX/Y）
-            //if (Node.InputPorts != null)
-            //{
-            //    foreach (var port in Node.InputPorts) port.RaisePositionChanged();
-            //}
-            //if (Node.OutputPorts != null)
-            //{
-            //    foreach (var port in Node.OutputPorts) port.RaisePositionChanged();
-            //}
-
-            // 3. 在 UI 线程进行平滑无感刷新，擦除旧视觉残影
+            // 2. 在 UI 线程进行平滑无感刷新，擦除旧视觉残影
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, new Action(() =>
             {
                 // 刷新自身 Measure 和 Arrange
@@ -157,6 +149,15 @@ namespace Grayson.Vison.FlowEdit.Controls
             }
             
         }
+        private void RefreshConnectionsAfterLayout()
+        {
+            var parentView = GetParentFlowEditView();
+            if (parentView?.DataContext is FlowVm vm)
+            {
+                vm.RefreshProcessConnections(vm.CurrentProcess);
+            }
+        }
+
         private FlowEditView GetParentFlowEditView()
         {
             DependencyObject parent = VisualTreeHelper.GetParent(this);
@@ -190,6 +191,10 @@ namespace Grayson.Vison.FlowEdit.Controls
 
             border.SetValue(Border.CornerRadiusProperty, new CornerRadius(16));
             border.SetValue(Border.BorderThicknessProperty, new Thickness(2.0)); // 适当加厚边框感
+            border.SetBinding(Border.ToolTipProperty, new Binding("Node.ValidationMessage")
+            {
+                RelativeSource = RelativeSource.TemplatedParent
+            });
 
             // 动态边框绑定 (选中/报错/高亮)
             var borderBrushBind = new MultiBinding { Converter = new NodeBorderConv() };

@@ -11,6 +11,7 @@ using Grayson.Vision.Repository.Interfaces;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using Grayson.Vison.FlowEdit.ViewModels;
+using Newtonsoft.Json;
 
 namespace Grayson.Vision.WpfUI.View
 {
@@ -44,13 +45,18 @@ namespace Grayson.Vision.WpfUI.View
         /// <summary>
         /// 🌟 跨界面跳转进入时触发参数接收与编辑器加载
         /// </summary>
+        /// <summary>
+        /// 🌟 跨界面跳转进入时触发参数接收与编辑器加载
+        /// </summary>
         public void OnNavigatedTo(object parameter)
         {
+            //Console.WriteLine( JsonConvert.SerializeObject(parameter));
             AttachHostSaveHandler();
             if (ViewModel == null) return;
 
             if (parameter is RecipeModel recipe)
             {
+                // 🌟 核心：直接使用引用，不进行 JSON 深拷贝，彻底解决线段搞乱和连线断裂问题
                 _currentRecipe = recipe;
             }
             else
@@ -64,16 +70,26 @@ namespace Grayson.Vision.WpfUI.View
             ViewModel.LoadRecipe(_currentRecipe);
         }
 
+
+
         /// <summary>
-        /// 🌟 离开页面时同步最新流程变更
+        /// 🌟 离开页面时同步最新流程变更并保存
         /// </summary>
         public void OnNavigatedFrom()
         {
-            if (ViewModel != null)
-            {
-                _currentRecipe = ViewModel.ExportCurrentRecipe();
-            }
+            //if (ViewModel != null)
+            //{
+            //    _currentRecipe = ViewModel.ExportCurrentRecipe();
+            //    if (_currentRecipe != null)
+            //    {
+            //        EnsureRecipeDefaults(_currentRecipe);
+            //        _currentRecipe.LastModifiedTime = DateTime.Now;
+            //        // 退出页面时立即落盘
+            //        _recipeStorage.SaveRecipe(_currentRecipe);
+            //    }
+            //}
         }
+
 
         private FlowEditStationContext ResolveStationContext(RecipeModel recipe)
         {

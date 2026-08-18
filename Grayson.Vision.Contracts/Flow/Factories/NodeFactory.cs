@@ -156,8 +156,8 @@ namespace Grayson.Vision.Contracts.Flow.Factories
         {
             EnsureInitialized();
 
-            // 解析枚举上的默认显示名称与描述
-            string defaultDisplayName = type.GetDescription();
+            // 解析节点默认显示名称：优先使用中文短名，避免回退到英文描述
+            string defaultDisplayName = GetDefaultDisplayName(type);
             var metaAttr = type.GetAttribute<NodeFieldMetaAttribute>();
             string defaultDescription = metaAttr?.Description ?? defaultDisplayName;
 
@@ -291,6 +291,19 @@ namespace Grayson.Vision.Contracts.Flow.Factories
             return _nodeRegistry.TryGetValue(type, out var regInfo)
                 ? Activator.CreateInstance(regInfo.ExecutorType) as INodeExecutor
                 : null;
+        }
+
+        /// <summary>
+        /// 获取节点默认显示名，优先使用特性短名，其次使用 Description，最后回退枚举名。
+        /// </summary>
+        private static string GetDefaultDisplayName(NodeType type)
+        {
+            var metaAttr = type.GetAttribute<NodeFieldMetaAttribute>();
+            if (!string.IsNullOrWhiteSpace(metaAttr?.ShortName))
+                return metaAttr.ShortName;
+
+            var description = type.GetDescription();
+            return !string.IsNullOrWhiteSpace(description) ? description : type.ToString();
         }
 
         /// <summary>

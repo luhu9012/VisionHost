@@ -1,4 +1,6 @@
-﻿using Grayson.Vision.Contracts.Flow.Factories;
+﻿using Grayson.Vision.Contracts.Flow.Attributes;
+using Grayson.Vision.Contracts.Flow.Enums;
+using Grayson.Vision.Contracts.Flow.Factories;
 using Grayson.Vision.Contracts.Flow.Helpers;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.Contracts.Recipe.Models;
@@ -34,10 +36,21 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 LastModifiedTime = recipe.LastModifiedTime,
 
                 // 2. 主流程转换
-                MainProcess = ProcessToDto(recipe.MainProcess)
+                MainProcess = ProcessToDto(recipe.MainProcess),
+
+                // 3. 逻辑设备映射转换
+                LogicalDevices = recipe.LogicalDevices?.Select(device => new RecipeDeviceMappingModel
+                {
+                    LogicalDeviceId = device.LogicalDeviceId,
+                    LogicalDeviceName = device.LogicalDeviceName,
+                    LogicalDeviceType = device.LogicalDeviceType,
+                    RequiredSpec = device.RequiredSpec,
+                    Role = device.Role,
+                    MappedDeviceId = device.MappedDeviceId
+                }).ToList() ?? new List<RecipeDeviceMappingModel>()
             };
 
-            // 3. 子流程字典转换
+            // 4. 子流程字典转换
             if (recipe.SubProcesses != null)
             {
                 foreach (var kvp in recipe.SubProcesses)
@@ -64,15 +77,11 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 {
                     NodeId = node.NodeId,
                     Type = node.Type,
-                    DisplayName = node.DisplayName,
+                    DisplayName = ResolveNodeDisplayName(node.Type, node.DisplayName),
                     Enable = node.Enable,
                     PosX = node.PosX,
                     PosY = node.PosY,
-                    ParameterModel = node.ParameterModel,
-
-                    // 🌟【新增1】映射保存输入与输出端口（包含 PortId、PortName 和 RelativeX/Y 坐标）
-                    InputPorts = node.InputPorts?.Select(p => ToPortDto(p)).ToList() ?? new List<NodePortDto>(),
-                    OutputPorts = node.OutputPorts?.Select(p => ToPortDto(p)).ToList() ?? new List<NodePortDto>()
+                    ParameterModel = node.ParameterModel
                 }).ToList() ?? new List<RecipeNodeDto>(),
 
                 Connections = process.Connections?.Select(conn =>
@@ -81,25 +90,11 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                     ConnectionId = conn.ConnectionId,
                     SourceNodeId = conn.SourceNode?.NodeId,
                     SourcePortId = conn.SourcePortId,
+                    SourcePortName = conn.SourcePort?.PortName,
                     TargetNodeId = conn.TargetNode?.NodeId,
-                    TargetPortId = conn.TargetPortId
+                    TargetPortId = conn.TargetPortId,
+                    TargetPortName = conn.TargetPort?.PortName
                 }).ToList() ?? new List<RecipeConnectionDto>()
-            };
-        }
-
-        /// <summary>
-        /// 单个 NodePort 转换为 NodePortDto
-        /// </summary>
-        private static NodePortDto ToPortDto(NodePort port)
-        {
-            if (port == null) return null;
-
-            return new NodePortDto
-            {
-                PortId = port.PortId,
-                PortName = port.PortName,
-                RelativeX = port.RelativeX,
-                RelativeY = port.RelativeY
             };
         }
 
@@ -127,7 +122,18 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 LastModifiedTime = dto.LastModifiedTime,
 
                 // 恢复主流程 VM
-                MainProcess = ProcessToModel(dto.MainProcess)
+                MainProcess = ProcessToModel(dto.MainProcess),
+
+                // 恢复逻辑设备映射
+                LogicalDevices = dto.LogicalDevices?.Select(device => new RecipeDeviceMappingModel
+                {
+                    LogicalDeviceId = device.LogicalDeviceId,
+                    LogicalDeviceName = device.LogicalDeviceName,
+                    LogicalDeviceType = device.LogicalDeviceType,
+                    RequiredSpec = device.RequiredSpec,
+                    Role = device.Role,
+                    MappedDeviceId = device.MappedDeviceId
+                }).ToList() ?? new List<RecipeDeviceMappingModel>()
             };
 
             // 恢复子流程字典 VM
@@ -163,7 +169,8 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 foreach (var nodeDto in dto.Nodes)
                 {
                     var position = new Point2D(nodeDto.PosX, nodeDto.PosY);
-                    FlowNodeBase node = NodeFactory.CreateNodeInstance(nodeDto.Type, position, nodeDto.DisplayName);
+                    string displayName = ResolveNodeDisplayName(nodeDto.Type, nodeDto.DisplayName);
+                    FlowNodeBase node = NodeFactory.CreateNodeInstance(nodeDto.Type, position, displayName);
                     if (node == null) continue;
 
                     node.NodeId = nodeDto.NodeId;
@@ -224,9 +231,6 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                         }
                     }
 
-                    RestoreNodePorts(node.InputPorts, nodeDto.InputPorts);
-                    RestoreNodePorts(node.OutputPorts, nodeDto.OutputPorts);
-
                     process.Nodes.Add(node);
                     nodeDict[node.NodeId] = node;
                 }
@@ -251,11 +255,13 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
 
                     if (sourceNode != null && targetNode != null)
                     {
-                        // 2. 匹配端口（找不到 PortId 就拿第一个默认端口）
-                        var sourcePort = sourceNode.OutputPorts.FirstOrDefault(p => p.PortId == connDto.SourcePortId)
+                        // 2. 匹配端口（优先按端口名，其次按 PortId，最后兜底首端口）
+                        var sourcePort = sourceNode.OutputPorts.FirstOrDefault(p => p.PortName == connDto.SourcePortName)
+                                         ?? sourceNode.OutputPorts.FirstOrDefault(p => p.PortId == connDto.SourcePortId)
                                          ?? sourceNode.OutputPorts.FirstOrDefault();
 
-                        var targetPort = targetNode.InputPorts.FirstOrDefault(p => p.PortId == connDto.TargetPortId)
+                        var targetPort = targetNode.InputPorts.FirstOrDefault(p => p.PortName == connDto.TargetPortName)
+                                         ?? targetNode.InputPorts.FirstOrDefault(p => p.PortId == connDto.TargetPortId)
                                          ?? targetNode.InputPorts.FirstOrDefault();
 
                         if (sourcePort != null && targetPort != null)
@@ -327,34 +333,22 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 // 忽略复杂集合转换异常或无法转换的值
             }
         }
-        /// <summary>
-        /// 将 DTO 保存的端口信息同步/还原给工厂创建的 NodePort 列表
-        /// </summary>
-        private static void RestoreNodePorts(ObservableCollection<NodePort> instancePorts, List<NodePortDto> portDtos)
-        {
-            if (instancePorts == null || portDtos == null || !portDtos.Any()) return;
-
-            for (int i = 0; i < instancePorts.Count; i++)
-            {
-                var instancePort = instancePorts[i];
-
-                // 优先按 PortName 或索引匹配 DTO 中的端口数据
-                var portDto = portDtos.FirstOrDefault(p => p.PortName == instancePort.PortName)
-                              ?? (i < portDtos.Count ? portDtos[i] : null);
-
-                if (portDto != null)
-                {
-                    // 🌟 核心：将固化的 PortId 和相对坐标回填给实例端口
-                    instancePort.PortId = portDto.PortId;
-                    instancePort.RelativeX = portDto.RelativeX;
-                    instancePort.RelativeY = portDto.RelativeY;
-                }
-            }
-        }
-
         #endregion
 
         #region 3. 辅助方法
+
+        private static string ResolveNodeDisplayName(NodeType type, string persistedDisplayName)
+        {
+            if (!string.IsNullOrWhiteSpace(persistedDisplayName))
+                return persistedDisplayName;
+
+            var metaAttr = type.GetAttribute<NodeFieldMetaAttribute>();
+            if (!string.IsNullOrWhiteSpace(metaAttr?.ShortName))
+                return metaAttr.ShortName;
+
+            var description = type.GetDescription();
+            return !string.IsNullOrWhiteSpace(description) ? description : type.ToString();
+        }
 
         public static ConnectionModel CreateAndBindConnection(
             FlowNodeBase sourceNode, NodePort sourcePort,

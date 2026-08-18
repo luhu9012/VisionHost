@@ -20,7 +20,7 @@ namespace Grayson.Vison.FlowEdit.Services
 
         private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
         {
-            TypeNameHandling = TypeNameHandling.Auto,
+            TypeNameHandling = TypeNameHandling.None,
             Formatting = Formatting.Indented,
             NullValueHandling = NullValueHandling.Ignore // 忽略空值，精简输出
         };

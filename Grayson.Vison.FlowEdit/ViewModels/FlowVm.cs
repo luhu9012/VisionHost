@@ -152,6 +152,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
         public ObservableCollection<string> ExecutionLogs { get; set; } = new ObservableCollection<string>();
+        public ObservableCollection<PreflightIssueItem> PreflightIssues { get; } = new ObservableCollection<PreflightIssueItem>();
         public ObservableCollection<FlowProcessModel> Breadcrumbs { get; set; } = new ObservableCollection<FlowProcessModel>();
         public ObservableCollection<UnitMeta> ToolBox { get; set; } = new ObservableCollection<UnitMeta>();
         public ObservableCollection<StationOptionItem> AvailableStations { get; } = new ObservableCollection<StationOptionItem>();
@@ -225,6 +226,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public ICommand RunContinuousCmd { get; }
         public ICommand StepRunCmd { get; }
         public ICommand StepRunNodeCmd { get; }
+        public ICommand PauseRunCmd { get; }
         public ICommand StopRunCmd { get; }
         public ICommand ResetCmd { get; }
         public ICommand AutoLayoutCmd { get; }
@@ -232,6 +234,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public ICommand ClearCanvasCommand { get; }
         public ICommand ToggleShowDataPortsCommand { get; }
         public ICommand OpenNodePropertyCommand { get; }
+        public ICommand RunPreflightCmd { get; }
+        public ICommand LocatePreflightIssueCmd { get; }
 
         #endregion
 
@@ -244,11 +248,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             _renderService = new HalconImageRenderService();
             ImageDisplayVm = new ImageDisplayVm(_renderService);
 
-            // 2. 加载插件与配方管理器
-            string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
-            new NodePluginLoader().LoadPlugins(pluginDir);
-
-            
+            // 2. 插件加载已经在 App 启动时完成，这里不再重复执行
+            // 原代码：new NodePluginLoader().LoadPlugins(pluginDir);
+            // 新逻辑：插件在 App.xaml.cs 的 Application_Startup 中统一加载
 
             // 3. 初始化工具箱与流程层级
             InitFullToolBox();
@@ -259,14 +261,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             _recipeManager = new RecipeManager(new WpfDialogService());
             _recipeManager.LoadCompositeRecipeTemplates(ToolBox);
 
-
-            // 4. 初始化 Worker 客户端
-            InitWorkerClient();
-
-            // 5. 命令绑定
+            // 4. 命令绑定（Worker 客户端在 LoadRecipe 加载真实配方后由 InitWorkerClient 初始化，避免与空配方产生竞争）
             RunContinuousCmd = new RelayCommand(async () => await StartWorkerAsync());
             StepRunCmd = new RelayCommand(async () => await TriggerWorkerOnceAsync());
             StepRunNodeCmd = new RelayCommand(async () => await StepRunNodeAsync());
+            PauseRunCmd = new RelayCommand(async () => await StopWorkerAsync());
             StopRunCmd = new RelayCommand(async () => await StopWorkerAsync());
             ResetCmd = new RelayCommand(async () => await ResetWorkerAsync());
 
@@ -282,6 +281,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             ClearCanvasCommand = new RelayCommand(() => ClearCanvas(false));
             ToggleShowDataPortsCommand = new RelayCommand(() => ShowDataPorts = !ShowDataPorts);
             OpenNodePropertyCommand = new RelayCommand<FlowNodeBase>(OnNodeDoubleClicked);
+            RunPreflightCmd = new RelayCommand(() => EnsureValidExecutionChain(false));
+            LocatePreflightIssueCmd = new RelayCommand<PreflightIssueItem>(LocatePreflightIssue);
 
             LogBus.Info("System", "FlowVm 初始化完成。");
         }
@@ -290,31 +291,145 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         #region 5. 校验与配方保存/导入
 
-        private bool EnsureValidExecutionChain()
+        private bool EnsureValidExecutionChain(bool showDialog = true)
         {
             if (CurrentProcess?.Nodes == null) return false;
 
+            PreflightIssues.Clear();
             foreach (var n in CurrentProcess.Nodes)
             {
                 n.HasError = false;
+                n.ValidationMessage = null;
+            }
+
+            var missingInputIssues = CollectMissingInputIssues();
+            foreach (var issue in missingInputIssues)
+            {
+                issue.Node.HasError = true;
+                issue.Node.ValidationMessage = issue.Message;
+                PreflightIssues.Add(new PreflightIssueItem
+                {
+                    NodeId = issue.Node.NodeId,
+                    NodeName = issue.Node.DisplayName,
+                    Message = issue.Message,
+                    Severity = "Error"
+                });
+            }
+
+            if (missingInputIssues.Count > 0)
+            {
+                var firstMsg = missingInputIssues[0].Message;
+                LogBus.Error("FlowVm", $"流程预检失败: {firstMsg}");
+                if (showDialog)
+                {
+                    MessageBox.Show($"流程存在错误无法运行：\n{firstMsg}", "预检错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                return false;
             }
 
             var buildResult = ExecutionChain.BuildAndValidate(CurrentProcess);
             if (!buildResult.IsSuccess)
             {
                 LogBus.Error("FlowVm", $"流程校验失败: {buildResult.ErrorMessage}");
+
                 foreach (var invalidNode in buildResult.InvalidNodes)
                 {
                     invalidNode.HasError = true;
+                    invalidNode.ValidationMessage = buildResult.ErrorMessage;
+                    PreflightIssues.Add(new PreflightIssueItem
+                    {
+                        NodeId = invalidNode.NodeId,
+                        NodeName = invalidNode.DisplayName,
+                        Message = buildResult.ErrorMessage,
+                        Severity = "Error"
+                    });
                 }
-                MessageBox.Show($"流程存在错误无法运行：\n{buildResult.ErrorMessage}", "拓扑校验错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+                if (buildResult.TypeMismatchedConnections != null)
+                {
+                    foreach (var mismatch in buildResult.TypeMismatchedConnections)
+                    {
+                        if (mismatch?.TargetNode == null) continue;
+                        mismatch.TargetNode.HasError = true;
+                        mismatch.TargetNode.ValidationMessage = buildResult.ErrorMessage;
+                        PreflightIssues.Add(new PreflightIssueItem
+                        {
+                            NodeId = mismatch.TargetNode.NodeId,
+                            NodeName = mismatch.TargetNode.DisplayName,
+                            Message = buildResult.ErrorMessage,
+                            Severity = "Error"
+                        });
+                    }
+                }
+
+                if (showDialog)
+                {
+                    MessageBox.Show($"流程存在错误无法运行：\n{buildResult.ErrorMessage}", "拓扑校验错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
                 return false;
             }
 
             CurrentExecutionChain = buildResult.Chain;
+            LogBus.Info("FlowVm", "流程预检通过。");
             return true;
         }
 
+        private List<PreflightPortIssue> CollectMissingInputIssues()
+        {
+            var issues = new List<PreflightPortIssue>();
+            var connections = CurrentProcess?.Connections?.ToList() ?? new List<ConnectionModel>();
+
+            foreach (var node in CurrentProcess.Nodes)
+            {
+                if (node?.InputPorts == null) continue;
+
+                foreach (var inputPort in node.InputPorts.Where(p => p != null && p.PortType == PortType.In))
+                {
+                    bool hasIncoming = connections.Any(c => c.TargetNode == node && c.TargetPortId == inputPort.PortId);
+                    if (!hasIncoming)
+                    {
+                        issues.Add(new PreflightPortIssue
+                        {
+                            Node = node,
+                            PortName = inputPort.PortName,
+                            Message = $"节点 [{node.DisplayName}] 输入端口 [{inputPort.PortName}] 未连接上游输出。"
+                        });
+                    }
+                }
+            }
+
+            return issues;
+        }
+
+        private sealed class PreflightPortIssue
+        {
+            public FlowNodeBase Node { get; set; }
+            public string PortName { get; set; }
+            public string Message { get; set; }
+        }
+
+        private void LocatePreflightIssue(PreflightIssueItem issue)
+        {
+            if (issue == null || CurrentProcess?.Nodes == null) return;
+
+            var node = CurrentProcess.Nodes.FirstOrDefault(n => string.Equals(n.NodeId, issue.NodeId, StringComparison.OrdinalIgnoreCase));
+            if (node == null) return;
+
+            SelectedNode = node;
+            OnNodeExecuting?.Invoke(node);
+        }
+
+        public bool TryFocusNodeByDisplayName(string nodeName)
+        {
+            if (string.IsNullOrWhiteSpace(nodeName) || CurrentProcess?.Nodes == null) return false;
+
+            var node = CurrentProcess.Nodes.FirstOrDefault(n => string.Equals(n.DisplayName, nodeName, StringComparison.OrdinalIgnoreCase));
+            if (node == null) return false;
+
+            SelectedNode = node;
+            OnNodeExecuting?.Invoke(node);
+            return true;
+        }
 
 
         /// <summary>
@@ -410,13 +525,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (process == null) return;
 
             // 1. 刷新当前流程中的连线坐标并重新挂载位置监听
-            if (process.Connections != null)
-            {
-                foreach (var conn in process.Connections)
-                {
-                    conn.BindAndUpdate();
-                }
-            }
+            RefreshProcessConnections(process);
 
             // 2. 递归刷新包含在当前流程中的复合节点（CompositeFlowNode）内部子流程
             if (process.Nodes != null)
@@ -428,6 +537,19 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                         BindAndRefreshConnections(compositeNode.SubProcess);
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// 重新计算指定流程内所有连线的端点坐标。
+        /// </summary>
+        public void RefreshProcessConnections(FlowProcessModel process)
+        {
+            if (process?.Connections == null) return;
+
+            foreach (var conn in process.Connections)
+            {
+                conn.BindAndUpdate();
             }
         }
 
@@ -1253,6 +1375,14 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             public string StationId { get; set; }
             public string DisplayName { get; set; }
             public bool IsEnabled { get; set; }
+        }
+
+        public sealed class PreflightIssueItem
+        {
+            public string NodeId { get; set; }
+            public string NodeName { get; set; }
+            public string Message { get; set; }
+            public string Severity { get; set; }
         }
 
         #endregion

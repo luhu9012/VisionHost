@@ -126,6 +126,16 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             set => Set(ref _hasError, value); // 🌟 触发 UI 绑定更新
         }
 
+        private string _validationMessage;
+        /// <summary>
+        /// 编辑期/运行前预检信息（用于提示缺失输入、类型不匹配等）
+        /// </summary>
+        public string ValidationMessage
+        {
+            get => _validationMessage;
+            set => Set(ref _validationMessage, value);
+        }
+
         /// <summary>
         /// 节点异常策略：节点失败时终止工单 / 跳过 / 重试 N 次
         /// </summary>

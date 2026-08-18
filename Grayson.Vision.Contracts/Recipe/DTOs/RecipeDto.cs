@@ -1,4 +1,5 @@
 ﻿using Grayson.Vision.Contracts.Flow.Enums;
+using Grayson.Vision.Contracts.Recipe.Models;
 using System;
 using System.Collections.Generic;
 
@@ -31,6 +32,11 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
         /// 子流程/并行流程字典 DTO (Key: ProcessId 或 ProcessName)
         /// </summary>
         public Dictionary<string, ProcessDto> SubProcesses { get; set; } = new Dictionary<string, ProcessDto>();
+
+        /// <summary>
+        /// 配方中声明的逻辑设备映射。
+        /// </summary>
+        public List<RecipeDeviceMappingModel> LogicalDevices { get; set; } = new List<RecipeDeviceMappingModel>();
         #endregion
     }
 
@@ -57,18 +63,6 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
         public double PosX { get; set; }
         public double PosY { get; set; }
         public object ParameterModel { get; set; }
-
-        // 🌟 新增：保存节点上的端口元数据（包含相对坐标）
-        public List<NodePortDto> InputPorts { get; set; } = new List<NodePortDto>();
-        public List<NodePortDto> OutputPorts { get; set; } = new List<NodePortDto>();
-    }
-
-    public class NodePortDto
-    {
-        public string PortId { get; set; }
-        public string PortName { get; set; }
-        public double RelativeX { get; set; }
-        public double RelativeY { get; set; }
     }
 
     /// <summary>
@@ -79,7 +73,9 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
         public string ConnectionId { get; set; }
         public string SourceNodeId { get; set; }
         public string SourcePortId { get; set; }
+        public string SourcePortName { get; set; }
         public string TargetNodeId { get; set; }
         public string TargetPortId { get; set; }
+        public string TargetPortName { get; set; }
     }
 }

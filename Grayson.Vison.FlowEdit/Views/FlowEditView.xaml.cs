@@ -1,8 +1,10 @@
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vison.FlowEdit.ViewModels;
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -404,6 +406,26 @@ namespace Grayson.Vison.FlowEdit.Views
         /// <summary>
         /// 复制选中行：只能从ListBox取选中项，遍历不可避免，数据量一般不大无性能压力
         /// </summary>
+        private void LogListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (LogListBox?.SelectedItem == null || !(DataContext is FlowVm vm))
+                return;
+
+            string line = LogListBox.SelectedItem.ToString();
+            if (string.IsNullOrWhiteSpace(line))
+                return;
+
+            var nodeMatch = Regex.Match(line, @"节点 \[(?<name>[^\]]+)\]");
+            if (!nodeMatch.Success)
+                return;
+
+            string nodeName = nodeMatch.Groups["name"].Value;
+            if (!vm.TryFocusNodeByDisplayName(nodeName))
+            {
+                LogBus.Warn("FlowEditView", $"日志定位失败：当前流程未找到节点 [{nodeName}]。");
+            }
+        }
+
         private void CopySelectedLogRows(object sender, RoutedEventArgs e)
         {
             if (LogListBox == null || LogListBox.SelectedItems.Count == 0)

@@ -35,6 +35,14 @@ namespace Grayson.Vison.FlowEdit
             StationHostRuntime = new StationHostRuntime();
             await StationHostRuntime.InitializeAsync();
 
+            // 🌟 初始化节点工厂：扫描并注册所有流程节点，确保配方加载时能正确还原 ParameterModel、ExecutorType 和端口
+            // 当 FlowEdit 独立运行时也需要初始化节点工厂
+            Grayson.Vision.Contracts.Flow.Factories.NodeFactory.Initialize();
+
+            // 🚀 加载节点插件：扫描并注册所有算子插件 DLL 中的节点类型到 NodeFactory
+            string pluginDir = AppDomain.CurrentDomain.BaseDirectory;
+            new Services.NodePluginLoader().LoadPlugins(pluginDir);
+
             base.OnStartup(e);
         }
 

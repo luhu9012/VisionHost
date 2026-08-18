@@ -104,6 +104,17 @@ namespace Grayson.Vision.WpfUI
 
             await StationHostRuntime.InitializeAsync();
 
+            // 🌟 初始化节点工厂：扫描并注册所有流程节点，确保配方加载时能正确还原 ParameterModel、ExecutorType 和端口
+            // 必须在首次加载配方之前完成初始化，否则反序列化的节点会缺失业务参数和执行器信息
+            Grayson.Vision.Contracts.Flow.Factories.NodeFactory.Initialize();
+
+            // 🚀 加载节点插件：扫描并注册所有算子插件 DLL 中的节点类型到 NodeFactory
+            // 这一步至关重要：必须在 RecipeStorageService.LoadRecipe 之前执行，否则首次加载配方时节点信息不完整
+            // 原本此逻辑在 FlowVm 构造函数中执行，但那时配方可能已经加载完毕，导致首次跳转数据异常
+            string pluginDir = System.AppDomain.CurrentDomain.BaseDirectory;
+            new Grayson.Vison.FlowEdit.Services.NodePluginLoader().LoadPlugins(pluginDir, 
+                msg => LogBus.Info("Plugin", msg));
+
             // FlowEdit 作为 UserControl 嵌入 WpfUI 时其 App.OnStartup 不会执行，
             // 因此把 WpfUI 的 StationHostRuntime 共享给 FlowEdit，使其 FlowVm 可正常初始化。
             try

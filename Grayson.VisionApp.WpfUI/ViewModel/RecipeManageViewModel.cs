@@ -15,6 +15,7 @@ using Grayson.Vision.Core.Client;
 using Grayson.Vision.Core.Station;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
+using Newtonsoft.Json;
 
 
 namespace Grayson.Vision.WpfUI.ViewModel
@@ -186,49 +187,75 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             if (SelectedRecipe.MainProcess != null)
             {
-                // 反射拓扑提取
+                // 1. 反射拓扑提取
                 var extractedDevices = RecipeDeviceExtractor.ExtractLogicalDevices(SelectedRecipe.MainProcess);
 
-                // 合并保留已有的 MappedDeviceId，避免从 Flow 重提取后丢失工位映射关系
+                // 2. 合并保留已有的 MappedDeviceId
                 var existingMappings = SelectedRecipe.LogicalDevices?
                     .Where(d => !string.IsNullOrEmpty(d.LogicalDeviceId))
-                    .ToDictionary(d => d.LogicalDeviceId, d => d.MappedDeviceId)
+                    .ToDictionary(d => d.LogicalDeviceId, d => d.MappedDeviceId, StringComparer.OrdinalIgnoreCase)
                     ?? new Dictionary<string, string>();
 
-                foreach (var device in extractedDevices)
+                // 🌟 核心修复 1：只有提取到有效设备时才更新 SelectedRecipe.LogicalDevices
+                if (extractedDevices != null && extractedDevices.Any())
                 {
-                    if (existingMappings.TryGetValue(device.LogicalDeviceId, out var mappedId))
+                    foreach (var device in extractedDevices)
                     {
-                        device.MappedDeviceId = mappedId;
+                        if (existingMappings.TryGetValue(device.LogicalDeviceId, out var mappedId))
+                        {
+                            device.MappedDeviceId = mappedId;
+                        }
                     }
+                    SelectedRecipe.LogicalDevices = extractedDevices;
                 }
-
-                SelectedRecipe.LogicalDevices = extractedDevices;
             }
 
-            // 触发每个映射项的绑定状态属性变更通知（MappedDeviceId 在流程编辑器中可能已变更）
+            // 🌟 核心修复 2：如果提取为空（例如第一次加载/节点未完全初始化），使用 SelectedRecipe.LogicalDevices 兜底，绝不直接赋空
             var devices = SelectedRecipe.LogicalDevices ?? new List<RecipeDeviceMappingModel>();
+
             foreach (var device in devices)
             {
                 device.RaisePropertyChanged(nameof(device.IsBoundToPhysical));
             }
 
-            LogicalDevicesList = devices.Any()
-                ? new ObservableCollection<RecipeDeviceMappingModel>(devices)
-                : new ObservableCollection<RecipeDeviceMappingModel>();
+            LogicalDevicesList = new ObservableCollection<RecipeDeviceMappingModel>(devices);
         }
 
         /// <summary>
-        /// 🌟 2. 打开编辑器并传参
+        /// 打开编辑器
         /// </summary>
         private void OnOpenFlowEdit()
         {
             if (SelectedRecipe == null) return;
 
+            // 🌟 跳转前先刷新并落盘，保证数据一致
+            RefreshLogicalDevicesFromFlow();
             _recipeStorage.SaveRecipe(SelectedRecipe);
 
-            // 跨界面跳转并携带 SelectedRecipe 参数对象
+            // 跨界面跳转并携带 SelectedRecipe 引用
             NavigationService.Current?.NavigateTo(PageType.FlowEdit, SelectedRecipe);
+        }
+        /// <summary>
+        /// 🌟 增加配方列表刷新方法（例如从 FlowEdit 页面返回时调用）
+        /// </summary>
+        public void ReloadCurrentRecipe()
+        {
+            if (SelectedRecipe == null) return;
+
+            string targetId = !string.IsNullOrEmpty(SelectedRecipe.RecipeId) ? SelectedRecipe.RecipeId : SelectedRecipe.RecipeCode;
+            var latestRecipe = _recipeStorage.LoadRecipe(targetId);
+
+            if (latestRecipe != null)
+            {
+                // 替换 AllRecipes 与 FilteredRecipes 中的引用，刷新界面
+                int index = AllRecipes.IndexOf(SelectedRecipe);
+                if (index >= 0)
+                {
+                    AllRecipes[index] = latestRecipe;
+                }
+
+                SelectedRecipe = latestRecipe;
+            }
         }
 
         /// <summary>
@@ -368,6 +395,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (string.IsNullOrWhiteSpace(SearchText))
             {
                 FilteredRecipes = new ObservableCollection<RecipeModel>(AllRecipes);
+             
             }
             else
             {
@@ -377,7 +405,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                                           (r.RecipeName?.ToLower().Contains(kw) == true))
                 );
             }
+
             SelectedRecipe = FilteredRecipes.FirstOrDefault();
+
         }
 
         #endregion

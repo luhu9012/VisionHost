@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Grayson.Vision.Contracts.Recipe.DTOs;
 using Grayson.Vision.Contracts.Recipe.Models;
 using Grayson.Vision.Contracts.Recipe.Services;
 using Newtonsoft.Json;
@@ -16,7 +17,7 @@ namespace Grayson.Vision.Repository.Services
     {
         private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
         {
-            TypeNameHandling = TypeNameHandling.Auto,
+            TypeNameHandling = TypeNameHandling.None,
             Formatting = Formatting.Indented,
             NullValueHandling = NullValueHandling.Ignore
         };
@@ -43,7 +44,8 @@ namespace Grayson.Vision.Repository.Services
                 try
                 {
                     string json = File.ReadAllText(file);
-                    var recipe = JsonConvert.DeserializeObject<RecipeModel>(json, JsonSettings);
+                    var dto = JsonConvert.DeserializeObject<VisionRecipeDto>(json, JsonSettings);
+                    var recipe = RecipeConverter.ToModel(dto);
                     if (recipe != null) list.Add(recipe);
                 }
                 catch { /* 兼容旧文件或损坏文件，静默跳过 */ }
@@ -61,7 +63,8 @@ namespace Grayson.Vision.Repository.Services
                 try
                 {
                     string json = File.ReadAllText(recipeIdOrPath);
-                    return JsonConvert.DeserializeObject<RecipeModel>(json, JsonSettings);
+                    var dto = JsonConvert.DeserializeObject<VisionRecipeDto>(json, JsonSettings);
+                    return RecipeConverter.ToModel(dto);
                 }
                 catch { return null; }
             }
@@ -81,7 +84,8 @@ namespace Grayson.Vision.Repository.Services
 
             try
             {
-                string json = JsonConvert.SerializeObject(recipe, JsonSettings);
+                var dto = RecipeConverter.ToDto(recipe);
+                string json = JsonConvert.SerializeObject(dto, JsonSettings);
                 File.WriteAllText(filePath, json);
                 return true;
             }
@@ -136,11 +140,11 @@ namespace Grayson.Vision.Repository.Services
                     }
                     else
                     {
-                        var recipe = JsonConvert.DeserializeObject<RecipeModel>(json, JsonSettings);
+                        var dto = JsonConvert.DeserializeObject<VisionRecipeDto>(json, JsonSettings);
 
                         // 2. 核心字段缺失判定（如配方 ID、编号或名称同时为空，视为损坏脏数据）
-                        if (recipe == null ||
-                           (string.IsNullOrWhiteSpace(recipe.RecipeId) && string.IsNullOrWhiteSpace(recipe.RecipeCode)))
+                        if (dto == null ||
+                           (string.IsNullOrWhiteSpace(dto.RecipeId) && string.IsNullOrWhiteSpace(dto.RecipeCode)))
                         {
                             isGarbage = true;
                         }
@@ -150,13 +154,13 @@ namespace Grayson.Vision.Repository.Services
                         else
                         {
                             string fileNameWithoutExt = Path.GetFileNameWithoutExtension(file);
-                            bool nameMatchesId = string.Equals(fileNameWithoutExt, recipe.RecipeId, StringComparison.OrdinalIgnoreCase);
-                            bool nameMatchesCode = string.Equals(fileNameWithoutExt, recipe.RecipeCode, StringComparison.OrdinalIgnoreCase);
+                            bool nameMatchesId = string.Equals(fileNameWithoutExt, dto.RecipeId, StringComparison.OrdinalIgnoreCase);
+                            bool nameMatchesCode = string.Equals(fileNameWithoutExt, dto.RecipeCode, StringComparison.OrdinalIgnoreCase);
 
                             if (!nameMatchesId && !nameMatchesCode)
                             {
                                 // 检查磁盘上是否已经存在合法的 RCP-New.json 文件，如果存在，说明当前文件是遗留的旧副本脏数据
-                                string correctFilePath = Path.Combine(_recipesFolderPath, $"{recipe.RecipeCode ?? recipe.RecipeId}.json");
+                                string correctFilePath = Path.Combine(_recipesFolderPath, $"{dto.RecipeCode ?? dto.RecipeId}.json");
                                 if (File.Exists(correctFilePath))
                                 {
                                     isGarbage = true; // 判定为重命名后遗留的孤儿文件

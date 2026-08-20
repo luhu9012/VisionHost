@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 namespace Grayson.Vision.Nodes.All.ImageInput.AcquireImage
 {
     [Node(NodeType.AcquireImage, NodeCategory.ImageInput, typeof(AcquireImageParam))]
+    [NodePort("Input", PortType.In, PortCategory.Data, dataType: "Bool", colorHex: "#028090")]
     [NodePort("Image", PortType.Out, PortCategory.Data, dataType: "Image", colorHex: "#9B59B6")]
     public class AcquireImageExecutor : NodeExecutorBase<AcquireImageParam>
     {

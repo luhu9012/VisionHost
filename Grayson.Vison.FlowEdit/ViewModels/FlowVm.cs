@@ -148,7 +148,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         /// 顶部配方关键信息摘要（供 Header 绑定显示）
         /// </summary>
         //public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")} | 工位: {CurrentStationDisplayName} | 当前层级: {CurrentProcess?.ProcessName} | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
-        public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")} | 当前层级: {CurrentProcess?.ProcessName} | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
+        public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")}  | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
 
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
         public ObservableCollection<string> ExecutionLogs { get; set; } = new ObservableCollection<string>();
@@ -386,13 +386,29 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 foreach (var inputPort in node.InputPorts.Where(p => p != null && p.PortType == PortType.In))
                 {
                     bool hasIncoming = connections.Any(c => c.TargetNode == node && c.TargetPortId == inputPort.PortId);
+
                     if (!hasIncoming)
                     {
+                        // 🌟 1. 如果端口声明了 IsRequired = false（非必连），直接跳过预检报警
+                        if (!inputPort.IsRequired)
+                        {
+                            continue;
+                        }
+
+                        // 🌟 2. 如果未扩展 IsRequired 属性，可根据端口类型（PortCategory）做通用策略处理：
+                        // 数据端口（Data Port）通常允许直接读取节点属性面板中的默认值，不强制要求连线；
+                        // 只有控制流端口（Exec Port）且不是首节点时才强制要求连线。
+                        if (inputPort.Category == PortCategory.Data)
+                        {
+                            continue; // 数据端口默认允许无连线输入（从节点 Param 默认值获取）
+                        }
+
+                        // 🌟 3. 记录真正的缺失连线异常
                         issues.Add(new PreflightPortIssue
                         {
                             Node = node,
                             PortName = inputPort.PortName,
-                            Message = $"节点 [{node.DisplayName}] 输入端口 [{inputPort.PortName}] 未连接上游输出。"
+                            Message = $"节点 [{node.DisplayName}] 的必填输入端口 [{inputPort.PortName}] 未连接上游节点。"
                         });
                     }
                 }

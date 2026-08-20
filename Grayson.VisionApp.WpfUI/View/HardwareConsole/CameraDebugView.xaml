@@ -31,7 +31,13 @@
                     <TextBlock Text="相机设备控制台" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,12"/>
 
                     <TextBlock Text="目标相机设备 (设备池):" Style="{StaticResource FormLabelStyle}"/>
-                    <ComboBox ItemsSource="{Binding CameraDeviceList}" DisplayMemberPath="DeviceKey" SelectedItem="{Binding SelectedCameraDevice}" Margin="0,4,0,10"/>
+                    <ComboBox ItemsSource="{Binding CameraDeviceList}"  SelectedItem="{Binding SelectedCameraDevice}" Margin="0,4,0,10">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DeviceKey}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
 
                     <Grid Margin="0,0,0,15">
                         <Grid.ColumnDefinitions>

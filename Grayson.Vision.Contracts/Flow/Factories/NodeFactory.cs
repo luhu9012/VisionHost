@@ -190,7 +190,7 @@ namespace Grayson.Vision.Contracts.Flow.Factories
             // 🌟 分支 2：处理普通逻辑/算法节点 (FlowNode)
             // =========================================================================
 
-            // 缓存查无此类型，创建安全兜底节点（防止未注册类型导致崩溃）[cite: 8]
+            // 缓存查无此类型，创建安全兜底节点（防止未注册类型导致崩溃）
             if (!_nodeRegistry.TryGetValue(type, out var regInfo))
             {
                 var fallback = new FlowNode(type, defaultDisplayName, NodeCategory.DeviceIO, position, defaultDescription);
@@ -202,21 +202,21 @@ namespace Grayson.Vision.Contracts.Flow.Factories
 
             var attr = regInfo.Attribute;
 
-            // 通过反射独立实例化该节点的参数配置实体 (ParameterModel)[cite: 8]
+            // 通过反射独立实例化该节点的参数配置实体 (ParameterModel)
             object paramInstance = regInfo.ParamType != null
                 ? Activator.CreateInstance(regInfo.ParamType)
                 : null;
 
             string finalDisplayName = !string.IsNullOrEmpty(overrideDisplayName) ? overrideDisplayName : defaultDisplayName;
 
-            // 实例化画布通用节点 FlowNode[cite: 8]
+            // 实例化画布通用节点 FlowNode
             var node = new FlowNode(attr.Type, finalDisplayName, attr.Category, position, defaultDescription, paramInstance);
 
-            // 挂载节点类型与业务执行器类型[cite: 8]
+            // 挂载节点类型与业务执行器类型
             node.Type = type;
             node.ExecutorType = regInfo.ExecutorType;
 
-            // 动态创建执行器 INodeExecutor 实例[cite: 8]
+            // 动态创建执行器 INodeExecutor 实例
             if (regInfo.ExecutorType != null)
             {
                 try
@@ -229,7 +229,7 @@ namespace Grayson.Vision.Contracts.Flow.Factories
                 }
             }
 
-            // 动态构建输入/输出端口集合[cite: 8]
+            // 动态构建输入/输出端口集合
             if (_portRegistry.TryGetValue(type, out var portAttrs))
             {
                 foreach (var pAttr in portAttrs)
@@ -240,7 +240,8 @@ namespace Grayson.Vision.Contracts.Flow.Factories
                         PortType = pAttr.PortType,
                         Category = pAttr.Category,
                         DataType = pAttr.DataType,
-                        ColorHex = pAttr.ColorHex
+                        ColorHex = pAttr.ColorHex,
+                        IsRequired = pAttr.IsRequired
                     };
 
                     if (pAttr.PortType == PortType.In)

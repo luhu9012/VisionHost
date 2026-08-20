@@ -27,7 +27,13 @@
                 </Grid.ColumnDefinitions>
 
                 <TextBlock Grid.Column="0" Text="目标通信设备:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <ComboBox Grid.Column="1" ItemsSource="{Binding AllCommunicationDevices}" DisplayMemberPath="DeviceKey" SelectedItem="{Binding SelectedCommDevice}"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding AllCommunicationDevices}"  SelectedItem="{Binding SelectedCommDevice}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DeviceKey}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
 
                 <!-- 连接状态指示与控制按钮 -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="15,0,0,0" VerticalAlignment="Center">

@@ -185,6 +185,9 @@
     <Compile Include="View\ShellView.xaml.cs">
       <DependentUpon>ShellView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="View\SplashView.xaml.cs">
+      <DependentUpon>SplashView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="View\StationManageView.xaml.cs">
       <DependentUpon>StationManageView.xaml</DependentUpon>
     </Compile>
@@ -314,6 +317,10 @@
     </Page>
     <Page Include="View\ShellView.xaml">
       <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\SplashView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="View\StationManageView.xaml">
       <SubType>Designer</SubType>

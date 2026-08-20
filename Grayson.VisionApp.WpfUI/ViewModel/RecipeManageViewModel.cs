@@ -25,15 +25,18 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly StationRuntimeManager _runtimeManager;
         private readonly IStationHostRuntime _hostRuntime;
         private readonly IRecipeStorageService _recipeStorage;
+        private readonly StationConfigService _stationConfigService;
 
         public RecipeManageViewModel(
             StationRuntimeManager runtimeManager = null,
             IStationHostRuntime hostRuntime = null,
-            IRecipeStorageService recipeStorage = null)
+            IRecipeStorageService recipeStorage = null,
+            StationConfigService stationConfigService = null)
         {
             _runtimeManager = runtimeManager;
             _hostRuntime = hostRuntime ?? App.StationHostRuntime;
             _recipeStorage = recipeStorage ?? Grayson.Vision.Repository.Services.RecipeStorageFactory.CreateRecipeStorageService();
+            _stationConfigService = stationConfigService ?? new StationConfigService();
 
             // 目标工位列表从 Core 已创建的站点动态获取
             AvailableStations = new ObservableCollection<string>();
@@ -259,17 +262,30 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 刷新目标工位列表：从 Core StationHostRuntime 获取当前已创建的站点。
+        /// 刷新目标工位列表：从工位配置中加载“全工位”。
         /// </summary>
         private void RefreshAvailableStations()
         {
             var previousSelected = SelectedTargetStationId;
             AvailableStations.Clear();
 
-            var stationIds = _hostRuntime?.GetStationIds() ?? Enumerable.Empty<string>();
-            foreach (var id in stationIds)
+            // 原逻辑（仅运行时已创建工位）：
+            // var stationIds = _hostRuntime?.GetStationIds() ?? Enumerable.Empty<string>();
+            // foreach (var id in stationIds)
+            // {
+            //     AvailableStations.Add(id);
+            // }
+
+            var stationCodes = (_stationConfigService.LoadAllLines() ?? new List<Grayson.Vision.Contracts.Station.Models.LineConfigModel>())
+                .SelectMany(l => l.Stations ?? new List<Grayson.Vision.Contracts.Station.Models.StationConfigModel>())
+                .Select(s => !string.IsNullOrWhiteSpace(s.StationCode) ? s.StationCode : s.StationId)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct()
+                .ToList();
+
+            foreach (var code in stationCodes)
             {
-                AvailableStations.Add(id);
+                AvailableStations.Add(code);
             }
 
             SelectedTargetStationId = AvailableStations.Contains(previousSelected)

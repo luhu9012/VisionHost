@@ -19,18 +19,23 @@ namespace Grayson.Vision.Contracts.Flow.Attributes
         public string DataType { get; }
         public string ColorHex { get; }
 
+        public bool IsRequired { get; set; } // 🌟 新增：标识该端口是否必须连线
+
         public NodePortAttribute(
             string portName,
             PortType portType,
             PortCategory category = PortCategory.Data,
             string dataType = "object",
-            string colorHex = "#007ACC")
+            string colorHex = "#007ACC",
+            bool isRequired = true
+            )
         {
             PortName = portName;
             PortType = portType;
             Category = category;
             DataType = dataType;
             ColorHex = colorHex;
-        }
+            IsRequired = isRequired;
+        }   
     }
 }

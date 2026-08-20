@@ -481,19 +481,79 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #region 节点与硬件增删逻辑
 
+        private string GenerateUniqueLineName()
+        {
+            var existingNames = new HashSet<string>(
+                ProductionLines
+                    .Select(l => l.LineName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var index = 1;
+            string candidate;
+            do
+            {
+                candidate = $"新产线_{index:D3}";
+                index++;
+            }
+            while (existingNames.Contains(candidate));
+
+            return candidate;
+        }
+
         private void OnAddLine()
         {
-            int count = ProductionLines.Count + 1;
             var newLine = new LineModel
             {
                 LineId = _configService.GenerateLineId(),
-                LineName = $"新产线_0{count}"
+                LineName = GenerateUniqueLineName()
             };
             ProductionLines.Add(newLine);
             SelectedLine = newLine;
         }
 
-        private void OnAddStation()
+        private string GenerateUniqueStationCode()
+        {
+            var existingCodes = new HashSet<string>(
+                ProductionLines
+                    .SelectMany(l => l.Stations ?? new ObservableCollection<StationModel>())
+                    .Select(s => s.StationCode)
+                    .Where(code => !string.IsNullOrWhiteSpace(code)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var index = 1;
+            string candidate;
+            do
+            {
+                candidate = $"ST_{index:D3}";
+                index++;
+            }
+            while (existingCodes.Contains(candidate));
+
+            return candidate;
+        }
+
+        private string GenerateUniqueStationName(LineModel line)
+        {
+            var existingNames = new HashSet<string>(
+                (line?.Stations ?? new ObservableCollection<StationModel>())
+                    .Select(s => s.StationName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var index = 1;
+            string candidate;
+            do
+            {
+                candidate = $"新工位_{index:D3}";
+                index++;
+            }
+            while (existingNames.Contains(candidate));
+
+            return candidate;
+        }
+
+        private async void OnAddStation()
         {
             if (SelectedLine == null)
             {
@@ -501,17 +561,65 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return;
             }
 
-            int count = SelectedLine.Stations.Count + 1;
             var newStation = new StationModel
             {
                 StationId = _configService.GenerateStationId(),
-                StationCode = $"ST_0{count}",
-                StationName = $"新工位_0{count}",
+                StationCode = GenerateUniqueStationCode(),
+                StationName = GenerateUniqueStationName(SelectedLine),
                 IsEnabled = true,
                 TimeoutMs = 3000
             };
             SelectedLine.Stations.Add(newStation);
             SelectedStation = newStation;
+
+            await AutoPersistAndRegisterIfEnabledAsync(newStation);
+        }
+
+        private async Task AutoPersistAndRegisterIfEnabledAsync(StationModel station)
+        {
+            if (station == null) return;
+
+            try
+            {
+                var stationConfig = ToStationConfigModel(station);
+                if (!_configService.SaveStation(stationConfig))
+                {
+                    MessageBox.Show("新增工位自动保存失败！", "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // 禁用工位：仅自动保存，不注册 Runtime
+                if (!station.IsEnabled)
+                {
+                    return;
+                }
+
+                var hostRuntime = App.StationHostRuntime as IStationHostRuntime
+                                  ?? StationHostRuntime.GlobalInstance;
+                if (hostRuntime == null)
+                {
+                    return;
+                }
+
+                if (hostRuntime.GetStationClient(station.StationCode) != null)
+                {
+                    hostRuntime.RemoveStation(station.StationCode);
+                }
+
+                var boundRecipe = !string.IsNullOrEmpty(stationConfig.BoundRecipeId)
+                    ? _recipeStorage.LoadRecipe(stationConfig.BoundRecipeId)
+                    : null;
+
+                await hostRuntime.CreateStationWithRecipeAsync(
+                    station.StationCode,
+                    boundRecipe,
+                    stationConfig.DeviceMappings,
+                    WorkMode.Production);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"新增工位自动保存/注册失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void OnDeleteNode()

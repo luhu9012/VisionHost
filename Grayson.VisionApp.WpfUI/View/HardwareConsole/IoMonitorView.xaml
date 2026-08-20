@@ -18,7 +18,13 @@
 
                 <TextBlock Grid.Column="0" Text="选择 IO 控制设备:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="0,0,10,0"/>
                 <!-- 此处绑定的设备源类型建议从 DeviceInfo 改为 IDevice 接口，方便获取设备状态 -->
-                <ComboBox Grid.Column="1" ItemsSource="{Binding IoDeviceList}" DisplayMemberPath="DeviceKey" SelectedItem="{Binding SelectedIoDevice}"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding IoDeviceList}"  SelectedItem="{Binding SelectedIoDevice}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DeviceKey}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
 
                 <!-- 连接状态指示与控制按钮 (参考通信调试界面) -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="15,0,0,0" VerticalAlignment="Center">

@@ -373,8 +373,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         private void OnLogout()
         {
-            if (MessageBox.Show("确定要退出当前账号并返回登录界面吗?", "退出登录确认", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+            if (!_globalData.IsAuthenticated)
             {
+                MessageBox.Show("当前没有已登录账号。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (MessageBox.Show("确定要退出当前账号并返回登录界面吗?", "退出登录确认", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                _globalData.ClearUserSession();
                 _globalData.RaiseUserLoggedOut();
             }
         }

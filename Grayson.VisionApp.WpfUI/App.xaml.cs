@@ -19,6 +19,7 @@ using Grayson.VisionApp.WpfUI.View;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 
 // FlowEdit 嵌入 WpfUI 时，其自身 App 不会启动，需共享运行时
@@ -51,84 +52,125 @@ namespace Grayson.Vision.WpfUI
         public static IStationHostRuntime StationHostRuntime { get; private set; }
 
         /// <summary>
+        /// 全局登出事件处理器（避免重复订阅）
+        /// </summary>
+        private EventHandler _userLoggedOutHandler;
+
+        /// <summary>
         /// 应用程序启动入口事件，程序打开时第一个执行的方法
         /// 类比前端main.ts入口函数，统一完成全局初始化工作
         /// </summary>
         private async void Application_Startup(object sender, StartupEventArgs e)
         {
-            // 1. 初始化文件日志服务
-            _fileLogSink = new FileLogSink();
+            // 在 App.xaml.cs 的 Application_Startup 中，不要恢复 ShutdownMode 为 OnLastWindowClose，直接保持全局 OnExplicitShutdown：
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-            // 2. 初始化存储层数据库路径 (存放在运行目录 Data/GraysonVision.db)
-            string dbPath = Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Data", "GraysonVision.db");
-            StorageFactory.Initialize(dbPath);
-         
-#if DEBUG
-            // 【VS 开发环境】：
-            // 不需要开启 FileLogSink（或者只输出到默认 Debug/Logs 目录）
-            // 所有 LogBus.Info/Error 都会直接显示在 VS 的 "输出(Output)" 窗口中！
+            var splashWindow = new SplashView();
+            var splashShownAt = DateTime.Now;
+            splashWindow.Show();
 
-            // 如果开发时也想顺便写本地日志，取消下面这句注释即可：
-            // _fileLogSink.Enable(); 
-#else
-            // 【生产打包环境】：
-            // 1. 可以从 App.config / appsettings.json 读取生产环境配置的磁盘路径
-            string customPath = ConfigurationManager.AppSettings["LogPath"]; 
-            
-            if (!string.IsNullOrEmpty(customPath))
-            {
-                _fileLogSink.SetDirectory(customPath); // 例如 "D:\FactoryData\Logs"
-            }
-
-            // 2. 生产环境开启落盘
-            _fileLogSink.Enable();
-#endif
-
-
-            // 1. 初始化账号认证服务（当前使用Mock模拟登录服务，可替换为数据库/网络登录实现）
-            _authService = new LiteDbAuthenticationService();
-
-            // 2. 注册两套全局异常捕获，兜底防止程序无提示闪退
-            // AppDomain：捕获后台非UI线程、Task、子线程抛出的未处理异常（如视觉采集、运动控制后台线程报错）
-            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-            // Dispatcher：捕获UI主线程控件绑定、页面操作产生的异常（等同于前端全局errorHandler捕获界面错误）
-            DispatcherUnhandledException += OnDispatcherUnhandledException;
-
-            // 🚀 在程序启动时，通过统一的 StationHostRuntime 初始化设备池与 Core 运行时
-            var runtimeInstance = new Grayson.Vision.Core.Station.StationHostRuntime();
-            StationHostRuntime = runtimeInstance;
-            Grayson.Vision.Core.Station.StationHostRuntime.GlobalInstance = runtimeInstance;
-
-            // 统一 StationRuntimeManager 也指向同一运行时，保证 UI 各 VM 读取到一致状态
-            Grayson.Vision.Core.Client.StationRuntimeManager.GlobalInstance = new Grayson.Vision.Core.Client.StationRuntimeManager(runtimeInstance);
-
-            await StationHostRuntime.InitializeAsync();
-
-            // 🌟 初始化节点工厂：扫描并注册所有流程节点，确保配方加载时能正确还原 ParameterModel、ExecutorType 和端口
-            // 必须在首次加载配方之前完成初始化，否则反序列化的节点会缺失业务参数和执行器信息
-            Grayson.Vision.Contracts.Flow.Factories.NodeFactory.Initialize();
-
-            // 🚀 加载节点插件：扫描并注册所有算子插件 DLL 中的节点类型到 NodeFactory
-            // 这一步至关重要：必须在 RecipeStorageService.LoadRecipe 之前执行，否则首次加载配方时节点信息不完整
-            // 原本此逻辑在 FlowVm 构造函数中执行，但那时配方可能已经加载完毕，导致首次跳转数据异常
-            string pluginDir = System.AppDomain.CurrentDomain.BaseDirectory;
-            new Grayson.Vison.FlowEdit.Services.NodePluginLoader().LoadPlugins(pluginDir, 
-                msg => LogBus.Info("Plugin", msg));
-
-            // FlowEdit 作为 UserControl 嵌入 WpfUI 时其 App.OnStartup 不会执行，
-            // 因此把 WpfUI 的 StationHostRuntime 共享给 FlowEdit，使其 FlowVm 可正常初始化。
             try
             {
-                FlowEditApp.StationHostRuntime = StationHostRuntime;
-            }
-            catch
-            {
-                // FlowEditApp 类型不可用时不影响主程序启动
-            }
+                // 1. 初始化文件日志服务
+                _fileLogSink = new FileLogSink();
 
-            // 3. 程序启动默认弹出登录窗口，登录校验通过后再加载主业务界面
-            ShowLoginWindow();
-            LogBus.Info("System", "应用程序启动完成！");
+                // 2. 初始化存储层数据库路径 (存放在运行目录 Data/GraysonVision.db)
+                string dbPath = Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Data", "GraysonVision.db");
+                StorageFactory.Initialize(dbPath);
+
+#if DEBUG
+                // 【VS 开发环境】：
+                // 不需要开启 FileLogSink（或者只输出到默认 Debug/Logs 目录）
+                // 所有 LogBus.Info/Error 都会直接显示在 VS 的 "输出(Output)" 窗口中！
+
+                // 如果开发时也想顺便写本地日志，取消下面这句注释即可：
+                // _fileLogSink.Enable();
+#else
+                // 【生产打包环境】：
+                // 1. 可以从 App.config / appsettings.json 读取生产环境配置的磁盘路径
+                string customPath = ConfigurationManager.AppSettings["LogPath"];
+
+                if (!string.IsNullOrEmpty(customPath))
+                {
+                    _fileLogSink.SetDirectory(customPath); // 例如 "D:\FactoryData\Logs"
+                }
+
+                // 2. 生产环境开启落盘
+                _fileLogSink.Enable();
+#endif
+
+                // 1. 初始化账号认证服务（当前使用Mock模拟登录服务，可替换为数据库/网络登录实现）
+                _authService = new LiteDbAuthenticationService();
+
+                // 2. 注册两套全局异常捕获，兜底防止程序无提示闪退
+                // AppDomain：捕获后台非UI线程、Task、子线程抛出的未处理异常（如视觉采集、运动控制后台线程报错）
+                AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+                // Dispatcher：捕获UI主线程控件绑定、页面操作产生的异常（等同于前端全局errorHandler捕获界面错误）
+                DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+                // 🚀 在程序启动时，通过统一的 StationHostRuntime 初始化设备池与 Core 运行时
+                var runtimeInstance = new Grayson.Vision.Core.Station.StationHostRuntime();
+                StationHostRuntime = runtimeInstance;
+                Grayson.Vision.Core.Station.StationHostRuntime.GlobalInstance = runtimeInstance;
+
+                // 统一 StationRuntimeManager 也指向同一运行时，保证 UI 各 VM 读取到一致状态
+                Grayson.Vision.Core.Client.StationRuntimeManager.GlobalInstance = new Grayson.Vision.Core.Client.StationRuntimeManager(runtimeInstance);
+
+                await StationHostRuntime.InitializeAsync();
+
+                // 🌟 初始化节点工厂：扫描并注册所有流程节点，确保配方加载时能正确还原 ParameterModel、ExecutorType 和端口
+                // 必须在首次加载配方之前完成初始化，否则反序列化的节点会缺失业务参数和执行器信息
+                Grayson.Vision.Contracts.Flow.Factories.NodeFactory.Initialize();
+
+                // 🚀 加载节点插件：扫描并注册所有算子插件 DLL 中的节点类型到 NodeFactory
+                // 这一步至关重要：必须在 RecipeStorageService.LoadRecipe 之前执行，否则首次加载配方时节点信息不完整
+                // 原本此逻辑在 FlowVm 构造函数中执行，但那时配方可能已经加载完毕，导致首次跳转数据异常
+                string pluginDir = System.AppDomain.CurrentDomain.BaseDirectory;
+                new Grayson.Vison.FlowEdit.Services.NodePluginLoader().LoadPlugins(pluginDir,
+                    msg => LogBus.Info("Plugin", msg));
+
+                // FlowEdit 作为 UserControl 嵌入 WpfUI 时其 App.OnStartup 不会执行，
+                // 因此把 WpfUI 的 StationHostRuntime 共享给 FlowEdit，使其 FlowVm 可正常初始化。
+                try
+                {
+                    FlowEditApp.StationHostRuntime = StationHostRuntime;
+                }
+                catch
+                {
+                    // FlowEditApp 类型不可用时不影响主程序启动
+                }
+
+                var elapsed = DateTime.Now - splashShownAt;
+                var minimumDuration = TimeSpan.FromMilliseconds(1200);
+                if (elapsed < minimumDuration)
+                {
+                    await Task.Delay(minimumDuration - elapsed);
+                }
+
+                // 3. 先关闭启动动画，再弹出登录窗口（ShowDialog 会阻塞）
+                if (splashWindow.IsVisible)
+                {
+                    splashWindow.Close();
+                }
+
+              
+                ShowLoginWindow();
+                LogBus.Info("System", "应用程序启动完成！");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"系统启动失败: {ex.Message}", "启动错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+            }
+            finally
+            {
+                if (splashWindow.IsVisible)
+                {
+                    splashWindow.Close();
+                }
+
+              
+            }
         }
 
         /// <summary>
@@ -199,10 +241,30 @@ namespace Grayson.Vision.WpfUI
 
             // 全局登出事件监听：任意页面触发登出时，关闭主窗口，重新打开登录界面
             // 类比前端mitt全局事件总线监听logout事件
-            GlobalData.Instance.UserLoggedOut += (s, e) =>
+            if (_userLoggedOutHandler != null)
             {
-                shellView.Close();
+                GlobalData.Instance.UserLoggedOut -= _userLoggedOutHandler;
+            }
+
+            _userLoggedOutHandler = (s, e) =>
+            {
+                if (shellView.IsVisible)
+                {
+                    shellView.Close();
+                }
+
                 ShowLoginWindow();
+            };
+
+            GlobalData.Instance.UserLoggedOut += _userLoggedOutHandler;
+
+            shellView.Closed += (s, e) =>
+            {
+                if (_userLoggedOutHandler != null)
+                {
+                    GlobalData.Instance.UserLoggedOut -= _userLoggedOutHandler;
+                    _userLoggedOutHandler = null;
+                }
             };
 
             // 将当前主窗体赋值给应用全局MainWindow对象

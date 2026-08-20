@@ -85,7 +85,13 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <ComboBox ItemsSource="{Binding MotionDeviceList}" DisplayMemberPath="DeviceName" SelectedItem="{Binding SelectedMotionDevice}"/>
+                        <ComboBox ItemsSource="{Binding MotionDeviceList}" SelectedItem="{Binding SelectedMotionDevice}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DeviceKey}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                         <Button Grid.Column="1" Content="🔄" Command="{Binding RefreshDevicesCommand}" Margin="6,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/>
                     </Grid>
 
@@ -95,8 +101,8 @@
                     </StackPanel>
 
                     <UniformGrid Columns="2" Margin="0,0,0,10">
-                        <Button Content="🔌 连接" Command="{Binding ConnectCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,4,0"/>
-                        <Button Content="❌ 断开" Command="{Binding DisconnectCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="4,0,0,0"/>
+                        <Button Content="⚡ 连接" Command="{Binding ConnectCommand}" Style="{StaticResource SuccessButtonStyle}" Width="auto" Margin="0,0,6,0"/>
+                        <Button Content="⏹ 断开" Command="{Binding DisconnectCommand}" Style="{StaticResource DangerButtonStyle}" Width="auto"/>
                     </UniformGrid>
 
                     <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,10"/>

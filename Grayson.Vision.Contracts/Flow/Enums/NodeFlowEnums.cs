@@ -232,6 +232,12 @@ namespace Grayson.Vision.Contracts.Flow.Enums
         [NodeFieldMeta("💡", "#3B82F6", "光源控制", "光源控制器 (串口/网口调光)")]
         LightControl,       // 串口/网口动态调节光源亮度
 
+        [NodeFieldMeta("🔌", "#2563EB", "板卡 IO 读写", "运动控制卡/IO 卡数字量输入输出控制 (MC IO)")]
+        MotionCardIo,       // 运动控制卡/IO卡板载输入输出 (MC Digital IO)
+
+        [NodeFieldMeta("🎯", "#1D4ED8", "轴绝对定位", "运动控制卡单轴绝对位置运动控制 (MC Axis Abs)")]
+        MotionCardAxisMoveAbs, // 运动控制卡单轴绝对定位 (MC Single Axis Move Absolute)
+
         // ==========================================
         // 10. 💾 数据存储与系统交互 (DataStorage - #475569 炭晶系)
         // ==========================================

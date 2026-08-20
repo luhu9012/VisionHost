@@ -83,6 +83,8 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
 
         // 端口颜色（如 蓝色代表普通数据，紫色代表图像等）
         public string ColorHex { get; set; } = "#1890FF";
+        // 🌟 新增：运行时持有的必填状态，由 NodeFactory 根据 Attribute 赋值
+        public bool IsRequired { get; set; }
 
     }
 

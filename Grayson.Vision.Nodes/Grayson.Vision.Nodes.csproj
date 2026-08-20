@@ -74,6 +74,16 @@
     <Compile Include="All\CalibrationLocation\ShapeMatch\ShapeMatchTemplateView.xaml.cs">
       <DependentUpon>ShapeMatchTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\DeviceIO\AxisMoveAbs\AxisMoveAbsExecutor.cs" />
+    <Compile Include="All\DeviceIO\AxisMoveAbs\AxisMoveAbsParam.cs" />
+    <Compile Include="All\DeviceIO\AxisMoveAbs\AxisMoveAbsTemplateView.xaml.cs">
+      <DependentUpon>AxisMoveAbsTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\DeviceIO\DigitalIo\DigitalIoExecutor.cs" />
+    <Compile Include="All\DeviceIO\DigitalIo\DigitalIoParam.cs" />
+    <Compile Include="All\DeviceIO\DigitalIo\DigitalIoTemplateView.xaml.cs">
+      <DependentUpon>DigitalIoTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="All\FlowControl\TerminateFlow\TerminateFlowExecutor.cs" />
     <Compile Include="All\FlowControl\TerminateFlow\TerminateFlowParam.cs" />
     <Compile Include="All\FlowControl\TerminateFlow\TerminateFlowTemplateView.xaml.cs">
@@ -242,6 +252,14 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="All\CalibrationLocation\ShapeMatch\ShapeMatchTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\DeviceIO\AxisMoveAbs\AxisMoveAbsTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\DeviceIO\DigitalIo\DigitalIoTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

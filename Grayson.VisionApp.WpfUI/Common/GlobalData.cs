@@ -216,6 +216,17 @@ namespace Grayson.Vision.WpfUI.Common
         }
 
         /// <summary>
+        /// 清理当前用户会话（退出登录前调用）
+        /// </summary>
+        public void ClearUserSession()
+        {
+            CurrentUserName = string.Empty;
+            CurrentUserRole = UserRole.Operator;
+            AlarmCount = 0;
+            DismissCriticalAlarm();
+        }
+
+        /// <summary>
         /// 触发用户登出事件
         /// </summary>
         public void RaiseUserLoggedOut()

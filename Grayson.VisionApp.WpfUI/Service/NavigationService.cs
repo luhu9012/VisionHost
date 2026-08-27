@@ -35,16 +35,16 @@ namespace Grayson.Vision.WpfUI.Service
         }
 
         /// <summary>
-        /// 注册页面工厂方法
+        /// 注册页面工厂方法。
+        /// 每次导航都会通过工厂创建新的页面实例，保证页面每次打开都是全新状态。
         /// </summary>
+        /// <param name="pageType">页面类型</param>
+        /// <param name="factory">页面创建工厂</param>
         public void RegisterPage(PageType pageType, Func<UserControl> factory)
         {
             _pageFactory[pageType] = factory;
         }
 
-        /// <summary>
-        /// 导航到指定页面
-        /// </summary>
         /// <summary>
         /// 导航到指定页面
         /// </summary>
@@ -68,8 +68,8 @@ namespace Grayson.Vision.WpfUI.Service
                 }
             }
 
-            // 创建新页面实例
-            var page = _pageFactory[pageType]();
+            // 每次导航都创建新的页面实例，页面每次打开都是全新状态
+            UserControl page = _pageFactory[pageType]();
 
             // 🌟 2. 触发新页面的 OnNavigatedTo（优先交由 ViewModel 处理，其次交由 View 处理）
             if (page.DataContext is INavigationAware targetVm)

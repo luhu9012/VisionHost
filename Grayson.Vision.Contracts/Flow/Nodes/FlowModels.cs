@@ -132,10 +132,16 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
         public ConnectorType SourceConnector { get; set; }
         public string SourcePortId { get; set; }
 
+        /// <summary>🌟 创建连线时缓存的源端口名，保存时即使端口对象被动态端口机制替换，也能持久化正确端口名</summary>
+        public string SourcePortName { get; set; }
+
 
         public FlowNodeBase TargetNode { get; set; }
         public ConnectorType TargetConnector { get; set; } = ConnectorType.Input;
         public string TargetPortId { get; set; }
+
+        /// <summary>🌟 创建连线时缓存的目标端口名，保存时兜底使用</summary>
+        public string TargetPortName { get; set; }
 
         private double _startX;
         public double StartX { get => _startX; set => Set(ref _startX, value); }
@@ -169,6 +175,7 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             if (sourcePort != null)
             {
                 SourcePortId = sourcePort.PortId;
+                SourcePortName = sourcePort.PortName; // 🌟 缓存端口名，防止后续端口对象被替换后保存时丢失
                 SourceConnector = sourcePort.Connector;
                 SourceRelativeX = sourcePort.RelativeX; // 🌟 记录 RelativeX
                 SourceRelativeY = sourcePort.RelativeY;
@@ -179,6 +186,7 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             if (targetPort != null)
             {
                 TargetPortId = targetPort.PortId;
+                TargetPortName = targetPort.PortName; // 🌟 缓存端口名
                 TargetConnector = targetPort.Connector;
                 TargetRelativeX = targetPort.RelativeX; // 🌟 记录 RelativeX
                 TargetRelativeY = targetPort.RelativeY;
@@ -215,11 +223,11 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             EndX = TargetNode.PosX + TargetRelativeX;
             EndY = TargetNode.PosY + TargetRelativeY;
         }
-        // 🌟 新增：动态获取源端口对象
-        public NodePort SourcePort => SourceNode?.InputPorts.Concat(SourceNode.OutputPorts)
+        // 🌟 新增：动态获取源端口对象（源端口一定是输出端口，优先在 OutputPorts 中查找）
+        public NodePort SourcePort => SourceNode?.OutputPorts.Concat(SourceNode.InputPorts)
                                                 .FirstOrDefault(p => p.PortId == SourcePortId);
 
-        // 🌟 新增：动态获取目标端口对象
+        // 🌟 新增：动态获取目标端口对象（目标端口一定是输入端口，优先在 InputPorts 中查找）
         public NodePort TargetPort => TargetNode?.InputPorts.Concat(TargetNode.OutputPorts)
                                                 .FirstOrDefault(p => p.PortId == TargetPortId);
 

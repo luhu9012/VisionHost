@@ -11,6 +11,12 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
 
     public class ImageThresholdParam : ParamBase
     {
+        /// <summary>
+        /// 阈值分割是实时预览的样板节点：拖动 MinGray/MaxGray 滑块时，
+        /// 属性面板右侧预览窗口实时刷新分割区域（绿色）与参数标注。
+        /// </summary>
+        public override bool SupportsPreview => true;
+
         private ThresholdMethod _method = ThresholdMethod.Fixed;
         public ThresholdMethod Method
         {

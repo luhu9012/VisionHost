@@ -3,6 +3,7 @@
 // 文件名: SystemSettingViewModel.cs
 // 说 明: 系统与运行参数设置 ViewModel
 //===================================================================================
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
@@ -85,7 +86,25 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public bool OptimizeOverlays { get => _optimizeOverlays; set { Set(ref _optimizeOverlays, value); MarkDirty(); } }
         #endregion
 
-        #region 4. 状态与 Commands
+        #region 4. 日志与诊断属性（与 LogConfig 单例同源同键，保存后热生效）
+        /// <summary>日志级别索引：0=Debug 1=Info 2=Warn 3=Error（与 LogLevel 枚举序一致）</summary>
+        private int _logLevelIndex;
+        public int LogLevelIndex { get => _logLevelIndex; set { Set(ref _logLevelIndex, value); MarkDirty(); } }
+
+        /// <summary>日志保留天数（超过自动清理，防磁盘占满）</summary>
+        private int _logRetentionDays;
+        public int LogRetentionDays { get => _logRetentionDays; set { Set(ref _logRetentionDays, value); MarkDirty(); } }
+
+        /// <summary>单个日志文件大小上限（MB，超过滚动新文件）</summary>
+        private int _logMaxFileSizeMB;
+        public int LogMaxFileSizeMB { get => _logMaxFileSizeMB; set { Set(ref _logMaxFileSizeMB, value); MarkDirty(); } }
+
+        /// <summary>是否启用结构化 JSON 落盘（.jsonl，供清洗 / AI 分析消费）</summary>
+        private bool _logJsonEnabled;
+        public bool LogJsonEnabled { get => _logJsonEnabled; set { Set(ref _logJsonEnabled, value); MarkDirty(); } }
+        #endregion
+
+        #region 5. 状态与 Commands
         private bool _isDirty;
         public bool IsDirty { get => _isDirty; set => Set(ref _isDirty, value); }
 
@@ -120,6 +139,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             RenderFpsIndex = ParseInt(ReadAppSetting("RenderFpsIndex"), 1);
             OptimizeOverlays = !string.Equals(ReadAppSetting("OptimizeOverlays"), "false", StringComparison.OrdinalIgnoreCase);
+
+            // 日志与诊断（默认 Info 级别、保留 30 天、单文件 50MB、不开 JSON）
+            LogLevelIndex = Enum.TryParse(ReadAppSetting("LogLevel"), true, out LogLevel logLevel) ? (int)logLevel : 1;
+            LogRetentionDays = ParseInt(ReadAppSetting("LogRetentionDays"), 30);
+            LogMaxFileSizeMB = ParseInt(ReadAppSetting("LogMaxFileSizeMB"), 50);
+            LogJsonEnabled = string.Equals(ReadAppSetting("LogJsonEnabled"), "true", StringComparison.OrdinalIgnoreCase);
 
             IsDirty = false;
         }
@@ -159,9 +184,32 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 SetXmlAppSetting(appSettings, "RenderFpsIndex", RenderFpsIndex.ToString());
                 SetXmlAppSetting(appSettings, "OptimizeOverlays", OptimizeOverlays ? "true" : "false");
 
+                // 日志与诊断配置（键与 LogConfig.LoadFromAppSettings 保持一致）
+                SetXmlAppSetting(appSettings, "LogLevel", ((LogLevel)LogLevelIndex).ToString());
+                SetXmlAppSetting(appSettings, "LogRetentionDays", LogRetentionDays.ToString());
+                SetXmlAppSetting(appSettings, "LogMaxFileSizeMB", LogMaxFileSizeMB.ToString());
+                SetXmlAppSetting(appSettings, "LogJsonEnabled", LogJsonEnabled ? "true" : "false");
+
                 doc.Save(_configPath);
                 IsDirty = false;
-                _dialogService.ShowInfo("系统与运行参数设置已保存，部分选项需重启后生效。", "保存成功");
+
+                // 🌟 热更新日志配置（无需重启）：同步到 LogConfig 单例 → LogRouter.ApplyConfig → 各 Sink 即时生效
+                try
+                {
+                    var cfg = LogConfig.Instance;
+                    cfg.LogPath = LogPath;
+                    cfg.MinLevel = (LogLevel)LogLevelIndex;
+                    cfg.RetentionDays = LogRetentionDays;
+                    cfg.MaxFileSizeMB = LogMaxFileSizeMB;
+                    cfg.JsonEnabled = LogJsonEnabled;
+                    cfg.Apply();
+                }
+                catch
+                {
+                    // 热更新失败不影响配置文件已保存（下次启动按新配置装配）
+                }
+
+                _dialogService.ShowInfo("系统与运行参数设置已保存，部分选项需重启后生效（日志配置已即时生效）。", "保存成功");
             }
             catch (Exception ex)
             {

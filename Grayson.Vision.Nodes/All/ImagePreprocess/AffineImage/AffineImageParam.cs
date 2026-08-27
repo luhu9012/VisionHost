@@ -4,6 +4,9 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.AffineImage
 {
     public class AffineImageParam : ParamBase
     {
+        /// <summary>调整旋转角度/中心时预览窗口实时显示仿射效果与旋转中心十字。</summary>
+        public override bool SupportsPreview => true;
+
         private double _centerRow = 500;
         public double CenterRow
         {

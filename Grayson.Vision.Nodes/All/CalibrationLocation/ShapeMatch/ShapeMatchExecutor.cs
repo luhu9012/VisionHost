@@ -5,6 +5,7 @@ using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.HalconWrapper.Match2D;
+using Grayson.Vision.HalconWrapper;
 using Grayson.Vision.Nodes.Common;
 
 namespace Grayson.Vision.Nodes.All.CalibrationLocation.ShapeMatch
@@ -31,14 +32,23 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.ShapeMatch
             if (inputImage == null)
             {
                 context.Log("[" + node.DisplayName + "] 错误：未获取到有效输入图像句柄！");
+                Preview?.BeginScene();
+                Preview?.AddText("⚠️ 输入图像为空，请先运行上游节点", 12, 12, "red");
                 return;
             }
 
             if (param.ModelId < 0)
             {
                 context.Log("[" + node.DisplayName + "] 错误：Shape 模板 ID 无效，请先训练模板！");
+                Preview?.BeginScene();
+                Preview?.AddBorrowed(inputImage);
+                Preview?.AddText("⚠️ Shape 模板 ID 无效，请先训练模板", 12, 12, "red");
                 return;
             }
+
+            // 预览：输入图为底图
+            Preview?.BeginScene();
+            Preview?.AddBorrowed(inputImage);
 
             var matchRes = MatchTool.ApplyFindShapeModel(inputImage, param.ModelId, param.MinScore);
 
@@ -51,10 +61,15 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.ShapeMatch
                 context.SetOutputValue(node, PORT_OUT_SCORE, best.Score);
 
                 context.Log("[" + node.DisplayName + "] 形状匹配成功 -> Row: " + best.PixelRow.ToString("F2") + ", Col: " + best.PixelCol.ToString("F2") + ", Angle: " + best.RotateDegree.ToString("F2") + "°, Score: " + best.Score.ToString("F2"));
+
+                // 匹配位置画十字 + 分数/角度标注
+                Preview?.AddCross(best.PixelRow, best.PixelCol, 40, "green");
+                Preview?.AddText($"✅ Score: {best.Score:F2}  Angle: {best.RotateDegree:F1}°  ({best.PixelRow:F1}, {best.PixelCol:F1})", 12, 12, "green");
             }
             else
             {
                 context.Log("[" + node.DisplayName + "] 形状匹配失败: " + matchRes.Message);
+                Preview?.AddText($"❌ 匹配失败 (MinScore={param.MinScore:F2}): {matchRes.Message}", 12, 12, "red");
             }
         }
     }

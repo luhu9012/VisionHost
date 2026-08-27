@@ -49,9 +49,6 @@
     <ErrorReport>prompt</ErrorReport>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="halcondotnet">
-      <HintPath>..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\halcondotnet.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -84,6 +81,7 @@
     <Compile Include="Flow\Attributes\NodePortAttribute.cs" />
     <Compile Include="Flow\Contexts\ExecutionContext.cs" />
     <Compile Include="Flow\Contexts\FrameCycleContext.cs" />
+    <Compile Include="Flow\Contexts\IFlowPreviewContext.cs" />
     <Compile Include="Flow\Contexts\NodeExecutionContext.cs" />
     <Compile Include="Flow\Enums\NodeFlowEnums.cs" />
     <Compile Include="Flow\Enums\PortDataType.cs" />
@@ -107,7 +105,13 @@
     <Compile Include="Imaging\Models\ImageRenderContext.cs" />
     <Compile Include="Infrastructure\Alarm\AlarmSeverity.cs" />
     <Compile Include="Infrastructure\Logging\FileLogSink.cs" />
+    <Compile Include="Infrastructure\Logging\ILogProcessor.cs" />
+    <Compile Include="Infrastructure\Logging\ILogSink.cs" />
+    <Compile Include="Infrastructure\Logging\JsonLogSink.cs" />
     <Compile Include="Infrastructure\Logging\LogBus.cs" />
+    <Compile Include="Infrastructure\Logging\LogConfig.cs" />
+    <Compile Include="Infrastructure\Logging\LogEntry.cs" />
+    <Compile Include="Infrastructure\Logging\LogRouter.cs" />
     <Compile Include="Infrastructure\Logging\WorkOrderLogEntry.cs" />
     <Compile Include="Infrastructure\Metrics\StationMetrics.cs" />
     <Compile Include="Infrastructure\Mvvm\ViewModelBase.cs" />
@@ -137,6 +141,7 @@
     <Compile Include="Devices\Interfaces\IPlc.cs" />
     <Compile Include="Recipe\Models\SafetyInterlockConfiguration.cs" />
     <Compile Include="Recipe\Models\StationRuntimeConfiguration.cs" />
+    <Compile Include="Recipe\Services\IRecipeApprovalService.cs" />
     <Compile Include="Recipe\Services\IRecipeStorageService.cs" />
     <Compile Include="Recipe\Services\RecipeDeviceExtractor.cs" />
     <Compile Include="Recipe\Traceability\RecipeTraceabilityEntry.cs" />
@@ -163,7 +168,10 @@
     <Compile Include="Station\Models\WorkOrder.cs" />
     <Compile Include="Station\Models\WorkOrderStatus.cs" />
     <Compile Include="Station\Services\IStationRepository.cs" />
-    <Compile Include="Station\\Services\\IStationHostRuntime.cs" />
+    <Compile Include="Station\Services\IStationHostRuntime.cs" />
+    <Compile Include="Station\Triggers\TriggerEnums.cs" />
+    <Compile Include="Station\Triggers\TriggerSourceConfig.cs" />
+    <Compile Include="Station\Triggers\ITriggerSource.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README_contracts.md" />

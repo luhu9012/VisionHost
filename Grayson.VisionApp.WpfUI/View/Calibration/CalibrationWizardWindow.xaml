@@ -74,7 +74,8 @@
 		</Border>
 
 		<!-- 2. 主内容区：TabControl 切换 4 个 Step -->
-		<TabControl Grid.Row="2" SelectedIndex="{Binding CurrentStep}" BorderThickness="0" Background="Transparent">
+		<TabControl x:Name="MainTabs" Grid.Row="2" SelectedIndex="{Binding CurrentStep}" BorderThickness="0" Background="Transparent"
+					SelectionChanged="MainTabs_SelectionChanged">
 			<TabControl.ItemContainerStyle>
 				<Style TargetType="TabItem">
 					<Setter Property="Visibility" Value="Collapsed"/>
@@ -183,6 +184,70 @@
                                 </ComboBox>
                             </Grid>
 
+                            <!-- 替换原 Step 0 中的网格步长及下方配置 -->
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="标定 X 轴选择:" VerticalAlignment="Center"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+              ItemsSource="{Binding AvailableAxes}"
+              SelectedValue="{Binding TargetProfile.BindXAxisIndex}"
+              SelectedValuePath="AxisIndex"
+              >
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayName}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="标定 Y 轴选择:" VerticalAlignment="Center"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+              ItemsSource="{Binding AvailableAxes}"
+              SelectedValue="{Binding TargetProfile.BindYAxisIndex}"
+              SelectedValuePath="AxisIndex"
+              >
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayName}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="标定中心基准点:" VerticalAlignment="Center"/>
+                                <Grid Grid.Column="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="X: " VerticalAlignment="Center"/>
+                                        <TextBox Width="65" Text="{Binding TargetProfile.BasePosX, StringFormat={}{0:F3}}" Margin="2,0,8,0"/>
+                                        <TextBlock Text="Y: " VerticalAlignment="Center"/>
+                                        <TextBox Width="65" Text="{Binding TargetProfile.BasePosY, StringFormat={}{0:F3}}" Margin="2,0,8,0"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="🎯 设当前轴位置为基准" 
+                Style="{StaticResource SecondaryButtonStyle}" 
+                Height="28" Padding="8,2"
+                Command="{Binding SetCurrentAsBasePosCommand}"/>
+                                </Grid>
+                            </Grid>
+
                             <Grid Margin="0,6">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="140"/>
@@ -190,10 +255,10 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="走位网格步长(mm):" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <TextBlock Text="X: " VerticalAlignment="Center"/>
-                                    <TextBox Width="70" Text="{Binding GridStepX}" Margin="4,0,12,0"/>
-                                    <TextBlock Text="Y: " VerticalAlignment="Center"/>
-                                    <TextBox Width="70" Text="{Binding GridStepY}"/>
+                                    <TextBlock Text="X步长: " VerticalAlignment="Center"/>
+                                    <TextBox Width="65" Text="{Binding GridStepX}" Margin="4,0,12,0"/>
+                                    <TextBlock Text="Y步长: " VerticalAlignment="Center"/>
+                                    <TextBox Width="65" Text="{Binding GridStepY}"/>
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
@@ -210,22 +275,200 @@
 					</Grid.ColumnDefinitions>
 
 					<Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="4">
-						<halcon:HalconImageDisplayHost x:Name="HalconDisplayStep1" DataContext="{Binding CalibrationImageDisplay}"/>
+						<halcon:HalconImageDisplayHost x:Name="HalconDisplayStep1" DataContext="{Binding CalibrationImageDisplay}" Loaded="HalconDisplayStep1_Loaded"/>
 					</Border>
 
 					<Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="16">
+						<ScrollViewer VerticalScrollBarVisibility="Auto">
 						<StackPanel>
 							<TextBlock Text="步骤 2：标定特征与提取算子配置" FontSize="14" FontWeight="Bold" Margin="0,0,0,12"/>
 							<TextBlock Text="{Binding StepGuideTip}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
 
-							<RadioButton Content="圆形 Mark 点 (提取圆心)" IsChecked="True" Margin="0,6,0,6"/>
-							<RadioButton Content="十字 Mark 点 (形状匹配)" Margin="0,0,0,12"/>
+							<RadioButton Content="圆形 Mark 点 (提取圆心)" 
+                                         IsChecked="{Binding TargetProfile.FeatureType, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=CircleMark}" 
+                                         Margin="0,6,0,6"/>
+							<RadioButton Content="十字 Mark 点 (形状匹配)" 
+                                         IsChecked="{Binding TargetProfile.FeatureType, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=CrossMark}" 
+                                         Margin="0,0,0,12"/>
+
+							<!-- 特征提取参数实时调节面板：滑块绑定 ExtractOptions（INotifyPropertyChanged），
+								 调节后触发 ReapplyFeatureExtraction，VM 内 300ms 防抖自动重试，所见即所得。 -->
+							<Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="4" Padding="10,8" Margin="0,4,0,0">
+								<StackPanel>
+									<DockPanel Margin="0,0,0,4">
+										<TextBlock Text="特征提取参数" FontWeight="SemiBold" FontSize="13" DockPanel.Dock="Left"/>
+										<Button Content="↻ 立即重试" Style="{StaticResource SecondaryButtonStyle}" Height="22" Padding="8,0" Margin="0,0,0,0" Click="RetryExtract_Click" DockPanel.Dock="Right"/>
+										<TextBlock Text="拖动滑杆 300ms 后自动重试" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,6,0"/>
+									</DockPanel>
+
+									<!-- 圆形 Mark 参数组（FeatureType == CircleMark 时显示） -->
+									<StackPanel>
+										<StackPanel.Style>
+											<Style TargetType="StackPanel">
+												<Setter Property="Visibility" Value="Collapsed"/>
+												<Style.Triggers>
+													<DataTrigger Binding="{Binding TargetProfile.FeatureType}" Value="CircleMark">
+														<Setter Property="Visibility" Value="Visible"/>
+													</DataTrigger>
+												</Style.Triggers>
+											</Style>
+										</StackPanel.Style>
+
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="阈值下限" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleThresholdMin" Minimum="0" Maximum="254" Height="24" Value="{Binding ExtractOptions.ThresholdMin}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleThresholdMin, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="阈值上限" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleThresholdMax" Minimum="1" Maximum="255" Height="24" Value="{Binding ExtractOptions.ThresholdMax}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleThresholdMax, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最小圆度" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleCircularity" Minimum="0.1" Maximum="1.0" Height="24" Value="{Binding ExtractOptions.MinCircularity}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleCircularity, StringFormat={}{0:F2}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最小面积" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleMinArea" Minimum="1" Maximum="5000" Height="24" Value="{Binding ExtractOptions.MinArea}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleMinArea, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最大面积" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleMaxArea" Minimum="100" Maximum="2000000" Height="24" Value="{Binding ExtractOptions.MaxArea}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleMaxArea, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="搜索半径" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleSearchRadius" Minimum="10" Maximum="800" Height="24" Value="{Binding ExtractOptions.SearchRadius}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleSearchRadius, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="亚像素阈值" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCircleSubPix" Minimum="1" Maximum="255" Height="24" Value="{Binding ExtractOptions.SubPixThreshold}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCircleSubPix, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+									</StackPanel>
+
+									<!-- 十字 Mark 参数组（FeatureType == CrossMark 时显示） -->
+									<StackPanel>
+										<StackPanel.Style>
+											<Style TargetType="StackPanel">
+												<Setter Property="Visibility" Value="Collapsed"/>
+												<Style.Triggers>
+													<DataTrigger Binding="{Binding TargetProfile.FeatureType}" Value="CrossMark">
+														<Setter Property="Visibility" Value="Visible"/>
+													</DataTrigger>
+												</Style.Triggers>
+											</Style>
+										</StackPanel.Style>
+
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="暗色阈值上限" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCrossDarkMax" Minimum="1" Maximum="254" Height="24" Value="{Binding ExtractOptions.CrossDarkThresholdMax}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCrossDarkMax, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="亮色阈值下限" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCrossLightMin" Minimum="1" Maximum="254" Height="24" Value="{Binding ExtractOptions.CrossLightThresholdMin}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCrossLightMin, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最小面积" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCrossMinArea" Minimum="1" Maximum="5000" Height="24" Value="{Binding ExtractOptions.CrossMinArea}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCrossMinArea, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最大面积" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCrossMaxArea" Minimum="100" Maximum="100000000" Height="24" Value="{Binding ExtractOptions.CrossMaxArea}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCrossMaxArea, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最小宽/高" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCrossMinSize" Minimum="1" Maximum="100" Height="24" Value="{Binding ExtractOptions.CrossMinSize}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCrossMinSize, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+										<Grid Margin="0,2">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="96"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="52"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Text="最大宽/高" FontSize="12" VerticalAlignment="Center"/>
+											<Slider Grid.Column="1" x:Name="slCrossMaxSize" Minimum="50" Maximum="5000" Height="24" Value="{Binding ExtractOptions.CrossMaxSize}" ValueChanged="FeatureSlider_ValueChanged" VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="2" Text="{Binding Value, ElementName=slCrossMaxSize, StringFormat={}{0:F0}}" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+										</Grid>
+									</StackPanel>
+								</StackPanel>
+							</Border>
 
 							<Button Content="📷 抓图并提取特征" Style="{StaticResource PrimaryButtonStyle}"
                                     Height="36" Command="{Binding TriggerSampleCommand}" Margin="0,10,0,0"/>
 
 							<TextBlock Text="{Binding LogText}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,16,0,0" TextWrapping="Wrap"/>
 						</StackPanel>
+						</ScrollViewer>
 					</Border>
 				</Grid>
 			</TabItem>

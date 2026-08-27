@@ -2,8 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:cvts="clr-namespace:Grayson.Vison.FlowEdit.Converters"
-        Title="{Binding DisplayName, StringFormat='⚙️ 节点属性设置 - {0}'}" 
-        Height="620" Width="520" 
+        xmlns:halconHost="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf"
+        Title="{Binding DisplayName, StringFormat='⚙️ 节点属性设置 - {0}'}"
+        Height="640" Width="520"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip"
         Background="#181818" Foreground="White">
@@ -46,13 +47,46 @@
             </StackPanel>
         </Border>
 
-        <!-- 2. 动态参数配置区 (Grayson.Vision.Nodes 中开发的 XAML 模板自动渲染到这里) -->
-        <!-- 复杂的节点会在自己的 ParamView 内内置 TabControl；简单节点则是纯表单 -->
-        <Border Grid.Row="1" Background="#252526" CornerRadius="4" Padding="8" BorderBrush="#3F3F46" BorderThickness="1">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ContentControl Content="{Binding ParameterModel}"/>
-            </ScrollViewer>
-        </Border>
+        <!-- 2. 核心内容区：左参数 / 右实时预览（仅 SupportsPreview 节点展开右列，其余维持单列零变化） -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="260"/>
+                <ColumnDefinition x:Name="PreviewColumn" Width="0"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 2.1 动态参数配置区 (Grayson.Vision.Nodes 中开发的 XAML 模板自动渲染到这里) -->
+            <!-- 复杂的节点会在自己的 ParamView 内内置 TabControl；简单节点则是纯表单 -->
+            <Border Grid.Column="0" Background="#252526" CornerRadius="4" Padding="8" BorderBrush="#3F3F46" BorderThickness="1">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ContentControl Content="{Binding ParameterModel}"/>
+                </ScrollViewer>
+            </Border>
+
+            <!-- 2.2 实时预览区：编辑参数时实时看到图像变化（场景式绘制，节点 Executor 走一步画一步） -->
+            <Border Grid.Column="1" Background="#111111" CornerRadius="4" Padding="6" BorderBrush="#3F3F46" BorderThickness="1" Margin="8 0 0 0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="4 2 4 6">
+                        <TextBlock Text="🖼 实时预览" Foreground="#00A896" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                        <CheckBox Content="参数变化自动刷新" DockPanel.Dock="Right"
+                                  IsChecked="{Binding ParentFlowVm.IsLivePreview, RelativeSource={RelativeSource AncestorType=Window}}"
+                                  Foreground="#AAA" FontSize="11" VerticalAlignment="Center"
+                                  ToolTip="参数变化后自动防抖 300ms 重跑该节点；关闭后仅手动点击「运行该节点」刷新"/>
+                    </DockPanel>
+
+                    <Grid Grid.Row="1">
+                        <halconHost:HalconImageDisplayHost x:Name="PreviewHost"/>
+                        <TextBlock x:Name="PreviewHint" Text="运行该节点后显示预览"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="#666" FontSize="13" IsHitTestVisible="False"/>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
 
         <!-- 3. 端口数据实时调试监控 (默认折叠，需要调试时展开) -->
         <Expander Grid.Row="2" Header="🔌 端口数据实时调试" IsExpanded="False" Foreground="#AAA" Margin="0 8 0 0">

@@ -4,6 +4,9 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.ShapeMatch
 {
     public class ShapeMatchParam : ParamBase
     {
+        /// <summary>调整最小分数等参数时预览窗口实时显示匹配位置十字与分数。</summary>
+        public override bool SupportsPreview => true;
+
         private int _modelId = -1;
         public int ModelId
         {

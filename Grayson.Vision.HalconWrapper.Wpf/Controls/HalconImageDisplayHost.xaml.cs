@@ -4,6 +4,7 @@ using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
 using HalconDotNet;
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -27,6 +28,16 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
         /// <summary>窗口是否初始化完成（拥有有效Halcon句柄）</summary>
         public bool IsReady => _hWindow != null;
+
+        /// <summary>
+        /// 内部获取 Halcon 底层窗口句柄（仅限同程序集内部使用）。
+        /// 注意：不能暴露为 public —— 该成员返回 halcondotnet 的 HWindow 类型，
+        /// 一旦进入公共 API，XAML 编译器（ReflectionOnly 模式）解析本控件类型时
+        /// 就必须加载 halcondotnet，进而触发其 .NET 2.0/3.5 依赖解析（本机缺失
+        /// PresentationCore 3.0 等），导致 MC1000 构建错误。internal 成员不会被
+        /// XAML 编译器解析，安全。
+        /// </summary>
+        internal HWindow GetDisplayWindow() => _hWindow;
 
         /// <summary>鼠标在图像上移动时触发事件，传递鼠标像素坐标</summary>
         public event EventHandler<CursorPixelEventArgs> CursorPixelMoved;
@@ -63,6 +74,337 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
             // 监听控件DataContext切换，自动订阅/解绑VM渲染事件，避免内存泄漏
             this.DataContextChanged += HalconImageDisplayHost_DataContextChanged;
+
+            // 🌟 订阅 SmartWindow 缩放/平移/尺寸变化事件：
+            // HSmartWindowControlWPF 交互（滚轮缩放 / 拖动平移 / 双击适配 / 窗口尺寸变化）
+            // 过程中不重绘任何已显示对象（窗口内容会被清掉），由本控件在事件后整体
+            // 重放场景（底图 + 叠加层），保证画面始终完整。
+            SmartWindow.HMouseWheel += SmartWindow_HMouseWheel;
+            SmartWindow.HMouseUp += SmartWindow_HMouseUp;
+            SmartWindow.HMouseMove += SmartWindow_HMouseMove;
+            SmartWindow.HMouseDoubleClick += SmartWindow_HMouseDoubleClick;
+            SmartWindow.SizeChanged += SmartWindow_SizeChanged;
+
+            // 🌟 关闭 SmartWindow 内置拖动平移（HMoveContent=true 时其内部 HShiftWindowContents
+            // 会清窗并只重绘控件自己管理的内容，与场景重放互相打架 → 拖动闪屏）。
+            // 平移由本控件接管：HMouseMove 拖动时平移窗口 part + 整体重放场景（见 SmartWindow_HMouseMove）。
+            SmartWindow.HMoveContent = false;
+
+            // 控件卸载时释放场景托管对象，防止 Halcon 句柄泄漏
+            this.Unloaded += (s, e) => RunOnUiSync(ClearScene);
+        }
+
+        #region HDevelop 式场景绘制（走一步画一步，交互后整体重放）
+
+        /// <summary>场景条目基类：Draw 自带完整绘制状态（颜色/线宽/模式），重放结果确定</summary>
+        private abstract class SceneItem
+        {
+            public string Color;
+            public int LineWidth = 1;
+            /// <summary>把本条目绘制到窗口（窗口 part 决定映射，无需关心缩放平移）</summary>
+            public abstract void Draw(HWindow window);
+        }
+
+        /// <summary>对象条目：region / XLD / 图像。Owned=true 时由显示层负责释放</summary>
+        private sealed class ObjectItem : SceneItem
+        {
+            public HObject Obj;
+            public bool Owned;
+            public override void Draw(HWindow window)
+            {
+                if (Obj == null || !Obj.IsInitialized()) return;
+                if (Color != null)
+                {
+                    window.SetColor(Color);
+                    window.SetLineWidth(LineWidth);
+                    window.SetDraw("margin");
+                }
+                else
+                {
+                    window.SetDraw("fill");
+                }
+                HOperatorSet.DispObj(Obj, window);
+            }
+        }
+
+        /// <summary>文本条目（image 坐标系，跟随缩放平移）</summary>
+        private sealed class TextItem : SceneItem
+        {
+            public string Text;
+            public double Row, Col;
+            public override void Draw(HWindow window)
+            {
+                HOperatorSet.DispText(window, Text, "image", Row, Col, Color ?? "white", "box", "false");
+            }
+        }
+
+        /// <summary>十字标记条目（特征点中心）</summary>
+        private sealed class CrossItem : SceneItem
+        {
+            public double Row, Col, Size;
+            public override void Draw(HWindow window)
+            {
+                window.SetColor(Color ?? "yellow");
+                window.SetLineWidth(LineWidth);
+                HOperatorSet.DispCross(window, Row, Col, Size, 0.785398);
+            }
+        }
+
+        /// <summary>圆条目（拟合圆等）</summary>
+        private sealed class CircleItem : SceneItem
+        {
+            public double Row, Col, Radius;
+            public override void Draw(HWindow window)
+            {
+                window.SetColor(Color ?? "red");
+                window.SetLineWidth(LineWidth);
+                HOperatorSet.DispCircle(window, Row, Col, Radius);
+            }
+        }
+
+        /// <summary>当前场景条目（按添加顺序累积）。仅 UI 线程访问。</summary>
+        private readonly List<SceneItem> _scene = new List<SceneItem>();
+
+        /// <summary>场景底图（AddBorrowed 的图像，用于 Display 渲染任务的同帧判断）</summary>
+        private HObject _sceneBaseImage;
+
+        /// <summary>拖动过程中的场景重放节流时间戳（30ms 一次）</summary>
+        private DateTime _lastSceneRepaintUtc = DateTime.MinValue;
+
+        /// <summary>拖动平移状态：本轮拖动是否已记录锚点（仅 UI 线程访问）</summary>
+        private bool _panAnchorSet;
+        /// <summary>拖动平移锚点（窗口像素坐标）</summary>
+        private double _panAnchorX, _panAnchorY;
+
+        /// <summary>开始新画面：清空场景（释放托管对象）并清空窗口</summary>
+        internal void SceneBegin()
+        {
+            RunOnUiSync(() =>
+            {
+                ClearScene();
+                if (_hWindow != null)
+                {
+                    try { _hWindow.ClearWindow(); } catch { }
+                }
+            });
+        }
+
+        /// <summary>提交对象（托管）并立即上屏。窗口不可用时对象就地释放，调用方无需关心</summary>
+        internal void SceneAddObject(HObject obj, string color, int lineWidth)
+        {
+            if (obj == null) return;
+            RunOnUiSync(() =>
+            {
+                if (!SafeAddAndDraw(new ObjectItem { Obj = obj, Color = color, LineWidth = lineWidth, Owned = true }))
+                {
+                    try { obj.Dispose(); } catch { }
+                }
+            });
+        }
+
+        /// <summary>提交借用对象（底图，不负责释放）并立即上屏，同时登记为场景底图</summary>
+        internal void SceneAddBorrowed(HObject obj)
+        {
+            if (obj == null) return;
+            RunOnUiSync(() =>
+            {
+                _sceneBaseImage = obj;
+                SafeAddAndDraw(new ObjectItem { Obj = obj, Color = null, Owned = false });
+            });
+        }
+
+        /// <summary>提交文本（image 坐标系）并立即上屏</summary>
+        internal void SceneAddText(string text, double row, double col, string color)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            RunOnUiSync(() => SafeAddAndDraw(new TextItem { Text = text, Row = row, Col = col, Color = color }));
+        }
+
+        /// <summary>提交十字标记并立即上屏</summary>
+        internal void SceneAddCross(double row, double col, double size, string color)
+        {
+            RunOnUiSync(() => SafeAddAndDraw(new CrossItem { Row = row, Col = col, Size = size, Color = color }));
+        }
+
+        /// <summary>提交圆并立即上屏</summary>
+        internal void SceneAddCircle(double row, double col, double radius, string color)
+        {
+            RunOnUiSync(() => SafeAddAndDraw(new CircleItem { Row = row, Col = col, Radius = radius, Color = color }));
+        }
+
+        /// <summary>追加条目并立即绘制（不清窗，叠加式）。返回 false 仅表示窗口不可用</summary>
+        private bool SafeAddAndDraw(SceneItem item)
+        {
+            _scene.Add(item);
+            if (_hWindow == null) return false;
+            try { item.Draw(_hWindow); }
+            catch (Exception ex)
+            {
+                // 单条绘制失败只记日志，条目仍留在场景里（交互重放时再尝试）
+                LogBus.Warn("HalconHost", $"场景条目绘制失败（已跳过）: {ex.Message}");
+            }
+            return true;
+        }
+
+        /// <summary>清空场景并释放其中托管对象（借用对象不动）。仅 UI 线程调用</summary>
+        private void ClearScene()
+        {
+            foreach (var item in _scene)
+            {
+                if (item is ObjectItem oi && oi.Owned && oi.Obj != null)
+                {
+                    try { oi.Obj.Dispose(); } catch { }
+                }
+            }
+            _scene.Clear();
+            _sceneBaseImage = null;
+        }
+
+        /// <summary>整体重放场景：清窗后按添加顺序逐条重画（窗口 part 已更新）。
+        /// 批量刷新：先关闭 flush_graphic 逐算子上屏，全部画完再统一刷新一次，
+        /// 消除"清窗→逐条重画"过程中间态可见造成的闪烁。</summary>
+        private void RepaintScene()
+        {
+            if (_hWindow == null || _scene.Count == 0) return;
+            try
+            {
+                bool flushDisabled = false;
+                try
+                {
+                    HOperatorSet.SetSystem("flush_graphic", "false");
+                    flushDisabled = true;
+                }
+                catch { /* 个别环境不支持该参数时降级为直接绘制 */ }
+
+                try
+                {
+                    _hWindow.ClearWindow();
+                    foreach (var item in _scene)
+                    {
+                        try { item.Draw(_hWindow); }
+                        catch { /* 底图可能已被新帧替换释放：单条失败跳过，不影响其余条目 */ }
+                    }
+                }
+                finally
+                {
+                    if (flushDisabled)
+                    {
+                        // 恢复的同时把缓冲的全部绘制一次性刷上屏
+                        try { HOperatorSet.SetSystem("flush_graphic", "true"); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("HalconHost", $"场景重放失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>用户交互（缩放/平移结束、双击、尺寸变化）后重放场景</summary>
+        private void RequestSceneRepaint()
+        {
+            RunOnUiSync(RepaintScene);
+        }
+
+        /// <summary>把动作调度到 UI 线程同步执行（已在 UI 线程则直接执行，保证调用方顺序）</summary>
+        private void RunOnUiSync(Action action)
+        {
+            if (action == null) return;
+            var dispatcher = Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess())
+            {
+                action();
+            }
+            else
+            {
+                dispatcher.Invoke(action, System.Windows.Threading.DispatcherPriority.Render);
+            }
+        }
+
+        #endregion
+
+        private void SmartWindow_HMouseWheel(object sender, HSmartWindowControlWPF.HMouseEventArgsWPF e)
+        {
+            RequestSceneRepaint();
+        }
+
+        private void SmartWindow_HMouseUp(object sender, HSmartWindowControlWPF.HMouseEventArgsWPF e)
+        {
+            _panAnchorSet = false; // 拖动结束，重置平移锚点
+            RequestSceneRepaint();
+        }
+
+        private void SmartWindow_HMouseDoubleClick(object sender, HSmartWindowControlWPF.HMouseEventArgsWPF e)
+        {
+            // 双击适配（HDoubleClickToFitContent）会调整窗口 part，重放场景
+            RequestSceneRepaint();
+        }
+
+        private void SmartWindow_HMouseMove(object sender, HSmartWindowControlWPF.HMouseEventArgsWPF e)
+        {
+            // 平移由本控件接管（SmartWindow.HMoveContent 已关闭，避免其内部清窗重绘与场景重放打架闪屏）：
+            // 左键按住拖动 = 按窗口像素位移平移窗口 part，再整体重放场景，画面跟随鼠标平滑移动。
+            if (System.Windows.Input.Mouse.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+            {
+                _panAnchorSet = false;
+                return;
+            }
+
+            if (!_panAnchorSet)
+            {
+                // 按下后的第一次移动：只记录锚点不平移
+                _panAnchorX = e.X;
+                _panAnchorY = e.Y;
+                _panAnchorSet = true;
+                return;
+            }
+
+            // 30ms 节流；节流期间累积的位移留到下一次一起平移（锚点仅在真正平移后前移）
+            var now = DateTime.UtcNow;
+            if ((now - _lastSceneRepaintUtc).TotalMilliseconds < 30) return;
+            _lastSceneRepaintUtc = now;
+
+            double dx = e.X - _panAnchorX;
+            double dy = e.Y - _panAnchorY;
+            if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5) return;
+            _panAnchorX = e.X;
+            _panAnchorY = e.Y;
+
+            if (PanWindowByPixels(dx, dy))
+            {
+                RepaintScene();
+            }
+        }
+
+        /// <summary>
+        /// 按窗口像素位移平移窗口 part（拖动平移核心）。
+        /// 鼠标向右拖 dx 像素 = 画面跟随右移 = 显示图像更左侧内容 → part 列区间左移。
+        /// 只平移不缩放（part 尺寸不变），天然保持纵横比。
+        /// </summary>
+        private bool PanWindowByPixels(double dxPixels, double dyPixels)
+        {
+            if (_hWindow == null || SmartWindow == null) return false;
+            if (SmartWindow.ActualWidth <= 0 || SmartWindow.ActualHeight <= 0) return false;
+            try
+            {
+                _hWindow.GetPart(out HTuple r1, out HTuple c1, out HTuple r2, out HTuple c2);
+                double scaleX = (c2.D - c1.D) / SmartWindow.ActualWidth;  // 每窗口像素对应多少图像列
+                double scaleY = (r2.D - r1.D) / SmartWindow.ActualHeight; // 每窗口像素对应多少图像行
+                double dCol = -dxPixels * scaleX;
+                double dRow = -dyPixels * scaleY;
+                _hWindow.SetPart(r1.D + dRow, c1.D + dCol, r2.D + dRow, c2.D + dCol);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("HalconHost", $"拖动平移窗口 part 失败: {ex.Message}");
+                return false;
+            }
+        }
+
+        private void SmartWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            RequestSceneRepaint();
         }
 
         /// <summary>
@@ -154,19 +496,36 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             {
                 try
                 {
-                    // 上下文为空 / 无图像：清空窗口，重置尺寸缓存
+                    // 上下文为空 / 无图像：清空窗口与场景，重置尺寸缓存
                     if (context?.Image == null)
                     {
                         _hWindow.ClearWindow();
+                        ClearScene();
                         _lastImageWidth = 0;
                         _lastImageHeight = 0;
                         LogBus.Debug("HalconHost", "[Display] 窗口与状态已成功清空。");
                         return;
                     }
 
+                    // 🌟 场景协同（抓图流程时序：渲染任务在场景提交之后才执行）：
+                    // - 渲染帧 ≠ 场景底图（新帧到达）：旧场景引用旧帧对象，作废清空；
+                    // - 渲染帧 == 场景底图（同一帧补渲染）：渲染完底图后重放场景，把叠加层补回来。
+                    var newImage = (context.Image as HalconRenderImage)?.HImage;
+                    bool sameFrame = newImage != null && ReferenceEquals(newImage, _sceneBaseImage);
+                    if (!sameFrame)
+                    {
+                        ClearScene();
+                    }
+
                     // 1. 渲染原图 + 叠加绘图（ROI、检测框、文字等Overlay）
                     _renderService.RenderToWindow(_hWindow, context.Image, context.Overlays);
                     LogBus.Debug("HalconHost", $"[Display] 图像已成功 DispObj 到 HWindow (尺寸: {context.Image.Width}x{context.Image.Height})");
+
+                    // 2. 同帧补渲染：渲染任务画了底图会盖住场景叠加层，重放补回
+                    if (sameFrame && _scene.Count > 0)
+                    {
+                        RepaintScene();
+                    }
 
                     // 2. 仅当图像分辨率变化时，执行窗口自适应填充（性能优化，避免重复缩放）
                     if (context.Image != null)
@@ -231,6 +590,11 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             else
             {
                 LogBus.Debug("HalconHost", "窗口准备完毕，当前无待渲染的 RenderContext。");
+                // 窗口重建（控件重新加载）而场景仍有条目时直接重放，画面不丢
+                if (_scene.Count > 0)
+                {
+                    RepaintScene();
+                }
             }
         }
 

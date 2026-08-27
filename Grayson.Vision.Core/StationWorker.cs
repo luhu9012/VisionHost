@@ -40,6 +40,12 @@ namespace Grayson.Vision.Core
         private IWorkflowScheduler _scheduler;
         private FlowProcessModel _currentRecipe;
 
+        /// <summary>
+        /// 宿主运行时引用（由 StationHostRuntime 在创建时设置），
+        /// 用于工位 Start/Stop 时联动启停触发源。
+        /// </summary>
+        public StationHostRuntime HostRuntime { get; set; }
+
         public ExecutionChain ActiveExecutionChain { get; private set; }
 
         /// <summary>工位指标聚合</summary>
@@ -92,7 +98,7 @@ namespace Grayson.Vision.Core
 
         private void CreateDefaultScheduler()
         {
-            _scheduler = new SimpleTriggerScheduler(StationId, _stationContext);
+            _scheduler = new SimpleTriggerScheduler(StationId, _stationContext, WorkOrderTracker);
             BindSchedulerEvents();
         }
 
@@ -196,11 +202,32 @@ namespace Grayson.Vision.Core
             UpdateState(StationState.Running);
             LogBus.Info("StationWorker", $"工位 [{StationId}] 已启动 (模式: {Mode})。");
 
+            // 🌟 启动触发源——生产模式下工位将自动被外部信号（PLC/IO/定时器）驱动，
+            //    不再空转等待；Manual 源则等待 UI 按钮触发。
+            try
+            {
+                HostRuntime?.StartTriggerSource(StationId);
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 启动触发源异常: {ex.Message}");
+            }
+
             await _scheduler.StartAsync().ConfigureAwait(false);
         }
 
         public async Task StopAsync()
         {
+            // 🌟 先停止触发源——不再响应外部信号
+            try
+            {
+                HostRuntime?.StopTriggerSource(StationId);
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("StationWorker", $"工位 [{StationId}] 停止触发源异常: {ex.Message}");
+            }
+
             await _scheduler.StopAsync().ConfigureAwait(false);
 
             UpdateState(ActiveExecutionChain?.Count > 0 ? StationState.Idle : StationState.Stopped);
@@ -258,13 +285,26 @@ namespace Grayson.Vision.Core
         }
 
         /// <summary>
+        /// 注入节点实时预览显示上下文（编辑器属性面板调试专用）。
+        /// 暂存到 StationContext，由调度器在构建调试单步 NodeExecutionContext 时读取；
+        /// null 表示清除注入。
+        /// </summary>
+        public void SetPreviewContext(IFlowPreviewContext preview)
+        {
+            _stationContext.PreviewContext = preview;
+        }
+
+        /// <summary>
         /// 工单级复位：终止当前工单并释放本次占用设备，不改变工位全局状态。
         /// </summary>
-        public Task WorkOrderResetAsync()
+        public async Task WorkOrderResetAsync()
         {
-            _scheduler?.StopAsync();
+            if (_scheduler != null)
+            {
+                await _scheduler.StopAsync().ConfigureAwait(false);
+            }
+            UpdateState(StationState.Idle);
             LogBus.Info("StationWorker", $"工位 [{StationId}] 工单级复位完成。");
-            return Task.CompletedTask;
         }
 
         /// <summary>

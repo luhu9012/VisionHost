@@ -113,7 +113,13 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <ComboBox ItemsSource="{Binding AxisList}" DisplayMemberPath="AxisName" SelectedItem="{Binding SelectedAxis}"/>
+                        <ComboBox ItemsSource="{Binding AxisList}"  SelectedItem="{Binding SelectedAxis}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding AxisName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                         <Button Grid.Column="1" Content="{Binding IsServoOn, Converter={StaticResource BoolToServoTextConverter}}"
                                 Command="{Binding ToggleServoCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="6,0,0,0" Width="90"/>
                     </Grid>
@@ -190,18 +196,27 @@
                 <StackPanel>
                     <DockPanel Margin="0,0,0,10">
                         <!-- 靠右的按钮，DockPanel.Dock="Right" 放最上面！DockPanel顺序很关键 -->
-                        <Button DockPanel.Dock="Right" 
-                            Content="🚨 全轴急停" 
-                            Command="{Binding EmergencyStopCommand}" 
-                            Background="#E74C3C" 
-                            Foreground="White" 
-                            FontWeight="Bold" 
+                        <Button DockPanel.Dock="Right"
+                            Content="🚨 全轴急停"
+                            Command="{Binding EmergencyStopCommand}"
+                            Background="#E74C3C"
+                            Foreground="White"
+                            FontWeight="Bold"
+                            Padding="12,6"
+                            Margin="8,0,0,0"
+                            HorizontalAlignment="Right"/>
+
+                        <!-- 相机实时画面入口：非模态弹窗显示相机采集图像，轴动时可动态观察视角变化 -->
+                        <Button DockPanel.Dock="Right"
+                            Content="📷 相机画面"
+                            Command="{Binding ShowCameraLiveCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"
                             Padding="12,6"
                             HorizontalAlignment="Right"/>
 
                         <!-- 剩下全部空间给标题 -->
-                        <TextBlock Text="选中轴实时状态与坐标" 
-                       Style="{StaticResource SubTitleTextStyle}" 
+                        <TextBlock Text="选中轴实时状态与坐标"
+                       Style="{StaticResource SubTitleTextStyle}"
                        VerticalAlignment="Center"/>
                     </DockPanel>
 

@@ -30,7 +30,29 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         Task ResumeAsync();
         Task TriggerOnceAsync(string batchId = null);
         Task StepNodeAsync(FlowNodeBase node);
+
+        /// <summary>
+        /// 注入节点实时预览显示上下文（编辑器属性面板调试专用）。
+        /// null 表示清除注入；仅本地嵌入式代理支持，IPC 远端代理为 no-op
+        /// （远端进程无法持有本地窗口句柄，静默退化为主视图显示）。
+        /// </summary>
+        void SetPreviewContext(IFlowPreviewContext preview);
         Task EmergencyStopAsync(string reason = null);
+
+        /// <summary>
+        /// 工单级复位：终止当前工单并释放本次占用设备，不改变工位全局状态。
+        /// </summary>
+        Task WorkOrderResetAsync();
+
+        /// <summary>
+        /// 工位软复位：停止运行、执行 ResetBlueprint（回安全点、IO 复位、清空队列），不重新初始化硬件句柄。
+        /// </summary>
+        Task SoftResetAsync();
+
+        /// <summary>
+        /// 硬件全复位：关闭所有设备句柄并重新 Open，用于断连后恢复。
+        /// </summary>
+        Task HardwareResetAsync();
 
         /// <summary>
         /// 工单追踪器；可用于 UI 读取最近工单快照。

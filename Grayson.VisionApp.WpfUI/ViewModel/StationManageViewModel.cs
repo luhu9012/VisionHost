@@ -2,25 +2,16 @@
 // Copyright (c) 2026 Grayson.Vision. All rights reserved.
 // 文件名: StationManageViewModel.cs
 //===================================================================================
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows;
-
-using RecipeModel = Grayson.Vision.Contracts.Recipe.Models.RecipeModel;
-using RecipeDeviceMappingModel = Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel;
-using ContractsStationConfig = Grayson.Vision.Contracts.Station.Models.StationConfigModel;
-using ContractsLineConfig = Grayson.Vision.Contracts.Station.Models.LineConfigModel;
-using HardwareDeviceModel = Grayson.Vision.WpfUI.Model.HardwareDeviceModel;
-
+using Grayson.Vision.Contracts.Devices;
+using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Recipe.Models;
 using Grayson.Vision.Contracts.Recipe.Services;
 using Grayson.Vision.Contracts.Station.Enums;
 using Grayson.Vision.Contracts.Station.Interfaces;
 using Grayson.Vision.Contracts.Station.Services;
+using Grayson.Vision.Contracts.Station.Triggers;
 using Grayson.Vision.Core.Client;
 using Grayson.Vision.Core.Station;
 using Grayson.Vision.Repository;
@@ -29,6 +20,17 @@ using Grayson.Vision.Repository.Services;
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows;
+using ContractsLineConfig = Grayson.Vision.Contracts.Station.Models.LineConfigModel;
+using ContractsStationConfig = Grayson.Vision.Contracts.Station.Models.StationConfigModel;
+using HardwareDeviceModel = Grayson.Vision.WpfUI.Model.HardwareDeviceModel;
+using RecipeDeviceMappingModel = Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel;
+using RecipeModel = Grayson.Vision.Contracts.Recipe.Models.RecipeModel;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
@@ -36,6 +38,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
     public class StationModel : ViewModelBase
     {
+        private readonly IDevicePool _devicePool;
         public Action OnBoundRecipeChangedAction { get; set; }
 
         private string _stationId;
@@ -89,8 +92,123 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ObservableCollection<HardwareDeviceModel> HardwareDevices { get; set; }
         public ObservableCollection<RecipeDeviceMappingModel> RecipeDeviceMappings { get; set; }
 
+        // ===== 触发源配置 =====
+
+        private TriggerSourceType _triggerSourceType = TriggerSourceType.Manual;
+        /// <summary>触发源类型（手动/定时器/PLC 位）</summary>
+        public TriggerSourceType TriggerSourceType
+        {
+            get => _triggerSourceType;
+            set => Set(ref _triggerSourceType, value);
+        }
+
+        private TriggerEdge _triggerEdge = TriggerEdge.Rising;
+        /// <summary>边沿检测模式</summary>
+        public TriggerEdge TriggerEdge
+        {
+            get => _triggerEdge;
+            set => Set(ref _triggerEdge, value);
+        }
+
+        private int _debounceMs;
+        /// <summary>防抖时间（毫秒）</summary>
+        public int DebounceMs
+        {
+            get => _debounceMs;
+            set => Set(ref _debounceMs, value);
+        }
+
+        private DropStrategy _dropStrategy = DropStrategy.DropOldest;
+        /// <summary>丢帧策略</summary>
+        public DropStrategy DropStrategy
+        {
+            get => _dropStrategy;
+            set => Set(ref _dropStrategy, value);
+        }
+
+        private int _timerIntervalMs = 1000;
+        /// <summary>定时器周期（毫秒）</summary>
+        public int TimerIntervalMs
+        {
+            get => _timerIntervalMs;
+            set => Set(ref _timerIntervalMs, value);
+        }
+
+        private string _plcDeviceId;
+        /// <summary>PLC 设备 ID（设备池逻辑 Key）</summary>
+        public string PlcDeviceId
+        {
+            get => _plcDeviceId;
+            set => Set(ref _plcDeviceId, value);
+        }
+
+        private string _plcAddress;
+        /// <summary>PLC 触发点位地址</summary>
+        public string PlcAddress
+        {
+            get => _plcAddress;
+            set => Set(ref _plcAddress, value);
+        }
+
+        private int _pollIntervalMs = 50;
+        /// <summary>PLC 轮询间隔（毫秒）</summary>
+        public int PollIntervalMs
+        {
+            get => _pollIntervalMs;
+            set => Set(ref _pollIntervalMs, value);
+        }
+
+        /// <summary>
+        /// 从 UI 属性构建触发源配置模型。
+        /// </summary>
+        public TriggerSourceConfig ToTriggerSourceConfig()
+        {
+            return new TriggerSourceConfig
+            {
+                SourceType = TriggerSourceType,
+                Edge = TriggerEdge,
+                DebounceMs = DebounceMs,
+                DropStrategy = DropStrategy,
+                TimerIntervalMs = TimerIntervalMs,
+                PlcDeviceId = PlcDeviceId,
+                PlcAddress = PlcAddress,
+                PollIntervalMs = PollIntervalMs,
+                EnableStats = true
+            };
+        }
+
+        /// <summary>
+        /// 从持久化配置模型恢复 UI 属性。
+        /// </summary>
+        public void FromTriggerSourceConfig(TriggerSourceConfig config)
+        {
+            if (config == null) config = new TriggerSourceConfig();
+            TriggerSourceType = config.SourceType;
+            TriggerEdge = config.Edge;
+            DebounceMs = config.DebounceMs;
+            DropStrategy = config.DropStrategy;
+            TimerIntervalMs = config.TimerIntervalMs;
+            PlcDeviceId = config.PlcDeviceId ?? "";
+            PlcAddress = config.PlcAddress ?? "";
+            PollIntervalMs = config.PollIntervalMs;
+        }
+
+        /// <summary>
+        /// 全局硬件池中的 PLC 设备列表（供触发源配置下拉选择）。
+        /// </summary>
+        public IEnumerable<HardwareDeviceModel> PlcDeviceOptions =>
+            _devicePool.GetAllDevices().OfType<IPlc>()
+                .Select(d => new HardwareDeviceModel
+                {
+                    DeviceId = d.DeviceKey,
+                    DeviceName = d.DeviceName,
+                    DeviceType = d.BrandName
+                }) ?? Enumerable.Empty<HardwareDeviceModel>();
+
+
         public StationModel()
         {
+            _devicePool = App.StationHostRuntime?.DevicePool ?? throw new InvalidOperationException("DevicePool not initialized");
             HardwareDevices = new ObservableCollection<HardwareDeviceModel>();
             RecipeDeviceMappings = new ObservableCollection<RecipeDeviceMappingModel>();
         }
@@ -405,11 +523,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 IWorkerClient client = null;
                 if (hostRuntime != null)
                 {
+                    // 装配触发源（传配置到 Core，工位 Start 后自动启动信号监听）
                     client = await hostRuntime.CreateStationWithRecipeAsync(
                         SelectedStation.StationCode,
                         boundRecipe,
                         stationConfig.DeviceMappings,
-                        WorkMode.Production);
+                        WorkMode.Production,
+                        stationConfig.TriggerSource);
                 }
 
                 if (client == null)
@@ -473,6 +593,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     config.DeviceMappings.Add(mapping);
                 }
             }
+
+            // 保存触发源配置
+            config.TriggerSource = station.ToTriggerSourceConfig();
 
             return config;
         }
@@ -825,6 +948,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         station.RecipeDeviceMappings.Add(mapping);
                     }
                 }
+
+                // 从持久化数据恢复触发源配置
+                station.FromTriggerSourceConfig(stationConfig.TriggerSource);
 
                 line.Stations.Add(station);
             }

@@ -46,6 +46,9 @@ namespace Grayson.Vision.WpfUI
         /// </summary>
         private FileLogSink _fileLogSink;
 
+        /// <summary>日志写盘失败告警节流时间（同一秒内多次失败只提示一次，防刷屏）</summary>
+        private DateTime _lastLoggingFailedNotifiedAt = DateTime.MinValue;
+
         /// <summary>
         /// 全局 StationHost 运行时（Core 唯一入口），程序生命周期内共享。
         /// </summary>
@@ -71,33 +74,36 @@ namespace Grayson.Vision.WpfUI
 
             try
             {
-                // 1. 初始化文件日志服务
-                _fileLogSink = new FileLogSink();
+                // 1. 初始化日志体系（LogConfig 装配 → LogRouter 路由 → 文件/JSON Sink 落盘）
+                //    LogPath 等配置来自 exe.config 的 appSettings（与 SystemSettingView「日志与诊断」Tab 同源同键），
+                //    解决了旧版 FileLogSink 不消费 LogPath 配置项的「孤儿配置」问题。
+                LogConfig.Instance.LoadFromAppSettings();
+                // 日志写失败告警（磁盘满等）：UI 一次性提示，防止产线「日志悄悄丢」无人知晓。
+                // 注意：此订阅者只做界面提示，切勿在此写日志（防递归）。
+                LogBus.LoggingFailed += OnLoggingFailed;
+
+#if DEBUG
+                // 【VS 开发环境】：
+                // 日志默认输出到 VS「输出(Output)」窗口（由 LogRouter.Publish 的 #if DEBUG 输出）；
+                // 如需开发时也本地落盘，取消下面两行注释即可（LogPath 默认 运行目录\Logs）：
+                // _fileLogSink = new FileLogSink(LogConfig.Instance.LogPath);
+                // LogRouter.AddSink(_fileLogSink);
+#else
+                // 【生产打包环境】：装配文件 Sink（+ 可选结构化 JSON Sink）。
+                // AddSink 内部自动 Configure + Enable（启动写盘线程），注册即生效。
+                _fileLogSink = new FileLogSink(LogConfig.Instance.LogPath);
+                LogRouter.AddSink(_fileLogSink);
+                if (LogConfig.Instance.JsonEnabled)
+                {
+                    // 结构化 NDJSON 落盘（供清洗 / AI 分析消费，如 {进程名}_{日期}.jsonl）
+                    LogRouter.AddSink(new JsonLogSink(LogConfig.Instance.LogPath));
+                }
+#endif
+                LogRouter.ApplyConfig(LogConfig.Instance);
 
                 // 2. 初始化存储层数据库路径 (存放在运行目录 Data/GraysonVision.db)
                 string dbPath = Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Data", "GraysonVision.db");
                 StorageFactory.Initialize(dbPath);
-
-#if DEBUG
-                // 【VS 开发环境】：
-                // 不需要开启 FileLogSink（或者只输出到默认 Debug/Logs 目录）
-                // 所有 LogBus.Info/Error 都会直接显示在 VS 的 "输出(Output)" 窗口中！
-
-                // 如果开发时也想顺便写本地日志，取消下面这句注释即可：
-                // _fileLogSink.Enable();
-#else
-                // 【生产打包环境】：
-                // 1. 可以从 App.config / appsettings.json 读取生产环境配置的磁盘路径
-                string customPath = ConfigurationManager.AppSettings["LogPath"];
-
-                if (!string.IsNullOrEmpty(customPath))
-                {
-                    _fileLogSink.SetDirectory(customPath); // 例如 "D:\FactoryData\Logs"
-                }
-
-                // 2. 生产环境开启落盘
-                _fileLogSink.Enable();
-#endif
 
                 // 1. 初始化账号认证服务（当前使用Mock模拟登录服务，可替换为数据库/网络登录实现）
                 _authService = new LiteDbAuthenticationService();
@@ -324,6 +330,8 @@ namespace Grayson.Vision.WpfUI
         private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             var exception = e.ExceptionObject as Exception;
+            // 🌟 崩溃前先落日志（此时是最后的记录机会——最需要日志的时刻不能只有弹窗）
+            LogBus.Error("System", $"严重未处理异常: {exception?.Message}", exception);
             MessageBox.Show($"应用程序发生严重错误:\n{exception?.Message}\n\n详细信息:\n{exception?.StackTrace}",
                 "严重错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -335,10 +343,36 @@ namespace Grayson.Vision.WpfUI
         /// </summary>
         private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
+            // 🌟 先落日志再弹窗（修复原「只弹窗不写日志」：界面异常也必须可追溯）
+            LogBus.Error("System", $"界面操作异常: {e.Exception.Message}", e.Exception);
             MessageBox.Show($"界面操作发生错误:\n{e.Exception.Message}\n\n详细信息:\n{e.Exception.StackTrace}",
                 "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             // 告知框架异常已人工处理，不再向上抛出导致程序崩溃
             e.Handled = true;
+        }
+
+        /// <summary>
+        /// 日志写盘失败告警（磁盘满 / 目录不可写等）：UI 一次性提示，防止产线「日志悄悄丢」无人知晓。
+        /// 注意：此方法内禁止再写日志（防递归），只做界面提示。
+        /// </summary>
+        private void OnLoggingFailed(string sinkName, int failures, Exception ex)
+        {
+            try
+            {
+                // 节流：同一秒内多次失败只提示一次，避免写盘失败时弹窗刷屏
+                if ((DateTime.Now - _lastLoggingFailedNotifiedAt).TotalSeconds < 1) return;
+                _lastLoggingFailedNotifiedAt = DateTime.Now;
+
+                // 后台线程触发 → 切到 UI 线程弹窗
+                Dispatcher.BeginInvoke(new Action(() =>
+                    MessageBox.Show($"日志写入失败（{sinkName}，累计 {failures} 次）：\n{ex?.Message}\n\n" +
+                                    "请检查磁盘空间或日志目录权限，否则日志将无法记录！",
+                        "日志告警", MessageBoxButton.OK, MessageBoxImage.Warning)));
+            }
+            catch
+            {
+                // 告警提示异常不影响主程序
+            }
         }
 
         /// <summary>
@@ -353,6 +387,15 @@ namespace Grayson.Vision.WpfUI
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[App] 退出释放资源异常: {ex.Message}");
+            }
+            // 🌟 冲刷并关闭所有日志 Sink（防程序退出时丢失缓冲中的日志）
+            try
+            {
+                LogRouter.ShutdownAll();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] 日志关闭异常: {ex.Message}");
             }
             base.OnExit(e);
         }

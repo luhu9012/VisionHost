@@ -18,8 +18,23 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
         private string _nodeId;
         public string NodeId
         {
-            get => string.IsNullOrEmpty(_nodeId) ? Guid.NewGuid().ToString("N") : _nodeId;
-            set => Set(ref _nodeId, value);
+            get
+            {
+                // 🌟【Bug修复】NodeId 必须稳定：首次读取时生成并缓存，杜绝"每次读取返回新 GUID"。
+                //    原实现导致保存配方时 Nodes 列表与 Connections.SourceNodeId/TargetNodeId
+                //    各自取到不同的随机 ID，下次加载时节点匹配失败、连线被错误重挂或丢失。
+                if (string.IsNullOrEmpty(_nodeId))
+                {
+                    _nodeId = Guid.NewGuid().ToString("N");
+                }
+                return _nodeId;
+            }
+            set
+            {
+                // 忽略空值赋值，防止外部反序列化写入 null/"" 后再次退化为不稳定状态
+                if (string.IsNullOrEmpty(value)) return;
+                Set(ref _nodeId, value);
+            }
         }
 
         // 节点全局唯一 ID，配方序列化标识节点

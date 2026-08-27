@@ -72,7 +72,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             set => Set(ref _latestThumbnail, value);
         }
 
-        public string StateText => string.IsNullOrEmpty(State) ? "未连接" : State;
+        /// <summary>
+        /// 状态中文文案：未连接或空状态显示「未连接」，其余按状态机中文映射。
+        /// </summary>
+        public string StateText => Grayson.Vision.WpfUI.Common.StationStateTexts.ToDisplayText(State);
 
         public string StateBrushKey
         {
@@ -106,7 +109,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly StationConfigService _configService;
         private readonly HalconImageRenderService _renderService;
         private readonly IStationHostRuntime _hostRuntime;
-        private readonly HashSet<string> _subscribedStationCodes = new HashSet<string>();
+        // 🌟 订阅按 client 实例管理（而非 StationCode）：工位保存时 RemoveStation + 重建 client 后，
+        // 新实例会被重新订阅，修复旧代码"按 Code 去重导致新实例永远收不到事件"的 Bug。
+        private readonly Dictionary<string, IWorkerClient> _subscribedClients = new Dictionary<string, IWorkerClient>();
         private DateTime _lastThumbnailUpdate = DateTime.MinValue;
         private int _gridColumns = 3;
         /// <summary>
@@ -197,8 +202,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public CardViewMode ViewMode
         {
             get => _viewMode;
-            set => Set(ref _viewMode, value);
+            set
+            {
+                if (Set(ref _viewMode, value))
+                {
+                    OnPropertyChanged(nameof(ViewModeToggleText));
+                }
+            }
         }
+
+        /// <summary>
+        /// 视图切换按钮文本：当前是统计卡片时提示切换到缩略图监控，反之提示切回统计卡片。
+        /// </summary>
+        public string ViewModeToggleText =>
+            ViewMode == CardViewMode.Compact ? "🖼 缩略图监控" : "📊 统计卡片";
 
         private StationStatusCardModel _selectedCard;
         public StationStatusCardModel SelectedCard
@@ -263,18 +280,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     card.IsConnected = client.IsConnected;
                     card.State = client.CurrentState.ToString();
 
-                    // 每个工位只挂载一次事件，避免重复
-                    if (!_subscribedStationCodes.Contains(stationConfig.StationCode))
-                    {
-                        _subscribedStationCodes.Add(stationConfig.StationCode);
-                        client.OnStateChanged += Client_OnStateChanged;
-                        client.OnFrameRendered += Client_OnFrameRendered;
-                    }
+                    // 🌟 每个工位只挂载一次事件；若实例已重建（RemoveStation+重建），退订旧实例并重新订阅
+                    SubscribeClient(stationConfig.StationCode, client);
                 }
                 else
                 {
                     card.IsConnected = false;
                     card.State = "NotConnected";
+                    UnsubscribeClient(stationConfig.StationCode);
                 }
             }
 
@@ -284,19 +297,41 @@ namespace Grayson.Vision.WpfUI.ViewModel
             await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// 🌟 按 client 实例订阅事件；若实例已变化则先退订旧实例再订阅新实例。
+        /// </summary>
+        private void SubscribeClient(string stationCode, IWorkerClient client)
+        {
+            if (string.IsNullOrEmpty(stationCode) || client == null) return;
+
+            if (_subscribedClients.TryGetValue(stationCode, out var existing))
+            {
+                if (ReferenceEquals(existing, client)) return; // 已订阅同一实例，无需重复
+                UnsubscribeClient(stationCode);                // 实例已重建，退订旧实例
+            }
+
+            client.OnStateChanged += Client_OnStateChanged;
+            client.OnFrameRendered += Client_OnFrameRendered;
+            _subscribedClients[stationCode] = client;
+        }
+
+        private void UnsubscribeClient(string stationCode)
+        {
+            if (string.IsNullOrEmpty(stationCode)) return;
+            if (!_subscribedClients.TryGetValue(stationCode, out var existing)) return;
+
+            existing.OnStateChanged -= Client_OnStateChanged;
+            existing.OnFrameRendered -= Client_OnFrameRendered;
+            _subscribedClients.Remove(stationCode);
+        }
+
         private void CleanRemovedSubscriptions(IEnumerable<string> activeStationCodes)
         {
-            var activeSet = new HashSet<string>(activeStationCodes);
-            var removed = _subscribedStationCodes.Where(c => !activeSet.Contains(c)).ToList();
+            var activeSet = new HashSet<string>(activeStationCodes ?? Enumerable.Empty<string>());
+            var removed = _subscribedClients.Keys.Where(c => !activeSet.Contains(c)).ToList();
             foreach (var stationCode in removed)
             {
-                var client = _hostRuntime?.GetStationClient(stationCode) ?? _runtimeManager.GetClient(stationCode);
-                if (client != null)
-                {
-                    client.OnStateChanged -= Client_OnStateChanged;
-                    client.OnFrameRendered -= Client_OnFrameRendered;
-                }
-                _subscribedStationCodes.Remove(stationCode);
+                UnsubscribeClient(stationCode);
             }
         }
 

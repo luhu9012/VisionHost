@@ -1,7 +1,8 @@
 ﻿<UserControl x:Class="Grayson.Vision.WpfUI.View.HardwareConsole.CameraDebugView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters">
+             xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             xmlns:controls="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf">
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
     </UserControl.Resources>
@@ -13,10 +14,14 @@
         </Grid.ColumnDefinitions>
 
         <!-- 左侧：图像渲染与抓拍展示区域 -->
-        <Border Grid.Column="0" Background="Black" CornerRadius="4" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,12,0">
+        <Border Grid.Column="0" Background="Black" CornerRadius="4" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,12,0" ClipToBounds="True">
             <Grid>
-                <Image Source="{Binding CameraImageSource}" Stretch="Uniform"/>
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" 
+                <!-- Halcon 智能窗口渲染宿主（支持缩放/自适应/像素坐标，替代旧 Image 标签） -->
+                <controls:HalconImageDisplayHost x:Name="CameraDisplayHost" DataContext="{Binding CameraDisplayVm}"/>
+
+                <!-- 占位提示：仅未开流时显示，置于 Halcon 控件上层但不拦截鼠标交互 -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Panel.ZIndex="10" IsHitTestVisible="False"
                             Visibility="{Binding IsGrabbing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
                     <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#444"/>
                     <TextBlock Text="相机未开流或无实时图像信号" Foreground="{StaticResource TextDisabledBrush}" Margin="0,10,0,0"/>

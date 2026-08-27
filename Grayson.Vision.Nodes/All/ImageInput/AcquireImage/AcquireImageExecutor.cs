@@ -6,6 +6,7 @@ using Grayson.Vision.Contracts.Flow.Attributes;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.HalconWrapper.ImageProc;
 using Grayson.Vision.Nodes.Common;
 using System;
 using System.Threading;
@@ -15,7 +16,7 @@ namespace Grayson.Vision.Nodes.All.ImageInput.AcquireImage
 {
     [Node(NodeType.AcquireImage, NodeCategory.ImageInput, typeof(AcquireImageParam))]
     [NodePort("Input", PortType.In, PortCategory.Data, dataType: "Bool", colorHex: "#028090")]
-    [NodePort("Image", PortType.Out, PortCategory.Data, dataType: "Image", colorHex: "#9B59B6")]
+    [NodePort("Image", PortType.Out, PortCategory.Data, dataType: "object", colorHex: "#9B59B6")]
     public class AcquireImageExecutor : NodeExecutorBase<AcquireImageParam>
     {
         public const string PORT_OUT_IMAGE = "Image";
@@ -68,8 +69,18 @@ namespace Grayson.Vision.Nodes.All.ImageInput.AcquireImage
                 }
 
                 context.CycleContext.TransientItems[$"CameraFrame:{param.CameraAlias}"] = frame;
-                context.SetOutputValue(node, PORT_OUT_IMAGE, frame);
-                context.Log($"[相机采集] 采集成功，FrameNum={frame?.FrameNum}, Size={frame?.Width}x{frame?.Height}");
+
+                // 将相机原始帧转换为 Halcon HImage，供下游视觉节点（ShapeMatch/Threshold 等）消费
+                var convRes = ImageBasicTool.FrameToHImage(frame);
+                if (!convRes.Success)
+                {
+                    context.Log("❌ [相机采集] 图像转换失败: " + convRes.Message);
+                    context.SetOutputValue(node, PORT_OUT_IMAGE, null);
+                    return;
+                }
+
+                context.SetOutputValue(node, PORT_OUT_IMAGE, convRes.Data);
+                context.Log($"[相机采集] 采集成功，FrameNum={frame?.FrameNum}, Size={frame?.Width}x{frame?.Height}, Format={frame?.PixelFormat}");
             }
             finally
             {

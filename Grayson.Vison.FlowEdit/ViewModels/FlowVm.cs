@@ -203,6 +203,37 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         private readonly HalconImageRenderService _renderService;
         private readonly RecipeManager _recipeManager;
 
+        #region 实时预览（节点属性面板内嵌视图窗口）
+
+        /// <summary>预览防抖定时器（参数变化后 300ms 触发一次单步重跑）</summary>
+        private readonly System.Windows.Threading.DispatcherTimer _previewDebounce;
+
+        /// <summary>预览目标节点（当前属性弹窗编辑的节点，可能与 SelectedNode 不同）</summary>
+        private FlowNodeBase _previewTargetNode;
+
+        /// <summary>预览参数模型的事件订阅句柄（解绑用）</summary>
+        private INotifyPropertyChanged _previewParamModel;
+
+        /// <summary>预览执行中标记（重入保护）</summary>
+        private bool _isPreviewRunning;
+
+        /// <summary>执行忙时记录一次待跑（拖动滑块高频触发的合并策略）</summary>
+        private bool _previewQueued;
+
+        private bool _isLivePreview = true;
+
+        /// <summary>参数变化是否自动刷新预览（属性面板复选框绑定）</summary>
+        public bool IsLivePreview
+        {
+            get => _isLivePreview;
+            set => Set(ref _isLivePreview, value);
+        }
+
+        /// <summary>每次预览执行完成后回调（属性窗口用来隐藏"运行后显示预览"占位提示）</summary>
+        public event Action OnPreviewExecuted;
+
+        #endregion
+
         public event Action<FlowNodeBase> OnNodeExecuting;
         public event Action<FlowNodeBase> OnNodeExecuted;
         public event Action<FlowNodeBase, Exception> OnExecutionError;
@@ -247,6 +278,17 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             InitLogBusSubscription();
             _renderService = new HalconImageRenderService();
             ImageDisplayVm = new ImageDisplayVm(_renderService);
+
+            // 1.1 初始化预览防抖定时器（属性面板参数变化 → 300ms 后单步重跑该节点）
+            _previewDebounce = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(300)
+            };
+            _previewDebounce.Tick += async (s, e) =>
+            {
+                _previewDebounce.Stop();
+                await GuardRunPreviewAsync();
+            };
 
             // 2. 插件加载已经在 App 启动时完成，这里不再重复执行
             // 原代码：new NodePluginLoader().LoadPlugins(pluginDir);
@@ -875,6 +917,93 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             await _workerClient.StepNodeAsync(SelectedNode);
         }
 
+        #region 实时预览执行链（属性面板专用）
+
+        /// <summary>
+        /// 挂接实时预览：把属性面板视图窗口的适配器注入引擎（经 WorkerClient → StationWorker
+        /// → 调试单步 NodeExecutionContext.Preview），并订阅参数变化（防抖重跑）+ 立即执行首帧。
+        /// 预览执行 = 一次真实的调试单步执行：输入取自端口值缓存（上游最近输出），
+        /// 输出写回输出端口，主视图/端口调试区同步刷新，不存在第二套数据通路。
+        /// </summary>
+        public void AttachPreview(IFlowPreviewContext previewContext, FlowNodeBase node)
+        {
+            if (previewContext == null || node == null) return;
+
+            DetachPreview();
+
+            _previewTargetNode = node;
+            _workerClient?.SetPreviewContext(previewContext);
+
+            if (node.ParameterModel is INotifyPropertyChanged pcm)
+            {
+                _previewParamModel = pcm;
+                pcm.PropertyChanged += OnPreviewParamChanged;
+            }
+
+            // 首帧：打开面板立即跑一次（相当于自动点一次「▶ 运行该节点」）
+            _ = GuardRunPreviewAsync();
+        }
+
+        /// <summary>
+        /// 卸载实时预览：解绑参数事件、清除引擎注入（属性窗口 OnClosed 时调用）。
+        /// </summary>
+        public void DetachPreview()
+        {
+            if (_previewParamModel != null)
+            {
+                _previewParamModel.PropertyChanged -= OnPreviewParamChanged;
+                _previewParamModel = null;
+            }
+            _previewDebounce?.Stop();
+            _previewTargetNode = null;
+            _workerClient?.SetPreviewContext(null);
+        }
+
+        /// <summary>参数属性变化 → 防抖 300ms（拖动滑块高频触发时只跑最后一次）</summary>
+        private void OnPreviewParamChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (!IsLivePreview || _previewTargetNode == null) return;
+            _previewDebounce.Stop();
+            _previewDebounce.Start();
+        }
+
+        /// <summary>
+        /// 预览执行（重入保护 + 合并待跑）：与 StepRunNodeAsync 同链路，
+        /// 但目标是当前弹窗编辑的节点而非 SelectedNode。
+        /// </summary>
+        private async Task GuardRunPreviewAsync()
+        {
+            if (_previewTargetNode == null || _workerClient == null) return;
+
+            if (_isPreviewRunning)
+            {
+                _previewQueued = true;
+                return;
+            }
+
+            _isPreviewRunning = true;
+            try
+            {
+                await _workerClient.StepNodeAsync(_previewTargetNode);
+                OnPreviewExecuted?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("FlowVm", $"实时预览执行失败 [{_previewTargetNode?.DisplayName}]: {ex.Message}");
+            }
+            finally
+            {
+                _isPreviewRunning = false;
+                if (_previewQueued)
+                {
+                    _previewQueued = false;
+                    _ = GuardRunPreviewAsync();
+                }
+            }
+        }
+
+        #endregion
+
         private async Task StopWorkerAsync()
         {
             if (_workerClient != null) await _workerClient.StopAsync();
@@ -991,6 +1120,18 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         {
             if (source == null || target == null || source == target || sourcePort == null || targetPort == null) return;
             if (sourcePort.PortType == targetPort.PortType) return;
+
+            // 🌟【Bug修复】重复连线守卫：同一对端口之间禁止重复连线。
+            //    此前画布连线未去重，重复保存/重连会在配方中堆积多条完全相同的连线。
+            bool isDuplicate = CurrentProcess.Connections.Any(c =>
+                c.SourceNode == source && c.TargetNode == target &&
+                c.SourcePortId == sourcePort.PortId && c.TargetPortId == targetPort.PortId);
+
+            if (isDuplicate)
+            {
+                LogBus.Info("Flow", $"连线已存在，忽略重复连接: {source.DisplayName}.{sourcePort.PortName} -> {target.DisplayName}.{targetPort.PortName}");
+                return;
+            }
 
             // 🌟 使用 RecipeConverter 的工厂绑定方法，自动挂载 OnPositionChanged 监听
             var connection = RecipeConverter.CreateAndBindConnection(source, sourcePort, target, targetPort);

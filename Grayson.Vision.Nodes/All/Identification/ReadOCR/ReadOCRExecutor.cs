@@ -5,6 +5,7 @@ using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.HalconWrapper.Identification;
+using Grayson.Vision.HalconWrapper;
 using Grayson.Vision.Nodes.Common;
 
 namespace Grayson.Vision.Nodes.All.Identification.ReadOCR
@@ -29,10 +30,18 @@ namespace Grayson.Vision.Nodes.All.Identification.ReadOCR
             if (inputImg == null)
             {
                 context.Log($"[{node.DisplayName}] 错误: 输入图像为空");
+                Preview?.BeginScene();
+                Preview?.AddText("⚠️ 输入图像为空，请先运行上游节点", 12, 12, "red");
                 return;
             }
 
             object searchRegion = context.GetInputValue<object>(node, PORT_IN_REGION);
+
+            // 预览：输入图为底图 + 搜索区域（蓝色，若有）
+            Preview?.BeginScene();
+            Preview?.AddBorrowed(inputImg);
+            if (searchRegion != null)
+                Preview?.Add(NodePreviewHelper.CopyForDisplay(searchRegion), "blue", 1);
 
             var ocrRes = OCRTool.RecognizeText(inputImg, searchRegion, param.FontFileName, param.MinStrokeWidth, param.ExpressionFilter);
             if (ocrRes.Success)
@@ -40,11 +49,17 @@ namespace Grayson.Vision.Nodes.All.Identification.ReadOCR
                 context.SetOutputValue(node, PORT_OUT_TEXT, ocrRes.TextResult);
                 context.SetOutputValue(node, PORT_OUT_CHAR_REGIONS, ocrRes.CharRegions);
                 context.Log($"[{node.DisplayName}] OCR 识别结果: {ocrRes.TextResult}");
+
+                // 字符区域（绿色）+ 识别结果文本标注
+                if (ocrRes.CharRegions != null)
+                    Preview?.Add(NodePreviewHelper.CopyForDisplay(ocrRes.CharRegions), "green", 2);
+                Preview?.AddText($"✅ OCR: {ocrRes.TextResult}", 12, 12, "green");
             }
             else
             {
                 context.SetOutputValue(node, PORT_OUT_TEXT, string.Empty);
                 context.Log($"[{node.DisplayName}] OCR 识别失败: {ocrRes.Message}");
+                Preview?.AddText($"❌ OCR 识别失败: {ocrRes.Message}", 12, 12, "red");
             }
         }
     }

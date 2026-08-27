@@ -71,6 +71,8 @@
     <Compile Include="Interfaces\IRecipeRepository.cs" />
     <Compile Include="Interfaces\IStationRepository.cs" />
     <Compile Include="Interfaces\IUserRepository.cs" />
+    <Compile Include="Services\RecipeApprovalFactory.cs" />
+    <Compile Include="Services\RecipeApprovalService.cs" />
     <Compile Include="Services\RecipeStorageFactory.cs" />
     <Compile Include="Services\RecipeStorageService.cs" />
     <Compile Include="StorageFactory.cs" />

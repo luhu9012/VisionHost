@@ -238,6 +238,9 @@ namespace Grayson.Vision.Contracts.Flow.Enums
         [NodeFieldMeta("🎯", "#1D4ED8", "轴绝对定位", "运动控制卡单轴绝对位置运动控制 (MC Axis Abs)")]
         MotionCardAxisMoveAbs, // 运动控制卡单轴绝对定位 (MC Single Axis Move Absolute)
 
+        [NodeFieldMeta("📍", "#1E40AF", "轴位置读取", "运动控制卡单轴位置/状态读取 (MC Axis Read Pos)")]
+        MotionCardAxisReadPos, // 运动控制卡单轴位置/状态读取 (MC Single Axis Read Position)
+
         // ==========================================
         // 10. 💾 数据存储与系统交互 (DataStorage - #475569 炭晶系)
         // ==========================================

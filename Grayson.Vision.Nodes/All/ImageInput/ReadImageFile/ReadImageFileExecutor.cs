@@ -3,6 +3,8 @@ using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.Contracts.Flow.Executants;
+using Grayson.Vision.HalconWrapper;
+using Grayson.Vision.HalconWrapper.ImageProc;
 using Grayson.Vision.Nodes.Common;
 using System.IO;
 using System.Threading;
@@ -70,7 +72,33 @@ namespace Grayson.Vision.Nodes.All.ImageInput.ReadImageFile
                 }
             }
 
-            context.SetOutputValue(node, PORT_OUT_IMAGE, targetFilePath);
+            context.SetOutputValue(node, PORT_OUT_IMAGE, null);
+
+            if (string.IsNullOrWhiteSpace(targetFilePath) || !File.Exists(targetFilePath))
+            {
+                Preview?.BeginScene();
+                Preview?.AddText("⚠️ 未选择有效图片文件", 12, 12, "red");
+                return;
+            }
+
+            // 加载图片文件为 object（运行时 HImage），输出到端口供下游消费
+            // 用 LoadImage（返回 Result<object>）而非 ReadImageFile（返回 Result<HObject>），
+            // 避免 HObject 类型穿透到 Nodes 层导致 CS0012
+            var loadRes = ImageBasicTool.LoadImage(targetFilePath);
+            if (!loadRes.Success || loadRes.Data == null)
+            {
+                context.Log($"⚠️ [图像读取] 图片加载失败: {loadRes.Message}");
+                Preview?.BeginScene();
+                Preview?.AddText("⚠️ 图片加载失败: " + loadRes.Message, 12, 12, "red");
+                return;
+            }
+
+            context.SetOutputValue(node, PORT_OUT_IMAGE, loadRes.Data);
+
+            // 实时预览：显示加载的图片 + 文件名标注
+            Preview?.BeginScene();
+            Preview?.AddBorrowed(loadRes.Data);
+            Preview?.AddText($"📁 {Path.GetFileName(targetFilePath)}", 12, 12, "yellow");
         }
     }
 }

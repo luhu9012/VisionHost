@@ -74,6 +74,17 @@ Grayson.Vision.Nodes/
 - 所有 Executor 使用 NodeExecutionContext 进行端口读写（context.GetInputValue / SetOutputValue）并通过 context.ResolveDevice 或服务容器访问硬件。
 - 复杂节点建议在 TemplateView 中使用 TabControl 分页组织参数，避免一个长滚动面板。
 
+实时预览（节点属性面板内嵌视图窗口，2026-08-22 新增）
+- 图像处理类节点可在属性编辑时实时看到图像变化，完整设计见根目录《节点属性面板实时预览_设计.md》。
+- 节点侧接入只需两步：
+  1. Param 覆写 `public override bool SupportsPreview => true;`（声明"需要预览区"，弹窗切换两列布局）；
+  2. Executor 内用基类便捷属性 `Preview?.`（即 `context.Preview`）场景式绘制——`Preview?.BeginScene()` → `Preview?.AddBorrowed(输入底图)` → `Preview?.Add(...)`。
+- 样板：`All/ImagePreprocess/ImageThreshold/ImageThresholdExecutor.cs`（阈值分割画绿色区域 + 参数标注）。
+- 所有权约定：`Add` 提交即所有权转移（显示层托管释放）；同时作为端口输出继续被下游消费的对象必须提交副本——用 `NodePreviewHelper.CopyForDisplay(res.Data)`（HalconWrapper，object 判型）。底图走 `AddBorrowed`（借用，生命周期归端口缓存）。矩形框可用 `NodePreviewHelper.CreateRectangle(r1,c1,r2,c2)`。
+- 生产运行 `Preview` 恒为 null，所有调用判空跳过，节点行为零变化；节点源码依旧零 `using HalconDotNet`。
+- **注意**：Nodes 调用 HalconWrapper 方法时，返回类型必须是 `Result<object>` 而非 `Result<HObject>`——后者会暴露 HObject 类型导致 CS0012。图像加载用 `ImageBasicTool.LoadImage`（返回 `Result<object>`），而非 `ReadImageFile`（返回 `Result<HObject>`）。
+- 已接入预览的节点（9 个）：ReadImageFile、ImageThreshold、ImageFilter、AffineImage、ROIOperation、ShapeMatch、NccMatch、ColorIdentify、ReadBarcode、ReadOCR。
+
 如何新增节点（快速步骤）
 1. 在 All/{Category}/{YourNode}/ 创建四个文件（Param/Executor/TemplateView/TemplateView.xaml.cs）。
 2. 在 Executor 上添加 [Node(...)] 与 [NodePort(...)] 特性，声明节点类型与端口。

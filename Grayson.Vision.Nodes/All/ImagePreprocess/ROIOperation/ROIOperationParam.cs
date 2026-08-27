@@ -13,6 +13,9 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ROIOperation
 
     public class ROIOperationParam : ParamBase
     {
+        /// <summary>ROI 运算参数调整时预览窗口实时显示裁剪框/区域集合运算结果。</summary>
+        public override bool SupportsPreview => true;
+
         private RoiOpType _opType = RoiOpType.Crop;
         public RoiOpType OpType
         {

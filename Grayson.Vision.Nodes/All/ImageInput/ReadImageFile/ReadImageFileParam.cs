@@ -10,6 +10,9 @@ namespace Grayson.Vision.Nodes.All.ImageInput.ReadImageFile
 {
     public class ReadImageFileParam : ParamBase
     {
+        /// <summary>图像源节点：切换文件/批处理文件夹时预览窗口实时显示加载的图片。</summary>
+        public override bool SupportsPreview => true;
+
         private string _filePath = @"C:\VisionImages\test.png";
         public string FilePath
         {

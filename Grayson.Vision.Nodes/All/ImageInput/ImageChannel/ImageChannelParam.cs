@@ -31,6 +31,8 @@ namespace Grayson.Vision.Nodes.All.ImageInput.ImageChannel
             set => Set(ref _selectedChannelIndex, value);
         }
 
+        public override bool SupportsPreview => true;
+
         public override string this[string columnName]
         {
             get

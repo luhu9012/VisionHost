@@ -79,6 +79,11 @@
     <Compile Include="All\DeviceIO\AxisMoveAbs\AxisMoveAbsTemplateView.xaml.cs">
       <DependentUpon>AxisMoveAbsTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\DeviceIO\AxisReadPos\AxisReadPosExecutor.cs" />
+    <Compile Include="All\DeviceIO\AxisReadPos\AxisReadPosParam.cs" />
+    <Compile Include="All\DeviceIO\AxisReadPos\AxisReadPosTemplateView.xaml.cs">
+      <DependentUpon>AxisReadPosTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="All\DeviceIO\DigitalIo\DigitalIoExecutor.cs" />
     <Compile Include="All\DeviceIO\DigitalIo\DigitalIoParam.cs" />
     <Compile Include="All\DeviceIO\DigitalIo\DigitalIoTemplateView.xaml.cs">
@@ -256,6 +261,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="All\DeviceIO\AxisMoveAbs\AxisMoveAbsTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\DeviceIO\AxisReadPos\AxisReadPosTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

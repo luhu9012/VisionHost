@@ -33,12 +33,12 @@
                     <TextBlock Text="{Binding SelectedStationCode, StringFormat='工位: {0}'}" Style="{StaticResource TitleTextStyle}" FontSize="20"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                         <Ellipse Width="10" Height="10" Fill="{Binding StateBrushKey, FallbackValue={StaticResource TextDisabledBrush}}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBlock Text="{Binding State}" Style="{StaticResource SubTitleTextStyle}" Foreground="{Binding StateBrushKey, FallbackValue={StaticResource TextDisabledBrush}}"/>
+                        <TextBlock Text="{Binding StateText}" Style="{StaticResource SubTitleTextStyle}" Foreground="{Binding StateBrushKey, FallbackValue={StaticResource TextDisabledBrush}}"/>
                     </StackPanel>
                 </StackPanel>
 
                 <!-- KPI 指标网格 -->
-                <UniformGrid Grid.Column="2" Columns="4" VerticalAlignment="Center">
+                <UniformGrid Grid.Column="2" Columns="5" VerticalAlignment="Center">
                     <StackPanel>
                         <TextBlock Text="总生产数" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
                         <TextBlock Text="{Binding TotalCount}" FontSize="24" FontWeight="Bold"/>
@@ -54,6 +54,10 @@
                     <StackPanel>
                         <TextBlock Text="Cycle Time" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
                         <TextBlock Text="{Binding CycleTimeMs, StringFormat='{}{0:F0} ms'}" FontSize="24" FontWeight="Bold" Foreground="#00A2ED"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="良率" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
+                        <TextBlock Text="{Binding YieldText}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource InfoBrush}"/>
                     </StackPanel>
                 </UniformGrid>
 
@@ -111,38 +115,80 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <!-- 工位选择 -->
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
+                        <!-- 当前配方 -->
                         <RowDefinition Height="*"/>
+                        <!-- 核心操作区 -->
+                        <RowDefinition Height="Auto"/>
+                        <!-- 底部急停区 -->
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                    <!-- 1. 工位选择 -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
                         <TextBlock Text="工位选择" Style="{StaticResource FormLabelStyle}" Margin="0,0,0,4"/>
                         <ComboBox Style="{StaticResource ModernComboBoxStyle}" 
-                                  ItemsSource="{Binding AvailableStations}" 
-                                  SelectedItem="{Binding SelectedStationCode}"/>
+                      ItemsSource="{Binding AvailableStations}" 
+                      SelectedItem="{Binding SelectedStationCode}"/>
                     </StackPanel>
 
-                    <!-- 配方信息 -->
-                    <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="10" Margin="0,0,0,16">
+                    <!-- 2. 当前配方卡片 -->
+                    <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="10" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock Text="当前配方" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
                             <TextBlock Text="{Binding CurrentRecipeName, FallbackValue='--'}" Style="{StaticResource SubTitleTextStyle}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding CurrentRecipeApprovalText, FallbackValue='未绑定配方'}" Style="{StaticResource BodyTextStyle}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- 控制按钮区 -->
-                    <UniformGrid Grid.Row="2" Columns="1" Rows="6">
-                        <Button Content="▶ 启动工位" Style="{StaticResource SuccessButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding StartCommand}"/>
-                        <Button Content="⏸ 暂停工位" Style="{StaticResource WarningButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding PauseCommand}"/>
-                        <Button Content="▶ 恢复工位" Style="{StaticResource PrimaryButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding ResumeCommand}"/>
-                        <Button Content="⏹ 停止工位" Style="{StaticResource DangerButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding StopCommand}"/>
-                        <Button Content="▶| 单次触发" Style="{StaticResource PrimaryButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding TriggerOnceCommand}"/>
-                        <Button Content="↺ 复位工位" Style="{StaticResource SecondaryButtonStyle}" Margin="0,2" Padding="0,8" Command="{Binding ResetCommand}"/>
-                    </UniformGrid>
+                    <!-- 2b. 触发源与节拍统计卡片 -->
+                    <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="10" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="触发信号" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
+                            <TextBlock Text="{Binding TriggerSummaryText, FallbackValue='手动触发'}" Style="{StaticResource BodyTextStyle}" FontWeight="Medium" Margin="0,2,0,4" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding TriggerStatsText, FallbackValue='--'}" Style="{StaticResource BodyTextStyle}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock Text="最近触发: " Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
+                                <TextBlock Text="{Binding LastTriggerTimeText, FallbackValue='--'}" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 3. 核心控制与复位（分组并列） -->
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <!-- 运行控制组 -->
+                            <TextBlock Text="运行控制" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}" Margin="0,0,0,6"/>
+                            <UniformGrid Columns="2" Margin="0,0,0,12">
+                                <Button Content="▶ 启动" Style="{StaticResource SuccessButtonStyle}" Margin="2" Padding="0,10" Command="{Binding StartCommand}"/>
+                                <Button Content="⏸ 暂停" Style="{StaticResource WarningButtonStyle}" Margin="2" Padding="0,10" Command="{Binding PauseCommand}"/>
+                                <Button Content="▶ 恢复" Style="{StaticResource PrimaryButtonStyle}" Margin="2" Padding="0,10" Command="{Binding ResumeCommand}"/>
+                                <Button Content="⏹ 停止" Style="{StaticResource DangerButtonStyle}" Margin="2" Padding="0,10" Command="{Binding StopCommand}"/>
+                            </UniformGrid>
+
+                            <Button Content="▶| 单次触发" Style="{StaticResource PrimaryButtonStyle}" Margin="2,0,2,16" Padding="0,8" Command="{Binding TriggerOnceCommand}"/>
+
+                            <!-- 复位管理组 -->
+                            <TextBlock Text="复位与重置" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}" Margin="0,0,0,6"/>
+                            <StackPanel Margin="0,0,0,12">
+                                <Button Content="↺ 软复位" Style="{StaticResource SecondaryButtonStyle}" Margin="2" Padding="0,6" Command="{Binding ResetCommand}"/>
+                                <Button Content="↺ 工单复位" Style="{StaticResource SecondaryButtonStyle}" Margin="2" Padding="0,6" Command="{Binding WorkOrderResetCommand}"/>
+                                <Button Content="↻ 硬件复位" Style="{StaticResource SecondaryButtonStyle}" Margin="2" Padding="0,6" Command="{Binding HardwareResetCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 4. 底部独立急停按钮 -->
+                    <Border Grid.Row="3" Margin="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="{StaticResource SurfaceBrush}" Padding="0,12,0,0">
+                        <Button Content="⛔ 紧急停止 (ESTOP)" 
+                    Style="{StaticResource DangerButtonStyle}" 
+                    Height="44" 
+                    FontSize="15" 
+                    FontWeight="Bold" 
+                    Command="{Binding EmergencyStopCommand}"/>
+                    </Border>
                 </Grid>
             </Border>
-
             <!-- 中间：Halcon 视觉实时渲染区 -->
             <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" ClipToBounds="True">
                 <controls:HalconImageDisplayHost DataContext="{Binding ImageDisplayVm}" />

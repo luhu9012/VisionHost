@@ -1,4 +1,5 @@
 // Grayson.Vision.WpfUI.ViewModel/StationMonitorViewModel.cs
+using Grayson.Vision.Contracts.Station.WorkOrderTracking;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Interfaces;
@@ -140,7 +141,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             PauseCommand = new RelayCommand(async _ => await PauseAsync(), _ => ActiveClient != null && State == "Running");
             ResumeCommand = new RelayCommand(async _ => await ResumeAsync(), _ => ActiveClient != null && State == "Paused");
             TriggerOnceCommand = new RelayCommand(async _ => await TriggerOnceAsync(), _ => ActiveClient != null && (State == "Idle" || State == "Running" || State == "Paused"));
-            ResetCommand = new RelayCommand(async _ => await ResetAsync(), _ => ActiveClient != null && (State == "Faulted" || State == "ErrorLocked"));
+            ResetCommand = new RelayCommand(async _ => await SoftResetAsync(), _ => ActiveClient != null);
+            WorkOrderResetCommand = new RelayCommand(async _ => await WorkOrderResetAsync(), _ => ActiveClient != null);
+            HardwareResetCommand = new RelayCommand(async _ => await HardwareResetAsync(), _ => ActiveClient != null);
+            EmergencyStopCommand = new RelayCommand(async _ => await EmergencyStopAsync(), _ => ActiveClient != null && (State == "Running" || State == "Paused" || State == "Idle"));
             ClearLogsCommand = new RelayCommand(_ => Logs.Clear());
 
             LoadAvailableStations();
@@ -186,11 +190,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 if (Set(ref _state, value))
                 {
+                    OnPropertyChanged(nameof(StateText));
                     OnPropertyChanged(nameof(StateBrushKey));
                     CommandManager.InvalidateRequerySuggested();
                 }
             }
         }
+
+        /// <summary>
+        /// 状态中文文案（状态机中文映射），供 Banner/卡片等展示层绑定；逻辑判断仍使用 State 英文字符串。
+        /// </summary>
+        public string StateText => Grayson.Vision.WpfUI.Common.StationStateTexts.ToDisplayText(State);
 
         public string StateBrushKey
         {
@@ -214,6 +224,42 @@ namespace Grayson.Vision.WpfUI.ViewModel
             set => Set(ref _currentRecipeName, value);
         }
 
+        private string _currentRecipeApprovalText;
+        /// <summary>
+        /// 当前绑定配方的审批状态中文文案（关注点信息：配方是否可用于生产）。
+        /// </summary>
+        public string CurrentRecipeApprovalText
+        {
+            get => _currentRecipeApprovalText;
+            set => Set(ref _currentRecipeApprovalText, value);
+        }
+
+        // ===== 触发源摘要与节拍统计 =====
+
+        private string _triggerSummaryText = "手动触发";
+        /// <summary>触发源摘要文本（如"PLC 位 | PLC_001 | M0.0 | 上升沿"）</summary>
+        public string TriggerSummaryText
+        {
+            get => _triggerSummaryText;
+            set => Set(ref _triggerSummaryText, value);
+        }
+
+        private string _triggerStatsText = "--";
+        /// <summary>节拍统计文本（如"触发: 156 | 执行: 150 | 丢弃: 6 | 平均间隔: 1250ms"）</summary>
+        public string TriggerStatsText
+        {
+            get => _triggerStatsText;
+            set => Set(ref _triggerStatsText, value);
+        }
+
+        private string _lastTriggerTimeText = "--";
+        /// <summary>最近触发时间</summary>
+        public string LastTriggerTimeText
+        {
+            get => _lastTriggerTimeText;
+            set => Set(ref _lastTriggerTimeText, value);
+        }
+
         public ObservableCollection<StationLogEntry> Logs { get; set; }
         public ObservableCollection<StationResultEntry> Results { get; set; }
 
@@ -222,15 +268,29 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand PauseCommand { get; }
         public ICommand ResumeCommand { get; }
         public ICommand TriggerOnceCommand { get; }
+        /// <summary>软复位（ResetCommand 指向软复位）</summary>
         public ICommand ResetCommand { get; }
+        /// <summary>工单级复位</summary>
+        public ICommand WorkOrderResetCommand { get; }
+        /// <summary>硬件全复位（断连恢复）</summary>
+        public ICommand HardwareResetCommand { get; }
+        /// <summary>急停</summary>
+        public ICommand EmergencyStopCommand { get; }
         public ICommand ClearLogsCommand { get; }
 
         #region INavigationAware 参数响应
         public void OnNavigatedTo(object parameter)
         {
-            if (parameter is string stationCode && !string.IsNullOrEmpty(stationCode))
+            try
             {
-                _ = InitializeWithStationAsync(stationCode);
+                if (parameter is string stationCode && !string.IsNullOrEmpty(stationCode))
+                {
+                    _ = InitializeWithStationAsync(stationCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog("ERROR", $"导航初始化失败: {ex.Message}");
             }
         }
 
@@ -294,6 +354,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 ? _recipeStorage.LoadRecipe(stationConfig.BoundRecipeId)
                 : null;
             CurrentRecipeName = recipe?.RecipeName ?? stationConfig?.BoundRecipeName;
+            CurrentRecipeApprovalText = recipe == null
+                ? "未绑定配方"
+                : $"{ApprovalStatusToText(recipe.ApprovalStatus)} · {recipe.Version}";
+
+            // 加载触发源摘要（从工位配置读取）
+            RefreshTriggerInfo(stationConfig?.TriggerSource);
+
+            // 从 Core 工单追踪器加载最近工单历史（打通 WorkOrderTracker → UI）
+            RefreshWorkOrderHistory();
 
             AddLog("INFO", $"已连接工位 {stationCode}，当前状态: {State}");
         }
@@ -355,30 +424,185 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private async Task TriggerOnceAsync()
         {
             if (ActiveClient == null) return;
-            try { await ActiveClient.TriggerOnceAsync(); }
+            try
+            {
+                // 优先走触发源的手动触发路径（经过丢帧策略+节拍统计）
+                var hostRuntime = App.StationHostRuntime as Grayson.Vision.Contracts.Station.Services.IStationHostRuntime;
+                if (hostRuntime != null && hostRuntime.GetTriggerSource(SelectedStationCode) != null)
+                {
+                    hostRuntime.ManualTrigger(SelectedStationCode);
+                }
+                else
+                {
+                    // 无触发源时直接调旧路径
+                    await ActiveClient.TriggerOnceAsync();
+                }
+            }
             catch (Exception ex) { AddLog("ERROR", $"单次触发失败: {ex.Message}"); }
         }
 
-        private async Task ResetAsync()
+        /// <summary>
+        /// 刷新触发源摘要文本。
+        /// </summary>
+        private void RefreshTriggerInfo(Grayson.Vision.Contracts.Station.Triggers.TriggerSourceConfig config)
+        {
+            TriggerSummaryText = config?.ToSummary() ?? "手动触发";
+            RefreshTriggerStats();
+        }
+
+        /// <summary>
+        /// 从 Core 运行时读取触发源节拍统计并刷新 UI。
+        /// </summary>
+        private void RefreshTriggerStats()
+        {
+            try
+            {
+                var hostRuntime = App.StationHostRuntime as Grayson.Vision.Contracts.Station.Services.IStationHostRuntime;
+                var source = hostRuntime?.GetTriggerSource(SelectedStationCode);
+                if (source == null)
+                {
+                    TriggerStatsText = "未配置触发源";
+                    LastTriggerTimeText = "--";
+                    return;
+                }
+
+                var stats = source.GetStats();
+                TriggerStatsText = $"触发: {stats.TotalTriggered} | 执行: {stats.TotalExecuted} | 丢弃: {stats.DroppedCount} | 平均间隔: {stats.AvgIntervalMs:F0}ms";
+                LastTriggerTimeText = stats.LastTriggerTime.HasValue
+                    ? stats.LastTriggerTime.Value.ToString("HH:mm:ss.fff")
+                    : "--";
+            }
+            catch
+            {
+                TriggerStatsText = "--";
+                LastTriggerTimeText = "--";
+            }
+        }
+
+        /// <summary>
+        /// 工单级复位：终止当前工单并释放本次占用设备，不改变工位全局状态。
+        /// </summary>
+        private async Task WorkOrderResetAsync()
         {
             if (ActiveClient == null) return;
             try
             {
-                await ActiveClient.StopAsync();
-                var config = _configService.LoadAllLines()
-                    .SelectMany(l => l.Stations)
-                    .FirstOrDefault(s => s.StationCode == SelectedStationCode);
-                var resetRecipe = !string.IsNullOrEmpty(config?.BoundRecipeId)
-                    ? _recipeStorage.LoadRecipe(config.BoundRecipeId)
-                    : null;
-                if (resetRecipe?.MainProcess != null)
-                {
-                    await ActiveClient.LoadRecipeAsync(resetRecipe.MainProcess);
-                }
+                await ActiveClient.WorkOrderResetAsync();
                 State = ActiveClient.CurrentState.ToString();
-                AddLog("INFO", "工位已复位");
+                AddLog("INFO", "工单级复位完成，等待下一次触发。");
             }
-            catch (Exception ex) { AddLog("ERROR", $"复位失败: {ex.Message}"); }
+            catch (Exception ex) { AddLog("ERROR", $"工单级复位失败: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// 软复位：停止运行、清空共享变量、重新打开设备（不重建硬件句柄）。
+        /// </summary>
+        private async Task SoftResetAsync()
+        {
+            if (ActiveClient == null) return;
+            try
+            {
+                await ActiveClient.SoftResetAsync();
+                State = ActiveClient.CurrentState.ToString();
+                AddLog("INFO", "工位软复位完成。");
+            }
+            catch (Exception ex) { AddLog("ERROR", $"软复位失败: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// 硬件全复位：关闭所有设备句柄并重新 Open，用于断连后恢复。
+        /// </summary>
+        private async Task HardwareResetAsync()
+        {
+            if (ActiveClient == null) return;
+            try
+            {
+                await ActiveClient.HardwareResetAsync();
+                State = ActiveClient.CurrentState.ToString();
+                AddLog("INFO", "硬件全复位完成，设备已重新连接。");
+            }
+            catch (Exception ex) { AddLog("ERROR", $"硬件复位失败: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// 急停：进入 ErrorLocked，终止所有工单。
+        /// </summary>
+        private async Task EmergencyStopAsync()
+        {
+            if (ActiveClient == null) return;
+            try
+            {
+                await ActiveClient.EmergencyStopAsync("UI 急停按钮触发");
+                State = ActiveClient.CurrentState.ToString();
+                AddLog("ERROR", "急停已触发！工位进入 ErrorLocked。");
+            }
+            catch (Exception ex) { AddLog("ERROR", $"急停失败: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// 从 Core 工单追踪器刷新最近工单历史与缺陷统计（打通 WorkOrderTracker → UI 展示）。
+        /// </summary>
+        private void RefreshWorkOrderHistory()
+        {
+            var tracker = ActiveClient?.WorkOrderTracker;
+            if (tracker == null) return;
+
+            var snapshots = tracker.GetRecentWorkOrders(20);
+            Results.Clear();
+            foreach (var snap in snapshots)
+            {
+                if (snap == null) continue;
+                Results.Add(new StationResultEntry
+                {
+                    Timestamp = snap.CreatedAt.ToLocalTime(),
+                    BatchId = !string.IsNullOrEmpty(snap.BatchId)
+                        ? snap.BatchId
+                        : (snap.WorkOrderId?.Length >= 8 ? snap.WorkOrderId.Substring(0, 8) : snap.WorkOrderId),
+                    Result = snap.IsOk == true ? "OK" : snap.IsOk == false ? "NG" : (snap.StatusText ?? "—"),
+                    Message = BuildSnapshotMessage(snap)
+                });
+            }
+
+            // 复活死属性：从真实工单数据统计缺陷/故障指标
+            var failed = snapshots.Where(s => s.IsOk == false).ToList();
+            ErrorCount = failed.Count;
+            FaultCount = snapshots.Count(s => !string.IsNullOrEmpty(s.ErrorMessage));
+            FirstDefectTime = failed
+                .OrderBy(s => s.CreatedAt)
+                .Select(s => (DateTime?)s.CreatedAt.ToLocalTime())
+                .FirstOrDefault();
+            LastDefectDescription = snapshots
+                .FirstOrDefault(s => !string.IsNullOrEmpty(s.ErrorMessage))?.ErrorMessage;
+        }
+
+        /// <summary>
+        /// 配方审批状态 → 中文文案（展示用）。
+        /// </summary>
+        private static string ApprovalStatusToText(Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus status)
+        {
+            switch (status)
+            {
+                case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Draft: return "草稿";
+                case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval: return "待审批";
+                case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved: return "已审批";
+                case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Frozen: return "已冻结";
+                case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Archived: return "已归档";
+                case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Deprecated: return "已废弃";
+                default: return status.ToString();
+            }
+        }
+
+        private static string BuildSnapshotMessage(WorkOrderSnapshot snap)
+        {
+            if (snap == null) return string.Empty;
+            var parts = new System.Collections.Generic.List<string>();
+            if (!string.IsNullOrEmpty(snap.RecipeName) && snap.RecipeName != "—")
+                parts.Add($"配方: {snap.RecipeName}");
+            if (snap.CycleTimeMs > 0)
+                parts.Add($"耗时: {snap.CycleTimeMs:F1}ms");
+            if (!string.IsNullOrEmpty(snap.ErrorMessage))
+                parts.Add($"异常: {snap.ErrorMessage}");
+            return parts.Count > 0 ? string.Join(" | ", parts) : snap.StatusText ?? string.Empty;
         }
 
         private void Client_OnStateChanged(object sender, StationState e)
@@ -451,6 +675,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 });
 
                 AddLog(isOk ? "INFO" : "ERROR", $"执行链结束，判定: {LastResult}，耗时: {e.ExecutionTimeMs:F1}ms");
+
+                // 刷新触发源节拍统计（执行完成后统计会有新数据）
+                RefreshTriggerStats();
             }));
         }
 

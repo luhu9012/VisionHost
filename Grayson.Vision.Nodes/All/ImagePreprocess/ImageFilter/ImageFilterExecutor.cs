@@ -5,6 +5,7 @@ using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.HalconWrapper.ImageProc;
+using Grayson.Vision.HalconWrapper;
 using Grayson.Vision.Nodes.Common;
 
 namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageFilter
@@ -25,18 +26,29 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageFilter
             if (inputImage == null)
             {
                 context.Log("[" + node.DisplayName + "] 错误：未获取到有效输入图像句柄！");
+                Preview?.BeginScene();
+                Preview?.AddText("⚠️ 输入图像为空，请先运行上游节点", 12, 12, "red");
                 return;
             }
+
+            // 预览：以输入图为底图，滤波后叠加输出图对比
+            Preview?.BeginScene();
+            Preview?.AddBorrowed(inputImage);
 
             var res = ImagePreprocessTool.ApplyFilter(inputImage, (int)param.Method, param.KernelSize);
             if (res.Success)
             {
                 context.SetOutputValue(node, PORT_OUT_IMAGE, res.Data);
                 context.Log("[" + node.DisplayName + "] 图像滤波成功 (方式: " + param.Method + ", 核大小: " + param.KernelSize + ")");
+
+                // 滤波输出图以显示副本提交（原对象留端口管线），半透明叠加对比
+                Preview?.Add(NodePreviewHelper.CopyForDisplay(res.Data), "yellow", 1);
+                Preview?.AddText($"滤波: {param.Method}  核大小: {param.KernelSize}", 12, 12, "yellow");
             }
             else
             {
                 context.Log("[" + node.DisplayName + "] 滤波失败: " + res.Message);
+                Preview?.AddText("⚠️ 滤波失败: " + res.Message, 12, 12, "red");
             }
         }
     }

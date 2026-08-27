@@ -14,6 +14,9 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageFilter
 
     public class ImageFilterParam : ParamBase
     {
+        /// <summary>滤波参数调整时预览窗口实时显示滤波效果。</summary>
+        public override bool SupportsPreview => true;
+
         private FilterMethod _method = FilterMethod.Gauss;
         public FilterMethod Method
         {

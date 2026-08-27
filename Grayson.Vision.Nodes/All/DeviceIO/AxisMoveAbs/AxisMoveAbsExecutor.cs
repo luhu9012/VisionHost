@@ -13,8 +13,8 @@ using System.Threading.Tasks;
 namespace Grayson.Vision.Nodes.All.DeviceIO.AxisMoveAbs
 {
     [Node(NodeType.MotionCardAxisMoveAbs, NodeCategory.DeviceIO, typeof(AxisMoveAbsParam))]
-    [NodePort("TargetPosIn", PortType.In, PortCategory.Data, dataType: "Single", colorHex: "#7C3AED")]
-    [NodePort("CurrentPosOut", PortType.Out, PortCategory.Data, dataType: "Single", colorHex: "#2ECC71")]
+    [NodePort("TargetPosIn", PortType.In, PortCategory.Data, dataType: "double", colorHex: "#7C3AED")]
+    [NodePort("CurrentPosOut", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#2ECC71")]
     [NodePort("Success", PortType.Out, PortCategory.Data, dataType: "Boolean", colorHex: "#3498DB")]
     public class AxisMoveAbsExecutor : NodeExecutorBase<AxisMoveAbsParam>
     {
@@ -33,8 +33,9 @@ namespace Grayson.Vision.Nodes.All.DeviceIO.AxisMoveAbs
             }
 
             // 动态获取目标坐标（如上一级视觉计算得到的定位数据）
-            float? dynamicPos = context.GetInputValue<float?>(node, PORT_IN_TARGET_POS, null);
-            float finalPos = dynamicPos.HasValue ? dynamicPos.Value : param.TargetPosition;
+            // 用 double? 兼容 CalibrationApply 输出的 double 类型；GetInputValue 直接 is T 匹配，float→double 不通
+            double? dynamicPos = context.GetInputValue<double?>(node, PORT_IN_TARGET_POS, null);
+            float finalPos = dynamicPos.HasValue ? (float)dynamicPos.Value : param.TargetPosition;
 
             context.Log($"🚀 [AxisMoveAbs] 轴 [{param.AxisIndex}] 开始绝对定位到: {finalPos}, 速度: {param.Speed}");
 

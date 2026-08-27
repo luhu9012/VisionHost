@@ -187,6 +187,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         public RelayCommand<string> DirectionMoveCommand { get; private set; }
         public RelayCommand StopAxisCommand { get; private set; }
         public RelayCommand EmergencyStopCommand { get; private set; }
+        public RelayCommand ShowCameraLiveCommand { get; private set; }
 
         #endregion
 
@@ -303,6 +304,37 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 if (SelectedMotionDevice == null || !IsConnected) return;
                 SelectedMotionDevice.RapidStop();
             }, _ => SelectedMotionDevice != null && IsConnected);
+
+            // 打开相机实时画面弹窗（非模态，轴动时可动态观察相机视角）
+            ShowCameraLiveCommand = new RelayCommand(_ => ShowCameraLiveWindow());
+        }
+
+        /// <summary>相机实时画面弹窗单例引用（防重复打开）</summary>
+        private static Window _cameraLiveWindow;
+
+        private static void ShowCameraLiveWindow()
+        {
+            if (_cameraLiveWindow != null)
+            {
+                // 已打开：激活置前即可
+                _cameraLiveWindow.Activate();
+                return;
+            }
+
+            try
+            {
+                _cameraLiveWindow = new View.HardwareConsole.CameraLiveWindow
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                _cameraLiveWindow.Closed += (s, e) => _cameraLiveWindow = null;
+                _cameraLiveWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                _cameraLiveWindow = null;
+                MessageBox.Show($"打开相机实时画面失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void LoadMotionDevices()
@@ -348,11 +380,13 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             AxisList.Clear();
             if (device == null) return;
 
-           
-            AxisList.Add(new AxisInfoModel { AxisIndex = 1, AxisName = "1号轴 (X轴)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 2, AxisName = "2号轴 (Y1轴)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 3, AxisName = "3号轴 (Y2轴)" });
-            AxisList.Add(new AxisInfoModel { AxisIndex = 0, AxisName = "0号轴 (Z轴)" });
+
+            // 轴信息配置：AxisIndex = 控制器内部轴编号，AxisName = 轴实际物理含义/安装位置
+            // 双工位滑台
+            AxisList.Add(new AxisInfoModel { AxisIndex = 1, AxisName = "1号轴：X轴（左右运动）" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 2, AxisName = "2号轴：右侧Y轴（前后运动）" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 3, AxisName = "3号轴：左侧Y轴（前后运动）" });
+            AxisList.Add(new AxisInfoModel { AxisIndex = 0, AxisName = "0号轴：Z轴（升降运动）" });
 
             SelectedAxis = AxisList.FirstOrDefault();
         }

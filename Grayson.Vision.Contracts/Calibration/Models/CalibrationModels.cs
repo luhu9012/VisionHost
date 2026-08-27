@@ -28,6 +28,14 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         EyeToHand, // 眼在手外 (相机固定，工件/平台移动)
         EyeInHand  // 眼在手上 (相机随轴/机器人末端移动)
     }
+    /// <summary>
+    /// 标定特征类型（第二步"特征配置"中由用户选择，决定特征提取算子）
+    /// </summary>
+    public enum CalibrationFeatureType
+    {
+        CircleMark, // 圆形 Mark 点 (提取圆心)：阈值分割 + 圆度筛选 + 亚像素圆拟合
+        CrossMark   // 十字 Mark 点 (形状匹配)：几何结构法（骨架 + 直线交叉点）
+    }
     public class CalibrationProfile : ViewModelBase
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -87,6 +95,71 @@ namespace Grayson.Vision.Contracts.Calibration.Models
 
         private CalibrationType _type = CalibrationType.NinePointHandEye;
         public CalibrationType Type { get => _type; set => Set(ref _type, value); }
+
+        // --- 新增：标定所绑定的轴索引和基准位置 ---
+        private int _bindXAxisIndex = 1;
+        /// <summary>标定所绑定的 X 轴索引 (默认1号轴)</summary>
+        public int BindXAxisIndex
+        {
+            get => _bindXAxisIndex;
+            set => Set(ref _bindXAxisIndex, value);
+        }
+
+        private int _bindYAxisIndex = 3;
+        /// <summary>标定所绑定的 Y 轴索引 (左工位设为3，右工位设为2)</summary>
+        public int BindYAxisIndex
+        {
+            get => _bindYAxisIndex;
+            set => Set(ref _bindYAxisIndex, value);
+        }
+
+        private double _basePosX;
+        /// <summary>标定起始基准 X 坐标 (Mark对准相机视野中心时的绝对物理位置)</summary>
+        public double BasePosX
+        {
+            get => _basePosX;
+            set
+            {
+                if (Set(ref _basePosX, value))
+                {
+                    IsBasePosSet = true; // 手动输入或按钮设置均视为已设置基准
+                }
+            }
+        }
+
+        private double _basePosY;
+        /// <summary>标定起始基准 Y 坐标</summary>
+        public double BasePosY
+        {
+            get => _basePosY;
+            set
+            {
+                if (Set(ref _basePosY, value))
+                {
+                    IsBasePosSet = true;
+                }
+            }
+        }
+
+        private bool _isBasePosSet;
+        /// <summary>
+        /// 基准位置是否已通过"设当前轴位置为基准"或手动输入设置。
+        /// 基准坐标可能恰为 0（机台原点），因此不能用 BasePosX==0 判断是否设置过；
+        /// 九点采样前必须校验该标志，避免未设基准就采样导致走位出视野、首点提取失败。
+        /// </summary>
+        public bool IsBasePosSet
+        {
+            get => _isBasePosSet;
+            set => Set(ref _isBasePosSet, value);
+        }
+
+        private CalibrationFeatureType _featureType = CalibrationFeatureType.CircleMark;
+        /// <summary>标定特征类型：圆形 Mark (提取圆心) / 十字 Mark (形状匹配)，第二步特征配置中由用户选择</summary>
+        public CalibrationFeatureType FeatureType
+        {
+            get => _featureType;
+            set => Set(ref _featureType, value);
+        }
     }
 
 
@@ -153,6 +226,18 @@ namespace Grayson.Vision.Contracts.Calibration.Models
             get => _worldY;
             set => Set(ref _worldY, value);
         }
+
+        private bool _isCaptured;
+        /// <summary>
+        /// 该点是否已成功采集回填。显式标志替代 (0,0) 哨兵判断：
+        /// 真实特征点像素坐标可能恰为 0（图像左上角），哨兵会把已采集点误判为未采集，
+        /// 导致 FirstOrDefault 永远选中同一个点、坐标反复不回填。
+        /// </summary>
+        public bool IsCaptured
+        {
+            get => _isCaptured;
+            set => Set(ref _isCaptured, value);
+        }
     }
 
     /// <summary>
@@ -179,6 +264,14 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         {
             get => _pixelY;
             set => Set(ref _pixelY, value);
+        }
+
+        private bool _isCaptured;
+        /// <summary>是否已采集回填（同 CalibrationPointModel，替代 0 哨兵判断）</summary>
+        public bool IsCaptured
+        {
+            get => _isCaptured;
+            set => Set(ref _isCaptured, value);
         }
     }
 

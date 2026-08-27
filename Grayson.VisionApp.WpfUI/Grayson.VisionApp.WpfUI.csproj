@@ -128,6 +128,8 @@
     <Compile Include="Common\Converters.cs" />
     <Compile Include="Common\Enums.cs" />
     <Compile Include="Common\GlobalData.cs" />
+    <Compile Include="Common\StationStateTexts.cs" />
+    <Compile Include="Common\TriggerOptionCatalog.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

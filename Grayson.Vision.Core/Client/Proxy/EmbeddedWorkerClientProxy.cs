@@ -90,8 +90,17 @@ namespace Grayson.Vision.Core.Client.Proxy
         public Task ResumeAsync() => Task.Run(() => _worker.ResumeAsync());
         public Task TriggerOnceAsync(string batchId = null) => Task.Run(() => _worker.TriggerOnceAsync(batchId));
         public Task EmergencyStopAsync(string reason = null) => Task.Run(() => _worker.EmergencyStopAsync(reason));
+        public Task WorkOrderResetAsync() => Task.Run(() => _worker.WorkOrderResetAsync());
+        public Task SoftResetAsync() => Task.Run(() => _worker.SoftResetAsync());
+        public Task HardwareResetAsync() => Task.Run(() => _worker.HardwareResetAsync());
 
         public Task StepNodeAsync(FlowNodeBase node) => Task.Run(() => _worker.StepNodeAsync(node));
+
+        /// <summary>
+        /// 注入节点实时预览显示上下文（编辑器属性面板调试专用）。
+        /// 本地嵌入式代理直接透传给 StationWorker；null 表示清除。
+        /// </summary>
+        public void SetPreviewContext(IFlowPreviewContext preview) => _worker?.SetPreviewContext(preview);
 
         public void Dispose()
         {

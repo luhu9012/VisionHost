@@ -15,6 +15,20 @@ namespace Grayson.Vision.Nodes.Common
     public abstract class NodeExecutorBase<TParam> : INodeExecutor
         where TParam : class, new()
     {
+        /// <summary>
+        /// 当前执行周期持有的节点上下文缓存（仅在 ExecuteAsync 执行期间有效，
+        /// 供 Preview 便捷属性读取；执行结束自动置空）。
+        /// </summary>
+        private NodeExecutionContext _currentContext;
+
+        /// <summary>
+        /// 实时预览显示上下文便捷入口（null 安全）。
+        /// 编辑器属性面板调试期为注入的 IFlowPreviewContext；生产运行为 null，
+        /// 所有调用天然跳过。用法与标定服务的场景式绘制完全一致：
+        /// Preview?.BeginScene() → Preview?.AddBorrowed(底图) → Preview?.Add(显示副本)。
+        /// </summary>
+        protected IFlowPreviewContext Preview => _currentContext?.Preview;
+
         public async Task ExecuteAsync(FlowNodeBase node, NodeExecutionContext context, CancellationToken token)
         {
             if (node == null)
@@ -30,8 +44,17 @@ namespace Grayson.Vision.Nodes.Common
                 throw new InvalidOperationException($"节点 [{node.DisplayName}] 未配置或参数模型类型不匹配，期望类型: {typeof(TParam).Name}");
             }
 
-            // 调用子类核心业务
-            await ExecuteCoreAsync(node, param, context, token);
+            // 缓存上下文供 Preview 便捷属性使用
+            _currentContext = context;
+            try
+            {
+                // 调用子类核心业务
+                await ExecuteCoreAsync(node, param, context, token);
+            }
+            finally
+            {
+                _currentContext = null;
+            }
         }
 
         /// <summary>

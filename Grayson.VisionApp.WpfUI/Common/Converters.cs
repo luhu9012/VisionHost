@@ -381,6 +381,31 @@ namespace Grayson.Vision.WpfUI.Common.Converters
         }
     }
     /// <summary>
+    /// 枚举值转可见性（值等于 ConverterParameter 时 Visible，否则 Collapsed）。
+    /// 用于触发源配置 Tab：仅显示当前选中源类型对应的参数面板。
+    /// </summary>
+    public class EnumToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value == null || parameter == null)
+                return Visibility.Collapsed;
+
+            string checkValue = value.ToString();
+            string targetValue = parameter.ToString();
+
+            return string.Equals(checkValue, targetValue, StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
     /// 枚举值相等判断转换器 (用于 RadioButton / Menu / Tag 显隐绑定)
     /// </summary>
     public class EnumToBoolConverter : IValueConverter

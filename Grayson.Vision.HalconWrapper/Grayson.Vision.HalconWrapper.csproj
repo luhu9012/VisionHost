@@ -49,7 +49,9 @@
   <ItemGroup>
     <Compile Include="Calibration\Calib2DTool.cs" />
     <Compile Include="Calibration\CalibrationService.cs" />
+    <Compile Include="Calibration\FeatureExtractOptions.cs" />
     <Compile Include="Calibration\FixtureTool.cs" />
+    <Compile Include="Calibration\ICalibrationDisplayContext.cs" />
     <Compile Include="Calibration\ICalibrationService.cs" />
     <Compile Include="Class1.cs" />
     <Compile Include="Core\HalconGlobalHelper.cs" />
@@ -68,6 +70,7 @@
     <Compile Include="Match2D\NccMatchTool.cs" />
     <Compile Include="Match2D\TemplateMatchTool.cs" />
     <Compile Include="Measure2D\EdgeMeasureTool.cs" />
+    <Compile Include="NodePreviewHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

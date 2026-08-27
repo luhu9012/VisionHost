@@ -20,6 +20,7 @@ namespace Grayson.Vision.Core.Scheduling
     {
         private readonly string _stationId;
         private readonly StationContext _stationContext;
+        private readonly Grayson.Vision.Core.Station.WorkOrderTracker _workOrderTracker;
         private FlowExecutor _executor;
         private ExecutionChain _executionChain;
         private CancellationTokenSource _continuousLoopCts;
@@ -34,10 +35,12 @@ namespace Grayson.Vision.Core.Scheduling
         public event EventHandler<NodeEventArgs> OnNodeExecuted;
         public event EventHandler<NodeExecutionErrorEventArgs> OnExecutionError;
 
-        public SimpleTriggerScheduler(string stationId, StationContext stationContext)
+        public SimpleTriggerScheduler(string stationId, StationContext stationContext,
+            Grayson.Vision.Core.Station.WorkOrderTracker workOrderTracker = null)
         {
             _stationId = stationId ?? throw new ArgumentNullException(nameof(stationId));
             _stationContext = stationContext ?? throw new ArgumentNullException(nameof(stationContext));
+            _workOrderTracker = workOrderTracker;
         }
 
         public Task LoadExecutionChainAsync(ExecutionChain chain)
@@ -111,9 +114,12 @@ namespace Grayson.Vision.Core.Scheduling
             if (!await AcquireExecutionLockAsync().ConfigureAwait(false)) return;
 
             WorkOrderExecutionContext workOrderContext = null;
+            WorkOrder workOrder = null;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var workOrder = new WorkOrder(null, _stationId, batchId, "TRIGGER");
+                workOrder = new WorkOrder(null, _stationId, batchId, Mode == WorkMode.Debug ? "DEBUG_SCHEDULER" : "TRIGGER");
+                _workOrderTracker?.Track(workOrder);
                 workOrderContext = new WorkOrderExecutionContext(workOrder, _stationContext.GlobalEngineContext);
 
                 // TODO: 若未来 StationContext 持有当前 RecipeModel，可在此处绑定配方追溯快照
@@ -124,14 +130,30 @@ namespace Grayson.Vision.Core.Scheduling
 
                 await _executor.StepAsync().ConfigureAwait(false);
 
+                sw.Stop();
                 workOrder.MarkCompleted(isOk: true);
+                workOrder.ResultData = new WorkOrderResultData
+                {
+                    IsOk = true,
+                    CycleTimeMs = sw.Elapsed.TotalMilliseconds
+                };
             }
             catch (Exception ex)
             {
-                workOrderContext?.WorkOrder?.MarkAborted(WorkOrderStatus.Abort_Error,
+                sw.Stop();
+                workOrder?.MarkAborted(WorkOrderStatus.Abort_Error,
                     reason: ex.Message,
                     ex: ex,
                     faultCode: -1000);
+                if (workOrder != null)
+                {
+                    workOrder.ResultData = new WorkOrderResultData
+                    {
+                        IsOk = false,
+                        CycleTimeMs = sw.Elapsed.TotalMilliseconds,
+                        ErrorMessage = ex.Message
+                    };
+                }
                 LogBus.Error("SimpleTriggerScheduler", $"[{_stationId}] 触发单次运行失败: {ex.Message}", ex);
             }
             finally
@@ -154,6 +176,10 @@ namespace Grayson.Vision.Core.Scheduling
                     cycleContext,
                     _stationContext.ResolveDevice
                 );
+
+                // 🌟 调试单步链路注入实时预览上下文（编辑器属性面板专用；
+                //    生产触发链路 TriggerOnceAsync 不注入，Preview 恒为 null）
+                nodeExecContext.Preview = _stationContext.PreviewContext;
 
                 LogBus.Info("SimpleTriggerScheduler", $"[{_stationId}] 调试单步运行节点: {node.DisplayName} ({node.NodeId})");
 

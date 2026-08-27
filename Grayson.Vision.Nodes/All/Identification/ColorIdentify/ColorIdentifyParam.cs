@@ -4,6 +4,9 @@ namespace Grayson.Vision.Nodes.All.Identification.ColorIdentify
 {
     public class ColorIdentifyParam : ParamBase
     {
+        /// <summary>调整 HSV 色彩范围时预览窗口实时显示颜色提取区域与面积占比。</summary>
+        public override bool SupportsPreview => true;
+
         private double _hueMin = 0;
         public double HueMin { get => _hueMin; set => Set(ref _hueMin, value); }
 

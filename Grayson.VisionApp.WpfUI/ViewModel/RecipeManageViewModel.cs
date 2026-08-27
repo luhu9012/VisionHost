@@ -9,7 +9,9 @@ using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Infrastructure.Permission;
 using Grayson.Vision.Contracts.Recipe.Models;
 using Grayson.Vision.Contracts.Recipe.Services;
+using Grayson.Vision.Contracts.Station.Enums;
 using Grayson.Vision.Contracts.Station.Interfaces;
+using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.Contracts.Station.Services;
 using Grayson.Vision.Core.Client;
 using Grayson.Vision.Core.Station;
@@ -25,17 +27,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly StationRuntimeManager _runtimeManager;
         private readonly IStationHostRuntime _hostRuntime;
         private readonly IRecipeStorageService _recipeStorage;
+        private readonly IRecipeApprovalService _approvalService;
         private readonly StationConfigService _stationConfigService;
 
         public RecipeManageViewModel(
             StationRuntimeManager runtimeManager = null,
             IStationHostRuntime hostRuntime = null,
             IRecipeStorageService recipeStorage = null,
-            StationConfigService stationConfigService = null)
+            StationConfigService stationConfigService = null,
+            IRecipeApprovalService approvalService = null)
         {
             _runtimeManager = runtimeManager;
             _hostRuntime = hostRuntime ?? App.StationHostRuntime;
             _recipeStorage = recipeStorage ?? Grayson.Vision.Repository.Services.RecipeStorageFactory.CreateRecipeStorageService();
+            _approvalService = approvalService ?? Grayson.Vision.Repository.Services.RecipeApprovalFactory.CreateRecipeApprovalService();
             _stationConfigService = stationConfigService ?? new StationConfigService();
 
             // 目标工位列表从 Core 已创建的站点动态获取
@@ -294,30 +299,58 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 🌟 3. 指定目标工位下发配方
+        /// 🌟 3. 指定目标工位下发配方（统一走 Core 标准入口，绑定并持久化，重启后仍生效）
         /// </summary>
         private async void OnApplyRecipe()
         {
             if (SelectedRecipe == null || string.IsNullOrEmpty(SelectedTargetStationId)) return;
 
-            // 保持内存与存储一致
-            _recipeStorage.SaveRecipe(SelectedRecipe);
-
-            // 每次下发前刷新一次目标列表，确保拿到最新站点
-            RefreshAvailableStations();
-
-            if (_runtimeManager != null)
+            try
             {
-                IWorkerClient client = _runtimeManager.GetClient(SelectedTargetStationId);
-                if (client != null && SelectedRecipe.MainProcess != null)
+                // 保持内存与存储一致
+                _recipeStorage.SaveRecipe(SelectedRecipe);
+
+                // 每次下发前刷新一次目标列表，确保拿到最新站点
+                RefreshAvailableStations();
+
+                // 1. 查找目标工位配置（配置存在才允许下发，避免产生悬挂绑定）
+                var config = (_stationConfigService.LoadAllLines() ?? new List<LineConfigModel>())
+                    .SelectMany(l => l.Stations ?? new List<StationConfigModel>())
+                    .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s.StationCode) && s.StationCode == SelectedTargetStationId);
+
+                if (config == null)
                 {
-                    await client.LoadRecipeAsync(SelectedRecipe.MainProcess);
-                    MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已成功下发至工位 [{SelectedTargetStationId}]！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show($"未找到工位 [{SelectedTargetStationId}] 的配置，请先在【工位管理】中创建并保存该工位。",
+                                    "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
-            }
 
-            MessageBox.Show($"未找到运行中的目标工位 [{SelectedTargetStationId}]，请先在【工位管理】中保存并启动工位。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                // 2. 更新并持久化工位绑定的配方（与工位管理保存路径一致，重启后绑定不丢失）
+                config.BoundRecipeId = SelectedRecipe.RecipeId;
+                config.BoundRecipeName = SelectedRecipe.RecipeName;
+                _stationConfigService.SaveStation(config);
+
+                // 3. 统一走 Core 标准入口：创建/更新工位 + 绑定设备映射 + 加载配方
+                var hostRuntime = _hostRuntime ?? App.StationHostRuntime;
+                if (hostRuntime == null)
+                {
+                    MessageBox.Show("Core 运行时不可用，无法下发配方。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                await hostRuntime.CreateStationWithRecipeAsync(
+                    SelectedTargetStationId,
+                    SelectedRecipe,
+                    SelectedRecipe.LogicalDevices,
+                    WorkMode.Production);
+
+                MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已下发并绑定至工位 [{SelectedTargetStationId}]，重启后仍生效！",
+                                "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"下发配方失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void OnSaveDetail()
@@ -376,6 +409,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             if (SelectedRecipe == null || SelectedRecipe.IsActive) return;
 
+            // 🌟 删除守卫：先检查是否有工位绑定该配方（不依赖 IsActive，杜绝悬挂引用）
+            var boundStations = (_stationConfigService.LoadAllLines() ?? new List<LineConfigModel>())
+                .SelectMany(l => l.Stations ?? new List<StationConfigModel>())
+                .Where(s => !string.IsNullOrEmpty(s.BoundRecipeId) &&
+                            (s.BoundRecipeId == SelectedRecipe.RecipeId ||
+                             (string.IsNullOrEmpty(SelectedRecipe.RecipeId) && s.BoundRecipeName == SelectedRecipe.RecipeName)))
+                .Select(s => s.StationCode)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .ToList();
+
+            if (boundStations.Any())
+            {
+                MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已被工位 [{string.Join(", ", boundStations)}] 绑定，请先在【工位管理】中解绑后再删除。",
+                                "无法删除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             // 🌟 增加删除确认弹窗
             var result = MessageBox.Show(
                 $"确定要永久删除配方 [{SelectedRecipe.RecipeName}] ({SelectedRecipe.RecipeCode}) 吗？此操作不可撤销。",
@@ -428,30 +478,21 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #endregion
 
-        #region 审批流程（UI 占位，实际工作流可后续接权限服务）
+        #region 审批流程（状态机下沉到 Core/Repository 的 IRecipeApprovalService）
 
         private bool CanSubmitApproval()
         {
-            return SelectedRecipe != null &&
-                   GlobalData.Instance.CurrentUserRole >= UserRole.Engineer &&
-                   SelectedRecipe.HasMinimumMetadata &&
-                   (SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Draft ||
-                    SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Rejected);
+            return _approvalService.CanSubmit(SelectedRecipe, GlobalData.Instance.CurrentUserRole) == null;
         }
 
         private bool CanApproveRecipe()
         {
-            return SelectedRecipe != null &&
-                   GlobalData.Instance.CurrentUserRole == UserRole.Administrator &&
-                   SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval;
+            return _approvalService.CanApprove(SelectedRecipe, GlobalData.Instance.CurrentUserRole) == null;
         }
 
         private bool CanRejectRecipe()
         {
-            return SelectedRecipe != null &&
-                   GlobalData.Instance.CurrentUserRole == UserRole.Administrator &&
-                   (SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval ||
-                    SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved);
+            return _approvalService.CanReject(SelectedRecipe, GlobalData.Instance.CurrentUserRole) == null;
         }
 
         /// <summary>
@@ -504,84 +545,69 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             if (SelectedRecipe == null) return;
 
-            if (!SelectedRecipe.HasMinimumMetadata)
+            var denyReason = _approvalService.CanSubmit(SelectedRecipe, GlobalData.Instance.CurrentUserRole);
+            if (denyReason != null)
             {
-                MessageBox.Show("请完善配方名称、编号、产品类别和版本号后再提交审批。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(denyReason, "无法提交", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            SelectedRecipe.ApprovalStatus = Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval;
-            EnsureApprovalInfo();
-            SelectedRecipe.ApprovalInfo.SubmittedBy = GlobalData.Instance.CurrentUserName ?? "未知用户";
-            SelectedRecipe.ApprovalInfo.SubmittedAt = DateTime.Now;
-            SelectedRecipe.ApprovalInfo.LastActionAt = DateTime.Now;
-            AddApprovalHistory(Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval);
-            _recipeStorage.SaveRecipe(SelectedRecipe);
+            bool success = _approvalService.SubmitForApproval(
+                SelectedRecipe,
+                GlobalData.Instance.CurrentUserName ?? "未知用户",
+                SelectedRecipe.ApprovalInfo?.ApprovalComment);
 
             RaiseCommandsCanExecuteChanged();
-            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已提交审批。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (success)
+                MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已提交审批。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            else
+                MessageBox.Show("提交审批失败，请检查存储目录权限或文件占用。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         private void OnApproveRecipe()
         {
             if (SelectedRecipe == null) return;
 
-            SelectedRecipe.ApprovalStatus = Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved;
-            EnsureApprovalInfo();
-            SelectedRecipe.ApprovalInfo.ApprovedBy = GlobalData.Instance.CurrentUserName ?? "未知用户";
-            SelectedRecipe.ApprovalInfo.ApprovedAt = DateTime.Now;
-            SelectedRecipe.ApprovalInfo.LastActionAt = DateTime.Now;
-            SelectedRecipe.ApprovalInfo.RejectionReason = null;
-            SelectedRecipe.EffectiveFrom = DateTime.Now;
-            SelectedRecipe.IsLocked = false;
-            AddApprovalHistory(Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved);
-            _recipeStorage.SaveRecipe(SelectedRecipe);
+            var denyReason = _approvalService.CanApprove(SelectedRecipe, GlobalData.Instance.CurrentUserRole);
+            if (denyReason != null)
+            {
+                MessageBox.Show(denyReason, "无法审批", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            bool success = _approvalService.Approve(
+                SelectedRecipe,
+                GlobalData.Instance.CurrentUserName ?? "未知用户",
+                SelectedRecipe.ApprovalInfo?.ApprovalComment);
 
             RaiseCommandsCanExecuteChanged();
-            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 审批已通过，已可下发工位。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (success)
+                MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 审批已通过，已可下发工位。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            else
+                MessageBox.Show("审批通过失败，请检查存储目录权限或文件占用。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         private void OnRejectRecipe()
         {
             if (SelectedRecipe == null) return;
 
-            var reason = SelectedRecipe.ApprovalInfo?.ApprovalComment;
-            SelectedRecipe.ApprovalStatus = Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Rejected;
-            EnsureApprovalInfo();
-            SelectedRecipe.ApprovalInfo.ApprovedBy = null;
-            SelectedRecipe.ApprovalInfo.ApprovedAt = null;
-            SelectedRecipe.ApprovalInfo.LastActionAt = DateTime.Now;
-            SelectedRecipe.ApprovalInfo.RejectionReason = reason;
-            SelectedRecipe.EffectiveFrom = null;
-            SelectedRecipe.IsLocked = false;
-            AddApprovalHistory(Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Rejected, reason);
-            _recipeStorage.SaveRecipe(SelectedRecipe);
+            var denyReason = _approvalService.CanReject(SelectedRecipe, GlobalData.Instance.CurrentUserRole);
+            if (denyReason != null)
+            {
+                MessageBox.Show(denyReason, "无法驳回", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            bool success = _approvalService.Reject(
+                SelectedRecipe,
+                GlobalData.Instance.CurrentUserName ?? "未知用户",
+                SelectedRecipe.ApprovalInfo?.ApprovalComment);
 
             RaiseCommandsCanExecuteChanged();
-            MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已驳回并回退到可编辑状态，请修改后重新提交。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-
-        private void EnsureApprovalInfo()
-        {
-            if (SelectedRecipe == null) return;
-            if (SelectedRecipe.ApprovalInfo == null)
-                SelectedRecipe.ApprovalInfo = new RecipeApprovalInfo();
-            if (SelectedRecipe.ApprovalInfo.History == null)
-                SelectedRecipe.ApprovalInfo.History = new List<RecipeApprovalHistoryEntry>();
-        }
-
-        private void AddApprovalHistory(Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus action, string comment = null)
-        {
-            EnsureApprovalInfo();
-            var entry = new RecipeApprovalHistoryEntry
-            {
-                ActionAt = DateTime.Now,
-                ActionBy = GlobalData.Instance.CurrentUserName ?? "未知用户",
-                Action = action,
-                Comment = comment ?? SelectedRecipe.ApprovalInfo.ApprovalComment,
-                ElectronicSignature = SelectedRecipe.ApprovalInfo.ElectronicSignature
-            };
-            SelectedRecipe.ApprovalInfo.History.Add(entry);
+            if (success)
+                MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已驳回并回退到可编辑状态，请修改后重新提交。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            else
+                MessageBox.Show("驳回失败，请检查存储目录权限或文件占用。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         #endregion

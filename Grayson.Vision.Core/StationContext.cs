@@ -33,6 +33,13 @@ namespace Grayson.Vision.Core
         /// </summary>
         public IDeviceManager DeviceManager { get; }
 
+        /// <summary>
+        /// 节点实时预览显示上下文（编辑器属性面板调试期由宿主经 IWorkerClient.SetPreviewContext 注入）。
+        /// 调度器在构建调试单步的 NodeExecutionContext 时读取此值赋给 Preview；
+        /// 生产运行恒为 null，节点内所有预览调用判空跳过，行为零变化。
+        /// </summary>
+        public IFlowPreviewContext PreviewContext { get; set; }
+
         public StationContext(string stationId)
         {
             StationId = stationId ?? throw new ArgumentNullException(nameof(stationId));

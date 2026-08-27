@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Generic;
 using Grayson.Vision.Contracts.Recipe.Models;
+using Grayson.Vision.Contracts.Station.Triggers;
 
 namespace Grayson.Vision.Contracts.Station.Models
 {
@@ -145,6 +146,12 @@ namespace Grayson.Vision.Contracts.Station.Models
         /// </summary>
         public Dictionary<string, string> RuntimeParams { get; set; } 
             = new Dictionary<string, string>();
+
+        /// <summary>
+        /// 工位触发源配置——工位级物理接线约定（PLC 点位/IO 通道等），不随配方变化。
+        /// 由 StationManageView 触发信号配置 Tab 编辑，工位初始化时由 StationHostRuntime 创建对应 ITriggerSource。
+        /// </summary>
+        public TriggerSourceConfig TriggerSource { get; set; } = new TriggerSourceConfig();
 
         /// <summary>
         /// 配置创建时间戳

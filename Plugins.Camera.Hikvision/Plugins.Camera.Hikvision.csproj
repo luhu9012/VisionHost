@@ -31,9 +31,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="halcondotnet">
-      <HintPath>..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\halcondotnet.dll</HintPath>
-    </Reference>
     <Reference Include="MvCamCtrl.Net">
       <HintPath>..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\MvCamCtrl.Net.dll</HintPath>
     </Reference>
@@ -50,9 +47,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="官方案例Demo_仅供参考功�?cs" />
-    <Compile Include="官方案例Demo_仅供参考功�?Designer.cs">
-      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    <Compile Include="官方案例Demo_仅供参考功�?cs" />
+    <Compile Include="官方案例Demo_仅供参考功�?Designer.cs">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
     </Compile>
     <Compile Include="HikvisionPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -67,14 +64,14 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="官方案例Demo_仅供参考功�?en-US.resx">
-      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    <EmbeddedResource Include="官方案例Demo_仅供参考功�?en-US.resx">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="官方案例Demo_仅供参考功�?resx">
-      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    <EmbeddedResource Include="官方案例Demo_仅供参考功�?resx">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="官方案例Demo_仅供参考功�?zh-CHS.resx">
-      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
+    <EmbeddedResource Include="官方案例Demo_仅供参考功�?zh-CHS.resx">
+      <DependentUpon>官方案例Demo_仅供参考功�?cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

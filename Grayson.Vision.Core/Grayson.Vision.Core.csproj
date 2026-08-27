@@ -63,7 +63,15 @@
     </Compile>
     <Compile Include="Recipe\RecipeDeviceExtractor.cs" />
     <Compile Include="Scheduling\SimpleTriggerScheduler.cs" />
+    <Compile Include="Triggers\TriggerSourceBase.cs" />
+    <Compile Include="Triggers\ManualTriggerSource.cs" />
+    <Compile Include="Triggers\TimerTriggerSource.cs" />
+    <Compile Include="Triggers\PlcBitTriggerSource.cs" />
+    <Compile Include="Triggers\TriggerSourceFactory.cs" />
     <Compile Include="StationWorker.cs" />
+    <Compile Include="Processes\StationProcessBase.cs" />
+    <Compile Include="Processes\MahjongPickConfig.cs" />
+    <Compile Include="Processes\MahjongPickProcess.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="StationContext.cs" />
     <Compile Include="Station\DefaultStationParameterService.cs" />

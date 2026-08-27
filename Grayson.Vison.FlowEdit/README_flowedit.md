@@ -253,6 +253,40 @@ ImageDisplayVm 根据 ImagePathOrBufferId 获取图像并渲染
 | `INodePluginLoader` | `NodePluginLoader` | 扫描插件 DLL，注册节点和 XAML 模板 |
 | `IFlowLayoutService` | `LayoutService` | DAG 拓扑自动布局 |
 
+### 4.6 NodePropertyWindow 实时预览（2026-08-22 新增）
+
+双击节点弹出的属性面板支持**左参数 / 右实时预览**两列布局，编辑参数（如阈值分割滑块）时
+预览窗口实时刷新图像变化。完整设计见根目录《节点属性面板实时预览_设计.md》。
+
+**职责分层**（谁拥有算法知识，谁负责绘制）：
+
+| 职责 | 归属 |
+|---|---|
+| 画什么、何时画 | Nodes 层 Executor（`context.Preview?.BeginScene()/Add()`，走一步画一步） |
+| 预览区是否存在 | Nodes 层 `ParamBase.SupportsPreview`（默认 false，仅图像类节点声明 true） |
+| 窗口宿主、适配器创建/释放、防抖重跑 | FlowEdit 层 `NodePropertyWindow` / `FlowVm` |
+| 句柄 → 窗口实际渲染 | HalconWrapper.Wpf `HalconDisplayContextAdapter`（只在 code-behind 创建） |
+
+**注入链路**：
+
+```text
+NodePropertyWindow.Loaded
+  → new HalconDisplayContextAdapter(PreviewHost) : IFlowPreviewContext
+  → FlowVm.AttachPreview(adapter, node)
+  → IWorkerClient.SetPreviewContext(adapter)              [Contracts 契约]
+  → StationWorker → StationContext.PreviewContext 暂存
+  → SimpleTriggerScheduler.StepNodeAsync 构建 NodeExecutionContext 时注入 .Preview
+  → 节点 Executor 内 context.Preview?.Add(...) 场景式绘制
+```
+
+**关键行为**：
+
+- 预览执行 = 一次真实调试单步执行（输入取端口值缓存、输出写回输出端口），无第二套数据通路；
+- 参数变化防抖 300ms + 重入保护（忙时只记最后一次）；面板打开即执行首帧；
+- 生产运行不注入（`Preview` 恒 null），节点内所有调用判空跳过，行为零变化；
+- 不支持预览的节点（`SupportsPreview == false`）弹窗维持原单列布局，零视觉回归；
+- IPC 观察者模式代理上 `SetPreviewContext` 为 no-op，静默退化为主视图显示。
+
 ---
 
 ## 5. 插件加载机制

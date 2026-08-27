@@ -21,6 +21,8 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
         public void InitializePoints(CalibrationWizardViewModel vm)
         {
             vm.CalibrationPoints.Clear();
+            // 重置参考 Mark 半径：重新采集/更换 Mark 板后旧参考失效（预览或首点成功会自动重新记录）
+            vm.CalibService.ResetMarkReference();
             for (int i = 1; i <= 9; i++)
             {
                 vm.CalibrationPoints.Add(new CalibrationPointModel { Index = i, PixelX = 0, PixelY = 0, WorldX = 0, WorldY = 0 });
@@ -40,31 +42,49 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
                 return;
             }
 
-            if (context.CalibrationPoints.Any(p => p.PixelX == 0 && p.PixelY == 0))
+            // 后台线程执行采样：UI 线程保持泵消息，算子每步绘制即时上屏；内部有防重入保护
+            context.RunSamplingOnBackground(() =>
             {
-                context.CaptureNextCalibrationPoint();
-                return;
-            }
+                if (context.CalibrationPoints.Any(p => !p.IsCaptured))
+                {
+                    context.CaptureNextCalibrationPoint();
+                    return;
+                }
 
-            context.CaptureNextRotationPoint();
+                context.CaptureNextRotationPoint();
+            });
         }
 
         public void AutoRunAll(CalibrationWizardViewModel context)
         {
             context.AppendLog("开始多点手眼 + 旋转中心自动采样流程...");
             InitializePoints(context);
-            context.AutoCollectNinePointSamples();
-            context.AutoCollectRotationSamples();
-            context.CurrentStep = 3;
-            ExecuteCalibration(context);
+            context.RunSamplingOnBackground(() =>
+            {
+                context.AutoCollectNinePointSamples();
+                context.AutoCollectRotationSamples();
+                context.AppendLog("平移九点 + 旋转采样完成，自动进入拟合计算...");
+                context.RunOnUi(() =>
+                {
+                    context.CurrentStep = 3;
+                    ExecuteCalibration(context);
+                });
+            });
         }
 
         public void ExecuteCalibration(CalibrationWizardViewModel context)
         {
-            if (context.CalibrationPoints.Count < 9 || context.CalibrationPoints.Any(p => p.PixelX == 0 && p.PixelY == 0) || context.RotationPoints.Count < 3 || context.RotationPoints.Any(p => p.PixelX == 0 && p.PixelY == 0))
+            if (context.CalibrationPoints.Count < 9 || context.CalibrationPoints.Any(p => !p.IsCaptured) || context.RotationPoints.Count < 3 || context.RotationPoints.Any(p => !p.IsCaptured))
             {
                 MessageBox.Show("平移 9 点或旋转点位采集未完成！", "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
+            }
+
+            // 诊断：拟合前逐点打印
+            context.AppendLog("═══ 九点标定拟合数据（含旋转标定）═══");
+            foreach (var p in context.CalibrationPoints)
+            {
+                context.AppendLog($"  点{p.Index}: Pixel({p.PixelX:F1}, {p.PixelY:F1})  World({p.WorldX:F3}, {p.WorldY:F3})");
             }
 
             double[] px = context.CalibrationPoints.Select(p => p.PixelX).ToArray();

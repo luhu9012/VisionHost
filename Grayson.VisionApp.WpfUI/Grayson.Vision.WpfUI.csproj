@@ -75,9 +75,9 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Common\TriggerOptionCatalog.cs" />
     <Compile Include="Selectors\Step3DataTemplateSelector.cs" />
     <Compile Include="Service\IAuthenticationService.cs" />
-    <Compile Include="Service\IDialogService.cs" />
     <Compile Include="Service\INavigationAware.cs" />
     <Compile Include="Service\INavigationService.cs" />
     <Compile Include="Service\LiteDbAuthenticationService.cs" />
@@ -101,6 +101,7 @@
     <Compile Include="ViewModel\HardwareConsoleViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\AxisControlViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\CameraDebugViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\CameraLiveWindowViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\CommDebugViewModel.cs" />
     <Compile Include="ViewModel\HardWareConsole\HardwareModels.cs" />
     <Compile Include="ViewModel\HardWareConsole\IoMonitorViewModel.cs" />
@@ -151,6 +152,9 @@
     </Compile>
     <Compile Include="View\HardwareConsole\CameraDebugView.xaml.cs">
       <DependentUpon>CameraDebugView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\CameraLiveWindow.xaml.cs">
+      <DependentUpon>CameraLiveWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\HardwareConsole\CommDebugView.xaml.cs">
       <DependentUpon>CommDebugView.xaml</DependentUpon>
@@ -214,6 +218,7 @@
     <Compile Include="Common\Converters.cs" />
     <Compile Include="Common\Enums.cs" />
     <Compile Include="Common\GlobalData.cs" />
+    <Compile Include="Common\StationStateTexts.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -276,6 +281,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\HardwareConsole\CameraDebugView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareConsole\CameraLiveWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -364,6 +373,7 @@
     </None>
     <None Include="README_wpfui.md" />
     <None Include="View\Calibration\使用文档.md" />
+    <None Include="View\Calibration\双工位滑台标定.md" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

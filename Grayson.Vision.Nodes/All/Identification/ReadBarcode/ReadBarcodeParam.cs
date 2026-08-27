@@ -14,6 +14,9 @@ namespace Grayson.Vision.Nodes.All.Identification.ReadBarcode
 
     public class ReadBarcodeParam : ParamBase
     {
+        /// <summary>调整码制/超时等参数时预览窗口实时显示条码区域与识别结果。</summary>
+        public override bool SupportsPreview => true;
+
         private BarcodeType _codeType = BarcodeType.Auto;
         public BarcodeType CodeType
         {

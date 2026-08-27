@@ -26,6 +26,13 @@ namespace Grayson.Vision.Contracts.Flow.Contexts
         /// </summary>
         private readonly Func<string, object> _hardwareResolver;
 
+        /// <summary>
+        /// 节点实时预览显示上下文（编辑器属性面板调试期由宿主注入；生产运行恒为 null）。
+        /// 节点 Executor 通过它把中间结果"走一步画一步"地提交到属性面板内嵌的视图窗口。
+        /// 与 hardwareResolver 同属"宿主注入能力"模式：不注入时所有调用判空跳过，节点行为零变化。
+        /// </summary>
+        public IFlowPreviewContext Preview { get; set; }
+
         #region 💡 新增：控制流分支与节点状态数据结构
         /// <summary>
         /// 记录每个节点当前激活的控制流输出端口（Key: NodeId, Value: PortName）
@@ -49,6 +56,12 @@ namespace Grayson.Vision.Contracts.Flow.Contexts
             CycleContext = cycleContext ?? new FrameCycleContext();
             _hardwareResolver = hardwareResolver;
         }
+
+        /// <summary>
+        /// 获取预览上下文的泛型便捷入口（兼容未来其它预览通道的实现类型）
+        /// </summary>
+        public TPreview GetPreview<TPreview>() where TPreview : class, IFlowPreviewContext
+            => Preview as TPreview;
 
         /// <summary>
         /// 快捷打印日志

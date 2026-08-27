@@ -3,14 +3,13 @@ using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Core;
+using Grayson.Vision.HalconWrapper.Wpf.Imaging;
+using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
 namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 {
@@ -18,12 +17,25 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
     {
         private readonly IDevicePool _devicePool;
 
+        /// <summary>Halcon 图像渲染服务：负责相机帧 → HImage 包装</summary>
+        private readonly HalconImageRenderService _renderService;
+
         public CameraDebugViewModel()
         {
             _devicePool = App.StationHostRuntime?.DevicePool ?? throw new InvalidOperationException("DevicePool not initialized");
+
+            // 图像显示 VM：直接绑定 View 层 Halcon 控件，帧到达时替换 ActiveImageContext 即自动渲染
+            _renderService = new HalconImageRenderService();
+            CameraDisplayVm = new ImageDisplayVm(_renderService);
+
             InitCommands();
             LoadDevices();
         }
+
+        /// <summary>
+        /// 相机实时画面渲染 VM，供 CameraDebugView 的 HalconImageDisplayHost 绑定。
+        /// </summary>
+        public ImageDisplayVm CameraDisplayVm { get; }
 
         public ObservableCollection<ICamera> CameraDeviceList { get; set; } = new ObservableCollection<ICamera>();
 
@@ -40,13 +52,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                     RefreshAllCanExecute();
                 }
             }
-        }
-
-        private BitmapSource _cameraImageSource;
-        public BitmapSource CameraImageSource
-        {
-            get => _cameraImageSource;
-            set => Set(ref _cameraImageSource, value);
         }
 
         private bool _isGrabbing;
@@ -193,7 +198,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 IsGrabbing = false;
 
                 // 2. 需求修复：断开连接后清空视图图像与参数
-                CameraImageSource = null;
+                CameraDisplayVm.Clear();
                 PixelFormat = "未知";
             }, _ => SelectedCameraDevice != null && IsConnected);
 
@@ -231,7 +236,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 {
                     SelectedCameraDevice?.SaveImageFile(dialog.FileName, ext);
                 }
-            }, _ => IsConnected); // 取消对 CameraImageSource != null 的依赖，只要连接即可点击（或者只判断 IsConnected）
+            }, _ => IsConnected); // 只要连接即可点击保存（依赖相机自身 SaveImageFile）
         }
         private void RefreshAllCanExecute()
         {
@@ -255,6 +260,9 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 SelectedCameraDevice.StateChanged -= OnCameraStateChanged;
             }
             IsGrabbing = false;
+
+            // 清空 Halcon 显示画面，释放当前帧 HImage 句柄
+            CameraDisplayVm.Clear();
         }
 
         private void OnCameraDeviceChanged(ICamera oldCamera, ICamera newCamera)
@@ -358,59 +366,23 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             {
                 try
                 {
-                    string fmtStr = (e.PixelFormat ?? "").ToUpperInvariant();
+                    // 2. 相机帧 → Halcon HImage 包装（WrapImage 内部处理 BGR/Gray8 转换）
+                    var renderImage = _renderService.WrapImage(e);
+                    if (renderImage == null) return;
 
-                    // 根据输出格式精确判断 WPF 格式
-                    bool isColor = fmtStr.Contains("BGR") || fmtStr.Contains("RGB");
-
-                    PixelFormat format = isColor ? PixelFormats.Bgr24 : PixelFormats.Gray8;
-                    int bytesPerPixel = isColor ? 3 : 1;
-                    int rawStride = e.Width * bytesPerPixel;
-
-                    WriteableBitmap writeableBitmap = CameraImageSource as WriteableBitmap;
-
-                    if (writeableBitmap == null ||
-                        writeableBitmap.PixelWidth != e.Width ||
-                        writeableBitmap.PixelHeight != e.Height ||
-                        writeableBitmap.Format != format)
+                    // 3. 构造渲染上下文并替换 ActiveImageContext
+                    //    HalconImageDisplayHost 通过 DataContext(CameraDisplayVm) 订阅了
+                    //    OnRequestRender 事件，替换 ActiveImageContext 即自动触发窗口渲染
+                    var context = new WpfImageRenderContext
                     {
-                        writeableBitmap = new WriteableBitmap(
-                            e.Width,
-                            e.Height,
-                            96,
-                            96,
-                            format,
-                            format == PixelFormats.Gray8 ? BitmapPalettes.Gray256 : null);
+                        NodeId = "camera-live",
+                        NodeName = "相机实时图像",
+                        Image = renderImage
+                    };
 
-                        CameraImageSource = writeableBitmap;
-                    }
-
-                    int bitmapStride = writeableBitmap.BackBufferStride;
-
-                    writeableBitmap.Lock();
-                    IntPtr pBackBuffer = writeableBitmap.BackBuffer;
-
-                    // 逐行拷贝与 4 字节对齐处理
-                    if (rawStride == bitmapStride)
-                    {
-                        Marshal.Copy(e.Buffer, 0, pBackBuffer, Math.Min(e.Buffer.Length, bitmapStride * e.Height));
-                    }
-                    else
-                    {
-                        for (int row = 0; row < e.Height; row++)
-                        {
-                            IntPtr dstRowPtr = pBackBuffer + (row * bitmapStride);
-                            int srcOffset = row * rawStride;
-
-                            if (srcOffset + rawStride <= e.Buffer.Length)
-                            {
-                                Marshal.Copy(e.Buffer, srcOffset, dstRowPtr, rawStride);
-                            }
-                        }
-                    }
-
-                    writeableBitmap.AddDirtyRect(new Int32Rect(0, 0, e.Width, e.Height));
-                    writeableBitmap.Unlock();
+                    var old = CameraDisplayVm.ActiveImageContext;
+                    CameraDisplayVm.ActiveImageContext = context;
+                    old?.Dispose(); // 释放上一帧 HImage 句柄，避免内存泄漏
 
                     IsGrabbing = true;
                 }

@@ -3,6 +3,7 @@ using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Factories;
 using Grayson.Vision.Contracts.Flow.Helpers;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Recipe.Models;
 using System;
 using System.Collections.Generic;
@@ -90,10 +91,11 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                     ConnectionId = conn.ConnectionId,
                     SourceNodeId = conn.SourceNode?.NodeId,
                     SourcePortId = conn.SourcePortId,
-                    SourcePortName = conn.SourcePort?.PortName,
+                    // 🌟 优先实时解析端口名；端口对象被动态端口机制替换后实时解析可能失败，回退到创建时缓存的端口名
+                    SourcePortName = conn.SourcePort?.PortName ?? conn.SourcePortName,
                     TargetNodeId = conn.TargetNode?.NodeId,
                     TargetPortId = conn.TargetPortId,
-                    TargetPortName = conn.TargetPort?.PortName
+                    TargetPortName = conn.TargetPort?.PortName ?? conn.TargetPortName
                 }).ToList() ?? new List<RecipeConnectionDto>()
             };
         }
@@ -245,31 +247,53 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                     if (string.IsNullOrEmpty(connDto.SourceNodeId) || string.IsNullOrEmpty(connDto.TargetNodeId))
                         continue;
 
-                    // 1. 尝试按 NodeId 精确查找
+                    // 1. 按 NodeId 精确查找
                     nodeDict.TryGetValue(connDto.SourceNodeId, out var sourceNode);
                     nodeDict.TryGetValue(connDto.TargetNodeId, out var targetNode);
 
-                    // 🌟 容错兜底：如果 JSON 里的 NodeId 错乱对不上，但节点数量正好符合拓扑关系
-                    if (sourceNode == null && process.Nodes.Count >= 1) sourceNode = process.Nodes[0];
-                    if (targetNode == null && process.Nodes.Count >= 2) targetNode = process.Nodes[1];
-
-                    if (sourceNode != null && targetNode != null)
+                    // 🌟【Bug修复】移除旧的"兜底重挂到 nodes[0]/nodes[1]"容错逻辑：
+                    //    该逻辑会在 NodeId 对不上时把连线静默错挂到前两个节点上，
+                    //    造成"相机采集→形状匹配"重复堆积、其它连线凭空消失的脏数据。
+                    //    现在改为跳过并记录警告，保证不产生错误拓扑。
+                    if (sourceNode == null || targetNode == null)
                     {
-                        // 2. 匹配端口（优先按端口名，其次按 PortId，最后兜底首端口）
-                        var sourcePort = sourceNode.OutputPorts.FirstOrDefault(p => p.PortName == connDto.SourcePortName)
-                                         ?? sourceNode.OutputPorts.FirstOrDefault(p => p.PortId == connDto.SourcePortId)
-                                         ?? sourceNode.OutputPorts.FirstOrDefault();
+                        LogBus.Warn("RecipeConverter",
+                            $"连线还原失败：SourceNodeId={connDto.SourceNodeId} / TargetNodeId={connDto.TargetNodeId} 未匹配到节点，已跳过该连线。");
+                        continue;
+                    }
 
-                        var targetPort = targetNode.InputPorts.FirstOrDefault(p => p.PortName == connDto.TargetPortName)
-                                         ?? targetNode.InputPorts.FirstOrDefault(p => p.PortId == connDto.TargetPortId)
-                                         ?? targetNode.InputPorts.FirstOrDefault();
+                    // 2. 匹配端口（优先按端口名，其次按 PortId，最后兜底首端口）
+                    var sourcePort = sourceNode.OutputPorts.FirstOrDefault(p => p.PortName == connDto.SourcePortName)
+                                     ?? sourceNode.OutputPorts.FirstOrDefault(p => p.PortId == connDto.SourcePortId)
+                                     ?? sourceNode.OutputPorts.FirstOrDefault();
 
-                        if (sourcePort != null && targetPort != null)
+                    var targetPort = targetNode.InputPorts.FirstOrDefault(p => p.PortName == connDto.TargetPortName)
+                                     ?? targetNode.InputPorts.FirstOrDefault(p => p.PortId == connDto.TargetPortId)
+                                     ?? targetNode.InputPorts.FirstOrDefault();
+
+                    if (sourcePort != null && targetPort != null)
+                    {
+                        // 🌟【Bug修复】去重守卫：同一对 (源节点+源端口 → 目标节点+目标端口) 只保留一条连线，
+                        //    自动修复历史保存产生的重复连线脏数据。
+                        bool isDuplicate = process.Connections.Any(c =>
+                            c.SourceNode == sourceNode && c.TargetNode == targetNode &&
+                            c.SourcePortId == sourcePort.PortId && c.TargetPortId == targetPort.PortId);
+
+                        if (isDuplicate)
                         {
-                            // 3. 将连线加入流程
-                            var connection = CreateAndBindConnection(sourceNode, sourcePort, targetNode, targetPort, connDto.ConnectionId);
-                            process.Connections.Add(connection);
+                            LogBus.Warn("RecipeConverter",
+                                $"检测到重复连线 [{sourceNode.DisplayName}.{sourcePort.PortName} -> {targetNode.DisplayName}.{targetPort.PortName}]，已自动去重。");
+                            continue;
                         }
+
+                        // 3. 将连线加入流程
+                        var connection = CreateAndBindConnection(sourceNode, sourcePort, targetNode, targetPort, connDto.ConnectionId);
+                        process.Connections.Add(connection);
+                    }
+                    else
+                    {
+                        LogBus.Warn("RecipeConverter",
+                            $"连线还原失败：端口匹配为空 (源端口 {connDto.SourcePortName} / 目标端口 {connDto.TargetPortName})，已跳过该连线。");
                     }
                 }
             }
@@ -361,12 +385,8 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
             };
 
             // 使用最新的 RelativeX/Y 刷新两端起点与终点坐标
+            // （节点位置监听已在 ConnectionModel 构造函数中挂载，这里不再重复订阅，避免双重回调）
             UpdateConnectionCoordinates(connection);
-
-            // 挂载节点位置改变事件监听
-            EventHandler updatePosHandler = (s, e) => UpdateConnectionCoordinates(connection);
-            sourceNode.OnPositionChanged += updatePosHandler;
-            targetNode.OnPositionChanged += updatePosHandler;
 
             return connection;
         }

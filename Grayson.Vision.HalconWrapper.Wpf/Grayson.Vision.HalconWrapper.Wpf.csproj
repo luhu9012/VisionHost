@@ -22,6 +22,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -32,7 +33,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="halcondotnet">
+    <Reference Include="halcondotnet, Version=19.11.0.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\Grayson.VisionApp\Grayson.VisionApp.Core\bin\Debug\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="System" />
@@ -50,6 +52,7 @@
     <Compile Include="Controls\HalconImageDisplayHost.xaml.cs">
       <DependentUpon>HalconImageDisplayHost.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Controls\HalconDisplayContextAdapter.cs" />
     <Compile Include="Imaging\\WpfImageRenderContext.cs" xmlns="" />
     <Compile Include="ViewModels\ImageDisplayVm.cs" />
   </ItemGroup>

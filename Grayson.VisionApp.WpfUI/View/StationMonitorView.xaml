@@ -191,7 +191,7 @@
             </Border>
             <!-- 中间：Halcon 视觉实时渲染区 -->
             <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" ClipToBounds="True">
-                <controls:HalconImageDisplayHost DataContext="{Binding ImageDisplayVm}" />
+                <controls:HalconImageDisplayHost x:Name="ImageHost" DataContext="{Binding ImageDisplayVm}" />
             </Border>
 
             <!-- 右侧：优化后的日志与结果数据表格 -->

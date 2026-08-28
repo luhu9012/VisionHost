@@ -10,9 +10,12 @@
                                        />
 
         <!-- 2. 右上角悬浮控制按钮组 -->
+        <!-- ⚠ 绑定走 RelativeSource 指向控件自身：本控件可能被嵌入任意 DataContext 宿主
+             （如 FlowEdit 节点属性窗口的预览区，DataContext 是 FlowNode），
+             若绑外部 VM 的 FitImageCmd 会报 Binding Error 40。 -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10">
             <Button Content="🔲 适应窗口" 
-                    Command="{Binding FitImageCmd}" 
+                    Command="{Binding FitImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" 
                     ToolTip="重置缩放，自适应居中显示"
                     Background="#80000000" Foreground="#FFFFFF" BorderBrush="#555" BorderThickness="1"
                     Padding="6,3" FontSize="11" Cursor="Hand">
@@ -27,10 +30,11 @@
                 </Button.Style>
             </Button>
         </StackPanel>
-        <!-- 🌟 3. 新增：左下角悬浮图像/像素信息栏 -->
+        <!-- 🌟 3. 新增：左下角悬浮图像/像素信息栏（绑定控件自身 SelectedImageInfo 依赖属性，
+             由代码在 VM.PropertyChanged / 内部鼠标移动时维护，不依赖外部 DataContext） -->
         <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10"
                 Background="#99000000" CornerRadius="3" Padding="8,4" IsHitTestVisible="False">
-            <TextBlock Text="{Binding SelectedImageInfo}" 
+            <TextBlock Text="{Binding SelectedImageInfo, RelativeSource={RelativeSource AncestorType=UserControl}}" 
                        Foreground="#00FF00" 
                        FontFamily="Consolas, Microsoft YaHei" 
                        FontSize="12" 

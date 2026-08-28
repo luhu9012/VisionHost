@@ -12,9 +12,16 @@
             </ResourceDictionary.MergedDictionaries>
 
             <DataTemplate DataType="{x:Type local:NccMatchParam}">
-                <StackPanel Margin="10">
-                    <TextBlock Text="模板 ID (Model ID):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <TextBox Text="{Binding ModelId, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+                <!-- ⚠ DataContextChanged 必须挂在 DataTemplate 内根元素上：
+                     模板提取机制只把 DataTemplate 注册进全局资源，UserControl 根 Grid 不会进入视觉树，
+                     挂在那里事件永不触发（下拉永不刷新）。与 CalibrationApplyTemplateView 同款写法。 -->
+                <StackPanel Margin="10" DataContextChanged="OnRootDataContextChanged">
+                    <TextBlock Text="引用模板 (在【模板管理】界面创建):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <ComboBox ItemsSource="{Binding TemplateOptions}" DisplayMemberPath="Name" SelectedValuePath="Name"
+                              SelectedValue="{Binding TemplateName}" Style="{StaticResource NodeParamComboBoxStyle}"
+                              DropDownOpened="TemplateCombo_DropDownOpened"
+                              Margin="0 0 0 4"/>
+                    <TextBlock Text="提示：模板不存在时，请先在工位【模板管理】界面创建模板" Foreground="#9E9E9E" FontSize="11" Margin="0 0 0 10" TextWrapping="Wrap"/>
 
                     <TextBlock Text="最小匹配分数 (Min Score):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding MinScore, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>

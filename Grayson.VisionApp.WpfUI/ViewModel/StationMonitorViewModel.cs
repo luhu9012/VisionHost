@@ -6,6 +6,7 @@ using Grayson.Vision.Contracts.Station.Interfaces;
 using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.Core.Client;
 using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
+using Grayson.Vision.HalconWrapper.Wpf.Controls;
 using Grayson.Vision.WpfUI.Service;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using System;
@@ -39,6 +40,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly Grayson.Vision.Contracts.Recipe.Services.IRecipeStorageService _recipeStorage;
         private IWorkerClient _activeClient;
         private readonly HalconImageRenderService _renderService;
+
+        /// <summary>
+        /// 本视图 Halcon 显示控件的预览适配器（IFlowPreviewContext）。
+        /// 生产执行链的节点叠加图形（模板匹配贴合轮廓/十字/文本）经它实时画到
+        /// 工位监视窗口——适配器只在代码后台创建（不进 XAML，MC1000 约束）。
+        /// </summary>
+        private HalconDisplayContextAdapter _previewAdapter;
 
         private int _totalCount;
         public int TotalCount { get => _totalCount; set { if (Set(ref _totalCount, value)) OnPropertyChanged(nameof(YieldText)); } }
@@ -155,6 +163,40 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// </summary>
         public ImageDisplayVm ImageDisplayVm { get; }
 
+        /// <summary>
+        /// 绑定本视图的 Halcon 显示控件为节点实时预览上下文。
+        /// 由 View 构造时传入（x:Name 引用）；之后在连接工位/触发自愈点
+        /// 反复调 EnsurePreviewAttached 把适配器武装到 Worker。
+        /// </summary>
+        public void AttachDisplayHost(HalconImageDisplayHost host)
+        {
+            if (host == null) return;
+            _previewAdapter = new HalconDisplayContextAdapter(host);
+            EnsurePreviewAttached();
+            AddLog("INFO", "视觉预览已绑定：模板匹配轮廓等节点叠加图形将实时显示在监视窗口。");
+        }
+
+        /// <summary>
+        /// 把预览适配器注入当前工位 Worker（幂等）。
+        /// 放在生产侧触发点反复调用：FlowEdit 打开属性面板调试节点时会把
+        /// 共享 Worker 的预览上下文换成编辑器自己的适配器——回到本页
+        /// 启动/单次触发前重新武装，保证叠加图形仍画到工位监视窗口。
+        /// </summary>
+        private void EnsurePreviewAttached()
+        {
+            try
+            {
+                if (_previewAdapter != null && ActiveClient != null)
+                {
+                    ActiveClient.SetPreviewContext(_previewAdapter);
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog("WARN", $"绑定视觉预览上下文失败: {ex.Message}");
+            }
+        }
+
         public ObservableCollection<string> AvailableStations { get; set; }
 
         private string _selectedStationCode;
@@ -202,18 +244,25 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// </summary>
         public string StateText => Grayson.Vision.WpfUI.Common.StationStateTexts.ToDisplayText(State);
 
-        public string StateBrushKey
+        /// <summary>
+        /// 状态指示灯/文字颜色（Brush 实例，避免字符串→Brush 转换失败导致恒为灰色）。
+        /// 从应用资源表按键取 Brush；缺失时回退 Gray。
+        /// </summary>
+        public System.Windows.Media.Brush StateBrushKey
         {
             get
             {
+                string key;
                 switch (State)
                 {
-                    case "Running": return "SuccessBrush";
-                    case "Faulted": return "DangerBrush";
-                    case "Idle": return "InfoBrush";
-                    case "Paused": return "WarningBrush";
-                    default: return "TextDisabledBrush";
+                    case "Running": key = "SuccessBrush"; break;
+                    case "Faulted": key = "DangerBrush"; break;
+                    case "Idle": key = "InfoBrush"; break;
+                    case "Paused": key = "WarningBrush"; break;
+                    default: key = "TextDisabledBrush"; break;
                 }
+                return System.Windows.Application.Current?.TryFindResource(key) as System.Windows.Media.Brush
+                       ?? System.Windows.Media.Brushes.Gray;
             }
         }
 
@@ -344,6 +393,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             ActiveClient = client;
             AttachClientEvents(client);
+            EnsurePreviewAttached();
 
             State = client.CurrentState.ToString();
 
@@ -396,7 +446,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private async Task StartAsync()
         {
             if (ActiveClient == null) return;
-            try { await ActiveClient.StartAsync(); }
+            try
+            {
+                // 自愈：若业务过程曾被 FlowEdit 调试卸载，先按配置重挂再启动
+                EnsureStationProcessAttached();
+                await ActiveClient.StartAsync();
+            }
             catch (Exception ex) { AddLog("ERROR", $"启动失败: {ex.Message}"); }
         }
 
@@ -426,6 +481,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (ActiveClient == null) return;
             try
             {
+                // 自愈：若业务过程曾被 FlowEdit 调试卸载，先按配置重挂再触发
+                EnsureStationProcessAttached();
+
                 // 优先走触发源的手动触发路径（经过丢帧策略+节拍统计）
                 var hostRuntime = App.StationHostRuntime as Grayson.Vision.Contracts.Station.Services.IStationHostRuntime;
                 if (hostRuntime != null && hostRuntime.GetTriggerSource(SelectedStationCode) != null)
@@ -439,6 +497,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
             }
             catch (Exception ex) { AddLog("ERROR", $"单次触发失败: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// 触发前自愈：若业务过程被 FlowEdit 编辑器 DetachProcess 卸载，
+        /// 按工位配置声明的过程键重新挂载（Core 侧 EnsureProcessAttached）。
+        /// 同时重新武装视觉预览上下文（FlowEdit 调试节点时会换成编辑器自己的适配器）。
+        /// </summary>
+        private void EnsureStationProcessAttached()
+        {
+            try
+            {
+                if (App.StationHostRuntime is Grayson.Vision.Core.Station.StationHostRuntime runtime)
+                {
+                    runtime.EnsureStationProcessAttached(SelectedStationCode);
+                }
+                EnsurePreviewAttached();
+            }
+            catch (Exception ex)
+            {
+                AddLog("WARN", $"自愈挂载业务过程失败: {ex.Message}");
+            }
         }
 
         /// <summary>

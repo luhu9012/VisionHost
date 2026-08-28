@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7A3E8C21-6B4D-4E9A-9F2C-D18E55B0A731}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Grayson.Vision.Plugins.Inference.OnnxRuntime</RootNamespace>
+    <AssemblyName>Plugins.Inference.OnnxRuntime</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.ML.OnnxRuntime">
+      <HintPath>..\packages\Microsoft.ML.OnnxRuntime.1.17.3\lib\netstandard2.0\Microsoft.ML.OnnxRuntime.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <!-- OnnxRuntime 托管库(netstandard2.0)依赖 Span/Memory，netfx 上由 System.Memory 提供。
+         注意：不要在 Include 里写死版本号，以 HintPath 的 DLL 实际版本为准，
+         否则与 OnnxRuntime 期望的 4.0.1.2 冲突 (MSB3277)。 -->
+    <Reference Include="System.Memory">
+      <HintPath>..\packages\System.Memory.4.5.5\lib\net461\System.Memory.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.4.5.3\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="OnnxRuntimeInferenceProvider.cs" />
+    <Compile Include="PostprocessHelper.cs" />
+    <Compile Include="PreprocessHelper.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
+      <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
+      <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="AI推理接入_说明.md" />
+    <None Include="packages.config" />
+    <None Include="README.md" />
+  </ItemGroup>
+  <!--
+    原生库部署：onnxruntime.dll 是 C++ 原生库（win-x64），
+    托管绑定库通过 P/Invoke 加载它，默认探测"进程运行目录"。
+    这里用 Content 直接拷到输出目录，宿主(WpfUI/FlowEdit)通过 ProjectReference
+    引用本插件时，Content 会跟随拷贝到宿主 bin，保证运行时能找到。
+  -->
+  <ItemGroup>
+    <Content Include="..\packages\Microsoft.ML.OnnxRuntime.1.17.3\runtimes\win-x64\native\onnxruntime.dll">
+      <Link>onnxruntime.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
+    <Content Include="..\packages\Microsoft.ML.OnnxRuntime.1.17.3\runtimes\win-x64\native\onnxruntime_providers_shared.dll">
+      <Link>onnxruntime_providers_shared.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

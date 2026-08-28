@@ -172,6 +172,10 @@
       <Project>{a909af73-e5d5-4cbc-8a86-7a7ed579fb49}</Project>
       <Name>Grayson.Vision.Repository</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Plugins.Inference.OnnxRuntime\Plugins.Inference.OnnxRuntime.csproj">
+      <Project>{7a3e8c21-6b4d-4e9a-9f2c-d18e55b0a731}</Project>
+      <Name>Plugins.Inference.OnnxRuntime</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

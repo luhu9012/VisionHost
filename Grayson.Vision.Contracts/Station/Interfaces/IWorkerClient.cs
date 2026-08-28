@@ -29,6 +29,19 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         Task PauseAsync();
         Task ResumeAsync();
         Task TriggerOnceAsync(string batchId = null);
+
+        /// <summary>
+        /// 完整执行视觉链一次（从链头开始，节点间上下文关联）。
+        /// 编辑器「运行」按钮 / 业务过程内部视觉段使用；不进入业务过程分流，绝不触发运动时序。
+        /// </summary>
+        Task RunContinuousAsync(string batchId = null);
+
+        /// <summary>
+        /// 视觉链单步：从链头开始、一次只执行 1 个节点（索引跨触发保留，上下文关联）。
+        /// 编辑器「单步」按钮使用；不进入业务过程分流，绝不触发运动时序。
+        /// </summary>
+        Task StepChainAsync(string batchId = null);
+
         Task StepNodeAsync(FlowNodeBase node);
 
         /// <summary>
@@ -58,6 +71,19 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         /// 工单追踪器；可用于 UI 读取最近工单快照。
         /// </summary>
         IWorkOrderTracker WorkOrderTracker { get; }
+
+        /// <summary>
+        /// 当前工位绑定的业务过程键；未绑定返回 null/空字符串。
+        /// UI 可用它提示"本工位由业务过程驱动，单次执行=完整业务周期"。
+        /// </summary>
+        string BoundProcessKey { get; }
+
+        /// <summary>
+        /// 卸载工位上已挂载的业务过程（编辑器调试模式专用）。
+        /// FlowEdit 绑定工位后调用，确保编辑器内 F5/F10 只跑视觉链、
+        /// 不会触发运动时序；WpfUI 工位管理保存配置时会重新挂载。
+        /// </summary>
+        void DetachProcess();
 
         // 状态与渲染事件
         event EventHandler<StationState> OnStateChanged;

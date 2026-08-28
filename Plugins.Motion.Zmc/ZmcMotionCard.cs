@@ -311,10 +311,15 @@ namespace Plugins.Motion.Zmc
             int ret = zmcaux.ZAux_Direct_GetAxisStatus(CardHandle, axis, ref status);
             if (ret != 0) return Result<AxisStatusFlags>.Fail($"读取轴 [{axis}] 状态失败: {ret}");
 
+            // ZMC AXIS_STATUS 字位定义（与 Contracts.AxisStatusFlags 枚举对齐）：
+            // bit0=正限位, bit1=负限位, bit2=伺服报警, bit3=原点开关。
+            // 注意：旧实现整体错位一位（bit1→FwdLimit/bit2→RevLimit/bit3→Alarm），
+            // 会导致限位/报警误判（如原点信号被当成报警导致业务过程中止）。
             AxisStatusFlags flags = AxisStatusFlags.Normal;
-            if ((status & (1 << 1)) != 0) flags |= AxisStatusFlags.FwdLimit;
-            if ((status & (1 << 2)) != 0) flags |= AxisStatusFlags.RevLimit;
-            if ((status & (1 << 3)) != 0) flags |= AxisStatusFlags.Alarm;
+            if ((status & (1 << 0)) != 0) flags |= AxisStatusFlags.FwdLimit;
+            if ((status & (1 << 1)) != 0) flags |= AxisStatusFlags.RevLimit;
+            if ((status & (1 << 2)) != 0) flags |= AxisStatusFlags.Alarm;
+            if ((status & (1 << 3)) != 0) flags |= AxisStatusFlags.HomeSwitch;
 
             return Result<AxisStatusFlags>.Ok(flags);
         }
@@ -367,7 +372,8 @@ namespace Plugins.Motion.Zmc
         /// <summary>控制单轴执行相对位置运动</summary>
         public Result MoveRelative(int axis, float distance, float speed)
         {
-            zmcaux.ZAux_Direct_SetSpeed(CardHandle, axis, speed);
+            float safeSpeed = ResolveSafeSpeed(axis, speed);
+            zmcaux.ZAux_Direct_SetSpeed(CardHandle, axis, safeSpeed);
             int ret = zmcaux.ZAux_Direct_Single_Move(CardHandle, axis, distance);
             return ret == 0 ? Result.Ok() : Result.Fail($"轴 [{axis}] 相对运动失败: {ret}");
         }
@@ -375,9 +381,28 @@ namespace Plugins.Motion.Zmc
         /// <summary>控制单轴执行绝对位置运动</summary>
         public Result MoveAbsolute(int axis, float position, float speed)
         {
-            zmcaux.ZAux_Direct_SetSpeed(CardHandle, axis, speed);
+            float safeSpeed = ResolveSafeSpeed(axis, speed);
+            zmcaux.ZAux_Direct_SetSpeed(CardHandle, axis, safeSpeed);
             int ret = zmcaux.ZAux_Direct_Single_MoveAbs(CardHandle, axis, position);
             return ret == 0 ? Result.Ok() : Result.Fail($"轴 [{axis}] 绝对运动失败: {ret}");
+        }
+
+        /// <summary>
+        /// 解析安全的运动速度：speed &lt;= 0 时读取轴当前设定速度（ZAux_Direct_GetSpeed）沿用，
+        /// 仍无效则兜底 50。
+        /// 严禁 SetSpeed(0) 后下发 MoveAbs：ZMC 控制器速度 0 时指令被缓冲但轴不运动，
+        /// IDLE 恒为 0，上位机"等位"逻辑将一直轮询到超时（现象：点击启动无响应）。
+        /// 速度单位 = 轴 UNITS（通常 mm/s 或 deg/s）。
+        /// </summary>
+        private float ResolveSafeSpeed(int axis, float speed)
+        {
+            if (speed > 0) return speed;
+
+            float cur = 0;
+            if (zmcaux.ZAux_Direct_GetSpeed(CardHandle, axis, ref cur) == 0 && cur > 0)
+                return cur;
+
+            return 50f; // 兜底：控制器从未设置过该轴速度时给一个合理默认值
         }
 
         /// <summary>触发指定轴的原点回归 (Datum)</summary>

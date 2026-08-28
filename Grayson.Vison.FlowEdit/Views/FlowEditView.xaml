@@ -312,28 +312,38 @@
             </DockPanel>
         </Border>
 
-        <!-- 面包屑导航 -->
+        <!-- 面包屑导航 + 业务过程绑定提示 -->
         <Border Grid.Row="1" Background="#252526" BorderBrush="#3F3F46" BorderThickness="0 1 0 1" Padding="12 0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="当前流程层级: " Foreground="#888" VerticalAlignment="Center"/>
-                <ItemsControl ItemsSource="{Binding Breadcrumbs}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <Button Content="{Binding ProcessName}" 
-                                        Command="{Binding DataContext.NavigateToProcessCmd, RelativeSource={RelativeSource AncestorType=UserControl}}" 
-                                        CommandParameter="{Binding}" Foreground="#58ACFA" Background="Transparent" BorderThickness="0" Cursor="Hand"/>
-                                <TextBlock Text=" &gt; " Foreground="#666" Margin="4 0" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
+            <DockPanel>
+                <!-- 左侧：面包屑 -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
+                    <TextBlock Text="当前流程层级: " Foreground="#888" VerticalAlignment="Center"/>
+                    <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="{Binding ProcessName}" 
+                                            Command="{Binding DataContext.NavigateToProcessCmd, RelativeSource={RelativeSource AncestorType=UserControl}}" 
+                                            CommandParameter="{Binding}" Foreground="#58ACFA" Background="Transparent" BorderThickness="0" Cursor="Hand"/>
+                                    <TextBlock Text=" &gt; " Foreground="#666" Margin="4 0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 右侧：业务过程绑定提示（工位生产模式绑定了业务过程时显示） -->
+                <Border DockPanel.Dock="Right" Background="#3A2B14" BorderBrush="#8A6D1F" BorderThickness="1"
+                        CornerRadius="3" Padding="8 2" Margin="8 0 0 0" VerticalAlignment="Center"
+                        Visibility="{Binding BoundProcessKey, Converter={StaticResource NullToCollapsed}}">
+                    <TextBlock Text="{Binding ProcessBannerText}" Foreground="#FFD980" FontSize="11" VerticalAlignment="Center"/>
+                </Border>
+            </DockPanel>
         </Border>
 
         <!-- 主内容区 -->

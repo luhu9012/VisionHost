@@ -91,6 +91,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 if (Set(ref _selectedNode, value))
                 {
                     DeleteNodeCmd?.RaiseCanExecuteChanged();
+                    RefreshSelectedNodeOutputs();
                 }
             }
         }
@@ -151,6 +152,14 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")}  | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
 
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
+        /// <summary>WatchData 的 Key 索引（Key = "节点名.端口名"），增量更新避免列表重建闪烁</summary>
+        private readonly Dictionary<string, SharedDataItem> _watchDataIndex = new Dictionary<string, SharedDataItem>();
+
+        /// <summary>节点执行历史（最新在前，最多保留 300 条）</summary>
+        public ObservableCollection<NodeExecRecord> ExecutionHistory { get; } = new ObservableCollection<NodeExecRecord>();
+
+        /// <summary>当前选中节点的输出端口值明细（画布点选节点 → 右侧面板实时显示）</summary>
+        public ObservableCollection<SharedDataItem> SelectedNodeOutputs { get; } = new ObservableCollection<SharedDataItem>();
         public ObservableCollection<string> ExecutionLogs { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<PreflightIssueItem> PreflightIssues { get; } = new ObservableCollection<PreflightIssueItem>();
         public ObservableCollection<FlowProcessModel> Breadcrumbs { get; set; } = new ObservableCollection<FlowProcessModel>();
@@ -172,6 +181,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 if (Set(ref _selectedStationId, value))
                 {
+                    RefreshBoundProcessKey();
                     OnPropertyChanged(nameof(CurrentStationDisplayName));
                     OnPropertyChanged(nameof(CurrentRecipeInfo));
 
@@ -181,6 +191,35 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     }
                 }
             }
+        }
+
+        private string _boundProcessKey;
+        /// <summary>
+        /// 当前编辑目标工位在生产模式下绑定的业务过程键（来自工位配置，非当前 Worker）。
+        /// 编辑器始终以纯视觉链模式运行（过程已卸载），此属性仅用于顶部 banner 提示。
+        /// </summary>
+        public string BoundProcessKey
+        {
+            get => _boundProcessKey;
+            private set
+            {
+                if (Set(ref _boundProcessKey, value))
+                {
+                    OnPropertyChanged(nameof(ProcessBannerText));
+                }
+            }
+        }
+
+        /// <summary>业务过程绑定提示文本（未绑定业务过程时为 null，banner 折叠）</summary>
+        public string ProcessBannerText => string.IsNullOrWhiteSpace(BoundProcessKey)
+            ? null
+            : $"⚠ 生产模式绑定业务过程 [{BoundProcessKey}] — 本编辑器已卸载该过程，仅调试视觉链（运动/IO 时序由外部业务代码控制）";
+
+        /// <summary>从工位配置刷新 Banner（工位配置声明了 ProcessKey 才显示）</summary>
+        private void RefreshBoundProcessKey()
+        {
+            var config = ResolveStationConfig(SelectedStationId);
+            BoundProcessKey = string.IsNullOrWhiteSpace(config?.ProcessKey) ? null : config.ProcessKey;
         }
 
         public string CurrentStationDisplayName
@@ -307,7 +346,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             RunContinuousCmd = new RelayCommand(async () => await StartWorkerAsync());
             StepRunCmd = new RelayCommand(async () => await TriggerWorkerOnceAsync());
             StepRunNodeCmd = new RelayCommand(async () => await StepRunNodeAsync());
-            PauseRunCmd = new RelayCommand(async () => await StopWorkerAsync());
+            PauseRunCmd = new RelayCommand(async () => await PauseWorkerAsync());
             StopRunCmd = new RelayCommand(async () => await StopWorkerAsync());
             ResetCmd = new RelayCommand(async () => await ResetWorkerAsync());
 
@@ -702,6 +741,11 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 await _stationHostRuntime.InitializeAsync();
                 _workerClient = await _stationHostRuntime.CreateStationWithRecipeAsync(runtimeStationKey, CurrentRecipe, deviceMappings);
 
+                // 🌟 编辑器固定为纯视觉链调试模式：无论工位配置是否声明了业务过程，
+                //    均显式卸载——避免「运行/单步」误触发完整业务周期（含运动/IO 时序）。
+                //    生产模式下的完整业务周期仍由工位 UI 侧创建的 Worker 承载。
+                _workerClient.DetachProcess();
+
                 _workerClient.OnFrameRendered += WorkerClient_OnFrameRendered;
                 _workerClient.OnNodeExecuting += Worker_OnNodeExecuting;
                 _workerClient.OnNodeExecuted += Worker_OnNodeExecuted;
@@ -761,6 +805,10 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 e.Node.IsRunning = false;
                 e.Node.HasError = false;
 
+                // 🌟 数据监控：刷新全节点端口值汇总 + 记录执行历史
+                RefreshWatchData();
+                RecordNodeExecution(e.Node, success: true);
+
                 OnNodeExecuted?.Invoke(e.Node);
             });
         }
@@ -774,6 +822,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 e.Node.IsRunning = false;
                 e.Node.HasError = true;
+
+                // 🌟 数据监控：记录失败历史（保留出错摘要）
+                RecordNodeExecution(e.Node, success: false, e.Exception?.Message);
 
                 OnExecutionError?.Invoke(e.Node, e.Exception);
             });
@@ -839,6 +890,143 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 }
             });
         }
+        #region 数据监控（WatchData / 执行历史 / 节点输出）
+
+        /// <summary>
+        /// 刷新全节点输出端口值汇总（WatchData）。增量更新：
+        /// 端口值变化的项原地刷新，新增项添加，节点删除/端口清空的项移除。
+        /// 仅在 UI 线程调用（由 Worker_OnNodeExecuted 的 Dispatcher 回调进入）。
+        /// </summary>
+        private void RefreshWatchData()
+        {
+            if (CurrentProcess?.Nodes == null) return;
+
+            var liveKeys = new HashSet<string>();
+            foreach (var node in CurrentProcess.Nodes)
+            {
+                if (node?.OutputPorts == null) continue;
+                foreach (var port in node.OutputPorts)
+                {
+                    if (port?.DataValue == null) continue;
+                    string key = node.DisplayName + "." + port.PortName;
+                    liveKeys.Add(key);
+
+                    var fmt = FormatPortValue(port.DataValue);
+                    if (_watchDataIndex.TryGetValue(key, out var item))
+                    {
+                        if (!Equals(item.Value, fmt.Text))
+                        {
+                            item.RawType = fmt.Type;
+                            item.Value = fmt.Text;
+                        }
+                    }
+                    else
+                    {
+                        var newItem = new SharedDataItem { Key = key, RawType = fmt.Type, Value = fmt.Text };
+                        _watchDataIndex[key] = newItem;
+                        WatchData.Add(newItem);
+                    }
+                }
+            }
+
+            // 移除已不在画布/已无输出值的监控项
+            var stale = WatchData.Where(w => !liveKeys.Contains(w.Key)).ToList();
+            foreach (var s in stale)
+            {
+                _watchDataIndex.Remove(s.Key);
+                WatchData.Remove(s);
+            }
+        }
+
+        /// <summary>刷新当前选中节点的输出端口值明细（点选节点时调用）</summary>
+        private void RefreshSelectedNodeOutputs()
+        {
+            SelectedNodeOutputs.Clear();
+            if (SelectedNode?.OutputPorts == null) return;
+            foreach (var port in SelectedNode.OutputPorts)
+            {
+                if (port.DataValue == null) continue;
+                var fmt = FormatPortValue(port.DataValue);
+                SelectedNodeOutputs.Add(new SharedDataItem
+                {
+                    Key = port.PortName,
+                    RawType = fmt.Type,
+                    Value = fmt.Text
+                });
+            }
+        }
+
+        /// <summary>追加一条节点执行历史（最新在前，上限 300 条）</summary>
+        private void RecordNodeExecution(FlowNodeBase node, bool success, string errorMsg = null)
+        {
+            string summary;
+            if (success)
+            {
+                var outputs = node.OutputPorts?.Where(p => p.DataValue != null)
+                    .Select(p => $"{p.PortName}={FormatPortValue(p.DataValue).Text}").ToList();
+                summary = outputs != null && outputs.Count > 0
+                    ? string.Join(" | ", outputs)
+                    : "执行成功（无输出值）";
+            }
+            else
+            {
+                summary = "执行失败" + (string.IsNullOrEmpty(errorMsg) ? "" : "： " + errorMsg);
+            }
+            if (summary.Length > 400) summary = summary.Substring(0, 400) + " …";
+
+            ExecutionHistory.Insert(0, new NodeExecRecord
+            {
+                Time = DateTime.Now.ToString("HH:mm:ss.fff"),
+                NodeName = node.DisplayName,
+                Success = success,
+                Summary = summary
+            });
+            while (ExecutionHistory.Count > 300)
+            {
+                ExecutionHistory.RemoveAt(ExecutionHistory.Count - 1);
+            }
+        }
+
+        /// <summary>端口值 → (显示文本, 原始类型名)。图像对象给出友好摘要，避免 ToString 无意义输出。</summary>
+        private (string Text, string Type) FormatPortValue(object val)
+        {
+            if (val == null) return ("null", "null");
+            string typeName = val.GetType().Name;
+
+            // 图像类对象（HObject/HImage/IRenderImage 等）：不给原始 ToString，尝试取尺寸
+            if (typeName.IndexOf("HObject", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("HImage", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("RenderImage", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("Image", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                try
+                {
+                    var mi = val.GetType().GetMethod("GetImageSize");
+                    if (mi != null)
+                    {
+                        var pars = new object[] { 0, 0 };
+                        mi.Invoke(val, pars);
+                        return ($"(图像 {pars[1]}x{pars[0]})", typeName);
+                    }
+                }
+                catch { }
+                return ("(图像对象)", typeName);
+            }
+
+            switch (val)
+            {
+                case string s: return (s, "string");
+                case double d: return (d.ToString("G4"), "double");
+                case float f: return (f.ToString("G4"), "float");
+                case int i: return (i.ToString(), "int");
+                case long l: return (l.ToString(), "long");
+                case bool b: return (b ? "true" : "false", "bool");
+                default: return (val.ToString(), typeName);
+            }
+        }
+
+        #endregion
+
         /// <summary>
         /// 准备进入新一轮执行：重置节点 UI 状态、清空临时观察数据
         /// </summary>
@@ -851,7 +1039,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 await ResetWorkerAsync();
             }
 
-           
+
         }
 
 
@@ -874,6 +1062,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 IsDirty = false; // 同步完成后重置 Dirty 状态
             }
         }
+        // 🌟 【运行】(F5)：从链头完整执行整条视觉链一次（节点间上下文关联）
         private async Task StartWorkerAsync()
         {
             if (_workerClient == null) return;
@@ -883,14 +1072,17 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 //await PrepareForNewExecutionAsync();
                 await EnsureWorkerSyncedAsync(); // 🌟 运行前自动检查并重新构建
                 await _workerClient.StartAsync();
-                await _workerClient.TriggerOnceAsync();
+                await _workerClient.RunContinuousAsync();
             }
             catch (Exception ex)
             {
                 LogBus.Error("FlowVm", $"启动失败: {ex.Message}");
             }
         }
-        // 🌟 单步运行（Step Run）命令：在当前流程上触发一次执行
+        // 🌟 【单步】(F10)：视觉链步进——从链头开始、一次只执行 1 个节点，
+        //    与前后节点输入输出上下文关联（内部即调度器 TriggerOnceAsync 单步）；
+        //    走 StepChainAsync 保证绝不进入业务过程分流（即使 StartAsync 自愈重挂了业务过程，
+        //    编辑器单步也永远不会触发运动/IO 时序）。
         private async Task TriggerWorkerOnceAsync()
         {
             if (_workerClient == null) return;
@@ -899,7 +1091,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 //await PrepareForNewExecutionAsync();
                 await EnsureWorkerSyncedAsync(); // 🌟 触发前自动检查并重新构建
-                await _workerClient.TriggerOnceAsync();
+                await _workerClient.StepChainAsync();
             }
             catch (Exception ex)
             {
@@ -1004,6 +1196,26 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
         #endregion
 
+        /// <summary>
+        /// 暂停执行：编辑器为纯视觉链模式（过程已卸载），暂停走调度器挂起——
+        /// 连续运行循环停止、新触发被忽略；单步节点预览仍可手动触发。
+        /// 恢复：点「运行」按钮（StartAsync 会解除暂停并重启循环）。
+        /// </summary>
+        private async Task PauseWorkerAsync()
+        {
+            if (_workerClient == null) return;
+
+            try
+            {
+                await _workerClient.PauseAsync();
+                LogBus.Info("FlowVm", "已暂停执行（连续循环停止，点「运行」恢复）。");
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("FlowVm", $"暂停失败: {ex.Message}");
+            }
+        }
+
         private async Task StopWorkerAsync()
         {
             if (_workerClient != null) await _workerClient.StopAsync();
@@ -1054,6 +1266,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 // 3) 可选：清空运行日志或监控数据
                 ExecutionLogs.Clear();
                 WatchData.Clear();
+                _watchDataIndex.Clear();
+                ExecutionHistory.Clear();
+                SelectedNodeOutputs.Clear();
 
                 LogBus.Info("FlowVm", "流程已成功复位至就绪状态。");
             }
@@ -1540,6 +1755,28 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             public string NodeName { get; set; }
             public string Message { get; set; }
             public string Severity { get; set; }
+        }
+
+        /// <summary>
+        /// 节点执行历史记录（ExecutionHistory 数据项，最新在前）。
+        /// 由 Worker_OnNodeExecuted / Worker_OnExecutionError 经 RecordNodeExecution 追加。
+        /// </summary>
+        public sealed class NodeExecRecord
+        {
+            /// <summary>执行时刻（HH:mm:ss.fff）</summary>
+            public string Time { get; set; }
+
+            /// <summary>节点显示名</summary>
+            public string NodeName { get; set; }
+
+            /// <summary>是否执行成功</summary>
+            public bool Success { get; set; }
+
+            /// <summary>结果摘要（成功 = 输出端口值列表；失败 = 异常消息，截断至 400 字符）</summary>
+            public string Summary { get; set; }
+
+            /// <summary>UI 友好状态文本（成功 ✓ / 失败 ✗），供列表直接绑定显示</summary>
+            public string StatusText => Success ? "✓ 成功" : "✗ 失败";
         }
 
         #endregion

@@ -89,6 +89,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
+        private string _processKey;
+        /// <summary>
+        /// 工位绑定的业务过程键（空 = 不挂过程，纯视觉/手动调试模式）。
+        /// 绑定后工位所有触发入口（启动/单次/PLC 信号）执行完整业务周期（运动+视觉）。
+        /// </summary>
+        public string ProcessKey
+        {
+            get => _processKey;
+            set => Set(ref _processKey, value);
+        }
+
+        /// <summary>
+        /// 业务过程参数 JSON（轴号/位置/IO/节拍，按需编辑；
+        /// 序列化到 StationConfigModel.ProcessConfigJson 持久化）。
+        /// </summary>
+        public string ProcessConfigJson { get; set; }
+
         public ObservableCollection<HardwareDeviceModel> HardwareDevices { get; set; }
         public ObservableCollection<RecipeDeviceMappingModel> RecipeDeviceMappings { get; set; }
 
@@ -263,6 +280,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // initialize per-tab view models
             HardwareAllocationVm = new HardwareAllocationViewModel(this);
             RecipeMappingVm = new RecipeMappingViewModel(this);
+            TemplateManagerVm = new TemplateManagerViewModel();
             // 初始化快捷跳转命令
             OpenCalibrationCenterCommand = new RelayCommand(
                 _ => OnOpenCalibrationCenter(),
@@ -291,6 +309,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public HardwareAllocationViewModel HardwareAllocationVm { get; }
         public RecipeMappingViewModel RecipeMappingVm { get; }
+        /// <summary>模板管理 Tab 的 VM（全局模板库，与具体工位无关）</summary>
+        public TemplateManagerViewModel TemplateManagerVm { get; }
  
 
         #region 属性
@@ -344,6 +364,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public ObservableCollection<HardwareDeviceModel> GlobalHardwarePool { get; set; }
         public ObservableCollection<RecipeModel> AvailableRecipes { get; set; }
+
+        /// <summary>
+        /// 可选业务过程键（Core 注册表数据源，工位管理"业务过程"下拉）。
+        /// </summary>
+        public ObservableCollection<string> AvailableProcessKeys { get; set; } = new ObservableCollection<string>();
 
         #endregion
 
@@ -529,7 +554,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         boundRecipe,
                         stationConfig.DeviceMappings,
                         WorkMode.Production,
-                        stationConfig.TriggerSource);
+                        stationConfig.TriggerSource,
+                        stationConfig.ProcessKey,
+                        stationConfig.ProcessConfigJson);
                 }
 
                 if (client == null)
@@ -596,6 +623,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             // 保存触发源配置
             config.TriggerSource = station.ToTriggerSourceConfig();
+
+            // 保存业务过程绑定（机器结构级时序，不随产品变化）
+            config.ProcessKey = string.IsNullOrWhiteSpace(station.ProcessKey) ? null : station.ProcessKey.Trim();
+            config.ProcessConfigJson = station.ProcessConfigJson;
 
             return config;
         }
@@ -737,7 +768,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     station.StationCode,
                     boundRecipe,
                     stationConfig.DeviceMappings,
-                    WorkMode.Production);
+                    WorkMode.Production,
+                    null,
+                    stationConfig.ProcessKey,
+                    stationConfig.ProcessConfigJson);
             }
             catch (Exception ex)
             {
@@ -878,6 +912,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AvailableRecipes.Add(recipe);
             }
 
+            // 业务过程注册表（Core 侧工厂）：下拉数据源，空=未注册任何过程
+            AvailableProcessKeys.Clear();
+            try
+            {
+                var runtime = App.StationHostRuntime as IStationHostRuntime
+                              ?? StationHostRuntime.GlobalInstance;
+                var keys = runtime?.GetSupportedProcessKeys();
+                if (keys != null)
+                {
+                    foreach (var key in keys) AvailableProcessKeys.Add(key);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[StationManage] 加载业务过程列表失败: {ex.Message}");
+            }
+
             ProductionLines.Clear();
             foreach (var lineConfig in _configService.LoadAllLines())
             {
@@ -951,6 +1002,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 // 从持久化数据恢复触发源配置
                 station.FromTriggerSourceConfig(stationConfig.TriggerSource);
+
+                // 从持久化数据恢复业务过程绑定
+                station.ProcessKey = stationConfig.ProcessKey;
+                station.ProcessConfigJson = stationConfig.ProcessConfigJson;
 
                 line.Stations.Add(station);
             }

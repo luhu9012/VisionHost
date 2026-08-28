@@ -30,25 +30,46 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <!--
+    ============================================================
+    Epson RC+ SPEL .NET SDK 条件编译：
+    - 安装 Epson RC+ 8.0 后，将安装目录 (如 C:\EpsonRC80\bin) 下的
+      spelnet64.dll 复制到解决方案根 DLLLib\ 目录，本项目自动启用
+      真实 SDK 适配层（SpeLNetAdapter.cs，EPSON_SPEL 宏）；
+    - 若 DLLLib\spelnet64.dll 不存在，则退回“离线仿真机械手”，
+      保证工程随时可编译、业务流可先行联调。
+    ============================================================
+  -->
+  <PropertyGroup>
+    <EpsonSdkDllPath>$(MSBuildThisFileDirectory)..\DLLLib\spelnet64.dll</EpsonSdkDllPath>
+    <DefineConstants Condition="Exists('$(EpsonSdkDllPath)')">$(DefineConstants);EPSON_SPEL</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System"/>
-    
-    <Reference Include="System.Core"/>
-    <Reference Include="System.Xml.Linq"/>
-    <Reference Include="System.Data.DataSetExtensions"/>
-    
-    
-    <Reference Include="Microsoft.CSharp"/>
-    
-    <Reference Include="System.Data"/>
-    
-    <Reference Include="System.Net.Http"/>
-    
-    <Reference Include="System.Xml"/>
+    <Reference Include="spelnet64" Condition="Exists('$(EpsonSdkDllPath)')">
+      <HintPath>$(EpsonSdkDllPath)</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Class1.cs" />
+    <Compile Include="EpsonPlugin.cs" />
+    <Compile Include="EpsonRobot.cs" />
+    <Compile Include="EpsonSdkAdapters.cs" />
+    <Compile Include="SpeLNetAdapter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
+      <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
+      <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
- </Project>
+</Project>

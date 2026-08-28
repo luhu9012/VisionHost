@@ -114,15 +114,23 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
                 }
                 else
                 {
-                    // 三通道交织（BGR24 / RGB24）
+                    // 三通道交织（BGR24 / RGB24）：每像素 3 字节
+                    long expected = (long)frame.Width * frame.Height * 3;
+                    if (frame.Buffer.Length < expected)
+                        return Result<object>.Fail($"帧缓冲长度不足：{frame.Buffer.Length} < {expected}（{frame.Width}x{frame.Height} BGR24/RGB24）");
+
                     string colorFormat = fmt.Contains("BGR") ? "bgr" : "rgb";
                     img = new HImage();
+                    // 注意：halcondotnet 此重载为 12 参数扩展版，末四位含义为
+                    // startRow / startColumn / bitsPerChannel / bitShift，
+                    // 其中 startRow/startColumn 必须 >= 0，bitsPerChannel=-1 表示全部位使用，bitShift=0。
                     img.GenImageInterleaved(
                         ptr, colorFormat,
                         frame.Width, frame.Height,
                         -1, "byte",
                         frame.Width, frame.Height,
-                        -1, 0, 0, -1);
+                        0, 0,
+                        -1, 0);
                 }
 
                 return Result<object>.Ok(img);
@@ -135,6 +143,30 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
             finally
             {
                 handle.Free();
+            }
+        }
+
+        /// <summary>
+        /// 获取图像基本信息（宽×高×通道数），供节点日志/诊断输出。
+        /// 仅返回字符串，HObject 类型不穿透到 Nodes 层（与 LoadImage 同模式）。
+        /// 典型用途：匹配节点 0 分排查时，一眼看出输入是否多通道彩色（匹配算子要求单通道）。
+        /// </summary>
+        public static Result<string> GetImageInfo(object nativeImage)
+        {
+            var hImg = nativeImage as HObject;
+            if (hImg == null || !hImg.IsInitialized())
+                return Result<string>.Fail("图像句柄无效");
+            try
+            {
+                HOperatorSet.CountChannels(hImg, out HTuple channels);
+                HOperatorSet.GetImageSize(hImg, out HTuple width, out HTuple height);
+                string channelDesc = channels.I > 1 ? $"{channels.I} 通道彩色" : "单通道灰度";
+                return Result<string>.Ok($"{width.I} x {height.I} px, {channelDesc}");
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error(nameof(ImageBasicTool), "获取图像信息失败", ex);
+                return Result<string>.Fail("图像信息获取异常", -1, ex);
             }
         }
 

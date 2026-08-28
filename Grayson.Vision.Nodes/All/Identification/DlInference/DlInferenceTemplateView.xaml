@@ -18,15 +18,32 @@
                         <local:DlTaskType>ObjectDetection</local:DlTaskType>
                         <local:DlTaskType>Classification</local:DlTaskType>
                         <local:DlTaskType>Segmentation</local:DlTaskType>
+                        <local:DlTaskType>AnomalyDetection</local:DlTaskType>
                     </ComboBox>
 
                     <TextBlock Text="模型路径 (Model Path):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding ModelPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
-                    <TextBlock Text="置信度阈值 (Confidence):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBlock Text="类别标签 (逗号分隔,与训练顺序一致):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding LabelsText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="置信度阈值 (异常检测=NG判定线,需OK样本标定):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding ConfidenceThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
-                    <CheckBox Content="开启 GPU 加速 (TensorRT/CUDA)" IsChecked="{Binding UseGpu}" Foreground="#CCCCCC" Margin="0 5 0 0"/>
+                    <TextBlock Text="异常热区阈值 (仅异常检测:热力图二值化):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding AnomalyRegionThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="NMS IoU 阈值 (仅检测):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding IouThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="检测输出布局 (auto/yolov5/yolov8):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <ComboBox Text="{Binding LayoutHint}" Style="{StaticResource NodeParamComboBoxStyle}" Margin="0 0 0 10" IsEditable="True">
+                        <ComboBoxItem Content="auto"/>
+                        <ComboBoxItem Content="yolov5"/>
+                        <ComboBoxItem Content="yolov8"/>
+                    </ComboBox>
+
+                    <CheckBox Content="开启 GPU 加速 (当前CPU插件忽略)" IsChecked="{Binding UseGpu}" Foreground="#CCCCCC" Margin="0 5 0 0"/>
                 </StackPanel>
             </DataTemplate>
         </ResourceDictionary>

@@ -69,6 +69,7 @@
     <Compile Include="Match2D\MatchTool.cs" />
     <Compile Include="Match2D\NccMatchTool.cs" />
     <Compile Include="Match2D\TemplateMatchTool.cs" />
+    <Compile Include="Templates\TemplateManager.cs" />
     <Compile Include="Measure2D\EdgeMeasureTool.cs" />
     <Compile Include="NodePreviewHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

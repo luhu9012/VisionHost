@@ -65,6 +65,10 @@ namespace Grayson.Vision.Core.Scheduling
                 return Task.CompletedTask;
             }
 
+            // 🌟 启动 = 明确的"重新开始"动作，同时解除暂停状态
+            //    （编辑器场景：暂停后点「运行」能直接恢复，无需单独点恢复按钮）
+            _isPaused = false;
+
             if (Mode == WorkMode.Debug)
             {
                 _continuousLoopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -109,7 +113,31 @@ namespace Grayson.Vision.Core.Scheduling
             return Task.CompletedTask;
         }
 
-        public async Task TriggerOnceAsync(string batchId = null)
+        /// <summary>
+        /// 【单步】触发：在任务流形成的执行链中，从头部节点开始，每次触发只执行 1 个节点，
+        /// 与前后节点的输入输出上下文关联（索引跨触发保留），走到链尾后自动回到链头。
+        /// 对应编辑器「单步」按钮 / 纯视觉链工位的手动单次触发。
+        /// </summary>
+        public Task TriggerOnceAsync(string batchId = null)
+        {
+            return ExecuteScopedAsync(batchId, "【单步】", () => _executor.StepAsync());
+        }
+
+        /// <summary>
+        /// 【运行】触发：从链头完整执行整条执行链一次（ResetIndex 从 0 开始，节点间上下文关联）。
+        /// 对应编辑器「运行」按钮、业务过程内部的视觉段（采图→匹配→标定需一次拿全结果）、
+        /// 以及生产触发源的单周期节拍。
+        /// </summary>
+        public Task RunContinuousAsync(string batchId = null)
+        {
+            return ExecuteScopedAsync(batchId, "【运行】", () => _executor.RunContinuousAsync());
+        }
+
+        /// <summary>
+        /// 单次/连续执行的公共脚手架：工单追踪 + 节点执行上下文注入 + 异常/完成统计。
+        /// <paramref name="runCore"/> 只允许调用 FlowExecutor 的执行原语（StepAsync / RunContinuousAsync）。
+        /// </summary>
+        private async Task ExecuteScopedAsync(string batchId, string modeLabel, Func<Task> runCore)
         {
             if (!await AcquireExecutionLockAsync().ConfigureAwait(false)) return;
 
@@ -122,13 +150,15 @@ namespace Grayson.Vision.Core.Scheduling
                 _workOrderTracker?.Track(workOrder);
                 workOrderContext = new WorkOrderExecutionContext(workOrder, _stationContext.GlobalEngineContext);
 
-                // TODO: 若未来 StationContext 持有当前 RecipeModel，可在此处绑定配方追溯快照
-                // workOrderContext.BindRecipeTraceability(_stationContext.CurrentRecipe?.CreateTraceabilitySnapshot());
-
                 var nodeExecContext = workOrderContext.CreateNodeContext(_stationContext.ResolveDevice);
+                // 🌟 注入实时预览上下文：宿主（工位监视页/FlowEdit）经 IWorkerClient.SetPreviewContext
+                //    注入即生效，节点内 Preview?.Add 的叠加图形（模板匹配轮廓等）实时上屏；
+                //    未注入时为 null，节点侧调用天然跳过，不影响执行
+                nodeExecContext.Preview = _stationContext.PreviewContext;
                 _executor.SetNodeExecutionContext(nodeExecContext);
 
-                await _executor.StepAsync().ConfigureAwait(false);
+                LogBus.Info("SimpleTriggerScheduler", $"[{_stationId}] {modeLabel} 触发执行链（{_executionChain?.Count ?? 0} 个节点）。");
+                await runCore().ConfigureAwait(false);
 
                 sw.Stop();
                 workOrder.MarkCompleted(isOk: true);
@@ -154,7 +184,7 @@ namespace Grayson.Vision.Core.Scheduling
                         ErrorMessage = ex.Message
                     };
                 }
-                LogBus.Error("SimpleTriggerScheduler", $"[{_stationId}] 触发单次运行失败: {ex.Message}", ex);
+                LogBus.Error("SimpleTriggerScheduler", $"[{_stationId}] {modeLabel} 触发执行失败: {ex.Message}", ex);
             }
             finally
             {
@@ -177,8 +207,8 @@ namespace Grayson.Vision.Core.Scheduling
                     _stationContext.ResolveDevice
                 );
 
-                // 🌟 调试单步链路注入实时预览上下文（编辑器属性面板专用；
-                //    生产触发链路 TriggerOnceAsync 不注入，Preview 恒为 null）
+                // 🌟 注入实时预览上下文（与 ExecuteScopedAsync 同源：谁 SetPreviewContext 就用谁的，
+                //    未注入为 null 节点侧天然跳过）
                 nodeExecContext.Preview = _stationContext.PreviewContext;
 
                 LogBus.Info("SimpleTriggerScheduler", $"[{_stationId}] 调试单步运行节点: {node.DisplayName} ({node.NodeId})");
@@ -211,7 +241,9 @@ namespace Grayson.Vision.Core.Scheduling
             {
                 try
                 {
-                    await TriggerOnceAsync().ConfigureAwait(false);
+                    // 调试连续循环 = 反复完整执行整条链（每次从链头 ResetIndex），
+                    // 不是单步步进（单步走 TriggerOnceAsync，由用户手动逐次点击）。
+                    await RunContinuousAsync().ConfigureAwait(false);
                     await Task.Delay(50, token).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException)

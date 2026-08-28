@@ -273,13 +273,24 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
     public class SharedDataItem : ViewModelBase
     {
         public string Key { get; set; }
+
+        /// <summary>原始数据类型名（如 Double / Int32 / HObject），与显示值分离</summary>
+        private string _rawType;
+        public string RawType
+        {
+            get => _rawType;
+            set { Set(ref _rawType, value); OnPropertyChanged(nameof(Type)); }
+        }
+
         private object _value;
+        /// <summary>显示值（监控面板呈现的格式化文本）</summary>
         public object Value
         {
             get => _value;
             set { Set(ref _value, value); OnPropertyChanged(nameof(Type)); }
         }
-        public string Type => Value?.GetType().Name ?? "null";
+
+        public string Type => RawType ?? Value?.GetType().Name ?? "null";
     }
     /// <summary>
     /// 工具箱Item模型：FlowNodeBase的元数据（描述信息），避免“未加载先实例化”的内存与性能浪费

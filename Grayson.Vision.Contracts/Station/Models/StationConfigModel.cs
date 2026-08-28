@@ -154,6 +154,20 @@ namespace Grayson.Vision.Contracts.Station.Models
         public TriggerSourceConfig TriggerSource { get; set; } = new TriggerSourceConfig();
 
         /// <summary>
+        /// 工位绑定的业务过程键（如 "MahjongPick" / "MahjongDualNozzle"）。
+        /// 过程绑定的是「机器结构」——双滑台 vs 双吸嘴 SCARA，不随产品变化，
+        /// 故放在工位配置而非配方中。为空表示该工位不挂业务过程（纯视觉/手动调试模式）。
+        /// 由 StationHostRuntime 在创建工位时经 StationProcessFactory 解析并 AttachProcess 到 Worker。
+        /// </summary>
+        public string ProcessKey { get; set; }
+
+        /// <summary>
+        /// 业务过程的参数 JSON（过程内部使用的轴号/位置/IO/节拍等工艺数据，
+        /// 如 MahjongPickConfig 的序列化结果）。与 ProcessKey 配套，允许为空（用过程默认参数）。
+        /// </summary>
+        public string ProcessConfigJson { get; set; }
+
+        /// <summary>
         /// 配置创建时间戳
         /// 用于审计和版本追踪
         /// </summary>

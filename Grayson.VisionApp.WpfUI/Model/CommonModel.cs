@@ -193,6 +193,23 @@ namespace Grayson.Vision.WpfUI.Model
             set => Set(ref _boundRecipe, value);
         }
 
+        private string _processKey;
+        /// <summary>
+        /// 工位绑定的业务过程键（空 = 不挂业务过程，工位为纯视觉/手动调试模式）。
+        /// 绑定后工位所有触发入口（启动/单次/PLC 信号）执行完整业务周期（运动+视觉）。
+        /// </summary>
+        public string ProcessKey
+        {
+            get => _processKey;
+            set => Set(ref _processKey, value);
+        }
+
+        /// <summary>
+        /// 业务过程参数 JSON（轴号/位置/IO/节拍，工位管理按需编辑；
+        /// 序列化到 StationConfigModel.ProcessConfigJson 持久化）。
+        /// </summary>
+        public string ProcessConfigJson { get; set; }
+
         /// <summary>
         /// 本工位从设备池领用的真实硬件设备
         /// </summary>

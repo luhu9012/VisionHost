@@ -12,6 +12,9 @@
   <Project Path="Grayson.VisionApp.WpfUI/Grayson.Vision.WpfUI.csproj" Id="a161af53-5187-4451-9f5d-cb3327f68d67" />
   <Project Path="Grayson.Vison.FlowEdit/Grayson.Vision.FlowEdit.csproj" Id="4fbca5f2-5fb8-4701-ac89-5c68a7b3fdd5" />
   <Project Path="Plugins.Camera.Hikvision/Plugins.Camera.Hikvision.csproj" Id="612ed44d-86b9-4888-9afe-6ee833befdd8" />
+  <Project Path="Plugins.Camera.Basler/Plugins.Camera.Basler.csproj" Id="8f3a1c27-5d64-4b9e-a1f0-3c7e9a2b6d01" />
+  <Project Path="Plugins.Robot.Epson/Plugins.Robot.Epson.csproj" Id="770e0ea4-ff78-4305-9bf6-72e41acac08f" />
   <Project Path="Plugins.Motion.Zmc/Plugins.Motion.Zmc.csproj" Id="cf4d0f77-4a4f-4684-85af-055eefbb28c7" />
   <Project Path="Plugins.Protocol.Universal/Plugins.Protocol.Universal.csproj" Id="245c22ab-7e19-47d1-a44c-2fc052f569e9" />
+  <Project Path="Plugins.Inference.OnnxRuntime/Plugins.Inference.OnnxRuntime.csproj" Id="7A3E8C21-6B4D-4E9A-9F2C-D18E55B0A731" />
 </Solution>

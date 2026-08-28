@@ -55,6 +55,16 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         Task TriggerOnceAsync(string batchId = null);
 
         /// <summary>
+        /// 完整执行视觉链一次（编辑器「运行」；不进入业务过程分流）。
+        /// </summary>
+        Task RunContinuousAsync(string batchId = null);
+
+        /// <summary>
+        /// 视觉链单步（编辑器「单步」；不进入业务过程分流）。
+        /// </summary>
+        Task StepChainAsync(string batchId = null);
+
+        /// <summary>
         /// 工位软复位（生产复位）：运行 ResetBlueprint，回安全点、IO 复位、清空队列，不重新初始化硬件句柄
         /// </summary>
         Task SoftResetAsync();

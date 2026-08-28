@@ -12,19 +12,28 @@
             </ResourceDictionary.MergedDictionaries>
 
             <DataTemplate DataType="{x:Type local:CalibrationApplyParam}">
-                <StackPanel Margin="10">
+                <StackPanel Margin="10" DataContextChanged="TemplateRoot_DataContextChanged">
                     <TextBlock Text="标定方案标识/名称:" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding CalibrationProfileName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
                     <TextBlock Text="标定矩阵路径 (.tup):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                    <Grid Margin="0 0 0 10">
+                    <Grid Margin="0 0 0 2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox Text="{Binding HomMatFilePath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}"/>
-                        <Button Grid.Column="1" Content="..." Width="30" Margin="4,0,0,0" Style="{StaticResource NodeParamButtonStyle}" Click="BrowseHomMat_Click"/>
+                        <ComboBox Grid.Column="0" ItemsSource="{Binding AvailableMatrixFiles}"
+                                  SelectedValue="{Binding HomMatFilePath, Mode=TwoWay}"
+                                  Style="{StaticResource NodeParamComboBoxStyle}"
+                                  ToolTip="自动扫描标定文件目录得到的可用矩阵，选择后自动填入路径"/>
+                        <Button Grid.Column="1" Content="⟳" Width="30" Margin="4,0,0,0" Style="{StaticResource NodeParamButtonStyle}"
+                                Click="RefreshMatrixFiles_Click" ToolTip="重新扫描标定文件存储目录"/>
+                        <Button Grid.Column="2" Content="..." Width="30" Margin="4,0,0,0" Style="{StaticResource NodeParamButtonStyle}"
+                                Click="BrowseHomMat_Click" ToolTip="手动选择标定矩阵文件（兜底）"/>
                     </Grid>
+                    <TextBlock Text="自动扫描目录：Config\Calibrations（标定方案）与 Recipes\**\Calib（发布目录），找不到时用「...」手动选择"
+                               Foreground="#9E9E9E" FontSize="11" Margin="0 2 0 10" TextWrapping="Wrap"/>
 
                     <TextBlock Text="转换模式:" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <RadioButton Content="像素坐标 ➔ 物理坐标 (Pixel -> World)" IsChecked="{Binding IsPixelToWorld}" Foreground="White" Margin="0 4 0 4"/>

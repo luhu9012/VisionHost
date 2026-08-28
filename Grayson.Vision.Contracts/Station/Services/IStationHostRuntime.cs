@@ -44,6 +44,10 @@ namespace Grayson.Vision.Contracts.Station.Services
 
         /// <summary>
         /// 创建工位并加载配方、绑定设备映射、装配触发源（UI 配置后的推荐入口）。
+        /// 可选挂载业务过程：传入 processKey + processConfigJson（工位配置的
+        /// StationConfigModel.ProcessKey/ProcessConfigJson）后，工位所有触发入口
+        /// （UI 按钮/PLC 触发/手动触发）将执行完整业务周期；不传则保持纯视觉链模式
+        /// （FlowEdit 编辑器调试语义）。
         /// 
         /// 使用统一的 RecipeDeviceMappingModel 模型。
         /// </summary>
@@ -52,7 +56,9 @@ namespace Grayson.Vision.Contracts.Station.Services
             RecipeModel recipe,
             IEnumerable<Recipe.Models.RecipeDeviceMappingModel> deviceMappings = null,
             WorkMode mode = WorkMode.Production,
-            TriggerSourceConfig triggerSourceConfig = null);
+            TriggerSourceConfig triggerSourceConfig = null,
+            string processKey = null,
+            string processConfigJson = null);
 
         /// <summary>
         /// 获取已存在的工位客户端。
@@ -79,6 +85,12 @@ namespace Grayson.Vision.Contracts.Station.Services
         /// 获取指定工位的工单追踪器；若工位不存在则返回 null。
         /// </summary>
         IWorkOrderTracker GetWorkOrderTracker(string stationId);
+
+        /// <summary>
+        /// 已注册的全部业务过程键（工位管理"业务过程"下拉数据源，来自 Core 的
+        /// StationProcessFactory 注册表；未注册任何过程时返回空集合）。
+        /// </summary>
+        IEnumerable<string> GetSupportedProcessKeys();
 
         // ===== 触发源管理 =====
 

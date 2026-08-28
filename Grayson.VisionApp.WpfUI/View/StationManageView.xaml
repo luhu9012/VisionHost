@@ -192,6 +192,11 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
+                                <TextBlock Text="  业务过程：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="180"
+                                          ItemsSource="{Binding AvailableProcessKeys}"
+                                          SelectedItem="{Binding SelectedStation.ProcessKey}"
+                                          ToolTip="挂载机器结构级业务过程（运动+视觉整周期）。空=纯视觉调试模式；选择后工位的启动/单次/PLC 触发执行完整业务周期。"/>
                             </StackPanel>
 
                             <TextBlock Grid.Row="1" Text="💡 请将流程配方中要求的【逻辑设备】映射至下方【已分配的物理硬件】："
@@ -385,6 +390,11 @@
                                 </Border>
                             </StackPanel>
                         </Grid>
+                    </TabItem>
+
+                    <!-- Tab 4: 模板管理 -->
+                    <TabItem Header="4. 模板管理" Style="{StaticResource ModernTabItemStyle}">
+                        <views:TemplateManagerView DataContext="{Binding DataContext.TemplateManagerVm, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                     </TabItem>
                 </TabControl>
             </Grid>

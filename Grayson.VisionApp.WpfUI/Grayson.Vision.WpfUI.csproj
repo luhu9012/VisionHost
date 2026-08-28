@@ -118,6 +118,7 @@
     <Compile Include="ViewModel\StationManageViewModel.cs" />
     <Compile Include="ViewModel\StationMonitorViewModel.cs" />
     <Compile Include="ViewModel\SystemSettingViewModel.cs" />
+    <Compile Include="ViewModel\TemplateManagerViewModel.cs" />
     <Compile Include="ViewModel\UserManageViewModel.cs" />
     <Compile Include="ViewModel\WorkOrderDetailDialogViewModel.cs" />
     <Compile Include="View\AddDeviceDialog.xaml.cs">
@@ -134,6 +135,9 @@
     </Compile>
     <Compile Include="View\DataTraceView.xaml.cs">
       <DependentUpon>DataTraceView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\TemplateManagerView.xaml.cs">
+      <DependentUpon>TemplateManagerView.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\DevicePoolView.xaml.cs">
       <DependentUpon>DevicePoolView.xaml</DependentUpon>
@@ -259,6 +263,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\DataTraceView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\TemplateManagerView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\DevicePoolView.xaml">
@@ -423,6 +430,16 @@
       <Project>{612ed44d-86b9-4888-9afe-6ee833befdd8}</Project>
       <Name>Plugins.Camera.Hikvision</Name>
     </ProjectReference>
+    <!-- 巴斯勒相机插件（新工位：麻将双吸嘴分拣） -->
+    <ProjectReference Include="..\Plugins.Camera.Basler\Plugins.Camera.Basler.csproj">
+      <Project>{8f3a1c27-5d64-4b9e-a1f0-3c7e9a2b6d01}</Project>
+      <Name>Plugins.Camera.Basler</Name>
+    </ProjectReference>
+    <!-- Epson 4轴 SCARA 机械手插件（新工位：麻将双吸嘴分拣） -->
+    <ProjectReference Include="..\Plugins.Robot.Epson\Plugins.Robot.Epson.csproj">
+      <Project>{770e0ea4-ff78-4305-9bf6-72e41acac08f}</Project>
+      <Name>Plugins.Robot.Epson</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Plugins.Motion.Zmc\Plugins.Motion.Zmc.csproj">
       <Project>{cf4d0f77-4a4f-4684-85af-055eefbb28c7}</Project>
       <Name>Plugins.Motion.Zmc</Name>
@@ -430,6 +447,10 @@
     <ProjectReference Include="..\Plugins.Protocol.Universal\Plugins.Protocol.Universal.csproj">
       <Project>{245c22ab-7e19-47d1-a44c-2fc052f569e9}</Project>
       <Name>Plugins.Protocol.Universal</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Plugins.Inference.OnnxRuntime\Plugins.Inference.OnnxRuntime.csproj">
+      <Project>{7a3e8c21-6b4d-4e9a-9f2c-d18e55b0a731}</Project>
+      <Name>Plugins.Inference.OnnxRuntime</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup />

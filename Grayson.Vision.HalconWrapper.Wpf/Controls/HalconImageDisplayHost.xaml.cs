@@ -1,12 +1,15 @@
 using Grayson.Vision.Contracts.Imaging;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
+using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using Grayson.Vision.HalconWrapper.Wpf.ViewModels;
 using HalconDotNet;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 {
@@ -28,6 +31,13 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
         /// <summary>窗口是否初始化完成（拥有有效Halcon句柄）</summary>
         public bool IsReady => _hWindow != null;
+
+        /// <summary>
+        /// 是否允许左键拖动平移（默认 true）。
+        /// 模板管理等需要在图像上左键框选 ROI 的场景，可在拖拽期间置 false 临时禁用平移，
+        /// 松开鼠标后恢复 true（防止 ROI 框选与拖动平移互相冲突）。
+        /// </summary>
+        public bool IsPanEnabled { get; set; } = true;
 
         /// <summary>
         /// 内部获取 Halcon 底层窗口句柄（仅限同程序集内部使用）。
@@ -66,8 +76,43 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
         }
         #endregion
 
+        #region 自包含 UI：适应窗口命令 / 信息栏文本（不依赖外部 DataContext）
+
+        /// <summary>
+        /// "适应窗口"按钮命令：直接调用本控件的 FitImage()。
+        /// 之所以不绑定外部 VM 的 FitImageCmd：本控件可能被嵌入任意 DataContext 宿主
+        /// （如 FlowEdit 节点属性窗口预览区，DataContext 是 FlowNode），绑定外部 VM 属性
+        /// 会报 Binding Error 40。控件自身命令在任何宿主下都自洽；
+        /// VM 模式下 FitImage() 内部仍优先取 RenderContext / 已订阅 VM 的激活图像，行为等价。
+        /// </summary>
+        public ICommand FitImageCommand { get; }
+
+        /// <summary>
+        /// 左下角信息栏文本（依赖属性）。VM 宿主模式下由 DataContextChanged 订阅
+        /// ImageDisplayVm.PropertyChanged 自动同步；非 VM 宿主（场景预览）下保持默认值，
+        /// 也可由外部代码直接赋值。
+        /// </summary>
+        public static readonly DependencyProperty SelectedImageInfoProperty =
+            DependencyProperty.Register(
+                nameof(SelectedImageInfo),
+                typeof(string),
+                typeof(HalconImageDisplayHost),
+                new PropertyMetadata(null));
+
+        public string SelectedImageInfo
+        {
+            get => (string)GetValue(SelectedImageInfoProperty);
+            set => SetValue(SelectedImageInfoProperty, value);
+        }
+        #endregion
+
         public HalconImageDisplayHost()
         {
+            // "适应窗口"命令：控件自包含，不依赖外部 VM（详见 FitImageCommand 注释）。
+            // ⚠ 必须先于 InitializeComponent() 赋值——XAML 中按钮绑定在 InitializeComponent
+            // 时解析，晚赋会让按钮 Command 为 null 而不可点击。
+            FitImageCommand = new RelayCommand(FitImage);
+
             InitializeComponent();
             // 实例化Halcon图像渲染工具服务
             _renderService = new HalconImageRenderService();
@@ -344,6 +389,12 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
         {
             // 平移由本控件接管（SmartWindow.HMoveContent 已关闭，避免其内部清窗重绘与场景重放打架闪屏）：
             // 左键按住拖动 = 按窗口像素位移平移窗口 part，再整体重放场景，画面跟随鼠标平滑移动。
+            // 外部（如模板管理 ROI 框选）可将 IsPanEnabled 置 false 临时禁用。
+            if (!IsPanEnabled)
+            {
+                _panAnchorSet = false;
+                return;
+            }
             if (System.Windows.Input.Mouse.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
             {
                 _panAnchorSet = false;
@@ -416,6 +467,7 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             // 1. 解绑上一个ViewModel的渲染事件，防止多次订阅、内存泄漏
             if (_boundVm != null)
             {
+                _boundVm.PropertyChanged -= OnBoundVmPropertyChanged;
                 _boundVm.OnRequestRender -= HandleRequestRender;
                 LogBus.Debug("HalconHost", "已解绑旧 ImageDisplayVm.OnRequestRender 事件");
                 _boundVm = null;
@@ -425,16 +477,32 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             if (e.NewValue is ImageDisplayVm newVm)
             {
                 _boundVm = newVm;
+                _boundVm.PropertyChanged += OnBoundVmPropertyChanged;
                 _boundVm.OnRequestRender += HandleRequestRender;
                 //🌟 订阅自适应事件
                 _boundVm.OnRequestFitImage += FitImage;
                 LogBus.Info("HalconHost", "成功订阅 ImageDisplayVm.OnRequestRender 事件！");
+
+                // 同步一次信息栏文本（若 VM 已有值）
+                SelectedImageInfo = newVm.SelectedImageInfo;
 
                 // 如果VM当前已有激活图像，控件窗口已就绪则立刻渲染
                 if (newVm.ActiveImageContext != null)
                 {
                     HandleRequestRender(newVm.ActiveImageContext);
                 }
+            }
+        }
+
+        /// <summary>
+        /// VM 宿主模式下，把 ImageDisplayVm.SelectedImageInfo 的变化同步到控件自身依赖属性
+        /// （信息栏 Text 绑定的是控件自身，不直接绑 VM —— 保证非 VM 宿主下不报 Binding 错误）。
+        /// </summary>
+        private void OnBoundVmPropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ImageDisplayVm.SelectedImageInfo) && _boundVm != null)
+            {
+                SelectedImageInfo = _boundVm.SelectedImageInfo;
             }
         }
 
@@ -515,6 +583,17 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                     if (!sameFrame)
                     {
                         ClearScene();
+                        // 🌟 新帧登记为场景底图（借用，不拥有）：生产链路的节点叠加图形
+                        // （模板匹配轮廓/十字/文本）经 SceneAddObject 进入同一场景——
+                        // 用户缩放/平移/窗口尺寸变化触发的 RepaintScene 重放"底图+叠加层"，
+                        // 画面完整；底图本身仍由 RenderToWindow 负责首绘。
+                        // 借用引用的生命周期：换帧时 ClearScene 先移除；若图像已被显示层
+                        // 释放（历史帧 Dispose），重放时单条 Draw 失败自动跳过。
+                        if (newImage != null)
+                        {
+                            _sceneBaseImage = newImage;
+                            _scene.Add(new ObjectItem { Obj = newImage, Color = null, Owned = false });
+                        }
                     }
 
                     // 1. 渲染原图 + 叠加绘图（ROI、检测框、文字等Overlay）
@@ -562,6 +641,34 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                 _renderService.FitImageToWindow(_hWindow, activeContext.Image);
                 SmartWindow?.SetFullImagePart();
                 LogBus.Debug("HalconHost", "手动触发了图像自适应窗口 (FitImage)。");
+            }
+        }
+
+        /// <summary>
+        /// 屏幕坐标（相对本控件左上角）→ 图像坐标（HALCON row/col）。
+        /// 供上层模板管理界面的 ROI 框选使用：把 WPF 拖拽矩形两角换算为图像像素坐标。
+        /// 基于当前窗口 part 映射，天然兼容缩放/平移后的画面。
+        /// 注意：公共 API 只暴露 WPF/double 类型，不泄漏 halcondotnet（MC1000 约束）。
+        /// </summary>
+        public bool TryGetImagePointAt(Point screenPoint, out double row, out double col)
+        {
+            row = 0;
+            col = 0;
+            if (_hWindow == null || SmartWindow == null) return false;
+            if (SmartWindow.ActualWidth <= 0 || SmartWindow.ActualHeight <= 0) return false;
+            try
+            {
+                _hWindow.GetPart(out HTuple r1, out HTuple c1, out HTuple r2, out HTuple c2);
+                double scaleX = (c2.D - c1.D) / SmartWindow.ActualWidth;  // 每窗口像素对应多少图像列
+                double scaleY = (r2.D - r1.D) / SmartWindow.ActualHeight; // 每窗口像素对应多少图像行
+                col = c1.D + screenPoint.X * scaleX;
+                row = r1.D + screenPoint.Y * scaleY;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("HalconHost", $"屏幕坐标转图像坐标失败: {ex.Message}");
+                return false;
             }
         }
 

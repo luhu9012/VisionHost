@@ -1,0 +1,328 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.TemplateManagerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:controls="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf"
+             xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             mc:Ignorable="d" d:DesignHeight="680" d:DesignWidth="1120"
+             Foreground="{DynamicResource TextPrimaryBrush}">
+    <UserControl.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- 源图模式分段按钮（RadioButton 无圆形 glyph 的胶囊样式） -->
+        <Style x:Key="SegmentRadioStyle" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4"
+                                Padding="14,6" BorderThickness="1" BorderBrush="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF0078D4"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF0078D4"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF0078D4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="10"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ==================== 左侧：模板库列表 ==================== -->
+        <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" Padding="8" CornerRadius="4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <TextBlock Text="视觉模板库" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="+ 新建" Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding NewTemplateCommand}" Height="28" Padding="8,0"
+                                ToolTip="清空右侧向导，重新选择源图创建模板"/>
+                        <Button Content="🗑 删除" Style="{StaticResource DangerButtonStyle}"
+                                Command="{Binding DeleteTemplateCommand}" Height="28" Padding="8,0" Margin="4,0,0,0"
+                                ToolTip="删除选中模板（引用该模板的匹配节点需改选其他模板）"/>
+                    </StackPanel>
+                </Grid>
+
+                <ListBox Grid.Row="2" ItemsSource="{Binding Templates}"
+                         SelectedItem="{Binding SelectedTemplate}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="4,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 状态灯 (绿:模板文件存在, 红:文件缺失) -->
+                                <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ModelFileExists}" Value="True">
+                                                    <Setter Property="Fill" Value="#FF107C41"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding ModelFileExists}" Value="False">
+                                                    <Setter Property="Fill" Value="#FFA80000"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <!-- 匹配类型 Tag -->
+                                        <Border Background="#7F5BB8" CornerRadius="3" Padding="4,2" Margin="0,0,4,0">
+                                            <TextBlock Text="{Binding Type}" Foreground="White" FontSize="10"/>
+                                        </Border>
+                                        <!-- 创建日期 Tag -->
+                                        <Border Background="#0078D4" CornerRadius="3" Padding="4,2">
+                                            <TextBlock Text="{Binding CreateTime, StringFormat={}{0:MM-dd HH:mm}}"
+                                                       Foreground="White" FontSize="10"/>
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                    <Button Content="🔄 刷新" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding RefreshCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ==================== 右侧：模板创建向导 ==================== -->
+        <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}" Padding="12" CornerRadius="4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 头部 -->
+                <Grid Grid.Row="0">
+                    <TextBlock Text="创建视觉模板" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Text="模板按名称被 ShapeMatch / NccMatch 节点引用"
+                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
+                </Grid>
+
+                <!-- 源图模式与采集操作 -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <RadioButton Content="📁 本地图片" GroupName="TemplateSrcMode"
+                                     IsChecked="{Binding IsFileMode}" Style="{StaticResource SegmentRadioStyle}"/>
+                        <RadioButton Content="📷 相机采集" GroupName="TemplateSrcMode" Margin="4,0,0,0"
+                                     IsChecked="{Binding IsCameraMode}" Style="{StaticResource SegmentRadioStyle}"/>
+                    </StackPanel>
+
+                    <!-- 本地图片模式 -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                Visibility="{Binding IsFileMode, Converter={StaticResource BoolToVis}}">
+                        <Button Content="📂 载入图片..." Style="{StaticResource SecondaryButtonStyle}"
+                                Command="{Binding LoadImageCommand}" Padding="14,6"/>
+                        <TextBlock Text="支持 png / bmp / jpg / tif"
+                                   Foreground="{DynamicResource TextDisabledBrush}" FontSize="11"
+                                   VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- 相机模式（快照一帧） -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                Visibility="{Binding IsCameraMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="相机:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                        <ComboBox Width="220" Style="{StaticResource ModernComboBoxStyle}"
+                                  ItemsSource="{Binding Cameras}" SelectedItem="{Binding SelectedCamera}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DeviceKey}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Content="📸 采集一帧" Style="{StaticResource PrimaryButtonStyle}"
+                                Command="{Binding AcquireImageCommand}" Padding="14,6" Margin="8,0,0,0"
+                                ToolTip="连接相机连续取流，收到第一帧立即停流并上屏（不长期占用取流）"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="3" Content="🧹 清除 ROI" Style="{StaticResource SecondaryButtonStyle}"
+                            Click="BtnClearRoi_Click" Padding="14,6" VerticalAlignment="Center"
+                            ToolTip="清空已框选的 ROI 数值"/>
+                </Grid>
+
+                <!-- 图像显示 + ROI 框选 -->
+                <Grid Grid.Row="4" ClipToBounds="True" Background="#FF111111" x:Name="ImageArea"
+                      PreviewMouseLeftButtonDown="ImageArea_PreviewMouseLeftButtonDown"
+                      PreviewMouseMove="ImageArea_PreviewMouseMove"
+                      PreviewMouseLeftButtonUp="ImageArea_PreviewMouseLeftButtonUp">
+                    <controls:HalconImageDisplayHost x:Name="ImageHost" DataContext="{Binding DisplayVm}"/>
+                    <Canvas x:Name="RoiCanvas" IsHitTestVisible="False">
+                        <Rectangle x:Name="RoiRect" Stroke="#FFFFE600" StrokeThickness="1.5"
+                                   Fill="#33FFE600" Visibility="Collapsed"/>
+                    </Canvas>
+
+                    <!-- 空态提示（未加载图像时） -->
+                    <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Background="#CC000000" CornerRadius="6" Padding="20,14"
+                            Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                        <StackPanel>
+                            <TextBlock Text="🖼️ 尚未加载源图像" FontSize="15" FontWeight="Bold"
+                                       Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                            <TextBlock Text="请在上方选择【本地图片】载入文件，或切换【相机采集】抓取一帧"
+                                       Foreground="#CCCCCC" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock Text="图像上屏后，按住鼠标左键拖拽即可框选模板 ROI（黄色框）"
+                                       Foreground="#CCCCCC" FontSize="12" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 参数表单 -->
+                <Border Grid.Row="6" Style="{StaticResource CardBorderStyle}" Padding="10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="8"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- 第一行：名称 / 类型 / 备注 -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="模板名称:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding TemplateName, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}"
+                                     ToolTip="节点引用模板的唯一名称（全局唯一），如 mahjong_tile_1"/>
+
+                            <TextBlock Grid.Column="3" Text="匹配类型:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
+                                      ItemsSource="{Binding TemplateTypeOptions}" SelectedItem="{Binding TemplateType}"
+                                      ToolTip="Shape=形状匹配（边缘轮廓，工件定位首选）；Ncc=灰度匹配（纹理/印刷图案）"/>
+
+                            <TextBlock Grid.Column="6" Text="备注:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Grid.Column="7" Text="{Binding Remark, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}"/>
+                        </Grid>
+
+                        <!-- 第二行：角度范围 / ROI -->
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="角度范围(°):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Grid.Column="1" Text="{Binding AngleStart, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="起始角度（度），Shape 模板的角度搜索范围"/>
+                            <TextBlock Grid.Column="2" Text="~" VerticalAlignment="Center" Margin="3,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBox Grid.Column="3" Text="{Binding AngleEnd, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="结束角度（度）"/>
+
+                            <TextBlock Grid.Column="5" Text="ROI:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Grid.Column="6" Text="{Binding RoiRow1, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 左上角 Row（图像 Y）"/>
+                            <TextBlock Grid.Column="7" Text="," VerticalAlignment="Center" Margin="2,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBox Grid.Column="8" Text="{Binding RoiCol1, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 左上角 Col（图像 X）"/>
+                            <TextBlock Grid.Column="9" Text="→" VerticalAlignment="Center" Margin="3,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBox Grid.Column="10" Text="{Binding RoiRow2, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 右下角 Row（图像 Y）"/>
+                            <TextBlock Grid.Column="11" Text="," VerticalAlignment="Center" Margin="2,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBox Grid.Column="12" Text="{Binding RoiCol2, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 右下角 Col（图像 X）"/>
+                            <TextBlock Grid.Column="13" Text="（在图像上拖拽框选，或直接修改数值）"
+                                       VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Foreground="{DynamicResource TextDisabledBrush}" FontSize="11"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- 底部：状态 + 创建 -->
+                <Grid Grid.Row="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding StatusText}"
+                               Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusText}"/>
+                    <Button Grid.Column="1" Content="🚀 创建模板" Style="{StaticResource SuccessButtonStyle}"
+                            Command="{Binding CreateTemplateCommand}" Padding="22,9"
+                            FontSize="14" FontWeight="Bold"
+                            ToolTip="按当前参数生成模板并落盘（后台线程执行 HALCON 算子）"/>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

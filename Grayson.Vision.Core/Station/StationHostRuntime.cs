@@ -9,6 +9,7 @@ using Grayson.Vision.Contracts.Station.Enums;
 using Grayson.Vision.Contracts.Station.Triggers;
 using Grayson.Vision.Contracts.Station.WorkOrderTracking;
 using Grayson.Vision.Core.Devices;
+using Grayson.Vision.Core.Processes;
 using Grayson.Vision.Core.Triggers;
 using System;
 using System.Collections.Concurrent;
@@ -118,6 +119,20 @@ namespace Grayson.Vision.Core.Station
         public IWorkerClient GetStationClient(string stationId)
         {
             return _clients.TryGetValue(stationId, out var client) ? client : null;
+        }
+
+        /// <summary>
+        /// 自愈：确保工位业务过程已挂载。若曾被 FlowEdit 编辑器（RebindWorkerClientAsync）
+        /// 对共享 worker 执行 DetachProcess 卸载，按工位配置声明的过程键重新装配。
+        /// 由工位监视页启动/单次触发前调用；编辑器侧不调用（保持纯视觉链调试模式）。
+        /// </summary>
+        public void EnsureStationProcessAttached(string stationId)
+        {
+            if (string.IsNullOrWhiteSpace(stationId)) return;
+            if (_workers.TryGetValue(stationId, out var worker))
+            {
+                worker.EnsureProcessAttached();
+            }
         }
 
         /// <summary>
@@ -262,13 +277,16 @@ namespace Grayson.Vision.Core.Station
         /// <summary>
         /// 创建工位并加载配方、绑定设备映射，装配触发源。
         /// 这是 UI 配置工位后的标准入口。
+        /// processKey + processConfigJson：可选挂载业务过程（见 IStationHostRuntime 说明）。
         /// </summary>
         public async Task<IWorkerClient> CreateStationWithRecipeAsync(
             string stationId,
             RecipeModel recipe,
             IEnumerable<Grayson.Vision.Contracts.Recipe.Models.RecipeDeviceMappingModel> deviceMappings = null,
             WorkMode mode = WorkMode.Production,
-            TriggerSourceConfig triggerSourceConfig = null)
+            TriggerSourceConfig triggerSourceConfig = null,
+            string processKey = null,
+            string processConfigJson = null)
         {
             var client = await CreateEmbeddedStationAsync(stationId);
             var worker = _workers[stationId];
@@ -318,6 +336,27 @@ namespace Grayson.Vision.Core.Station
                 await worker.LoadRecipeAsync(recipe.MainProcess);
             }
 
+            // 🌟 装配业务过程（工位配置声明了 ProcessKey 时挂载：
+            //    之后所有触发入口自动执行完整业务周期）
+            if (!string.IsNullOrWhiteSpace(processKey))
+            {
+                // 记录配置声明（供 EnsureStationProcessAttached 自愈重挂：
+                // FlowEdit 编辑器调试会 DetachProcess 卸载共享 worker 的业务过程）
+                worker.DesiredProcessKey = processKey;
+                worker.DesiredProcessConfigJson = processConfigJson;
+
+                var process = StationProcessFactory.Create(processKey, processConfigJson, worker);
+                if (process != null)
+                {
+                    worker.AttachProcess(process);
+                }
+                else
+                {
+                    LogBus.Warn("StationHostRuntime",
+                        $"[{stationId}] 业务过程 [{processKey}] 装配失败（未注册或实例化异常），工位回退为纯视觉链模式。");
+                }
+            }
+
             // 装配触发源（配置为 null 时默认 Manual，与旧行为兼容）
             SetupTriggerSource(stationId, triggerSourceConfig ?? new TriggerSourceConfig());
 
@@ -357,6 +396,14 @@ namespace Grayson.Vision.Core.Station
         public IWorkOrderTracker GetWorkOrderTracker(string stationId)
         {
             return _workers.TryGetValue(stationId, out var worker) ? worker.WorkOrderTracker : null;
+        }
+
+        /// <summary>
+        /// 已注册的全部业务过程键（UI 下拉数据源）。
+        /// </summary>
+        public IEnumerable<string> GetSupportedProcessKeys()
+        {
+            return StationProcessFactory.GetSupportedKeys();
         }
 
         public void Dispose()

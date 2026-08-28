@@ -77,18 +77,25 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// </summary>
         public string StateText => Grayson.Vision.WpfUI.Common.StationStateTexts.ToDisplayText(State);
 
-        public string StateBrushKey
+        /// <summary>
+        /// 状态指示灯/文字颜色（Brush 实例，避免字符串→Brush 转换失败导致恒为灰色）。
+        /// 从应用资源表按键取 Brush；缺失时回退 Gray。
+        /// </summary>
+        public System.Windows.Media.Brush StateBrushKey
         {
             get
             {
+                string key;
                 switch (State)
                 {
-                    case "Running": return "SuccessBrush";
-                    case "Faulted": return "DangerBrush";
-                    case "Idle": return "InfoBrush";
-                    case "Paused": return "WarningBrush";
-                    default: return "TextDisabledBrush";
+                    case "Running": key = "SuccessBrush"; break;
+                    case "Faulted": key = "DangerBrush"; break;
+                    case "Idle": key = "InfoBrush"; break;
+                    case "Paused": key = "WarningBrush"; break;
+                    default: key = "TextDisabledBrush"; break;
                 }
+                return System.Windows.Application.Current?.TryFindResource(key) as System.Windows.Media.Brush
+                       ?? System.Windows.Media.Brushes.Gray;
             }
         }
 

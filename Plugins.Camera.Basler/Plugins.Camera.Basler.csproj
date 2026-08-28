@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{8f3a1c27-5d64-4b9e-a1f0-3c7e9a2b6d01}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Plugins.Camera.Basler</RootNamespace>
+    <AssemblyName>Plugins.Camera.Basler</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <!--
+    ============================================================
+    巴斯勒 pylon SDK 条件编译：
+    - 将 pylon .NET API 托管程序集 Basler.Pylon.dll 复制到解决方案根的 DLLLib\ 目录后，
+      本项目会自动启用真实 SDK 适配层（PylonNetAdapter.cs，BASLER_PYLON 宏）；
+    - 若 DLLLib\Basler.Pylon.dll 不存在，则自动退回“离线仿真适配层”
+      （SimulatedBaslerSdk，生成合成麻将测试图），保证工程随时可编译、业务流可联调。
+    ============================================================
+  -->
+  <PropertyGroup>
+    <PylonSdkDllPath>$(MSBuildThisFileDirectory)..\DLLLib\Basler.Pylon.dll</PylonSdkDllPath>
+    <DefineConstants Condition="Exists('$(PylonSdkDllPath)')">$(DefineConstants);BASLER_PYLON</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Basler.Pylon" Condition="Exists('$(PylonSdkDllPath)')">
+      <HintPath>$(PylonSdkDllPath)</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="BaslerPlugin.cs" />
+    <Compile Include="BaslerSdkAdapters.cs" />
+    <Compile Include="PylonNetAdapter.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
+      <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
+      <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

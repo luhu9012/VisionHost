@@ -48,6 +48,7 @@
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Imaging\HalconRenderImage.cs" />
+    <Compile Include="Services\TemplateCreationBridge.cs" />
     <Compile Include="Imaging\HalconImageRenderService.cs" />
     <Compile Include="Controls\HalconImageDisplayHost.xaml.cs">
       <DependentUpon>HalconImageDisplayHost.xaml</DependentUpon>

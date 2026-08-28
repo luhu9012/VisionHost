@@ -132,7 +132,8 @@ namespace Grayson.Vision.Contracts.Flow.Executants
 
             if (_currentStepIndex >= execChain.Count)
             {
-                LogBus.Info("Engine", "🔄 单步执行到达末尾");
+                LogBus.Info("Engine", "🔄 单步执行到达链尾，索引自动回到链头");
+                ResetIndex();
                 OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.StepEndReached));
                 return;
             }
@@ -164,10 +165,13 @@ namespace Grayson.Vision.Contracts.Flow.Executants
             stopwatch.Stop();
             State = ExecutionMode.Paused;
 
-            // 🌟 如果单步刚好执行完最后一个节点，触发完成通知并传入耗时
+            // 🌟 如果单步刚好执行完最后一个节点，触发完成通知并复位到链头：
+            //    下次「单步」从头开始（单步语义 = 链头起步、一次一个节点、可反复走完整个链）
             if (_currentStepIndex >= execChain.Count)
             {
+                LogBus.Info("Engine", $"✔ 单步执行完成（{execChain.Count} 个节点），索引已复位，下次单步从头开始。");
                 OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(ChainExecutionResult.Success, null, stopwatch.Elapsed.TotalMilliseconds));
+                ResetIndex();
             }
         }
         /// <summary>

@@ -44,6 +44,18 @@ namespace Grayson.Vision.HalconWrapper
         }
 
         /// <summary>
+        /// 静默释放显示对象（吞异常）。典型场景：为预览生成的覆盖图形（模板匹配贴合轮廓等）
+        /// 在无预览窗口（生产模式 Preview == null）时调用，避免 HALCON 句柄泄漏。
+        /// </summary>
+        public static void DisposeQuietly(object obj)
+        {
+            if (obj is HObject hObj)
+            {
+                try { hObj.Dispose(); } catch { }
+            }
+        }
+
+        /// <summary>
         /// 创建矩形区域（供 ROI 裁剪框、搜索区域框等预览标注）。
         /// 返回的 HObject 所有权归调用方——应通过 IFlowPreviewContext.Add 提交后由显示层释放。
         /// </summary>

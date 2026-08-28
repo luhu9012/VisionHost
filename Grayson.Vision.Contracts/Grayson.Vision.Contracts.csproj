@@ -59,7 +59,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Ai\Enums\InferenceEnums.cs" />
+    <Compile Include="Ai\Interfaces\IInferenceProvider.cs" />
+    <Compile Include="Ai\Models\InferenceModels.cs" />
+    <Compile Include="Ai\InferenceProviderRegistry.cs" />
     <Compile Include="Calibration\Models\CalibrationModels.cs" />
+    <Compile Include="Templates\Models\TemplateModels.cs" />
     <Compile Include="Communication\CommunicationMessage.cs" />
     <Compile Include="Core\Models\Result.cs" />
     <Compile Include="Core\Geometry\Pose3D.cs" />
@@ -152,6 +157,7 @@
     <Compile Include="Station\Interfaces\IStationWorkerHost.cs" />
     <Compile Include="Station\Interfaces\IWorkerClient.cs" />
     <Compile Include="Station\Interfaces\IWorkflowScheduler.cs" />
+    <Compile Include="Station\Processes\IStationProcess.cs" />
     <Compile Include="Station\Models\DataTraceEntry.cs" />
     <Compile Include="Station\Models\IStationWorkerEvents.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

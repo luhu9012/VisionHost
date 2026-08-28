@@ -26,6 +26,12 @@ namespace Grayson.Vision.Core.Client.Proxy
 
         public IWorkOrderTracker WorkOrderTracker => _worker?.WorkOrderTracker;
 
+        /// <summary>当前工位挂载的业务过程键（未挂载为 null），供 UI/编辑器提示。</summary>
+        public string BoundProcessKey => _worker?.ProcessKey;
+
+        /// <summary>卸载业务过程（编辑器调试模式：只跑视觉链，不触发运动时序）。</summary>
+        public void DetachProcess() => _worker?.DetachProcess();
+
         public event EventHandler<StationState> OnStateChanged;
         public event EventHandler<ImageRenderEventArgs> OnFrameRendered;
         public event EventHandler<ChainCompletedEventArgs> OnExecutionCompleted;
@@ -89,6 +95,8 @@ namespace Grayson.Vision.Core.Client.Proxy
         public Task PauseAsync() => Task.Run(() => _worker.PauseAsync());
         public Task ResumeAsync() => Task.Run(() => _worker.ResumeAsync());
         public Task TriggerOnceAsync(string batchId = null) => Task.Run(() => _worker.TriggerOnceAsync(batchId));
+        public Task RunContinuousAsync(string batchId = null) => Task.Run(() => _worker.RunContinuousAsync(batchId));
+        public Task StepChainAsync(string batchId = null) => Task.Run(() => _worker.StepChainAsync(batchId));
         public Task EmergencyStopAsync(string reason = null) => Task.Run(() => _worker.EmergencyStopAsync(reason));
         public Task WorkOrderResetAsync() => Task.Run(() => _worker.WorkOrderResetAsync());
         public Task SoftResetAsync() => Task.Run(() => _worker.SoftResetAsync());

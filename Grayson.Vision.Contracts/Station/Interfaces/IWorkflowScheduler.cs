@@ -40,12 +40,19 @@ namespace Grayson.Vision.Contracts.Station.Interfaces
         Task StopAsync();
 
         /// <summary>
-        /// 手动触发一次执行（单帧/单物料）。
+        /// 【单步】手动触发：执行链从链头开始、一次只执行 1 个节点（索引跨触发保留，
+        /// 与前后节点输入输出上下文关联），走到链尾后自动回到链头。对应编辑器「单步」。
         /// </summary>
         Task TriggerOnceAsync(string batchId = null);
 
         /// <summary>
-        /// 单步执行指定节点（调试用）。
+        /// 【运行】手动触发：从链头完整执行整条执行链一次（节点间上下文关联）。
+        /// 对应编辑器「运行」、业务过程内部视觉段、生产触发源的单周期节拍。
+        /// </summary>
+        Task RunContinuousAsync(string batchId = null);
+
+        /// <summary>
+        /// 单步执行指定节点（调试用）：忽略其他节点输入输出，独立执行选中节点。对应编辑器「运行该节点」。
         /// </summary>
         Task StepNodeAsync(FlowNodeBase node);
 

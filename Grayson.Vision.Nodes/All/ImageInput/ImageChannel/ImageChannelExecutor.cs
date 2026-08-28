@@ -60,7 +60,11 @@ namespace Grayson.Vision.Nodes.All.ImageInput.ImageChannel
             if (res.Success)
             {
                 context.SetOutputValue(node, PORT_OUT_IMAGE, res.Data);
-                context.Log("[通道拆分] 提取成功 → " + channelName + " 单通道灰度图");
+
+                // 诊断日志：输出图像信息（尺寸/通道数）——匹配类算子要求单通道，此处应显示"单通道灰度"
+                var outInfo = ImageBasicTool.GetImageInfo(res.Data);
+                context.Log("[通道拆分] 提取成功 → " + channelName + " 单通道灰度图" +
+                    (outInfo.Success ? "（" + outInfo.Data + "）" : "（信息读取失败: " + outInfo.Message + "）"));
 
                 // 提取结果画显示副本
                 disp?.Add(NodePreviewHelper.CopyForDisplay(res.Data), "green", 1);

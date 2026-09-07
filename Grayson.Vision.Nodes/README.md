@@ -5,7 +5,7 @@
 - Executor：运行时逻辑（继承 NodeExecutorBase<TParam>，通过 NodeExecutionContext 读写端口、访问设备服务）
 - TemplateView：WPF 参数面板（XAML + code-behind）
 
-目标：为宿主（FlowEdit / VisionApp.WpfUI / WorkerHost）提供可复用的视觉处理节点，保持执行层无 UI 依赖、可跨进程运行。
+目标：为宿主（FlowEdit / VisionApp.WpfUI）提供可复用的视觉处理节点，执行层无 UI 依赖（单进程线程级 Worker 宿主；早期跨进程 WorkerHost 方案已移除）。
 
 目录结构（关键节点与说明）：
 

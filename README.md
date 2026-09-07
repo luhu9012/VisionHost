@@ -1,319 +1,144 @@
-# Grayson.Vision.Host 解决方案说明
+# Grayson.Vision.Host — 机器视觉工位装配平台（上位机）
 
-本仓库是 **Grayson 视觉检测平台** 的主机端解决方案，基于 **.NET Framework 4.7.2** 构建，采用 WPF 进行界面开发，核心围绕 **可拖拽流程节点编辑器**、**工业相机**、**PLC**、**Halcon 图像处理**、**设备资源管理**、**工单追踪**、**工位 PackML 状态机** 等能力展开。
-
-> 设计约束：
-> - `Grayson.Vision.Contracts` 与 `Grayson.Vision.Core` 不引用任何 WPF / Halcon / 具体硬件 SDK。
-> - `Grayson.VisionApp.WpfUI` 只承担 UI 交互与显示门面（Facade），不持有设备池、调度策略、工位状态机等核心职责。
-> - 设备生命周期、资源租赁、调度器、配方配置、工单追踪、指标告警等能力逐步集中到 `Core`。
+> 面向「视觉工位快速搭建 / 换型」的 C# + WPF 上位机平台：**流程可编排、设备可插拔、模板/标定/配方可配置、结果可追溯**。
+> 形态：单仓库多工程，`.NET Framework 4.7.2` / WPF / x64；视觉内核 HALCON，流程引擎自研。
+>
+> ⚠️ 本文档 **2026-09-07 全面校正重写**，以当前代码为准。旧版 `READEME.md`（08-16 快照）、`README.md`（旧版）与 `新架构说明.md` 已由 `ARCHITECTURE.md` 取代，原稿均归档于 [`Archive/`](Archive/说明.md)，仅作历史存档。
 
 ---
 
-## 1. 目标框架与运行环境
+## 1. 平台是什么
 
-- **目标框架**：`.NET Framework 4.7.2`
-- **解决方案文件**：`Grayson.Vision.Host.slnx`
-- **主要 UI 技术**：WPF（Windows Presentation Foundation）
-- **平台目标**：推荐 `x64`
-- **外部依赖/中间件**：
-  - `halcondotnet`（Halcon 机器视觉库）
-  - `MvCamCtrl.Net`（海康工业相机 SDK）
-  - `Newtonsoft.Json`（JSON 序列化）
-  - `DynamicExpresso.Core`（动态表达式求值）
+一句话：**把"一套视觉检测/引导设备的工程搭建"做成"配置 + 编排"，而不是"改代码"。**
 
----
+覆盖三类现场角色：
 
-## 2. 项目一览
+| 角色 | 关心什么 | 平台怎么满足 |
+|---|---|---|
+| 现场工程师 | 换产品/换工位少改代码 | 模板、标定档案、配方、工位配置全部配置化；流程用节点图编排 |
+| 上位机/视觉开发 | 新相机/新机械手/新逻辑怎么接入 | `Contracts` 接口契约 + `Plugins.*` 插件化，宿主零改动 |
+| 设备/产线 | 稳定、可查、能对接 MES | 工位状态机、工单追溯、数据追溯、MesBridge、日志分级 |
 
-| 项目名称 | 输出类型 | 主要用途 | 目标框架 |
-|---|---|---|---|
-| `Grayson.Vision.Contracts` | 类库 (Library) | 核心接口、领域模型、流程引擎抽象、设备抽象、通用服务契约、Worker 宿主契约 | .NET Framework 4.7.2 |
-| `Grayson.Vision.Core` | 类库 (Library) | 工位核心：`StationHostRuntime`、`StationWorker`、`StationContext`、设备池/租赁、调度器、状态机、事件路由 | .NET Framework 4.7.2 |
-| `Grayson.Vision.HalconWrapper` | 类库 (Library) | 对 Halcon 图像处理 API 的业务化封装，提供标定、匹配、测量、滤波等工具 | .NET Framework 4.7.2 |
-| `Grayson.Vision.HalconWrapper.Wpf` | WPF 类库 (Library) | Halcon 图像的 WPF 显示封装，封装 `HSmartWindowControlWPF`、渲染服务、缩略图 | .NET Framework 4.7.2 |
-| `Grayson.Vision.Nodes` | 类库 (Library) | 流程节点实现：DeviceIO / Logic 等分类节点，以及对应参数面板 XAML | .NET Framework 4.7.2 |
-| `Grayson.Vison.FlowEdit` | WPF 程序 (WinExe) | 独立的视觉流程编辑器，支持拖拽节点、图像显示、节点属性配置、配方管理；同时可作为嵌入式线程调试宿主 | .NET Framework 4.7.2 |
-| `Grayson.VisionApp.WpfUI` | WPF 程序 (WinExe) | 主程序宿主界面（登录、主框架、设备池、流程编辑、报警、配方、用户管理等） | .NET Framework 4.7.2 |
-| `Grayson.Vision.Repository` | 类库 (Library) | 基于 LiteDB 的数据持久化层，负责配方、工位配置、历史记录等 PO 与仓储 | .NET Framework 4.7.2 |
-| `Plugins.Camera.Hikvision` | 类库 (Library) | 海康工业相机插件，实现 `ICamera` 接口 | .NET Framework 4.7.2 |
-| `Plugins.Motion.Zmc` | 类库 (Library) | ZMC 运动控制卡插件，实现 `IMotion` 接口 | .NET Framework 4.7.2 |
-| `Plugins.Protocol.Universal` | 类库 (Library) | 通用通信协议插件 | .NET Framework 4.7.2 |
-
-> 说明：项目名称中 `Grayson.Vison.FlowEdit` 保留了仓库中的原始拼写。
+已落地能力带：
+- **视觉定位引导**：模板匹配（形状/相关性）+ 手眼标定 → 机器人/运动轴抓取引导；
+- **测量与识别**：卡尺/边缘/亚像素测量、Blob/OCR 基础识别，AI（ONNX / DLTool）预留链路；
+- **标定体系 v2**：物理量建模（H 手眼 / e 偏心 / t 对针 / s 像素当量…），向导化采集、残差体检、两级发布；
+- **流程编排**：节点图（采集→预处理→匹配/测量→坐标换算→设备动作→数据回传），自研执行引擎；
+- **设备插件**：相机（海康/巴斯勒）、SCARA（Epson）、运动控制卡（ZMC）、PLC（西门子/Modbus/通用）、推理（ONNX）；
+- **配置持久化**：LiteDB（工位/设备/历史）+ JSON（配方/标定矩阵），支持旧 JSON 无损兼容；
+- **追溯与通信**：工单追踪、日志分级、MES 桥接、触发信号统一入口。
 
 ---
 
-## 3. 分层架构与职责分离
+## 2. 解决方案结构（工程清单）
 
-本方案采用倒置依赖的分层结构，越底层的项目越稳定，越上层的项目越接近具体 UI 与硬件：
+解决方案文件：`Grayson.Vision.Host.slnx`。仓库共 **17 个产品工程**（slnx 收录 14 个；另有 3 个未收录，见下表注）；`.workbuddy/` 下另有 4 个一次性验证工程（不入库）。
+
+| 层 | 工程 | 类型 | 职责一句话 | 规模(cs) |
+|---|---|---|---|---|
+| 契约底座 | **Grayson.Vision.Contracts** | 类库 | 接口/领域模型/DTO/枚举，全仓依赖最底层；不引 WPF/HALCON/硬件 SDK | 128 |
+| 数据 | **Grayson.Vision.Repository** | 类库 | LiteDB 持久化：工位配置/配方存储/历史仓储 | 28 |
+| 运行 | **Grayson.Vision.Core** | 类库 | StationWorker 运行宿主：工位状态机、设备池、调度、触发器、业务流程 Process | 35 |
+| 视觉内核 | **Grayson.Vision.HalconWrapper** | 类库 | HALCON 业务化封装：模板/匹配/测量/标定/预处理，不依赖 WPF | 28 |
+| 显示内核 | **Grayson.Vision.HalconWrapper.Wpf** | WPF 类库 | HALCON 图像 WPF 显示宿主/渲染服务/交互翻译层 | 10 |
+| 节点 | **Grayson.Vision.Nodes** | 类库 | 流程节点实现 + 参数面板（10 大类节点），供编辑器与运行引擎共享 | 103 |
+| 编辑器 | **Grayson.Vison.FlowEdit** | WinExe | 独立流程编辑器（拖节点/配参数/验流程），也可嵌入主程序 | 16 |
+| 主程序 | Grayson.VisionApp.WpfUI 目录 | WinExe | 主界面壳：登录/总览/工位监控/模板/标定/配方/设备/系统等 40+ 页 | 106 |
+| 相机 | **Plugins.Camera.Basler** | 插件 | 巴斯勒相机 `ICamera` 实现（Pylon） | 4 |
+| 相机 | **Plugins.Camera.Hikvision** | 插件 | 海康相机 `ICamera` 实现（MvCamCtrl） | 4 |
+| 机械手 | **Plugins.Robot.Epson** | 插件 | Epson SCARA：RC+/SPEL/TCP 脚本三层通信适配 | 7 |
+| 运动 | **Plugins.Motion.Zmc** | 插件 | ZMC 运动控制卡 `IMotionCard` 实现 | 5 |
+| PLC | **Plugins.PLC.Siemens** | 插件 | 西门子 S7 通信插件（未入 slnx） | 2 |
+| PLC | **Plugins.PLC.Modbus** | 插件 | Modbus 占位工程（未入 slnx，暂无实现） | 2 |
+| 通信 | **Plugins.Protocol.Universal** | 插件 | 通用协议解析/指令策略（网口/串口） | 8 |
+| 推理 | **Plugins.Inference.OnnxRuntime** | 插件 | ONNX 推理 `IInferenceProvider`：YOLO/分类/异常检测 → Region/框 | 4 |
+
+> 注：`Grayson.VisionApp.WpfUI` 目录内含 **两个 csproj**（`Grayson.Vision.WpfUI.csproj` 挂载全插件进 slnx；`Grayson.VisionApp.WpfUI.csproj` 为轻量变体，引用集不同，产物同名 `Grayson.Vision.WpfUI.exe`，未入 slnx）。建议后续收敛为一个入口。
+
+依赖方向（已按 csproj 实引核对）：
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│  应用层 (WinExe)                                                    │
-│  Grayson.VisionApp.WpfUI / Grayson.Vison.FlowEdit                   │
-├─────────────────────────────────────────────────────────────────────┤
-│  工位核心逻辑层                                                     │
-│  Grayson.Vision.Core                                                │
-│  (StationHostRuntime / StationWorker / StationContext)              │
-├─────────────────────────────────────────────────────────────────────┤
-│  插件与节点层                                                       │
-│  Grayson.Vision.Nodes / Plugins.Camera.Hikvision /                  │
-│  Plugins.Motion.Zmc / Plugins.Protocol.Universal                    │
-├─────────────────────────────────────────────────────────────────────┤
-│  基础设施层                                                         │
-│  Grayson.Vision.HalconWrapper.Wpf (WPF 显示)                        │
-│  Grayson.Vision.HalconWrapper (纯 Halcon 算法)                      │
-│  Grayson.Vision.Repository (数据持久化)                             │
-├─────────────────────────────────────────────────────────────────────┤
-│  契约层                                                             │
-│  Grayson.Vision.Contracts (接口、模型、枚举、通用服务契约)            │
-└─────────────────────────────────────────────────────────────────────┘
+Plugins.* ─┐                                  ┌─> Grayson.Vision.HalconWrapper.Wpf
+Contracts <-┼- Repository <- Core <-+         ├-> Grayson.Vision.Nodes  ─┐
+(底座)      └- HalconWrapper <-+    |          │                          v
+                              |    └-----------> Grayson.Vison.FlowEdit <-> Grayson.VisionApp.WpfUI(WPF 主程序)
+                              └----------------> Grayson.Vision.Nodes ──> 同上
+规则：Contracts 不依赖任何上层；Core/Repository/HalconWrapper 不引 WPF、不引具体硬件 SDK；只有主程序与编辑器允许组合一切。
 ```
 
-### 3.1 核心运行架构
+---
 
-当前版本采用 **严格分层 + 单进程内多线程 Worker 宿主** 模式运行 Station 工作流。`StationHostRuntime` 是全局同进程运行入口：
+## 3. 四个核心概念（30 秒扫盲）
+
+1. **工位（Station）= 运行载体**：一条线/一台机上的一个视觉任务点。`StationConfigModel`（配置、触发源、流程键、运行参数）→ `StationWorker`（状态机 + 驱动流程）→ 具体业务 `Process`（如 VisionPickPlaceProcess、MahjongPickProcess）。
+2. **配方（Recipe）= 随产品变的工艺**：流程节点图 + 工艺参数 + 逻辑设备需求。JSON 落盘（`Recipes\{Code}.json`），发布分**工位级**（共享标定矩阵）与**配方级**（矩阵快照进配方），不直接下发设备。
+3. **模板/标定 = 视觉资产**：模板源图留档可回溯；标定按物理量建模（手眼 H、偏心 e、对针 t、像素当量 s），状态机 Draft→SampleComplete→Verified→Published|Expired，向导采集 + 残差门禁。
+4. **节点（Node）= 最小执行单元**：10 大类（图像输入/预处理/识别/定位标定/测量2D/数学逻辑/设备IO/流程控制/数据存储/复合组），同一节点实现既被 FlowEdit 可视化编辑，也被运行时引擎调度执行。
+
+---
+
+## 4. 文档导航（先读哪几篇）
+
+| 文档 | 内容 | 建议 |
+|---|---|---|
+| `README.md`（本篇） | 定位 / 工程清单 / 概念扫盲 / 快速开始 | 所有人先读 |
+| `ARCHITECTURE.md` | 分层架构、依赖规则、关键机制（设备/工位/配方/节点/标定/显示） | 要改代码前读 |
+| `STATUS_TODO.md` | 各工程/特性域完成度、已知缺口与隐患、下一步 TODO | 接需求前必读 |
+| `DOCS_INDEX.md` | 仓库全部 md/html 文档清单 + 时效状态 + 阅读路径 | 找资料先查 |
+| `architecture-overview.html` | 可视化架构图（分层/依赖/模块卡片） | 讲给别人听用 |
+
+各工程内另有 README（`README_contracts.md` 等），随工程目录走；业务设计文档入口见 `DOCS_INDEX.md`。
+
+---
+
+## 5. 快速开始
 
 ```text
-应用层 / 编排 UI
-	Grayson.VisionApp.WpfUI / Grayson.Vison.FlowEdit
-			│ 编辑配方 / 发送指令 / 订阅状态     ▲ 推送图像帧 / 节点执行状态 / 日志 / 指标 / 告警
-			│（禁止直接操作节点、设备 SDK）      │
-			└────────── 跨线程事件 / Dispatcher ──┘
-			│                                    │
-StationHost 运行时层
-	Grayson.Vision.Core.Station.StationHostRuntime
-			│ 全局设备池 (DevicePool)、多工位 Worker 缓存、统一生命周期
-			▼
-WorkStation 工位层
-	Grayson.Vision.Core.StationWorker
-			│ PackML 顶层状态机（Idle / Stopped / Running / Paused / Faulted / Resetting / ErrorLocked）
-			│ 调度器托管、生命周期、安全联锁、复位分级
-			▼
-Scheduler 调度层
-	Grayson.Vision.Contracts.Station.Interfaces.IWorkflowScheduler
-	Grayson.Vision.Core.Scheduling.SimpleTriggerScheduler
-			│ 工单级执行、WorkOrder 生命周期、设备租赁申请、单步/连续触发
-			▼
-Blueprint / Node 层
-	Grayson.Vision.Contracts.Flow.Nodes / INodeExecutor
-			│ 只读写 WorkOrder 上下文，通过注入的设备代理调用硬件
-			▼
-Device 设备层
-	Grayson.Vision.Core.Devices.DevicePool / DeviceManager
-	Grayson.Vision.Contracts.Devices.IDevice / IDeviceLease / IDeviceManager
-			│ 硬件 SDK、状态机、重连、资源租赁、Mock / 仿真
+1) 打开 Grayson.Vision.Host.slnx（或直接编译入口 csproj）
+2) 目标框架 .NET Framework 4.7.2；平台建议 x64
+3) 外部原生依赖需放入 exe 运行目录：
+   - halcondotnet / halcon.dll（HALCON Runtime）
+   - 相机 SDK 原生库（Basler pylon / 海康 MVS）
+   - 各插件驱动原生 dll 随插件 Content 拷贝
+4) 运行目录 = Grayson.VisionApp.WpfUI\bin\Debug\（主程序 Grayson.Vision.WpfUI.exe）
+5) 典型上机流程：建档工位 → 绑定/领用设备 → 采图调成像(模板/平场) → 标定(向导) → 编排配方 → 运行验证
 ```
 
-- **StationHostRuntime**：进程级单例（推荐），统一持有 `IDevicePool`、多工位 `StationWorker` 与 `IWorkerClient` 缓存。UI 通过它创建/销毁工位，避免每处各自实例化设备池。
-- **工位（Station）**：拥有唯一的 `StationId`；`StationWorker` 是顶层状态机，不直接参与节点执行细节。
-- **配方（Recipe）**：`RecipeModel` 拆分如下：
-  - 业务流（`MainProcess` / `SubProcesses`）：画布编排的业务逻辑；
-  - 工位运行配置（`StationRuntimeConfiguration`）：调度器、超时、IO 映射、告警阈值；
-  - 工艺参数集（`ProcessParameterSet`）：与产品绑定的阈值、曝光、AI 模型、标定结果。
-- **设备资源管理**：`IDeviceManager`/`DeviceManager` 负责设备注册、Open / Close、独占/共享租赁；`IDeviceLease` 是工单持有设备句柄的凭证；节点不再直接持有设备实例。全局设备池 `DevicePool` 负责插件加载、物理扫描、持久化与工位领用。
-- **工单追踪**：`WorkOrder` 强类型记录 `Created → Running → Completed_OK / Completed_NG / Abort_*` 生命周期；`WorkOrderTracker` 保存最近工单历史。
-- **可观测性**：`LogBus` 支持 Category 过滤与工单级日志；`StationMetrics` 聚合 OK/NG、节点耗时、设备重连、队列长度；`AlarmBus` 分发 Information/Warning/Fault 告警。
-- **单进程运行**：当前版本所有 `StationWorker` 运行在宿主进程内（`WpfUI` 或 `FlowEdit`），通过跨线程事件与 `Dispatcher` 将状态/图像/日志推送到 UI，无 IPC 序列化开销，适合单机视觉检测场景。
-- **嵌入式调试**：`Grayson.Vison.FlowEdit` 可直接创建 `StationWorker` 或经由 `StationHostRuntime` 进行单步 / 连续调试。
+> 本机构建/回归脚本（个人开发环境用）：`.workbuddy/` 下 `build_p2.py`、`build_recipe_publish.py`、`verify_p0_assert.py`、`verify_recipe_publish_assert.py`、`verify_halcon_operators.py`、`deploy_halcon_runtime.py`。MSBuild 用 32 位 `VS\18\Community\MSBuild\Current\Bin\MSBuild.exe`（amd64 版易崩）。
 
 ---
 
-## 4. 主要入口与使用方式
-
-### 4.1 推荐入口：StationHostRuntime
-
-在主程序中，建议全局共享一个 `StationHostRuntime`：
-
-```csharp
-var host = new StationHostRuntime();
-await host.InitializeAsync(); // 加载插件、恢复设备池
-
-// 创建工位并绑定配方与设备映射
-var client = await host.CreateStationWithRecipeAsync(
-	"Station_01",
-	recipe,
-	deviceMappings,
-	WorkMode.Production
-);
-
-client.OnStateChanged += (s, e) => { /* 更新 UI 状态 */ };
-client.OnFrameRendered += (s, e) => Dispatcher.Invoke(() => imageVm.Render(e));
-
-await client.StartAsync();
-```
-
-### 4.2 UI 门面：StationRuntimeManager / WorkerClientManager
-
-```csharp
-// 简化的 UI 门面，内部转发到 StationHostRuntime
-var manager = new StationRuntimeManager(host);
-var client = await manager.CreateAndConnectStationAsync("Station_01", WorkerConnectMode.Embedded);
-
-// 多工位缓存与广播
-var multiManager = new WorkerClientManager();
-await multiManager.RegisterAndConnectAsync("Station_01", WorkerConnectMode.Embedded);
-await multiManager.LoadRecipeToAllAsync(recipe.MainProcess);
-```
-
-### 4.3 底层调试：直接使用 StationWorker
-
-```csharp
-var worker = new StationWorker("DebugStation_01");
-worker.OnFrameRendered += (s, e) => Dispatcher.Invoke(() => imageVm.Render(e));
-await worker.LoadRecipeAsync(recipe.MainProcess);
-await worker.StartAsync();
-```
-
----
-
-## 5. 项目职责速查
-
-### 5.1 Grayson.Vision.Contracts
-
-**契约层，不依赖 WPF、Halcon 等具体技术。** 所有上层项目都依赖它。主要包含：
-
-- **视图模型基类**：`ViewModelBase`、`RelayCommand<T>`
-- **通用模型与结果**：`Result<T>`、`Pose3D`
-- **工位 Worker 契约**：
-  - `IStationWorkerHost`：工位宿主统一接口（`LoadRecipeAsync`、`StartAsync`、`StopAsync`、`TriggerOnceAsync`）
-  - `IStationWorkerEvents`：状态/节点/执行链/日志事件集合
-  - `IStationHostRuntime`：进程级运行时根接口
-  - `IWorkflowScheduler`：调度器抽象
-  - `StationState`、`WorkMode`、`ImageRenderEventArgs`、`ChainCompletedEventArgs`
-- **业务节点接口与模型**：
-  - `INodeExecutor`、节点特性 `NodeAttribute` / `NodePortAttribute`
-  - 流程节点模型：`FlowNode`、`FlowNodeBase`、`FlowModels`、`CompositeFlowNode`
-  - 执行上下文：`NodeExecutionContext`、`ExecutionContext`、`FrameCycleContext`
-  - 流程执行器：`FlowExecutor`
-  - 节点工厂：`NodeFactory`
-- **设备抽象接口**：`IDevice`、`ICamera`、`IPlc`、`IHardwarePlugin`、`IDeviceManager`、`IDevicePool`、`IDeviceLease`
-- **通用服务契约**：`IDialogService`、`IFileDialogService`、`IFlowLayoutService`
-- **插件加载契约**：`INodePluginLoader`
-- **图像渲染契约（无 UI）**：`IRenderImage`、`ImageRenderContext`、`ImageOverlay`、`IImageRenderService`、`IImageDisplayHost`
-- **权限**：`UserRole`
-
-### 5.2 Grayson.Vision.Core
-
-**工位核心逻辑层，零 UI 污染。** 只引用 `Contracts`，承载全局同进程宿主、设备管理、调度、工单追踪、状态机、事件路由。完整说明请参阅 [`Grayson.Vision.Core/README_core.md`](Grayson.Vision.Core/README_core.md)。
-
-主要类型：
-
-- `StationHostRuntime`：全局同进程运行时根，持有 `IDevicePool`、所有工位 `StationWorker` 与 `IWorkerClient`。
-- `StationWorker`：实现 `IStationWorkerHost` 与 `IStationWorkerEvents`。
-  - 管理 `StationState`：Idle / Stopped / Running / Paused / Faulted / **Resetting** / **ErrorLocked**。
-  - 加载配方 → 构建 `ExecutionChain`；通过 `IWorkflowScheduler` 驱动执行，自己只负责顶层状态机与事件转发。
-  - 提供 **四级复位/停止**：`WorkOrderResetAsync`（工单级）、`SoftResetAsync`（工位软复位）、`HardwareResetAsync`（硬件全复位）、`EmergencyStopAsync`（急停 → ErrorLocked）。
-  - 暴露 `StationMetrics`、`WorkOrderTracker`。
-- `StationContext`：工位独立运行上下文。
-  - `IDeviceManager DeviceManager`：统一设备注册、生命周期、独占/共享租赁。
-  - `IStationParameterService StationParameters`：工位全局参数（标定矩阵、工位配置），写入需要 `operatorToken`。
-  - `ExecutionContext GlobalEngineContext`：工位全局共享数据总线，节点可通过它读取全局参数，业务节点禁止随意写入。
-- `Devices/DevicePool.cs`、`Devices/DeviceManager.cs`：全局设备池与工位级设备租赁。
-- `Scheduling/SimpleTriggerScheduler.cs`：单次触发 + Debug 连续循环的默认调度器。
-- `Station/WorkOrderTracker.cs`：最近工单历史。
-- `Client/StationRuntimeManager.cs`、`Client/WorkerClientManager.cs`、`Client/EmbeddedWorkerClientProxy.cs`：UI 入口与多工位广播。
-
-### 5.3 Grayson.Vision.HalconWrapper / .Wpf
-
-- `HalconWrapper`：纯算法层，不引用 WPF，封装 Halcon 标定、Blob、匹配、测量、滤波等。
-- `HalconWrapper.Wpf`：WPF 渲染层，封装 `HSmartWindowControlWPF`、图像显示服务、缩略图转换。
-
-### 5.4 Grayson.Vision.Nodes
-
-流程节点实现，按分类组织（如 DeviceIO、Logic、Halcon 等）。每个节点通常包含：
-
-- 节点执行器（`INodeExecutor` 实现）
-- 参数模型（可序列化）
-- 参数面板 XAML / ViewModel（与节点插件配套）
-
-### 5.5 Grayson.Vison.FlowEdit
-
-- 独立的视觉流程编辑器 WinExe。
-- 拖拽节点画布、属性面板、图像显示、配方保存/加载。
-- 可作为嵌入式线程宿主直接创建 `StationWorker` 或 `StationHostRuntime` 进行调试。
-
-### 5.6 Grayson.VisionApp.WpfUI
-
-- 主程序宿主 WinExe。
-- 登录、主框架、设备池管理、流程编辑、报警、配方、用户管理等。
-- 通过 `StationRuntimeManager` 或 `WorkerClientManager` 访问工位，禁止直接操作 `StationWorker` 或设备 SDK。
-
-### 5.7 Grayson.Vision.Repository
-
-- 基于 LiteDB 的数据持久化层。
-- 配方、工位配置、设备配置、历史记录等 PO 与仓储实现。
-
-### 5.8 插件项目
-
-| 项目 | 说明 |
-|---|---|
-| `Plugins.Camera.Hikvision` | 海康工业相机插件，实现 `ICamera`。 |
-| `Plugins.Motion.Zmc` | ZMC 运动控制卡插件，实现 `IMotion`。 |
-| `Plugins.Protocol.Universal` | 通用通信协议插件（串口 / TCP / UDP）。 |
-
----
-
-## 6. 工位状态机
-
-`StationWorker` 采用 PackML 风格状态机：
+## 6. 顶层目录导览
 
 ```text
-Stopped ──LoadRecipeAsync──> Idle ──StartAsync──> Running
-  ↑                                              │      │
-  │                     StopAsync / Canceled     │      │ TriggerOnceAsync 完成
-  └──────────────────────────────────────────────┘      │   （单次运行回 Idle）
-														  │
-												 Faulted  │  ErrorLocked
-														 Fault
-														  │
-												 任何错误   │  EmergencyStopAsync
-														  │
-												 Soft/Hardware
-												 Reset ──>  Resetting ──> Idle
+Grayson.Vision.Host/
+├─ Grayson.Vision.Contracts/      契约层（接口/模型/DTO，13 个领域目录）
+├─ Grayson.Vision.Core/           工位运行宿主与业务 Process
+├─ Grayson.Vision.Repository/     LiteDB 持久化
+├─ Grayson.Vision.HalconWrapper/  HALCON 封装（无 WPF）
+├─ Grayson.Vision.HalconWrapper.Wpf/  HALCON 显示宿主/交互层
+├─ Grayson.Vision.Nodes/          流程节点实现
+├─ Grayson.Vison.FlowEdit/        流程编辑器 exe
+├─ Grayson.VisionApp.WpfUI/       主程序（View/ViewModel/Service/...）
+├─ Plugins.Camera.Basler|Hikvision/   相机插件
+├─ Plugins.Robot.Epson/           机械手插件
+├─ Plugins.Motion.Zmc/            运控卡插件
+├─ Plugins.PLC.Siemens|Modbus/    PLC 插件
+├─ Plugins.Protocol.Universal/    通用通信插件
+├─ Plugins.Inference.OnnxRuntime/ AI 推理插件
+├─ DLLLib/                        第三方 dll 汇集（halcondotnet 等）
+├─ packages/                      NuGet 本地包
+├─ InterviewPrep/                 个人排查案例笔记（未入库，勿 git add）
+├─ resume/                        个人求职/面试材料（独立 git 仓库，根仓库已忽略）
+└─ .workbuddy/                    开发工具与记忆（回归脚本/部署脚本/日志）
 ```
 
-- `Resetting`：复位中，执行 `SoftResetAsync` 或 `HardwareResetAsync` 期间进入。
-- `ErrorLocked`：急停锁定，需人工干预后才能重新初始化。
-- `LoadRecipeAsync` 失败时进入 `Faulted`，但保留空链/部分链，确保 UI 仍能启动并显示错误。
-- 节点执行失败或连续运行取消时，根据 `ChainExecutionResult` 切回 `Faulted` / `Stopped` / `Idle`。
+> 根目录散落的历史设计文档（2026-08 至 09-06）属**知识资产**，仍可参考，时效判定见 `DOCS_INDEX.md`，勿随手删除。
 
 ---
 
-## 7. 设计约束
+## 7. 状态速览
 
-1. **零 UI 污染**：`Grayson.Vision.Contracts` 与 `Grayson.Vision.Core` 不引用 `PresentationFramework`、`PresentationCore`、`WindowsBase` 等任何 UI 程序集。
-2. **倒置依赖**：上层项目（WPF UI、插件）引用下层项目（Contracts、Core），Core 不反向依赖任何宿主或 UI 项目。
-3. **设备租赁**：节点不应直接持有设备实例；执行期间通过 `IDeviceLease` 申请与释放设备。
-4. **单进程宿主**：当前版本所有工位运行在宿主进程内，通过事件与 `Dispatcher` 与 UI 交互；独立的跨进程 WorkerHost 仅作为未来扩展点保留。
-5. **工位隔离**：每个 `StationWorker` 拥有独立的 `StationContext`，不同工位间不共享硬件句柄与数据缓存。
-
----
-
-## 8. Quick Start
-
-```bash
-# 1. 克隆后用 Visual Studio 2026 打开 slnx
-Grayson.Vision.Host.slnx
-
-# 2. 还原 NuGet 包
-# 3. 编译并启动 Grayson.VisionApp.WpfUI（或 Grayson.Vison.FlowEdit）
-```
-
-如需在 `FlowEdit` 中快速调试流程：
-
-```csharp
-var host = new StationHostRuntime();
-await host.InitializeAsync();
-var client = await host.CreateEmbeddedStationAsync("Debug_01");
-await client.LoadRecipeAsync(recipe.MainProcess);
-await client.StartAsync(); // Debug 模式下会自动进入连续触发循环
-```
-
----
-
-## 9. 相关文档
-
-- [`Grayson.Vision.Core/README_core.md`](Grayson.Vision.Core/README_core.md) — 工位核心详细说明
-- [`Grayson.Vision.Nodes/README.md`](Grayson.Vision.Nodes/README.md) — 节点开发说明
-- [`Grayson.Vison.FlowEdit/README.md`](Grayson.Vison.FlowEdit/README.md) — 流程编辑器说明
+- 主线能力（标定 v2、配方两级发布、流程编排、模板源图留档、设备插件、UI 工程台）**已落地并有回归断言保护**；
+- 在研/待办：多相机复合标定与业务模板（固定上相机 + 固定下相机 + 眼在手）、ST_003 发布链隐患、双 csproj 收敛、DLTool .hdl 端到端实操验证等；
+- 完整矩阵见 `STATUS_TODO.md`。

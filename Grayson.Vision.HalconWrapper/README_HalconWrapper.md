@@ -1,192 +1,49 @@
-# Grayson.Vision.HalconWrapper
+# Grayson.Vision.HalconWrapper — HALCON 业务化封装（视觉内核）
 
-Halcon 算子封装层，面向公司视觉框架提供统一、安全的图像处理 API。本层是系统中唯一允许直接引用 `HalconDotNet` 的项目。上层 `Nodes`、插件及其他业务模块禁止直接使用 Halcon 原生对象。
+> 校正：2026-09-07。系统内**唯一允许直接引用 HalconDotNet 的工程之一**（另一个是 HalconWrapper.Wpf）。上层（Nodes/插件/UI）禁止直接 new 原生 HALCON 对象。
 
-## 1. 基础信息
+## 1. 目录结构
 
-- **目标框架**：.NET Framework 4.7.2 x64
-- **语言**：C# 7.x
-- **适配 Halcon 版本**：19.11 x64
-- **必须引用**：
-  - `Grayson.Vision.Contracts`
-  - `Grayson.Vision.Common`
-  - `HalconDotNet.dll`（复制到输出目录：如果较新则复制）
+| 目录 | 职责 |
+|---|---|
+| `Templates\` | 模板学习/保存/加载/源图留档（CreateTemplate 在学习帧落 `Config\Templates\Sources\{模板名}.png` 并回填 `SourceImagePath`） |
+| `Match2D\` | 形状匹配（ShapeModel）/ 相关匹配（NCC） |
+| `Measure2D\` | 卡尺 / 边缘 / 亚像素测量（测量辅助类） |
+| `Calibration\` | 九点标定 / 手眼求解 / 旋转中心 / 像素当量 |
+| `ImageProc\` | 通用图像处理（滤波/阈值/形态学/Blob） |
+| `Identification\` | 识别类（条码/OCR 等） |
+| `Core\` | 封装基类/图像上下文 |
+| `NodePreviewHelper.cs` | 节点运行期预览辅助 |
 
-## 2. 模块与目录结构
+依赖：仅 `Contracts`；无 WPF（WPF 显示在 `HalconWrapper.Wpf`）。
 
-```
-Grayson.Vision.HalconWrapper
-├─ Core
-│  ├─ HalconMemoryGuard.cs      HObject 内存托管，防止泄露
-│  └─ HalconGlobalHelper.cs     Pose 转换、像素/毫米换算、坐标系绘制
-├─ ImageProc
-│  ├─ ImageBasicTool.cs         图像读写、灰度转换、ROI 裁剪
-│  ├─ ImageFilterTool.cs        高斯/中值滤波、形态学运算
-│  ├─ ImageThresholdTool.cs     固定阈值、动态阈值、Otsu、区域面积筛选
-│  ├─ AffineImageTool.cs        图像仿射变换（旋转/平移）
-│  ├─ RoiOperationTool.cs       Region 转 Mask、ROI 集合运算
-│  └─ ImagePreprocessTool.cs    面向 UI/节点的 object 类型统一预处理入口
-├─ Match2D
-│  ├─ MatchTool.cs              通用匹配封装（按策略分发）
-│  ├─ NccMatchTool.cs           NCC 互相关匹配实现
-│  └─ TemplateMatchTool.cs      shape_model 创建、查找、释放
-├─ Identification
-│  ├─ BarcodeTool.cs            条码/二维码检测与解码
-│  ├─ ColorTool.cs              颜色分割/颜色判断相关工具
-│  ├─ OCRTool.cs                OCR 识别封装（接口层）
-│  └─ DeepLearningTool.cs       深度学习推理/模型加载（占位/封装）
-├─ Measure2D
-│  └─ EdgeMeasureTool.cs        卡尺测量（边缘、圆孔，预留接口）
-└─ Calibration
-   ├─ Calib2DTool.cs            九点标定、像素↔世界坐标换算
-   └─ FixtureTool.cs            夹具/位置补正、点/区域的仿射映射
-```
+## 2. 算子与句柄铁律（新封装前必读）
 
-## 3. 设计原则
+1. **模型句柄一律 HTuple(HHandle) 原样传**，不做 IntPtr 中间转换；
+2. `GenImageInterleaved` = **12 参**（bits=-1, shift=0）；`MinMaxGray` = **6 参**；
+3. **不存在的算子**（幻觉高发区，新增前跑 `.workbuddy/verify_halcon_operators.py` dnfile 静态核对）：
+   - ❌ `GenRectangle1ContourXld` → 用 `GenContourPolygonXld`
+   - ❌ `GenRegionBoundary` → 用 `GenContourRegionXld`
+   - ❌ `HomMat2dToAffinePara`、`FindCircle` 等（以 halcondotnet.dll 实测为准）
+4. `ImageOverlay` 的属性名是 **Column**（非 Col/行）；
+5. `set_shape_model_origin` = 相对域重心偏移——固化 origin 后旧 `.shm/.ncc` 必须重建；
+6. **算子绝不跑 UI 线程**；HImage 借用语义（见根 ARCHITECTURE §6）。
 
-1. **唯一 Halcon 入口**：只有本层可直接 `using HalconDotNet`，上层通过 `Result<T>` 与本层交互。
-2. **统一返回值**：所有公开方法均返回 `Result<T>` 或 `Result`，调用方无需处理 Halcon 原生异常。
-3. **内存安全**：`HalconMemoryGuard` 批量托管临时 `HObject`，`using` 结束自动释放。
-4. **异常隔离**：底层异常统一转 `Result.Fail`，日志记录后上层只拿到业务错误信息，不暴露 Halcon 细节。
+## 3. 模板工程要点（工艺级约束）
 
-## 4. 快速使用
+- ROI：目标占 ≥50%、框心=吸取点；NumLevels/Contrast auto、MinContrast 10；自测分数≈1.0 属正常；
+- 光照梯度大 → `EnableFlatField=true` 后**重建模板**；
+- 源图留档：`Sources\{模板名}.png` 用于"编辑选中"回读原图改 ROI/掩膜；同名覆盖天然复用同文件；Delete 只清 Sources 留档、**用户原图绝不删**；
+- 存量空 `SourceImagePath` 老模板：原帧已失，需现场同名覆盖重学一次自动补档。
 
-### 4.1 加载并显示结果
+## 4. 扩展指南
 
-```csharp
-var result = ImageBasicTool.ReadImageFile("D:/sample.bmp");
-if (!result.Success)
-{
-	// 处理失败：result.Message
-	return;
-}
-HObject img = result.Data;
-// 使用 img，使用完毕后由调用方负责释放或继续托管给 Guard
+```text
+在对应目录建 XxxService/Helper → 走 HalconDotNet → 返回 HObject/HTuple 结果
+→ 上层(Nodes)只依赖本工程公开类，不直接碰原生句柄
 ```
 
-### 4.2 图像预处理链
+## 5. 关联文档
 
-```csharp
-using (var guard = new HalconMemoryGuard())
-{
-	var gray = ImageBasicTool.RgbToGray(img);
-	if (!gray.Success) return;
-
-	var blur = ImageFilterTool.GaussFilter(gray.Data, 5);
-	if (!blur.Success) return;
-
-	var region = ImageThresholdTool.FixedThreshold(blur.Data, 0, 128);
-	if (!region.Success) return;
-
-	guard.Register(gray.Data);
-	guard.Register(blur.Data);
-	// region.Data 若为下游输出结果，可单独管理
-}
-```
-
-### 4.3 模板匹配
-
-```csharp
-// 1. 创建模板
-var createModel = TemplateMatchTool.CreateShapeModel(
-	templateImg, roiRow1, roiCol1, roiRow2, roiCol2,
-	angleStart: -20, angleEnd: 20);
-
-if (!createModel.Success) return;
-int modelId = createModel.Data;
-
-// 2. 在线匹配
-var find = TemplateMatchTool.FindShapeModel(searchImg, modelId, 0.7);
-if (find.Success && find.Data.Length > 0)
-{
-	var match = find.Data[0];
-	Console.WriteLine($"Row={match.PixelRow}, Col={match.PixelCol}, Score={match.Score}");
-}
-
-// 3. 释放模板
-TemplateMatchTool.ClearShapeModel(modelId);
-```
-
-### 4.4 九点标定与坐标转换
-
-```csharp
-// 计算标定矩阵
-var calibResult = Calib2DTool.CalcNinePointHomMat(
-	pixelXList, pixelYList,
-	worldXList, worldYList);
-
-if (!calibResult.Success) return;
-HTuple homMat = calibResult.Data;
-
-// 像素 -> 世界 mm
-var world = HalconGlobalHelper.PixelToWorldMm(pixelX, pixelY, homMat);
-
-// 保存/读取
-Calib2DTool.SaveHomMatToFile(homMat, "calib.tup");
-Calib2DTool.LoadHomMatFromFile("calib.tup");
-```
-
-## 5. 各模块 API 一览
-
-### 5.1 Core
-
-| 文件 | 关键类型 | 说明 |
-|------|----------|------|
-| `HalconMemoryGuard` | `Register`、`CleanAll`、`Dispose` | 批量托管 `HObject` 生命周期 |
-| `HalconGlobalHelper` | `PixelToWorldMm`、`WorldMmToPixel`、`DrawCross`、`Pose3D↔HTuple` | 坐标换算、绘图、Pose 转换 |
-
-### 5.2 ImageProc
-
-| 文件 | 主要能力 |
-|------|----------|
-| `ImageBasicTool` | `ReadImageFile`、`SaveImageToFile`、`RgbToGray`、`CropImage` |
-| `ImageFilterTool` | `GaussFilter`、`MedianFilter`、`Erode`、`Dilate`、`OpenMorph`、`CloseMorph` |
-| `ImageThresholdTool` | `FixedThreshold`、`AutoThreshold`、`OtsuThreshold`、`SelectRegionByArea` |
-| `AffineImageTool` | `RotateImage` |
-| `RoiOperationTool` | `RegionToMask`、`CombineRegions`（1=交集/2=并集/3=差集） |
-| `ImagePreprocessTool` | `ApplyFilter`、`ApplyThreshold`、`ApplyRoiCrop`、`ApplyCombineRegions`、`ApplyAffineRotate`（object 形态入口） |
-
-### 5.3 Match2D
-
-| 文件 | 主要能力 |
-|------|----------|
-| `MatchTool` | 匹配策略分发、统一结果封装（支持不同匹配算法切换） |
-| `NccMatchTool` | 基于 NCC 的模板匹配实现，适用于亮度/对比稳定的场景 |
-| `TemplateMatchTool` | `CreateShapeModel`、`FindShapeModel`、`ClearShapeModel`（基于 Halcon shape_model） |
-| `TemplateMatchResult` | `PixelRow`、`PixelCol`、`RotateDegree`、`Score` |
-
-### 5.4 Identification
-
-| 文件 | 主要能力 |
-|------|----------|
-| `BarcodeTool` | 条码/二维码检测与解码，返回位置与内容 |
-| `ColorTool` | 基于颜色的分割与判定工具，支持 HSV/RGB 查询 |
-| `OCRTool` | OCR 接口封装（占位），上层可注入具体 OCR 引擎实现 |
-| `DeepLearningTool` | 深度学习模型加载与推理封装（占位/接口层） |
-
-### 5.5 Measure2D
-
-| 文件 | 主要能力 |
-|------|----------|
-| `EdgeMeasureTool` | `MeasureLineDistance`、`MeasureCircleDiameter`（当前为骨架，后续按需实现） |
-
-### 5.6 Calibration
-
-| 文件 | 主要能力 |
-|------|----------|
-| `Calib2DTool` | `CalcNinePointHomMat`、`SaveHomMatToFile`、`LoadHomMatFromFile` |
-| `FixtureTool` | `CreateFixture`（建立位置补正矩阵）、`ApplyFixtureToPoint`、`ApplyFixtureToRegion`（将补正应用于点或区域） |
-
-## 6. 使用规范
-
-- 对临时 `HObject` 优先使用 `using (var guard = new HalconMemoryGuard())` 托管，避免单个 `Dispose` 散落。
-- 返回给上层的图像对象建议使用 `Result<T>` 传递，生命周期由接收方负责。
-- 禁止在本层之外创建新的 `HalconDotNet` 依赖，保证后续 Halcon 版本升级只改动本层。
-- `.NET Framework 4.7.2` 下不支持部分高版本 C# 语法，保持 C# 7.x 兼容。
-
-## 7. 更新记录
-
-- 更新目录结构以匹配真实源码文件（新增 `AffineImageTool`、`RoiOperationTool`、`ImagePreprocessTool`、Identification 模块、Match2D 多种实现）。
-- 在 API 一览中补充 `MatchTool`、`NccMatchTool`、`BarcodeTool`、`ColorTool`、`OCRTool`、`DeepLearningTool` 等条目以反映当前源码。
-- 调整基础配置说明为 `.NET Framework 4.7.2 x64`。
-- 补充使用示例与 API 一览表，减少 README 中直接内嵌完整源码的比重。
+- 根 `ARCHITECTURE.md` §4.4/§6；`视觉交互翻译层设计方案_v1_2026-09-05.md`（显示侧）
+- 算子核查脚本 `.workbuddy/verify_halcon_operators.py`（PYTHONPATH=envs/default/Lib/site-packages）

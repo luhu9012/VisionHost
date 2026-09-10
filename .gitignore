@@ -33,7 +33,7 @@ packages/
 Logs/
 Temp/
 
-# 机器视觉本地素材（不上仓库）
+# 机器视觉本地素材（运行期产生的图/模板/标定文件，不上仓库）
 Images/
 Templates/
 CalibFiles/
@@ -43,6 +43,18 @@ CalibFiles/
 *.tif
 *.hobj
 *.hvp
+
+# ⚠️ 例外：内嵌演示资产必须入库（否则 clone 后 DL / 测量 demo 跑不起来）
+#    Assets\DLDemo（.hdl 模型 + 精选图）、Assets\MeasureDemo（测量素材）
+!Grayson.VisionApp.WpfUI/Assets/**
+!Grayson.VisionApp.WpfUI/Assets/DLDemo/**
+!Grayson.VisionApp.WpfUI/Assets/MeasureDemo/**
+
+# AI 协作过程产物（脚本 / staging / 探针，非产品源码，不入库）
+.workbuddy/
+_staging_*/
+_probe/
+\-\-full-page/
 
 # SDK、驱动、授权文件
 SDK/
@@ -66,3 +78,6 @@ appsettings.local.json
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# 个人简历文件夹（含独立 git 仓库与本地履历，不入库）
+resume/

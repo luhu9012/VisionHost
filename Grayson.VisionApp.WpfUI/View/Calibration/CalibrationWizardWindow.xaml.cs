@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Grayson.Vision.HalconWrapper.Calibration;
 using Grayson.Vision.HalconWrapper.Wpf.Controls;
@@ -15,56 +16,58 @@ using Grayson.Vision.WpfUI.ViewModel;
 
 namespace Grayson.Vision.WpfUI.View
 {
-    /// <summary>
-    /// 第三步界面数据模板选择器（兼容 C# 7.3）
-    /// </summary>
-    public class Step3DataTemplateSelector : DataTemplateSelector
-    {
-        public DataTemplate NinePointTemplate { get; set; }
-        public DataTemplate HandEyeWithRotationTemplate { get; set; }
-        public DataTemplate CheckerboardTemplate { get; set; }
-        public DataTemplate PixelScaleTemplate { get; set; }
-
-        public override DataTemplate SelectTemplate(object item, DependencyObject container)
-        {
-            if (item is CalibrationProfile profile)
-            {
-                switch (profile.Type)
-                {
-                    case CalibrationType.NinePointHandEye:
-                        return NinePointTemplate;
-                    case CalibrationType.HandEyeWithRotation:
-                       return HandEyeWithRotationTemplate;
-
-                    case CalibrationType.Checkerboard2D:
-                        return CheckerboardTemplate;
-
-                    case CalibrationType.PixelScale:
-                        return PixelScaleTemplate;
-
-                    default:
-                        return NinePointTemplate;
-                }
-            }
-            return base.SelectTemplate(item, container);
-        }
-    }
-
     public partial class CalibrationWizardWindow : Window
     {
         public CalibrationWizardWindow() : this(null)
         {
         }
 
-        public CalibrationWizardWindow(CalibrationProfile profile)
+        public CalibrationWizardWindow(CalibrationProfile profile, CalibrationTaskSpec spec = null)
         {
             InitializeComponent();
-            this.DataContext = new CalibrationWizardViewModel(this, profile);
+            var vm = new CalibrationWizardViewModel(this, profile, spec);
+            // P1b：v2 StepDef 会话同面板多步（Bind/Origin 同槽0、Compute/Verify 同槽3）时，
+            // 步骤切换后把面板滚到该步关键区（基准/发布区位于面板下部→底部，其余→顶部）。
+            vm.PropertyChanged += WizardVm_PropertyChanged;
+            this.DataContext = vm;
+        }
+
+        private void WizardVm_PropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(CalibrationWizardViewModel.CurrentStep))
+            {
+                Dispatcher.BeginInvoke(new Action(ScrollMainContentForCurrentStep),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
+        /// <summary>当前步骤所在面板纵向定位：基准(DefineOrigin)/发布(VerifyAndPublish)区在面板下部 → 滚底；其余 → 滚顶</summary>
+        private void ScrollMainContentForCurrentStep()
+        {
+            if (!(DataContext is CalibrationWizardViewModel vm)) return;
+            ScrollViewer sv = FindVisualDescendants<ScrollViewer>(MainTabs).FirstOrDefault();
+            if (sv == null) return;
+            try
+            {
+                if (vm.ScrollToBottomForCurrentStep)
+                {
+                    sv.ScrollToVerticalOffset(double.MaxValue);
+                }
+                else
+                {
+                    sv.ScrollToHome();
+                }
+            }
+            catch
+            {
+                // 滚动定位为体验增强，失败不阻断向导
+            }
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            this.DialogResult = false;
+            // 2026-09-06 非模态化：DialogResult 仅对 ShowDialog 打开的窗口合法，直接关闭即可；
+            // 宿主在 Closed 时以 VM.IsSessionCompleted 判定是否提交，取消=false→不提交
             this.Close();
         }
 
@@ -140,6 +143,22 @@ namespace Grayson.Vision.WpfUI.View
 
             _displayContextAdapter = new HalconDisplayContextAdapter(host);
             vm.CalibrationDisplayContext = _displayContextAdapter;
+        }
+
+        /// <summary>EIH 间接对针点选：覆盖层视口坐标 → 图像坐标 → VM 记 p_tip（仅 t 会话对针视图内的覆盖层触发）</summary>
+        private void AlignHost_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!(DataContext is CalibrationWizardViewModel vm) || !vm.IsEihToolOffsetSession) return;
+            if (HalconDisplayAlign == null) return;
+            var viewPoint = e.GetPosition(HalconDisplayAlign);
+            double row, col;
+            if (HalconDisplayAlign.TryGetImagePointAt(viewPoint, out row, out col))
+            {
+                vm.SetAlignFeaturePixel(row, col);
+                HalconDisplayAlign.ClearMarkers();
+                HalconDisplayAlign.AddMarkerCross(row, col, 14, "yellow", "p_tip");
+                e.Handled = true;
+            }
         }
 
         /// <summary>深度遍历可视化子树，找出指定类型的全部控件</summary>

@@ -7,6 +7,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
     {
         public CameraDebugViewModel CameraDebugVM { get; }
         public AxisControlViewModel AxisControlVM { get; }
+        public RobotDebugViewModel RobotDebugVM { get; }
         public IoMonitorViewModel IoMonitorVM { get; }
         public CommDebugViewModel CommDebugVM { get; }
 
@@ -15,6 +16,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // 组合子ViewModel，便于统一解耦与维护
             CameraDebugVM = new CameraDebugViewModel();
             AxisControlVM = new AxisControlViewModel();
+            RobotDebugVM = new RobotDebugViewModel();
             IoMonitorVM = new IoMonitorViewModel();
             CommDebugVM = new CommDebugViewModel();
         }
@@ -26,6 +28,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             CameraDebugVM?.Cleanup();
             AxisControlVM?.Cleanup();
+            RobotDebugVM?.Cleanup();
             IoMonitorVM?.Cleanup();
         }
     }

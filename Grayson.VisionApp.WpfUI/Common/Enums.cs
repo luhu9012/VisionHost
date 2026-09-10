@@ -81,12 +81,20 @@ namespace Grayson.Vision.WpfUI.Common
         StationMonitor,
         RecipeManage,
         CalibrationManage,
+        // 模板工作台（v3 信息架构：模板=全局资产工具，与标定管理同级独立页，不再嵌工位 Tab）
+        TemplateManage,
+        // 任务模板中心（T 层任务模板库：引导定位/深度学习推理/外观测量 三类可复用任务模板，2026-09-09）
+        TaskTemplateCenter,
+        // 模型仓库（深度学习/测量推理资产注册中心，任务模板按 ModelAssetCode 引用）
+        ModelRegistry,
         DevicePool,
         HardwareConsole,
         PluginManage,
         DataTrace,
         MesBridge,
-        SystemSetting
+        SystemSetting,
+        // 工程工具:相机装调助手(垂直度快检 + 三点对焦快调闭环, 2026-09-06)
+        CameraTuneTool
 
     }
 }

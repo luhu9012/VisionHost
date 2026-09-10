@@ -19,7 +19,7 @@ namespace Plugins.Camera.Basler
     //
     // 选择逻辑见 BaslerSdkFactory.Create：
     //   DLLLib\Basler.Pylon.dll 存在 → 真实 pylon 适配层（编译期由 BASLER_PYLON 宏控制）
-    //   不存在                     → SimulatedBaslerSdk（合成麻将测试图）
+    //   不存在                     → SimulatedBaslerSdk（合成工件测试图）
     // ======================================================================
 
     /// <summary>SDK 层设备枚举信息（SN / 型号 / 显示名）</summary>
@@ -106,7 +106,7 @@ namespace Plugins.Camera.Basler
                         _instance = new PylonNetSdk();
 #else
                         // 未检测到 DLLLib\Basler.Pylon.dll，使用离线仿真：
-                        // 相机可正常“连接/采图”，图像为程序合成的麻将测试图，
+                        // 相机可正常“连接/采图”，图像为程序合成的工件测试图，
                         // 便于在没有真实巴斯勒相机时先行验证业务流。
                         _instance = new SimulatedBaslerSdk();
 #endif
@@ -128,8 +128,8 @@ namespace Plugins.Camera.Basler
     /// “虚拟巴斯勒相机”，让「采图节点 → 匹配 → 标定 → 机器人吸取」的
     /// 整条业务流可以在办公室环境先行跑通。
     ///
-    /// 仿真图像内容：暗背景 + 两块高亮“麻将牌”矩形（MONO8 灰度），
-    /// 与双吸嘴工位一次吸取两颗麻将的场景一致。
+    /// 仿真图像内容：暗背景 + 两块高亮“工件牌”矩形（MONO8 灰度），
+    /// 与双吸嘴工位一次吸取两颗工件的场景一致。
     /// </summary>
     internal sealed class SimulatedBaslerSdk : IBaslerSdk
     {
@@ -144,7 +144,7 @@ namespace Plugins.Camera.Basler
                 {
                     SerialNumber = "SIM-BASLER-0001",
                     ModelName = "acA1300-30gm (Simulated)",
-                    FriendlyName = "巴斯勒虚拟相机(麻将工位)"
+                    FriendlyName = "巴斯勒虚拟相机(工件工位)"
                 }
             };
         }
@@ -155,7 +155,7 @@ namespace Plugins.Camera.Basler
         }
     }
 
-    /// <summary>仿真相机实例：生成合成麻将测试图</summary>
+    /// <summary>仿真相机实例：生成合成工件测试图</summary>
     internal sealed class SimulatedBaslerCamera : IBaslerSdkCamera
     {
         private readonly string _serial;
@@ -253,7 +253,7 @@ namespace Plugins.Camera.Basler
             return null;
         }
 
-        /// <summary>合成一帧“麻将工位”测试图并上抛</summary>
+        /// <summary>合成一帧“工件工位”测试图并上抛</summary>
         private void PushFrame()
         {
             try
@@ -261,12 +261,12 @@ namespace Plugins.Camera.Basler
                 var sink = _frameSink;
                 if (sink == null || !_grabbing) return;
 
-                // 生成 MONO8 图像：深灰底 + 两块亮色麻将牌
+                // 生成 MONO8 图像：深灰底 + 两块亮色工件牌
                 // （两颗牌间距固定，模拟双吸嘴一次吸取两颗的上料场景）
                 byte[] buf = new byte[Width * Height];
                 for (int i = 0; i < buf.Length; i++) buf[i] = 40;
 
-                // 麻将牌尺寸约 30x42mm 视场内 ~120x170 像素
+                // 工件牌尺寸约 30x42mm 视场内 ~120x170 像素
                 DrawTile(buf, 420, 350, 120, 170, 215);
                 DrawTile(buf, 620, 350, 120, 170, 215);
 
@@ -287,7 +287,7 @@ namespace Plugins.Camera.Basler
             }
         }
 
-        /// <summary>画一块带圆角感的“麻将牌”亮矩形</summary>
+        /// <summary>画一块带圆角感的“工件牌”亮矩形</summary>
         private static void DrawTile(byte[] buf, int x0, int y0, int w, int h, byte gray)
         {
             for (int y = y0; y < y0 + h && y < Height; y++)

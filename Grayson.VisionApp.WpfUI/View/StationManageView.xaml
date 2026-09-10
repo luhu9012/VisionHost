@@ -5,9 +5,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
             xmlns:converters="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
             xmlns:common="clr-namespace:Grayson.Vision.WpfUI.Common"
-            xmlns:views="clr-namespace:Grayson.Vision.WpfUI.View"
             mc:Ignorable="d" 
-            d:DesignHeight="720" d:DesignWidth="1280">
+            d:DesignHeight="760" d:DesignWidth="1360">
     <UserControl.Resources>
         <converters:BoolToStatusBrushConverter x:Key="BoolToStatusBrushConverter"/>
         <converters:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter"/>
@@ -35,9 +34,10 @@
 
                 <!-- 操作按钮栏 -->
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-                    <Button Content="+ 产线" Style="{StaticResource PrimaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding DataContext.AddLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                    <Button Content="+ 工位" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding DataContext.AddStationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                    <Button Content="删除" Style="{StaticResource DangerButtonStyle}" Padding="10,5" Command="{Binding DataContext.DeleteNodeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    <Button Content="+ 产线" Style="{StaticResource PrimaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding AddLineCommand}"/>
+                    <Button Content="+ 工位" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Command="{Binding AddStationCommand}"
+                            ToolTip="在当前产线下用『需求问卷向导』创建工位"/>
+                    <Button Content="删除" Style="{StaticResource DangerButtonStyle}" Padding="10,5" Command="{Binding DeleteNodeCommand}"/>
                 </StackPanel>
 
                 <!-- 产线-工位 树形视图 -->
@@ -55,6 +55,8 @@
                             <StackPanel Orientation="Horizontal" Margin="2,4">
                                 <TextBlock Text="🏭 " VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding LineName}" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <TextBlock Text="{Binding Stations.Count, StringFormat=' ({}{0})'}" FontSize="11"
+                                           Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center" Margin="4,0,0,0"/>
                             </StackPanel>
 
                             <!-- 2级：工位节点 -->
@@ -64,9 +66,17 @@
                                         <TextBlock Text="⚙️ " VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding StationName}" Foreground="{StaticResource TextSecondaryBrush}"/>
                                         <TextBlock Text="{Binding StationCode, StringFormat=' ({0})'}" Foreground="{StaticResource TextDisabledBrush}" FontSize="11"/>
-                                        <TextBlock Text=" | 启用" FontSize="11" Margin="4,0,0,0" Foreground="Green"
+                                        <Border Background="#22007D56" CornerRadius="8" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding ReadyBadgeText}" FontSize="10.5" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </Border>
+                                        <TextBlock Text="启" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="#FF107C41" FontWeight="Bold"
+                                                   ToolTip="工位已启用"
                                                    Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                        <TextBlock Text=" | 禁用" FontSize="11" Margin="4,0,0,0" Foreground="Gray"
+                                        <TextBlock Text="停" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="Gray"
+                                                   ToolTip="工位已禁用"
                                                    Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
                                     </StackPanel>
                                 </DataTemplate>
@@ -77,292 +87,441 @@
             </Grid>
         </Border>
 
-        <!-- ==================== 右侧：工位详细配置与映射 ==================== -->
-        <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="12">
+        <!-- ==================== 右侧：工位工程工作台 ==================== -->
+        <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="14">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/> <!-- 0 站头（身份 + 信息摘要 + 动作） -->
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="Auto"/> <!-- 2 装配旅程带 -->
                     <RowDefinition Height="12"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>    <!-- 4 三个配置 Tab -->
                 </Grid.RowDefinitions>
 
-                <!-- 顶栏：工位元数据配置 -->
-                <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="12">
-                    <Grid>
+                <!-- ─────────── 站头 ─────────── -->
+                <Grid Grid.Row="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 身份行：大号名称 + 编号 + 动作组 -->
+                    <DockPanel Grid.Row="0">
+                        <!-- 右侧动作组（先声明的 Dock.Right 占据右侧） -->
+                        <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,0,4">
+                            <Button Content="🧩 流程编排" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5"
+                                    Margin="0,0,6,0" VerticalAlignment="Center"
+                                    Command="{Binding OpenFlowEditCommand}"
+                                    ToolTip="打开视觉流程编辑器（需先绑定产品配方）"/>
+                            <Button Content="🎯 模板工作台" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5"
+                                    Margin="0,0,6,0" VerticalAlignment="Center"
+                                    Command="{Binding OpenTemplateWorkbenchCommand}"
+                                    ToolTip="打开模板工作台并自动定位当前工位的模板资产"/>
+                            <Button Content="📐 标定中心" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5"
+                                    Margin="0,0,6,0" VerticalAlignment="Center"
+                                    Command="{Binding OpenCalibrationCenterCommand}"
+                                    ToolTip="打开标定中心并按当前工位需求档案建议合适的标定方案"/>
+                            <Button Content="📋 需求档案" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5"
+                                    Margin="0,0,6,4" VerticalAlignment="Center"
+                                    Command="{Binding OpenProfileCommand}"
+                                    ToolTip="查看/编辑本工位的需求问卷档案（问卷→系统推导建议）。低频入口：改需求请先想清楚会联动哪些下游建议"/>
+                            <Button Content="💾 保存并同步" Style="{StaticResource SuccessButtonStyle}" Padding="14,5"
+                                    Margin="0,0,0,0" VerticalAlignment="Center"
+                                    Command="{Binding SaveStationConfigCommand}"
+                                    ToolTip="保存工位配置到库并同步 Core Runtime"/>
+                        </WrapPanel>
+
+                        <!-- 左侧身份：名称(主) + 编号（末位填充剩余区域） -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚙️" FontSize="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox Text="{Binding SelectedStation.StationName, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" Width="250"
+                                     FontSize="15" FontWeight="Bold" VerticalContentAlignment="Center"
+                                     ToolTip="工位名称（可编辑）"/>
+                            <Border Background="#22378ADD" CornerRadius="10" Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="编号 " FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    <TextBox Text="{Binding SelectedStation.StationCode, UpdateSourceTrigger=PropertyChanged}"
+                                             Background="Transparent" BorderThickness="0" Width="92"
+                                             FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"
+                                             VerticalContentAlignment="Center" Padding="0"
+                                             ToolTip="工位编号（可编辑，保存后作为 Runtime 注册码）"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <!-- 信息行：启用/超时 + 概览摘要 -->
+                    <Grid Grid.Row="1" Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="110"/>
-                            <ColumnDefinition Width="12"/>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="140"/>
-                            <ColumnDefinition Width="12"/>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="80"/>
-                            <ColumnDefinition Width="12"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <!-- 快捷按钮列 -->
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Column="0" Text="工位编号:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                        <TextBox Grid.Column="1" Text="{Binding SelectedStation.StationCode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-
-                        <TextBlock Grid.Column="3" Text="工位名称:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                        <TextBox Grid.Column="4" Text="{Binding SelectedStation.StationName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-
-                        <TextBlock Grid.Column="6" Text="超时(ms):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                        <TextBox Grid.Column="7" Text="{Binding SelectedStation.TimeoutMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-
-                        <CheckBox Grid.Column="9"
-                                  Content="启用工位"
+                        <CheckBox Grid.Column="0" Content="启用工位"
                                   IsChecked="{Binding SelectedStation.IsEnabled, UpdateSourceTrigger=PropertyChanged}"
-                                  VerticalContentAlignment="Center"
+                                  VerticalContentAlignment="Center" Margin="0,0,18,0"
                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                  ToolTip="启用的工位可在单工位监控中连接，禁用工位不会被保存到 Runtime"/>
+                                  FontSize="12"
+                                  ToolTip="启用的工位可在单工位监控中连接；禁用工位不会被同步到 Runtime"/>
 
-                        <!-- 🎯 新增：从当前工位直达标定中心的快捷入口 -->
-                        <Button Grid.Column="12" 
-                        Content="🎯 标定中心" 
-                        Style="{StaticResource SecondaryButtonStyle}" 
-                        Margin="8,0,0,0"
-                        ToolTip="快速打开标定管理中心并自动定位至当前工位"
-                        Command="{Binding OpenCalibrationCenterCommand}"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
+                            <TextBlock Text="超时(ms) " FontSize="11" Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding SelectedStation.TimeoutMs, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" Width="70" FontSize="11"
+                                     VerticalContentAlignment="Center"/>
+                        </StackPanel>
 
-                        <Button Grid.Column="13" 
-                        Content="💾 保存工位并同步 Runtime Client" 
-                        Style="{StaticResource SuccessButtonStyle}" 
-                        Margin="8,0,0,0"
-                        Command="{Binding SaveStationConfigCommand}"/>
+                        <!-- 概览摘要：配方 / 硬件 / 触发 / 同步（占满剩余宽度，过长省略号） -->
+                        <Border Grid.Column="3" Background="#0D0078D4" CornerRadius="4" Padding="8,3" VerticalAlignment="Center" Margin="0,0,0,4">
+                            <TextBlock Text="{Binding StationOverviewText, TargetNullValue=''}" FontSize="11.5"
+                                       Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </Border>
                     </Grid>
+                </Grid>
+
+                <!-- ─────────── ⚡ 装配旅程带 ─────────── -->
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0"
+                        Visibility="{Binding IsStationSelected, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <DockPanel>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⚡ 装配旅程" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+                                <TextBlock Text=" · " FontSize="12" Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding ReadinessSummaryText}" FontSize="12" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <Button DockPanel.Dock="Right" Content="🚀 去单工位监控试运行"
+                                    Style="{StaticResource SuccessButtonStyle}" Padding="10,4" Margin="12,0,0,0"
+                                    Command="{Binding GoMonitorCommand}"
+                                    ToolTip="装配完成：跳转单工位监控页试运行（自动定位当前工位）"
+                                    Visibility="{Binding IsAllRequiredDone, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        </DockPanel>
+                        <TextBlock Text="点击步骤直达对应配置 Tab；🎯/📐 步骤跳到独立资产页。装齐必做步骤（任务模板→配方→硬件→映射→触发→保存同步）工位才能真正跑起来；纯视觉检测工位可跳过任务模板步骤。任务模板在【任务模板中心】统一新建/绑定/解绑。"
+                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}" Margin="0,3,0,6" TextWrapping="Wrap"/>
+                        <ItemsControl ItemsSource="{Binding ReadinessSteps}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding DataContext.GotoReadinessStepCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"
+                                            Margin="0,0,6,6" Padding="9,4"
+                                            ToolTip="{Binding Detail}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding StateGlyph}" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" " />
+                                            <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding TabLabel, StringFormat=' · {0}'}" FontSize="10.5"
+                                                       Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+                                                <!-- 已完成：绿色浅底 -->
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding State}" Value="2">
+                                                        <Setter Property="Background" Value="#1E27AE60"/>
+                                                        <Setter Property="BorderBrush" Value="#5527AE60"/>
+                                                    </DataTrigger>
+                                                    <!-- 下一步：高亮橙色 -->
+                                                    <DataTrigger Binding="{Binding State}" Value="1">
+                                                        <Setter Property="Background" Value="#33FF8C1A"/>
+                                                        <Setter Property="BorderBrush" Value="#FFFF8C1A"/>
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                    </DataTrigger>
+                                                    <!-- 可跳过：弱化 -->
+                                                    <DataTrigger Binding="{Binding State}" Value="3">
+                                                        <Setter Property="Opacity" Value="0.55"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </Border>
 
-                <!-- 核心选项卡：物理硬件领用 vs 配方映射 -->
-                <TabControl Grid.Row="2" Style="{StaticResource ModernTabControlStyle}">
+                <!-- ─────────── 三个配置 Tab ─────────── -->
+                <TabControl Grid.Row="4" Style="{StaticResource ModernTabControlStyle}" SelectedIndex="{Binding ActiveTabIndex}">
 
-                    <!-- Tab 1: 物理硬件分配 -->
-                    <TabItem Header="1. 物理硬件分配" Style="{StaticResource ModernTabItemStyle}">
+                    <!-- Tab ① 硬件领用 -->
+                    <TabItem Header="{Binding TabHeaderTexts[0]}" Style="{StaticResource ModernTabItemStyle}">
                         <Grid Margin="8">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <Button Content="+ 从全局硬件池领用" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddHardwareCommand}" Margin="0,0,8,0"/>
-                                <Button Content="移除所选硬件" Style="{StaticResource DangerButtonStyle}" Command="{Binding RemoveHardwareCommand}"/>
-                            </StackPanel>
+                            <Grid Grid.Row="0" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <WrapPanel Grid.Column="0">
+                                    <Button Content="＋ 从全局硬件池领用" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"
+                                            Command="{Binding AddHardwareCommand}"/>
+                                    <Button Content="移除所选硬件" Style="{StaticResource DangerButtonStyle}"
+                                            Command="{Binding RemoveHardwareCommand}"/>
+                                </WrapPanel>
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                           FontSize="11.5" Foreground="{StaticResource TextDisabledBrush}"
+                                           Text="{Binding SelectedStation.HardwareDevices.Count, StringFormat='已领用 {}{0} 台 · 运行时按设备池租赁记录绑定'}"/>
+                            </Grid>
 
                             <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
                                       ItemsSource="{Binding SelectedStation.HardwareDevices}" SelectedItem="{Binding SelectedHardware}">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="设备编号" Binding="{Binding DeviceCode}" Width="120" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="硬件名称" Binding="{Binding DeviceName}" Width="150" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="驱动/类型" Binding="{Binding DeviceType}" Width="140" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="连接参数/IP" Binding="{Binding ConnectionString}" Width="160" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="80" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="设备编号" Binding="{Binding DeviceCode}" Width="110" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="硬件名称" Binding="{Binding DeviceName}" Width="160" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="驱动/类型" Binding="{Binding DeviceType}" Width="150" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="连接参数/IP" Binding="{Binding ConnectionString}" Width="*" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="状态" Binding="{Binding StatusText}" Width="90" IsReadOnly="True"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
                     </TabItem>
 
-
-
-                    <!-- Tab 2: 配方绑定的逻辑 -> 物理映射 -->
-                    <TabItem Header="2. 配方逻辑设备映射" Style="{StaticResource ModernTabItemStyle}">
+                    <!-- Tab ② 配方 · 逻辑映射 -->
+                    <TabItem Header="{Binding TabHeaderTexts[1]}" Style="{StaticResource ModernTabItemStyle}">
                         <Grid Margin="8">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="8"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="8"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                                <TextBlock Text="绑定的产品配方：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
-                                <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="240"
-                                          ItemsSource="{Binding AvailableRecipes}" 
-                                          SelectedItem="{Binding SelectedStation.BoundRecipe}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding RecipeName}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                                <TextBlock Text="  业务过程：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
-                                <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="180"
-                                          ItemsSource="{Binding AvailableProcessKeys}"
-                                          SelectedItem="{Binding SelectedStation.ProcessKey}"
-                                          ToolTip="挂载机器结构级业务过程（运动+视觉整周期）。空=纯视觉调试模式；选择后工位的启动/单次/PLC 触发执行完整业务周期。"/>
-                            </StackPanel>
-
-                            <TextBlock Grid.Row="1" Text="💡 请将流程配方中要求的【逻辑设备】映射至下方【已分配的物理硬件】："
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-
-                            <DataGrid Grid.Row="2" Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
-                                      ItemsSource="{Binding SelectedStation.RecipeDeviceMappings}">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="配方逻辑设备" Binding="{Binding LogicalDeviceName}" Width="160" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="要求设备类型" Binding="{Binding LogicalDeviceType}" Width="120" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="能力/规格需求" Binding="{Binding RequiredSpec}" Width="180" IsReadOnly="True"/>
-
-                                    <!-- 动态选择映射到本工位领用的硬件 -->
-                                    <DataGridTemplateColumn Header="⚡ 绑定到物理硬件实体" Width="*">
-                                        <DataGridTemplateColumn.CellTemplate>
+                            <!-- 配方选择卡 -->
+                            <Border Grid.Row="0" Background="{StaticResource BackgroundCardBrush}" CornerRadius="4" Padding="12,9">
+                                <WrapPanel VerticalAlignment="Center">
+                                    <TextBlock Text="产品配方（运行逻辑）" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                    <ComboBox Style="{StaticResource ModernComboBoxStyle}" Width="260" Margin="10,0,0,0"
+                                              ItemsSource="{Binding AvailableRecipes}" 
+                                              SelectedItem="{Binding SelectedStation.BoundRecipe}"
+                                              SelectionChanged="RecipeCombo_SelectionChanged">
+                                        <ComboBox.ItemTemplate>
                                             <DataTemplate>
-                                                <ComboBox Style="{StaticResource ModernComboBoxStyle}"
-                                                          ItemsSource="{Binding DataContext.SelectedStation.HardwareDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                        
-                                                          SelectedValuePath="DeviceId"
-                                                          SelectedValue="{Binding MappedDeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <TextBlock Text="{Binding DeviceId}" />
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
+                                                <TextBlock Text="{Binding RecipeName}" ToolTip="{Binding RecipeName}"/>
                                             </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                </DataGrid.Columns>
-                            </DataGrid>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+
+                                    <!-- 配方库为空：引导先去建配方（含视觉链） -->
+                                    <Button Content="＋ 去创建配方" Style="{StaticResource PrimaryButtonStyle}" Padding="12,4" Margin="14,2,0,2"
+                                            Command="{Binding OpenRecipeManageCommand}"
+                                            ToolTip="配方库为空：先创建包含视觉链的产品配方，再回来绑定本工位"
+                                            Visibility="{Binding HasRecipesAvailable, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
+                                    <!-- 配方库非空：配方管理（编辑/切换）+ 流程编排 -->
+                                    <Button Content="📦 配方管理" Style="{StaticResource SecondaryButtonStyle}" Padding="12,4" Margin="14,2,0,2"
+                                            Command="{Binding OpenRecipeManageCommand}"
+                                            ToolTip="打开配方管理页（创建/编辑/选择配方）"
+                                            Visibility="{Binding HasRecipesAvailable, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    <Button Content="🧩 流程编排" Style="{StaticResource SecondaryButtonStyle}" Padding="12,4" Margin="8,2,0,2"
+                                            Command="{Binding OpenFlowEditCommand}"
+                                            ToolTip="打开视觉流程编辑器，编排该配方的视觉链（需已绑定产品配方）"/>
+                                    <TextBlock Text="配方 = 视觉链流程编排 · 工位的运行逻辑"
+                                               FontSize="10.5" Foreground="{StaticResource TextDisabledBrush}"
+                                               VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                </WrapPanel>
+                            </Border>
+
+                            <!-- 引导 / 进度 说明 -->
+                            <TextBlock Grid.Row="2" Text="{Binding RecipePickerHintText}" FontSize="11.5"
+                                       Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="2,0,0,0"/>
+
+                            <!-- 映射表（未绑定配方 / 配方库空 时换引导占位） -->
+                            <Grid Grid.Row="4">
+                                <DataGrid Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
+                                          ItemsSource="{Binding SelectedStation.RecipeDeviceMappings}"
+                                          Visibility="{Binding IsMappingAreaEmpty, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="配方逻辑设备" Binding="{Binding LogicalDeviceName}" Width="160" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="要求设备类型" Binding="{Binding LogicalDeviceType}" Width="130" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="能力/规格需求" Binding="{Binding RequiredSpec}" Width="*" IsReadOnly="True"/>
+                                        <DataGridTemplateColumn Header="⚡ 绑定到物理硬件实体" Width="*">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox Style="{StaticResource ModernComboBoxStyle}"
+                                                              ItemsSource="{Binding DataContext.SelectedStation.HardwareDevices, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                              SelectedValuePath="DeviceId"
+                                                              SelectedValue="{Binding MappedDeviceId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                              SelectionChanged="MappingCombo_SelectionChanged">
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding DeviceId}" />
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <!-- 映射区空态：配方库空 / 未绑定 -->
+                                <Border Background="#0D808080" CornerRadius="4"
+                                        Visibility="{Binding IsMappingAreaEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="24" MaxWidth="560">
+                                        <TextBlock Text="🔗" FontSize="30" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding RecipePickerHintText}" FontSize="12.5"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,0"/>
+                                        <Button Content="📦 去配方管理（创建 / 选择产品配方）"
+                                                Style="{StaticResource PrimaryButtonStyle}" Padding="16,6"
+                                                HorizontalAlignment="Center" Margin="0,16,0,0"
+                                                Command="{Binding OpenRecipeManageCommand}"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                         </Grid>
                     </TabItem>
 
-                    <!-- Tab 3: 标定管理 -->
-                    <!--<TabItem Header="3. 标定管理" Style="{StaticResource ModernTabItemStyle}">
-                        <views:CalibrationManagerView DataContext="{Binding DataContext.CalibrationManagerVm, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                    </TabItem>-->
+                    <!-- Tab ③ 触发与运行 -->
+                    <TabItem Header="{Binding TabHeaderTexts[2]}" Style="{StaticResource ModernTabItemStyle}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <Grid Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="10"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="10"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="10"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="10"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                    <!-- Tab 3: 触发信号配置 -->
-                    <TabItem Header="3. 触发信号配置" Style="{StaticResource ModernTabItemStyle}">
-                        <Grid Margin="8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="8"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="8"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
+                                <!-- 说明 -->
+                                <TextBlock Grid.Row="0"
+                                           Text="💡 工位如何被触发去执行一次完整视觉链？手动 = 监控页按钮；定时器 = 固定周期自动触发；PLC 位 = 轮询 PLC 地址的 bool 位（上升/下降沿）触发。"
+                                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
 
-                            <!-- 提示说明 -->
-                            <TextBlock Grid.Row="0"
-                                       Text="💡 配置工位的触发信号来源。手动=UI 按钮点击；定时器=固定周期自动触发；PLC 位=轮询 PLC 指定地址的 bool 位（上升沿/下降沿）后触发。"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       TextWrapping="Wrap"/>
-
-                            <!-- 触发源类型与边沿 -->
-                            <Grid Grid.Row="2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="160"/>
-                                    <ColumnDefinition Width="12"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="140"/>
-                                    <ColumnDefinition Width="12"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBlock Grid.Column="0" Text="触发源类型:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{x:Static common:TriggerOptionCatalog.SourceTypeOptions}"
-                                          SelectedValuePath="Value"
-                                          SelectedValue="{Binding SelectedStation.TriggerSourceType}"
-                                          ToolTip="选择工位触发信号的来源类型">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding DisplayName}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                    <ComboBox.ItemContainerStyle>
-                                        <Style TargetType="ComboBoxItem">
-                                            <Setter Property="ToolTip" Value="{Binding ToolTip}"/>
-                                        </Style>
-                                    </ComboBox.ItemContainerStyle>
-                                </ComboBox>
-
-                                <TextBlock Grid.Column="3" Text="边沿检测:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{x:Static common:TriggerOptionCatalog.EdgeOptions}"
-                                          SelectedValuePath="Value"
-                                          SelectedValue="{Binding SelectedStation.TriggerEdge}"
-                                          ToolTip="选择什么电平变化算一次有效触发（定时器源会自动忽略此项）">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding DisplayName}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                    <ComboBox.ItemContainerStyle>
-                                        <Style TargetType="ComboBoxItem">
-                                            <Setter Property="ToolTip" Value="{Binding ToolTip}"/>
-                                        </Style>
-                                    </ComboBox.ItemContainerStyle>
-                                </ComboBox>
-
-                                <TextBlock Grid.Column="6" Text="防抖(ms):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <TextBox Grid.Column="7" Text="{Binding SelectedStation.DebounceMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-                            </Grid>
-
-                            <!-- 丢帧策略 -->
-                            <Grid Grid.Row="4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="200"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBlock Grid.Column="0" Text="丢帧策略:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{x:Static common:TriggerOptionCatalog.DropStrategyOptions}"
-                                          SelectedValuePath="Value"
-                                          SelectedValue="{Binding SelectedStation.DropStrategy}"
-                                          ToolTip="检测周期超过触发节拍（执行中又来新信号）时的处理策略">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding DisplayName}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                    <ComboBox.ItemContainerStyle>
-                                        <Style TargetType="ComboBoxItem">
-                                            <Setter Property="ToolTip" Value="{Binding ToolTip}"/>
-                                        </Style>
-                                    </ComboBox.ItemContainerStyle>
-                                </ComboBox>
-                            </Grid>
-
-                            <!-- Timer 源参数（仅 Timer 类型时可见） -->
-                            <StackPanel Grid.Row="5" Margin="0,12,0,0" Visibility="{Binding SelectedStation.TriggerSourceType, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Timer}">
-                                <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                                <!-- 触发源 / 边沿 / 防抖 -->
+                                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="12">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="20"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="140"/>
+                                            <ColumnDefinition Width="20"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0" Text="触发源类型:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                                  ItemsSource="{x:Static common:TriggerOptionCatalog.SourceTypeOptions}"
+                                                  SelectedValuePath="Value"
+                                                  SelectedValue="{Binding SelectedStation.TriggerSourceType}"
+                                                  ToolTip="工位触发信号的来源类型">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding DisplayName}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                            <ComboBox.ItemContainerStyle>
+                                                <Style TargetType="ComboBoxItem">
+                                                    <Setter Property="ToolTip" Value="{Binding ToolTip}"/>
+                                                </Style>
+                                            </ComboBox.ItemContainerStyle>
+                                        </ComboBox>
+
+                                        <TextBlock Grid.Column="3" Text="边沿检测:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                        <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
+                                                  ItemsSource="{x:Static common:TriggerOptionCatalog.EdgeOptions}"
+                                                  SelectedValuePath="Value"
+                                                  SelectedValue="{Binding SelectedStation.TriggerEdge}"
+                                                  ToolTip="什么电平变化算一次有效触发（定时器源自动忽略此项）">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding DisplayName}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                            <ComboBox.ItemContainerStyle>
+                                                <Style TargetType="ComboBoxItem">
+                                                    <Setter Property="ToolTip" Value="{Binding ToolTip}"/>
+                                                </Style>
+                                            </ComboBox.ItemContainerStyle>
+                                        </ComboBox>
+
+                                        <TextBlock Grid.Column="6" Text="防抖(ms):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                        <TextBox Grid.Column="7" Text="{Binding SelectedStation.DebounceMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 丢帧策略 -->
+                                <Border Grid.Row="4" Style="{StaticResource CardBorderStyle}" Padding="12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="210"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="丢帧策略:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                        <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                                  ItemsSource="{x:Static common:TriggerOptionCatalog.DropStrategyOptions}"
+                                                  SelectedValuePath="Value"
+                                                  SelectedValue="{Binding SelectedStation.DropStrategy}"
+                                                  ToolTip="检测周期超过触发节拍（执行中又来新信号）时的处理策略">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding DisplayName}" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                            <ComboBox.ItemContainerStyle>
+                                                <Style TargetType="ComboBoxItem">
+                                                    <Setter Property="ToolTip" Value="{Binding ToolTip}"/>
+                                                </Style>
+                                            </ComboBox.ItemContainerStyle>
+                                        </ComboBox>
+                                        <TextBlock Grid.Column="2" Margin="12,0,0,0" Text="边沿检测 / 防抖对定时器源无效；定时器周期见下方参数区。"
+                                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Timer 源参数（仅 Timer 时显示） -->
+                                <Border Grid.Row="6" Style="{StaticResource CardBorderStyle}" Padding="12"
+                                        Visibility="{Binding SelectedStation.TriggerSourceType, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Timer}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="100"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Grid.Column="0" Text="定时器周期(ms):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
                                         <TextBox Grid.Column="1" Text="{Binding SelectedStation.TimerIntervalMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                                        <TextBlock Grid.Column="2" Margin="12,0,0,0" Text="周期必须 &gt; 0，否则视为触发配置不完整（装配旅程第 4 步无法通过）。"
+                                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                     </Grid>
                                 </Border>
-                            </StackPanel>
 
-                            <!-- PlcBit 源参数（仅 PlcBit 类型时可见） -->
-                            <StackPanel Grid.Row="5" Margin="0,12,0,0" Visibility="{Binding SelectedStation.TriggerSourceType, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=PlcBit}">
-                                <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                                <!-- PlcBit 源参数（仅 PlcBit 时显示） -->
+                                <Border Grid.Row="8" Style="{StaticResource CardBorderStyle}" Padding="12"
+                                        Visibility="{Binding SelectedStation.TriggerSourceType, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=PlcBit}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="200"/>
-                                            <ColumnDefinition Width="12"/>
-                                            <ColumnDefinition Width="120"/>
-                                            <ColumnDefinition Width="160"/>
-                                            <ColumnDefinition Width="12"/>
-                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="190"/>
+                                            <ColumnDefinition Width="20"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="150"/>
+                                            <ColumnDefinition Width="20"/>
+                                            <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="80"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
@@ -388,15 +547,117 @@
                                         <TextBox Grid.Column="7" Text="{Binding SelectedStation.PollIntervalMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
                                     </Grid>
                                 </Border>
-                            </StackPanel>
-                        </Grid>
+                            </Grid>
+                        </ScrollViewer>
                     </TabItem>
 
-                    <!-- Tab 4: 模板管理 -->
-                    <TabItem Header="4. 模板管理" Style="{StaticResource ModernTabItemStyle}">
-                        <views:TemplateManagerView DataContext="{Binding DataContext.TemplateManagerVm, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                    <!-- ④ 执行方案（2026-09-06：业务引擎装配，替代旧 ProcessKey 裸键+JSON 入口） -->
+                    <TabItem Header="{Binding TabHeaderTexts[3]}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="18,14,18,18">
+                                <!-- 任务模板（工位任务唯一入口，stage9-2：模板中心统一新建/绑定/更换/解绑） -->
+                                <Border Style="{StaticResource CardBorderStyle}" Padding="14"
+                                        Background="#0A7C3AED" BorderBrush="#267C3AED">
+                                    <StackPanel>
+                                        <TextBlock Text="🧩 任务模板 —— 工位任务的唯一入口" FontSize="13" FontWeight="Bold" Margin="0,0,0,6"/>
+                                        <TextBlock Text="工位跑什么 = 绑定哪个任务模板。新建 / 绑定 / 更换 / 解绑统一在【任务模板中心】完成：模板绑定保存时自动派生运行引擎（引导定位 → 运动节拍引擎；深度学习推理 / 外观测量 → 独立视觉引擎 StandaloneVision）并挂接配方链。本页只读展示绑定结果，不做引擎直选。"
+                                                   FontSize="11.5" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                        <Border CornerRadius="6" Padding="12,10" Background="#14FFFFFF" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal"
+                                                            Visibility="{Binding HasTemplateBind, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="✅ 已绑定　" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding BoundTemplateSummaryText}" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding BoundTemplateEngineText}" FontSize="11.5" Margin="0,3,0,0"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                                                <TextBlock Text="本工位尚未绑定任务模板。到【任务模板中心】从行业目录新建三类已实现任务（引导定位 / 深度学习推理 / 外观测量），或在模板卡上「部署到工位」直接完成绑定；内置的 2 个深度学习演示任务（药片分割/镁片分类）已在模板中心自动就绪，可直接选用。"
+                                                           FontSize="11.5" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                                                           Visibility="{Binding HasTemplateBind, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="🧭 打开任务模板中心" Style="{StaticResource PrimaryButtonStyle}"
+                                                    Padding="16,7" Command="{Binding OpenTemplateCenterCommand}"
+                                                    ToolTip="任务模板中心：行业全量目录（三类已实现族可生成）+ DL 示例翻译任务；模板内「部署到工位」完成本工位的绑定/更换/解绑"/>
+                                            <TextBlock Text="模板绑定/解绑保存后，回本页点顶部【💾 保存并同步】→ 运行时按模板重新装配生效。"
+                                                       FontSize="11" Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center"
+                                                       Margin="12,0,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 当前方案详情 -->
+                                <Border Style="{StaticResource CardBorderStyle}" Padding="14" Margin="0,10,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="⚙️ 派生运行引擎（模板绑定导出 · 只读）" FontSize="12.5" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                        <TextBlock Text="{Binding EngineDetailText}" FontSize="12" LineHeight="20"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 引擎参数与示教（引导定位引擎绑定后由模板派生 ProcessKey；就地编辑位点写回） -->
+                                <Border Style="{StaticResource CardBorderStyle}" Padding="14" Margin="0,10,0,0"
+                                        Background="#0A0078D4" BorderBrush="#260078D4">
+                                    <StackPanel>
+                                        <TextBlock Text="🔧 引擎参数与示教" FontSize="12.5" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{Binding EngineTeachPanelHint}" FontSize="11"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
+                                                   Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding EngineTeachLogText}" FontSize="10.5"
+                                                   Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"
+                                                   Margin="0,2,0,4"/>
+                                        <ContentControl Content="{Binding EngineTeachPanel}"
+                                                        Visibility="{Binding HasEngineTeachPanel, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 下一步引导 -->
+                                <Border Style="{StaticResource CardBorderStyle}" Padding="14" Margin="0,10,0,0">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="▶️ 去单工位监控（触发试运行）"
+                                                Style="{StaticResource SuccessButtonStyle}" Padding="14,6"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding GoMonitorCommand}"
+                                                ToolTip="模板绑定并保存同步后，到【单工位监控】用 单次触发/启动 跑任务：深度学习/测量任务看 OK/NG 判据与 CSV；引导定位任务看 定位→吸取→放料 节拍（监视页有由易到难引导卡）"/>
+                                        <StackPanel>
+                                            <TextBlock Text="下一步" FontSize="12.5" FontWeight="SemiBold"/>
+                                            <TextBlock Text="到【任务模板中心】完成模板绑定（或用「部署到工位」）→ 回本页点【💾 保存并同步】→ 引导定位类引擎的参数/示教表单就地出现（位点/真空/角度策略），就地填好再保存 → 到【单工位监控】触发试运行。深度学习/外观测量类由独立视觉引擎自动判 OK/NG。"
+                                                       FontSize="11.5" Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextWrapping="Wrap" Margin="0,4,12,0"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
                     </TabItem>
                 </TabControl>
+
+                <!-- 🗺️ 空态引导层：未选中工位（无产线/产线下无工位/未选）时覆盖整个右侧 -->
+                <Border Grid.Row="0" Grid.RowSpan="5"
+                        Background="{StaticResource BackgroundBrush}"
+                        Visibility="{Binding IsStationSelected, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560" Margin="48,24">
+                        <TextBlock Text="🗺️" FontSize="46" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding EmptyGuideTitle}" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,16,0,0"/>
+                        <TextBlock Text="{Binding EmptyGuideText}" FontSize="12.5" LineHeight="21"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,24,0,0">
+                            <Button Content="＋ 新建产线" Style="{StaticResource PrimaryButtonStyle}" Padding="16,6" Margin="0,0,10,0"
+                                    Command="{Binding AddLineCommand}"/>
+                            <Button Content="＋ 需求向导建工位" Style="{StaticResource SecondaryButtonStyle}" Padding="16,6"
+                                    Command="{Binding AddStationCommand}"
+                                    ToolTip="在当前产线下用『需求问卷向导』创建工位：先答检测对象/相机安装/运动需求，系统实时推导建议视觉链与标定方案"/>
+                        </StackPanel>
+                        <TextBlock Text="创建工位后回到本工作台，顶部【⚡ 装配旅程】按依赖顺序引导：任务模板（跑什么任务，独立页）→ 绑定配方（运行逻辑）→ 领用硬件 → 逻辑映射 → 触发配置 → 模板（独立页）→ 标定（独立页）→ 保存同步；就绪后即可在【单工位监控】试运行。"
+                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="0,18,0,0"/>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
     </Grid>

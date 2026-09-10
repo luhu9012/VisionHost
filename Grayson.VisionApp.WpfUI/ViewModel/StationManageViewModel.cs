@@ -1,15 +1,17 @@
-﻿//===================================================================================
+//===================================================================================
 // Copyright (c) 2026 Grayson.Vision. All rights reserved.
 // 文件名: StationManageViewModel.cs
 //===================================================================================
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Devices.Services;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Recipe.Models;
 using Grayson.Vision.Contracts.Recipe.Services;
 using Grayson.Vision.Contracts.Station.Enums;
 using Grayson.Vision.Contracts.Station.Interfaces;
+using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.Contracts.Station.Services;
 using Grayson.Vision.Contracts.Station.Triggers;
 using Grayson.Vision.Core.Client;
@@ -23,6 +25,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -105,6 +108,30 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// 序列化到 StationConfigModel.ProcessConfigJson 持久化）。
         /// </summary>
         public string ProcessConfigJson { get; set; }
+
+        // ===== 任务模板绑定（stage9-2：任务模板为工位任务唯一入口；引擎由模板绑定层派生） =====
+
+        private string _taskTemplateCode;
+        /// <summary>绑定的任务模板代码（TemplateCode；任务模板中心的部署/解绑写此字段）</summary>
+        public string TaskTemplateCode
+        {
+            get => _taskTemplateCode;
+            set => Set(ref _taskTemplateCode, value);
+        }
+
+        private string _taskTemplateName;
+        public string TaskTemplateName
+        {
+            get => _taskTemplateName;
+            set => Set(ref _taskTemplateName, value);
+        }
+
+        private string _taskTemplateKindText;
+        public string TaskTemplateKindText
+        {
+            get => _taskTemplateKindText;
+            set => Set(ref _taskTemplateKindText, value);
+        }
 
         public ObservableCollection<HardwareDeviceModel> HardwareDevices { get; set; }
         public ObservableCollection<RecipeDeviceMappingModel> RecipeDeviceMappings { get; set; }
@@ -222,6 +249,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     DeviceType = d.BrandName
                 }) ?? Enumerable.Empty<HardwareDeviceModel>();
 
+        // ===== 装配就绪徽标（左树显示，由 VM 统一重算后写入）=====
+        private string _readyBadgeText = string.Empty;
+        /// <summary>左树就绪徽标文本（如 "🆕 空壳" / "🔧 装配中 2/6" / "✅ 就绪"）；由 VM 重算写入</summary>
+        public string ReadyBadgeText
+        {
+            get => _readyBadgeText;
+            set => Set(ref _readyBadgeText, value);
+        }
+
 
         public StationModel()
         {
@@ -243,6 +279,68 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
     }
 
+    /// <summary>
+    /// 工位"装配旅程"引导步骤（v1.1 用户视角：创建工位后按依赖顺序装配）。
+    /// 步骤按用户真实依赖排序，非 Tab 顺序：
+    ///   1 业务过程（决定跑什么周期）→ 2 物理硬件（画面/运动/IO 来源）→ 3 产品配方绑定（逻辑设备清单来源）
+    ///   → 4 逻辑→物理映射 → 5 触发与运行策略 → 6 视觉资产（模板）→ 7 标定与示教 → 8 保存并同步 Runtime。
+    /// 每步状态由当前 SelectedStation 配置实时判定（ReadinessCheck），下一步=首个未完成必做步骤。
+    /// </summary>
+    public class ReadinessStep
+    {
+        /// <summary>步骤序号（1 基）</summary>
+        public int Index { get; set; }
+        /// <summary>图标（emoji）</summary>
+        public string Icon { get; set; }
+        /// <summary>短标题（chip 显示）</summary>
+        public string Title { get; set; }
+        /// <summary>说明（ToolTip/详情）</summary>
+        public string Description { get; set; }
+        /// <summary>归属 Tab 语义名（仅展示）</summary>
+        public string TabLabel { get; set; }
+        /// <summary>定位目标 TabIndex（TabControl SelectedIndex；ActionKind=1 时忽略）</summary>
+        public int TargetTabIndex { get; set; }
+        /// <summary>0=点击定位 Tab；1=点击直接触发"保存并同步 Runtime"；2=打开模板工作台页；3=打开标定中心页</summary>
+        public int ActionKind { get; set; }
+        /// <summary>是否必做（false=建议项：如模板/标定按需，无则跳过）</summary>
+        public bool Required { get; set; } = true;
+        /// <summary>计算期完成标志（由 BuildSteps 写入；RefreshReadiness 据此设 State）</summary>
+        public bool Done { get; set; }
+        /// <summary>当前状态：0=未完成 1=进行中(下一步) 2=已完成 3=跳过/不适用</summary>
+        public int State { get; set; }
+        /// <summary>附加状态文案（如"已绑定 MahjongPick" / "缺少 FOV"）</summary>
+        public string Detail { get; set; }
+
+        /// <summary>UI 呈现的状态符号</summary>
+        public string StateGlyph
+        {
+            get
+            {
+                switch (State)
+                {
+                    case 2: return "✅";
+                    case 1: return "👉";
+                    case 3: return "➖";
+                    default: return "⬜";
+                }
+            }
+        }
+
+        public string StateText
+        {
+            get
+            {
+                switch (State)
+                {
+                    case 2: return "已完成";
+                    case 1: return "下一步";
+                    case 3: return "可跳过";
+                    default: return "待完成";
+                }
+            }
+        }
+    }
+
     #endregion
 
     // 2. 新增快捷跳转命令
@@ -252,8 +350,239 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private readonly StationRuntimeManager _runtimeManager;
         private readonly StationConfigService _configService;
         private readonly IRecipeStorageService _recipeStorage;
-        private readonly INavigationService _navigationService;
+
+        // ===== 引擎派生与展示（stage9-2：工位引擎键唯一来源=任务模板绑定，ProcessKey 只读展示/由模板保存写回） =====
+
+        private string _engineDetailText = string.Empty;
+        /// <summary>当前执行方案详情（适用说明/示教入口提示），第④Tab 展示</summary>
+        public string EngineDetailText
+        {
+            get => _engineDetailText;
+            private set => Set(ref _engineDetailText, value);
+        }
+
+        // ===== ④执行方案 Tab：引擎参数/示教面板就地挂载（2026-09-06 职责收敛）=====
+        // 此前示教面板挂监视页扩展位（StationMonitorExtensionRegistry），监视页被工程操作污染。
+        // 现按 09-03 信息架构决策：示教/参数面板改挂「工位工程工作台 → ④ 执行方案」Tab，
+        // 与引擎选择同屏（选引擎 → 保存同步 → 就地出现参数表单），监视页回归纯生产看板。
+        private object _engineTeachPanel;
+        /// <summary>当前工位引擎的 参数/示教 面板（按 ProcessKey 经注册表创建；无注册=null）。</summary>
+        public object EngineTeachPanel
+        {
+            get => _engineTeachPanel;
+            private set
+            {
+                if (Set(ref _engineTeachPanel, value))
+                {
+                    OnPropertyChanged(nameof(HasEngineTeachPanel));
+                }
+            }
+        }
+
+        /// <summary>是否有引擎参数/示教面板可挂（④Tab「保存并同步后挂出」提示显隐用）。</summary>
+        public bool HasEngineTeachPanel => EngineTeachPanel != null;
+
+        private string _engineTeachPanelHint = string.Empty;
+        /// <summary>引擎面板区说明文案（由 RefreshEngineTeachNotice 统一刷新）。</summary>
+        public string EngineTeachPanelHint
+        {
+            get => _engineTeachPanelHint;
+            private set => Set(ref _engineTeachPanelHint, value);
+        }
+
+        private string _engineTeachLogText = string.Empty;
+        /// <summary>引擎面板最近一条日志（工作台无日志区，就地展示便于看到保存结果）。</summary>
+        public string EngineTeachLogText
+        {
+            get => _engineTeachLogText;
+            private set => Set(ref _engineTeachLogText, value);
+        }
+
+        private IStationMonitorExtension _teachExtension;
+        private object _teachPanelView;
+
+        /// <summary>按当前选中工位/引擎状态刷新 面板区说明文案（工位切换/引擎变更/保存后调用）。</summary>
+        private void RefreshEngineTeachNotice()
+        {
+            if (EngineTeachPanel != null)
+            {
+                EngineTeachPanelHint = "以下为本引擎的 参数/示教 表单：填好点面板内【💾 保存】即写回工位配置并热更新（运行中保存则下次启动生效）。";
+                return;
+            }
+
+            var station = SelectedStation;
+            string key = station?.ProcessKey;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                EngineTeachPanelHint = "未选择执行引擎。从上方目录选引擎并点【💾 保存并同步】后，本引擎的参数/示教表单将就地出现在此处。";
+                return;
+            }
+            if (StationMonitorExtensionRegistry.IsRegistered(key))
+            {
+                EngineTeachPanelHint = $"已选引擎 [{key}]，但尚未保存到数据库。点【💾 保存并同步】后，本引擎的参数/示教表单将就地出现在此处（保存前先以代码默认运行）。";
+                return;
+            }
+            EngineTeachPanelHint = $"当前引擎 [{key}] 无需参数/示教面板（参数以代码默认或配方节点为准），可直接到【单工位监控】触发试运行。";
+        }
+
+        // ===== 任务模板绑定展示（stage9-2：模板=工位任务唯一入口；④ Tab 只读展示 + 跳模板中心） =====
+
+        /// <summary>当前工位是否已绑定任务模板</summary>
+        public bool HasTemplateBind => SelectedStation != null && !string.IsNullOrWhiteSpace(SelectedStation.TaskTemplateCode);
+
+        /// <summary>绑定模板摘要（代码 · 名称（类型族））</summary>
+        public string BoundTemplateSummaryText
+        {
+            get
+            {
+                var s = SelectedStation;
+                if (s == null || string.IsNullOrWhiteSpace(s.TaskTemplateCode)) return "未绑定任务模板";
+                return $"{s.TaskTemplateCode} · {s.TaskTemplateName ?? "—"}（{s.TaskTemplateKindText ?? "—"}）";
+            }
+        }
+
+        /// <summary>绑定模板派生的运行引擎（读工位 ProcessKey，经目录给友好名）</summary>
+        public string BoundTemplateEngineText
+        {
+            get
+            {
+                var s = SelectedStation;
+                if (s == null || string.IsNullOrWhiteSpace(s.ProcessKey)) return "未装载运行引擎";
+                var opt = Grayson.Vision.WpfUI.Service.StationProcessCatalog.Find(s.ProcessKey);
+                return opt != null ? $"{opt.Icon} {opt.Name}（{s.ProcessKey}）" : $"引擎键 {s.ProcessKey}";
+            }
+        }
+
+        private void RefreshBoundTemplate()
+        {
+            OnPropertyChanged(nameof(HasTemplateBind));
+            OnPropertyChanged(nameof(BoundTemplateSummaryText));
+            OnPropertyChanged(nameof(BoundTemplateEngineText));
+        }
+
+        public RelayCommand OpenTemplateCenterCommand { get; private set; }
+
+        /// <summary>打开任务模板中心（模板中心/编辑器内「部署到工位」完成绑定/更换/解绑）</summary>
+        private void OnOpenTemplateCenter()
+        {
+            if (SelectedStation == null) return;
+            NavigationService.Current?.NavigateTo(PageType.TaskTemplateCenter, SelectedStation.StationCode);
+        }
+
+        /// <summary>刷新当前方案详情文案（工位切换/模板绑定变化/保存后调用）</summary>
+        private void RefreshEngineDetailText()
+        {
+            var station = SelectedStation;
+            if (station == null)
+            {
+                EngineDetailText = string.Empty;
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(station.ProcessKey))
+            {
+                EngineDetailText = "未绑定任务模板：工位触发只跑视觉链（纯视觉/配方驱动）。\n" +
+                                   "若本工位需要 定位→吸取→归正→放料 的运动节拍或 DL/测量判据，请到【任务模板中心】新建任务模板并部署到本工位（绑定自动派生引擎）。";
+                return;
+            }
+            var opt = Grayson.Vision.WpfUI.Service.StationProcessCatalog.Find(station.ProcessKey);
+            if (opt == null)
+            {
+                EngineDetailText = $"已派生引擎 [{station.ProcessKey}]（目录外键——引擎已注册但无元数据，请检查注册一致性）。";
+                return;
+            }
+            string teachHint = opt.HasTeachPanel
+                ? "参数（位点/IO/角度策略/偏心）在下方「引擎参数与示教」表单就地编辑写回，无需手改 JSON。"
+                : "该引擎暂无独立参数面板：参数以引擎代码默认为准（独立视觉引擎按任务模板 VerdictRule 判 OK/NG）。";
+            EngineDetailText = $"{opt.Icon} {opt.Name}\n{opt.Summary}\n适用：{opt.ApplicableTo}\n{teachHint}";
+        }
+
+        // （旧「档案建议 → 一键采纳」直选引擎 UI 已随 stage9-2 移除；任务模板中心为唯一引擎入口）
+
+        #region 装配旅程引导（v1.1 用户视角）
+
+        /// <summary>装配步骤清单（创建工位后按依赖顺序引导）</summary>
+        public ObservableCollection<ReadinessStep> ReadinessSteps { get; } = new ObservableCollection<ReadinessStep>();
+
+        private int _activeTabIndex;
+        /// <summary>TabControl 选中索引（步骤点击定位用，TwoWay）</summary>
+        public int ActiveTabIndex
+        {
+            get => _activeTabIndex;
+            set => Set(ref _activeTabIndex, value);
+        }
+
+        private string _readinessSummaryText = string.Empty;
+        /// <summary>装配进度摘要（如"装配进度 3/5 · 下一步：S1② 绑定产品配方"）</summary>
+        public string ReadinessSummaryText
+        {
+            get => _readinessSummaryText;
+            private set => Set(ref _readinessSummaryText, value);
+        }
+
+        private bool _isAllRequiredDone;
+        /// <summary>全部必做步骤已完成（用于显示"去试运行"高亮）</summary>
+        public bool IsAllRequiredDone
+        {
+            get => _isAllRequiredDone;
+            private set => Set(ref _isAllRequiredDone, value);
+        }
+
+        /// <summary>4 个配置 Tab 头状态文本（●=必做已就绪 / ○=有必做未完成）。模板/标定已独立成页，不占 Tab。</summary>
+        public string[] TabHeaderTexts { get; } = new string[4];
+
+        /// <summary>Tab 固定标题（glyph 前缀拼接用；stage9-2：④ 收敛为任务模板唯一入口 + 派生引擎/示教）</summary>
+        private static readonly string[] TabTitles =
+        {
+            "① 硬件领用",
+            "② 配方 · 逻辑映射",
+            "③ 触发与运行",
+            "④ 任务模板 · 引擎"
+        };
+
+        /// <summary>配方库是否有可用配方（映射 Tab「去创建配方」显隐依据；由配方加载后通知）</summary>
+        public bool HasRecipesAvailable => AvailableRecipes != null && AvailableRecipes.Count > 0;
+
+        private string _stationOverviewText = string.Empty;
+        /// <summary>站头一行式信息摘要（配方/硬件/触发/同步），由 RefreshReadiness 重算</summary>
+        public string StationOverviewText
+        {
+            get => _stationOverviewText;
+            private set => Set(ref _stationOverviewText, value);
+        }
+
+        private string _recipePickerHintText = string.Empty;
+        /// <summary>配方选择区/映射区引导文案（空配方库/未绑定/映射进度），由 RefreshReadiness 重算</summary>
+        public string RecipePickerHintText
+        {
+            get => _recipePickerHintText;
+            private set => Set(ref _recipePickerHintText, value);
+        }
+
+        private bool _isMappingAreaEmpty = true;
+        /// <summary>映射区是否需要占位（配方库为空 或 尚未绑定配方时 true，隐藏映射表改显引导）</summary>
+        public bool IsMappingAreaEmpty
+        {
+            get => _isMappingAreaEmpty;
+            private set => Set(ref _isMappingAreaEmpty, value);
+        }
+
+        /// <summary>步骤点击 → 定位到对应 Tab</summary>
+        public RelayCommand<ReadinessStep> GotoReadinessStepCommand { get; }
+
+        /// <summary>保存同步完成后的"去单工位监控试运行"引导</summary>
+        public RelayCommand GoMonitorCommand { get; }
+
+        #endregion
+
         public RelayCommand OpenCalibrationCenterCommand { get; }
+        /// <summary>打开模板工作台（独立菜单页；携带当前工位代码自动定位/归属）</summary>
+        public RelayCommand OpenTemplateWorkbenchCommand { get; }
+        /// <summary>打开视觉流程编辑器（携带当前工位绑定的配方上下文）</summary>
+        public RelayCommand OpenFlowEditCommand { get; }
+        /// <summary>打开配方管理页（携带当前绑定的配方；配方库为空时同作「去创建配方」入口）</summary>
+        public RelayCommand OpenRecipeManageCommand { get; }
+        /// <summary>打开当前工位的需求档案（查看/编辑问卷；无档案旧工位=补档空问卷）</summary>
+        public RelayCommand OpenProfileCommand { get; }
 
         public StationManageViewModel(
             StationRuntimeManager runtimeManager = null,
@@ -268,6 +597,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
             AvailableRecipes = new ObservableCollection<RecipeModel>();
             ProductionLines = new ObservableCollection<LineModel>();
 
+            // Tab 头默认纯标题（装配状态 glyph 由 RefreshReadiness 在选中工位后写入）
+            for (int i = 0; i < TabHeaderTexts.Length; i++) TabHeaderTexts[i] = TabTitles[i];
+
             AddLineCommand = new RelayCommand(_ => OnAddLine());
             AddStationCommand = new RelayCommand(_ => OnAddStation(), _ => SelectedLine != null);
             DeleteNodeCommand = new RelayCommand(_ => OnDeleteNode(), _ => SelectedLine != null || SelectedStation != null);
@@ -279,13 +611,34 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             // initialize per-tab view models
             HardwareAllocationVm = new HardwareAllocationViewModel(this);
-            RecipeMappingVm = new RecipeMappingViewModel(this);
-            TemplateManagerVm = new TemplateManagerViewModel();
             // 初始化快捷跳转命令
             OpenCalibrationCenterCommand = new RelayCommand(
                 _ => OnOpenCalibrationCenter(),
                 _ => SelectedStation != null
             );
+            OpenTemplateWorkbenchCommand = new RelayCommand(
+                _ => OnOpenTemplateWorkbench(),
+                _ => SelectedStation != null
+            );
+            OpenTemplateCenterCommand = new RelayCommand(
+                _ => OnOpenTemplateCenter(),
+                _ => SelectedStation != null
+            );
+            OpenFlowEditCommand = new RelayCommand(
+                _ => OnOpenFlowEdit(),
+                _ => SelectedStation?.BoundRecipe != null
+            );
+            OpenRecipeManageCommand = new RelayCommand(
+                _ => OnOpenRecipeManage(),
+                _ => SelectedStation != null
+            );
+            OpenProfileCommand = new RelayCommand(
+                _ => OnOpenProfile(),
+                _ => SelectedStation != null
+            );
+
+            GotoReadinessStepCommand = new RelayCommand<ReadinessStep>(OnGotoReadinessStep);
+            GoMonitorCommand = new RelayCommand(_ => OnGoMonitor());
 
         }
         /// <summary>
@@ -307,10 +660,87 @@ namespace Grayson.Vision.WpfUI.ViewModel
             NavigationService.Current?.NavigateTo(PageType.CalibrationManage, navContext);
         }
 
+        /// <summary>
+        /// 打开视觉流程编辑器（带当前工位绑定配方上下文；与配方管理页同一跳转约定）。
+        /// </summary>
+        private void OnOpenFlowEdit()
+        {
+            if (SelectedStation?.BoundRecipe == null) return;
+            NavigationService.Current?.NavigateTo(PageType.FlowEdit, SelectedStation.BoundRecipe);
+        }
+
+        /// <summary>
+        /// 打开配方管理页（配方映射 Tab「去创建配方/管理配方」入口）。
+        /// 携带当前绑定的配方对象；配方库为空时配方页展示空态，指引新建。
+        /// </summary>
+        private void OnOpenRecipeManage()
+        {
+            if (SelectedStation == null) return;
+            NavigationService.Current?.NavigateTo(PageType.RecipeManage, SelectedStation.BoundRecipe);
+        }
+
+        /// <summary>
+        /// 打开当前工位的需求档案（编辑模式向导）：有档案→预填问卷查看/修改；无档案（向导启用前的旧工位）
+        /// → 以当前工位信息构造"补档空壳"进编辑模式，填完保存即补建 Active 档案。
+        /// 编辑保存由窗口内完成（回写 JSON），本方法只做导航后刷新装配旅程/徽标。
+        /// </summary>
+        private void OnOpenProfile()
+        {
+            var s = SelectedStation;
+            if (s == null) return;
+
+            StationProfile profile = null;
+            try
+            {
+                profile = new StationProfileRepository().GetByStationId(s.StationId);
+            }
+            catch { /* 档案缺失不阻断 */ }
+
+            var editable = profile ?? new StationProfile
+            {
+                // 补档空壳：无问卷，仅带当前工位关联；保存后以 StationId 命名落 Active
+                LineId = SelectedLine?.LineId ?? string.Empty,
+                LineName = SelectedLine?.LineName ?? string.Empty,
+                StationId = s.StationId,
+                StationCode = s.StationCode,
+                StationName = s.StationName,
+                IsEnabled = s.IsEnabled,
+                TimeoutMs = s.TimeoutMs,
+                Status = StationProfileStatus.Active
+            };
+            // 始终以工位当前代码/名称为准（工位站头可改名，避免档案留存旧值）
+            editable.StationCode = s.StationCode;
+            editable.StationName = s.StationName;
+
+            var win = new View.StationWizardWindow(editable)
+            {
+                Owner = Application.Current.MainWindow
+            };
+
+            if (win.ShowDialog() != true || !(win.DataContext is StationWizardViewModel wvm) || !wvm.IsEditMode)
+            {
+                return; // 取消/未确认
+            }
+
+            // 档案已由窗口落盘（保持 Active）；下游建议类 UI 实时读盘，此处刷新旅程步骤与徽标即可
+            RefreshReadiness();
+            RefreshAllStationBadges();
+            string detail = profile != null ? "已更新" : "已补建（该工位此前无需求档案，本次从空问卷建档）";
+            MessageBox.Show(
+                $"工位需求档案{detail}。\n装配旅程第 6 步标定建议、标定中心候选清单等将按新档案实时更新；不影响已生效的运行时配置。",
+                "📋 需求档案", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// 打开独立「模板工作台」页并定位当前工位的模板资产（无则钉住归属，新建即带工位）。
+        /// </summary>
+        private void OnOpenTemplateWorkbench()
+        {
+            if (SelectedStation == null) return;
+            NavigationService.Current?.NavigateTo(PageType.TemplateManage, SelectedStation.StationCode);
+        }
+
         public HardwareAllocationViewModel HardwareAllocationVm { get; }
-        public RecipeMappingViewModel RecipeMappingVm { get; }
-        /// <summary>模板管理 Tab 的 VM（全局模板库，与具体工位无关）</summary>
-        public TemplateManagerViewModel TemplateManagerVm { get; }
  
 
         #region 属性
@@ -319,7 +749,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ObservableCollection<LineModel> ProductionLines
         {
             get => _productionLines;
-            set => Set(ref _productionLines, value);
+            set
+            {
+                if (Set(ref _productionLines, value))
+                {
+                    OnPropertyChanged(nameof(HasAnyLine));
+                    RefreshEmptyGuide();
+                }
+            }
         }
 
         private LineModel _selectedLine;
@@ -331,6 +768,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (Set(ref _selectedLine, value))
                 {
                     RefreshCommandStates();
+                    RefreshEmptyGuide();
                 }
             }
         }
@@ -345,8 +783,38 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     OnStationSelectedChanged();
                     RefreshCommandStates();
+                    RefreshReadiness();
+                    OnPropertyChanged(nameof(IsStationSelected));
                 }
             }
+        }
+
+        /// <summary>是否已选中工位（装配引导面板显隐）</summary>
+        public bool IsStationSelected => SelectedStation != null;
+
+        /// <summary>是否已存在产线（空态引导用）</summary>
+        public bool HasAnyLine => ProductionLines != null && ProductionLines.Count > 0;
+
+        private string _emptyGuideTitle = string.Empty;
+        /// <summary>空态引导标题（未选中工位时显示在右侧）</summary>
+        public string EmptyGuideTitle
+        {
+            get => _emptyGuideTitle;
+            private set => Set(ref _emptyGuideTitle, value);
+        }
+
+        private string _emptyGuideText = string.Empty;
+        /// <summary>空态引导正文</summary>
+        public string EmptyGuideText
+        {
+            get => _emptyGuideText;
+            private set => Set(ref _emptyGuideText, value);
+        }
+
+        /// <summary>供 View 侧低层控件（DataGrid 单元格编辑等）在编辑后触发装配状态重算</summary>
+        public void NotifyStationEdited()
+        {
+            RefreshReadiness();
         }
 
         private HardwareDeviceModel _selectedHardware;
@@ -365,11 +833,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ObservableCollection<HardwareDeviceModel> GlobalHardwarePool { get; set; }
         public ObservableCollection<RecipeModel> AvailableRecipes { get; set; }
 
-        /// <summary>
-        /// 可选业务过程键（Core 注册表数据源，工位管理"业务过程"下拉）。
-        /// </summary>
-        public ObservableCollection<string> AvailableProcessKeys { get; set; } = new ObservableCollection<string>();
-
         #endregion
 
         #region 命令定义
@@ -385,6 +848,517 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #region 私有辅助方法
 
+        /// <summary>步骤/状态相关属性名（StationModel.PropertyChanged 时需重算装配进度；含 ProcessKey=执行方案变更）</summary>
+        private static readonly string[] ReadinessSensitiveProps =
+        {
+            nameof(StationModel.ProcessKey),
+            nameof(StationModel.ProcessConfigJson),
+            nameof(StationModel.TaskTemplateCode),
+            nameof(StationModel.BoundRecipe),
+            nameof(StationModel.IsEnabled),
+            nameof(StationModel.TriggerSourceType),
+            nameof(StationModel.TimerIntervalMs),
+            nameof(StationModel.PlcDeviceId),
+            nameof(StationModel.PlcAddress),
+            nameof(StationModel.PollIntervalMs)
+        };
+
+        private StationModel _readinessSubscribedStation;
+        private StationProfileRepository _profileRepo;
+
+        /// <summary>装配进度重算（创建/选中工位、配置变化、保存后调用）。纯展示逻辑，不落盘。</summary>
+        private void RefreshReadiness()
+        {
+            var s = SelectedStation;
+
+            // 订阅跟随当前选中工位（退订旧对象防泄漏）
+            if (!ReferenceEquals(_readinessSubscribedStation, s))
+            {
+                if (_readinessSubscribedStation != null)
+                {
+                    _readinessSubscribedStation.PropertyChanged -= Station_ReadinessPropChanged;
+                }
+                _readinessSubscribedStation = s;
+                if (s != null)
+                {
+                    s.PropertyChanged += Station_ReadinessPropChanged;
+                }
+            }
+
+            if (s == null)
+            {
+                ReadinessSummaryText = string.Empty;
+                IsAllRequiredDone = false;
+                StationOverviewText = string.Empty;
+                RecipePickerHintText = string.Empty;
+                IsMappingAreaEmpty = true;
+                for (int i = 0; i < TabHeaderTexts.Length; i++) SetTabGlyph(i, string.Empty);
+                ReadinessSteps.Clear();
+                EngineDetailText = string.Empty;
+                RefreshEmptyGuide();
+                RefreshBoundTemplate();
+                return;
+            }
+
+            if (_profileRepo == null) _profileRepo = new StationProfileRepository();
+            StationProfile profile = null;
+            try
+            {
+                profile = _profileRepo.GetByStationId(s.StationId)
+                          ?? _profileRepo.GetByStationId(s.StationCode);
+            }
+            catch { /* 档案缺失不阻断引导 */ }
+
+            // 构建 7 步清单（配方单主线：代码型业务过程已从工位页移除；含状态 0/2；"下一步"在下方统一判定）
+            var steps = BuildSteps(s, profile);
+            foreach (var st in steps)
+            {
+                st.State = st.Done ? 2 : 0;
+            }
+
+            // 建议项（Required=false）：完成=✅ 否则➖可跳过；不参与完成率与"下一步"定位
+            bool foundNext = false;
+            int doneCount = 0, reqCount = 0;
+            foreach (var st in steps)
+            {
+                if (!st.Required)
+                {
+                    st.State = st.Done ? 2 : 3;
+                    continue;
+                }
+                reqCount++;
+                if (st.State == 2)
+                {
+                    doneCount++;
+                }
+                else if (!foundNext && st.State == 0)
+                {
+                    st.State = 1; // 高亮为"下一步"
+                    foundNext = true;
+                }
+            }
+
+            // 状态 3（跳过）不参与完成率
+            ReadinessSteps.Clear();
+            foreach (var st in steps) ReadinessSteps.Add(st);
+
+            IsAllRequiredDone = doneCount >= reqCount;
+            ReadinessSummaryText = IsAllRequiredDone
+                ? $"🎉 装配完成（{doneCount}/{reqCount}）—— 可保存后在【单工位监控】试运行"
+                : $"⚡ 装配进度 {doneCount}/{reqCount} · 下一步：{steps.FirstOrDefault(x => x.State == 1)?.Title ?? "检查可跳过项"}";
+
+            // 更新 4 个配置 Tab 头状态点（步骤下标：0 执行方案 / 1 配方 / 2 硬件 / 3 映射 / 4 触发 / 7 保存）
+            SetTabGlyph(0, steps[2].State == 2 ? "●" : "○"); // ① 硬件领用
+            SetTabGlyph(1, (steps[1].State == 2 && steps[3].State == 2) ? "●" : "○"); // ② 配方 · 逻辑映射
+            SetTabGlyph(2, steps[4].State == 2 ? "●" : "○"); // ③ 触发与运行
+            SetTabGlyph(3, steps[0].State == 2 ? "●" : steps[0].Required ? "○" : "◇"); // ④ 执行方案（可跳过显示◇）
+
+            RefreshStationOverview(s);
+            RefreshRecipePickerState(s);
+            RefreshAllStationBadges();
+            RefreshEngineDetailText(); // 派生引擎只读详情（随模板绑定/工位切换刷新）
+            RefreshEmptyGuide();
+            RefreshBoundTemplate();
+        }
+
+        /// <summary>重算站头一行摘要（配方/硬件/触发/同步），供顶部信息条展示</summary>
+        private void RefreshStationOverview(StationModel s)
+        {
+            if (s == null)
+            {
+                StationOverviewText = string.Empty;
+                return;
+            }
+
+            string recipe = s.BoundRecipe != null
+                ? $"配方 · {s.BoundRecipe.RecipeName}"
+                : "配方 · 未绑定";
+
+            string engine;
+            if (string.IsNullOrWhiteSpace(s.TaskTemplateCode))
+            {
+                engine = string.IsNullOrWhiteSpace(s.ProcessKey)
+                    ? "任务模板 · 未绑定"
+                    : $"任务模板 · 未绑定（引擎残留 {s.ProcessKey}）";
+            }
+            else if (string.IsNullOrWhiteSpace(s.ProcessKey))
+            {
+                engine = $"任务模板 · {s.TaskTemplateCode}（引擎未同步）";
+            }
+            else
+            {
+                var engineOpt = Grayson.Vision.WpfUI.Service.StationProcessCatalog.Find(s.ProcessKey);
+                engine = $"任务模板 · {s.TaskTemplateCode} → {(engineOpt != null ? engineOpt.Name : s.ProcessKey)}";
+            }
+
+            int hwCount = s.HardwareDevices?.Count ?? 0;
+            string hardware = hwCount > 0 ? $"硬件 · 已领用 {hwCount} 台" : "硬件 · 未领用";
+
+            string trigger;
+            switch (s.TriggerSourceType)
+            {
+                case TriggerSourceType.Timer:
+                    trigger = s.TimerIntervalMs > 0 ? $"定时触发 · {s.TimerIntervalMs}ms" : "定时触发 · 周期未设";
+                    break;
+                case TriggerSourceType.PlcBit:
+                    trigger = string.IsNullOrWhiteSpace(s.PlcDeviceId)
+                        ? "PLC 触发 · 未配设备"
+                        : $"PLC 触发 · {s.PlcDeviceId}:{s.PlcAddress}";
+                    break;
+                default:
+                    trigger = "手动触发";
+                    break;
+            }
+
+            string sync;
+            if (!s.IsEnabled)
+            {
+                sync = "工位已禁用";
+            }
+            else
+            {
+                var hostRuntime = App.StationHostRuntime as IStationHostRuntime
+                                  ?? StationHostRuntime.GlobalInstance;
+                sync = hostRuntime?.GetStationClient(s.StationCode) != null ? "Runtime 已同步" : "Runtime 未同步";
+            }
+
+            StationOverviewText = $"{engine}   ｜   {recipe}   ｜   {hardware}   ｜   {trigger}   ｜   {sync}";
+        }
+
+        /// <summary>重算映射 Tab 配方选择区/映射区引导（配方库空/未绑定/进度/完成）</summary>
+        private void RefreshRecipePickerState(StationModel s)
+        {
+            if (s == null)
+            {
+                RecipePickerHintText = string.Empty;
+                IsMappingAreaEmpty = true;
+                return;
+            }
+
+            if (!HasRecipesAvailable)
+            {
+                RecipePickerHintText = "💡 配方库当前为空 —— 工位的运行逻辑（视觉链）由配方承载。点右侧【＋ 去创建配方】先建一个配方，再回来绑定本工位。";
+                IsMappingAreaEmpty = true;
+                return;
+            }
+
+            if (s.BoundRecipe == null)
+            {
+                RecipePickerHintText = "💡 尚未绑定产品配方：从上方下拉选择后，下方将列出该配方的【逻辑设备】，供映射到本工位已领用的物理硬件。";
+                IsMappingAreaEmpty = true;
+                return;
+            }
+
+            IsMappingAreaEmpty = false;
+            int logicalCount = s.BoundRecipe.LogicalDevices?.Count ?? 0;
+            if (logicalCount == 0)
+            {
+                RecipePickerHintText = $"✅ 配方【{s.BoundRecipe.RecipeName}】不含逻辑设备需求 —— 无需映射，可直接进入「③ 触发与运行」。";
+                return;
+            }
+
+            var mappings = s.RecipeDeviceMappings;
+            int mapped = mappings == null ? 0 : mappings.Count(m => !string.IsNullOrWhiteSpace(m.MappedDeviceId));
+            RecipePickerHintText = mapped >= logicalCount
+                ? $"✅ 配方【{s.BoundRecipe.RecipeName}】共 {logicalCount} 个逻辑设备，已全部映射到物理硬件。"
+                : $"⚡ 配方【{s.BoundRecipe.RecipeName}】共 {logicalCount} 个逻辑设备，已映射 {mapped}/{logicalCount} —— 全部映射完成后即可保存同步。";
+        }
+
+        /// <summary>重算空态引导文案（未选中工位时右侧区域给方向，避免空白）</summary>
+        private void RefreshEmptyGuide()
+        {
+            if (IsStationSelected)
+            {
+                // 已选中工位：装配面板接管，空态层隐藏
+                EmptyGuideTitle = string.Empty;
+                EmptyGuideText = string.Empty;
+                return;
+            }
+
+            if (!HasAnyLine)
+            {
+                EmptyGuideTitle = "🏭 还没有产线";
+                EmptyGuideText = "产线是工位的物理归属。点击下方【+ 产线】建立第一条产线，或在产线下用【+ 工位】需求向导创建工位。";
+                return;
+            }
+
+            if (SelectedLine != null)
+            {
+                EmptyGuideTitle = $"产线「{SelectedLine.LineName}」下尚未选择工位";
+                EmptyGuideText = SelectedLine.Stations == null || SelectedLine.Stations.Count == 0
+                    ? "该产线下还没有工位。点击【+ 工位】用『需求向导』创建第一个工位（先答需求问卷，系统推导建议链），或从左侧选择其它产线的工位。"
+                    : "请在左侧选择该产线下的工位开始装配；或点击【+ 工位】用『需求向导』为产线新增工位。";
+            }
+            else
+            {
+                EmptyGuideTitle = "请选择工位";
+                EmptyGuideText = "在左侧展开产线并点击一个工位，即可查看并装配它的视觉方案；或在产线下用【+ 工位】需求向导新建。";
+            }
+        }
+
+        /// <summary>重算左侧树全部工位的就绪徽标文本（仅配置级判定，不读档案）</summary>
+        private void RefreshAllStationBadges()
+        {
+            foreach (var line in ProductionLines)
+            {
+                if (line?.Stations == null) continue;
+                foreach (var st in line.Stations)
+                {
+                    if (st == null) continue;
+                    st.ReadyBadgeText = ComputeBadgeText(st);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 左树工位就绪徽标：🆕 空壳（未绑配方/无运行逻辑） / 🔧 装配中 {done}/{req} / ✅ 就绪。
+        /// 判定口径与装配步骤一致（配方单主线：代码型业务过程已从工位页移除；配置级判定，不读档案）。
+        /// </summary>
+        private static string ComputeBadgeText(StationModel st)
+        {
+            bool recipe = st.BoundRecipe != null;
+            bool hardware = st.HardwareDevices != null && st.HardwareDevices.Count > 0;
+
+            if (!recipe)
+            {
+                return hardware ? "🔧 待绑配方" : "🆕 空壳";
+            }
+
+            int logicalCount = st.BoundRecipe?.LogicalDevices?.Count ?? 0;
+            bool mappingOk = logicalCount == 0
+                || (st.RecipeDeviceMappings != null && st.RecipeDeviceMappings.Count == logicalCount
+                    && st.RecipeDeviceMappings.All(m => !string.IsNullOrWhiteSpace(m.MappedDeviceId)));
+
+            bool triggerOk;
+            if (st.TriggerSourceType == TriggerSourceType.Timer) triggerOk = st.TimerIntervalMs > 0;
+            else if (st.TriggerSourceType == TriggerSourceType.PlcBit)
+                triggerOk = !string.IsNullOrWhiteSpace(st.PlcDeviceId) && !string.IsNullOrWhiteSpace(st.PlcAddress);
+            else triggerOk = true;
+
+            bool synced = false;
+            if (st.IsEnabled)
+            {
+                var hostRuntime = App.StationHostRuntime as IStationHostRuntime
+                                  ?? StationHostRuntime.GlobalInstance;
+                synced = hostRuntime?.GetStationClient(st.StationCode) != null;
+            }
+
+            bool step1 = recipe, step2 = hardware;
+            bool step3 = logicalCount == 0 || mappingOk;   // 无逻辑设备=无需映射→完成
+            bool step4 = triggerOk;
+            bool step5 = synced || !st.IsEnabled;
+
+            // 与面板 BuildSteps 同口径：必做= 绑配方/领硬件/映射(绑了才必做)/触发/保存
+            int req = 0, done = 0;
+            AddToBadge(ref req, ref done, step1, true);
+            AddToBadge(ref req, ref done, step2, true);
+            AddToBadge(ref req, ref done, step3, true);
+            AddToBadge(ref req, ref done, step4, true);
+            AddToBadge(ref req, ref done, step5, true);
+
+            if (done >= req) return "✅ 就绪";
+            return $"🔧 装配中 {done}/{req}";
+        }
+
+        private static void AddToBadge(ref int req, ref int done, bool ok, bool required)
+        {
+            if (required)
+            {
+                req++;
+                if (ok) done++;
+            }
+        }
+
+        /// <summary>构建工位 8 步装配清单（纯计算，不触 UI；供进度面板与徽标共用）。Done=true 表示该步已满足。</summary>
+        /// <summary>构建工位 7 步装配清单（纯计算，不触 UI；供进度面板与徽标共用）。Done=true 表示该步已满足。
+        /// 配方单主线：运行逻辑=产品配方（流程编排）；代码型业务过程入口已移除。</summary>
+        private static List<ReadinessStep> BuildSteps(StationModel s, StationProfile profile)
+        {
+            var steps = new List<ReadinessStep>();
+            if (s == null) return steps;
+
+            bool hasRecipe = s.BoundRecipe != null;
+            bool hasHardware = s.HardwareDevices != null && s.HardwareDevices.Count > 0;
+            int logicalCount = s.BoundRecipe?.LogicalDevices?.Count ?? 0;
+            bool mappingOk = logicalCount == 0
+                || (s.RecipeDeviceMappings != null && s.RecipeDeviceMappings.Count == logicalCount
+                    && s.RecipeDeviceMappings.All(m => !string.IsNullOrWhiteSpace(m.MappedDeviceId)));
+            bool triggerOk;
+            if (s.TriggerSourceType == TriggerSourceType.Timer) triggerOk = s.TimerIntervalMs > 0;
+            else if (s.TriggerSourceType == TriggerSourceType.PlcBit)
+                triggerOk = !string.IsNullOrWhiteSpace(s.PlcDeviceId) && !string.IsNullOrWhiteSpace(s.PlcAddress);
+            else triggerOk = true;
+            bool synced = false;
+            if (s.IsEnabled)
+            {
+                var hostRuntime = App.StationHostRuntime as IStationHostRuntime
+                                  ?? StationHostRuntime.GlobalInstance;
+                synced = hostRuntime?.GetStationClient(s.StationCode) != null;
+            }
+
+            // 步骤 ActionKind：0=定位 Tab  1=触发"保存并同步"  2=打开模板工作台页  3=打开标定中心页
+            // 装配执行方案（stage9-2：任务模板=工位任务唯一入口——工位跑什么=绑定哪个任务模板，
+            // 引导定位/深度学习推理/外观测量 均由模板绑定派生运行引擎；纯视觉/检测工位可跳过（Required=false）。
+            bool templateBound = !string.IsNullOrWhiteSpace(s.TaskTemplateCode);
+            bool engineBound = !string.IsNullOrWhiteSpace(s.ProcessKey);
+            var engineOpt = Grayson.Vision.WpfUI.Service.StationProcessCatalog.Find(s.ProcessKey);
+            bool pickPlaceProfile = profile?.Requirement != null
+                && (profile.Requirement.TaskType ?? string.Empty).Contains("定位抓取");
+            var suggestion = Grayson.Vision.WpfUI.Service.StationProcessCatalog.SuggestFor(profile?.Requirement);
+            string engineDetail;
+            if (templateBound && engineBound)
+            {
+                engineDetail = engineOpt != null
+                    ? $"已绑定 [{s.TaskTemplateCode} {s.TaskTemplateName}] → 引擎 [{engineOpt.Icon} {engineOpt.Name}]；参数/示教在下方「④ 任务模板·引擎」Tab 就地编辑"
+                    : $"已绑定 [{s.TaskTemplateCode} {s.TaskTemplateName}] → 引擎键 [{s.ProcessKey}]（目录外键，检查注册一致性）";
+            }
+            else if (templateBound)
+            {
+                engineDetail = $"已绑定模板 [{s.TaskTemplateCode}] 但引擎键未同步 —— 点顶部【💾 保存并同步】由模板派生 ProcessKey；或在模板中心重新「部署到工位」。";
+            }
+            else if (engineBound)
+            {
+                engineDetail = $"已挂引擎 [{s.ProcessKey}] 但无任务模板绑定（旧配置残留）。模板=工位任务唯一入口：请到模板中心绑定模板收口，避免直改 ProcessKey 被模板保存覆盖。";
+            }
+            else if (suggestion != null)
+            {
+                var sugOpt = Grayson.Vision.WpfUI.Service.StationProcessCatalog.Find(suggestion.EngineKey);
+                engineDetail = $"未绑定 —— 📋 档案建议：{sugOpt?.Icon} {sugOpt?.Name ?? suggestion.EngineKey}（到任务模板中心建引导定位模板并部署即走完整取放节拍）";
+            }
+            else
+            {
+                engineDetail = pickPlaceProfile
+                    ? "未绑定 —— 档案任务=定位抓取但未推导出建议，到「任务模板中心」新建 引导定位 模板并部署到本工位"
+                    : "未绑定（纯视觉/配方驱动）：工位触发只跑视觉链，无运动节拍；需要抓放/旋转时序时到模板中心绑定 引导定位 任务模板";
+            }
+            AddStep(steps, 1, "🧩", "绑定任务模板", "工位任务唯一入口：到任务模板中心新建/绑定任务模板（引导定位→运动节拍引擎；深度学习/外观测量→独立视觉引擎），模板自动派生引擎与判据。纯视觉检测工位可跳过。",
+                "④ 任务模板/引擎", 3, 0, pickPlaceProfile, templateBound && engineBound, engineDetail);
+            AddStep(steps, 2, "📦", "绑定产品配方", "工位的运行逻辑来自产品配方（含视觉链流程编排）。先在配方管理建配方，再到本步绑定。",
+                "② 配方映射", 1, 0, true, hasRecipe,
+                hasRecipe ? $"已绑定 [{s.BoundRecipe.RecipeName}]"
+                          : "未绑定配方（运行逻辑为空 —— 创建后工位只能手动/纯视觉调试）");
+            AddStep(steps, 3, "⚙️", "领用物理硬件", "从全局硬件池把相机/运动/IO 领用到本工位，供配方逻辑设备映射。",
+                "① 硬件领用", 0, 0, true, hasHardware,
+                hasHardware ? $"已领用 {s.HardwareDevices.Count} 台：{string.Join("、", s.HardwareDevices.Take(4).Select(h => h.DeviceName))}" + (s.HardwareDevices.Count > 4 ? "…" : "") : "未领用任何硬件");
+            AddStep(steps, 4, "🔗", "完成逻辑→物理映射", "把配方要求的每个逻辑设备都绑定到已领用的物理硬件。",
+                "② 配方映射", 1, 0, true, mappingOk,
+                mappingOk ? (logicalCount == 0 ? "配方无逻辑设备需求（自动完成）" : "全部逻辑设备已映射")
+                          : $"尚有逻辑设备未映射（{logicalCount} 个逻辑位）");
+            AddStep(steps, 5, "🔔", "配置触发与运行", "选择触发源：手动按钮 / 定时器 / PLC 位，并设丢帧策略。",
+                "③ 触发运行", 2, 0, true, triggerOk,
+                triggerOk ? $"触发源=[{s.TriggerSourceType}]" : "触发配置不完整（Timer 需周期>0；PLC 需设备+地址）");
+            AddStep(steps, 6, "🎯", "视觉资产：模板", "按需求在独立模板工作台创建模板（特征点/面随资产存档），供匹配节点引用。",
+                "模板工作台页", 0, 2, false, false,
+                profile != null && profile.AssetSuggestions != null && profile.AssetSuggestions.Any(a => a.Contains("模板"))
+                    ? "向导建议：" + string.Join("；", profile.AssetSuggestions.Where(a => a.Contains("模板")))
+                    : "按需（本工位任务如不需要模板可跳过）—— 点击直达模板工作台");
+            AddStep(steps, 7, "📐", "标定与示教", "建立 图像↔机械 关系：九点/手眼/旋转中心/示教点（独立标定中心承接）。",
+                "标定中心页", 0, 3, false, false,
+                BuildCalibrationStepHint(profile));
+            AddStep(steps, 8, "💾", "保存并同步 Runtime", "保存工位配置到库并同步 Core Runtime（单工位监控据此连接/运行）。",
+                "顶栏保存按钮", -1, 1, true, synced || !s.IsEnabled,
+                !s.IsEnabled ? "工位禁用：无需同步 Runtime（启用后需保存同步）" : (synced ? "已同步 Runtime Client" : "尚未保存/同步"));
+            return steps;
+        }
+
+        /// <summary>旅程第6步（标定）提示：档案有相机槽 → 按槽逐条清单；否则沿用旧单相机建议文案</summary>
+        private static string BuildCalibrationStepHint(StationProfile profile)
+        {
+            var slots = profile?.Requirement?.CameraSlots;
+            if (slots != null && slots.Count > 0)
+            {
+                var items = slots.Where(x => x != null).Select(x =>
+                {
+                    string tag = string.IsNullOrWhiteSpace(x.SlotKey) ? "相机槽" : x.SlotKey;
+                    string inst = ShortenInstallKind(x.InstallKind);
+                    string rec = Grayson.Vision.WpfUI.Service.StationProposalEngine.RecommendCalibrationForSlot(x);
+                    string shortRec = rec.Contains("：") ? rec.Substring(0, rec.IndexOf("：")) : rec;
+                    return $"{tag}({inst})→{shortRec}";
+                }).ToList();
+                string prefix = items.Count > 2
+                    ? string.Join("；", items.Take(2)) + $"…共 {items.Count} 槽"
+                    : string.Join("；", items);
+                return $"档案相机槽 ×{items.Count}：{prefix}—— 点击直达标定中心";
+            }
+            return profile != null && !string.IsNullOrWhiteSpace(profile.CalibrationSuggestion)
+                ? "向导建议：" + profile.CalibrationSuggestion
+                : "按需（需要出坐标/引导时做标定）—— 点击直达标定中心";
+        }
+
+        private static string ShortenInstallKind(string install)
+        {
+            if (string.IsNullOrWhiteSpace(install)) return "安装待定";
+            return install.Replace("（随执行机构）", "").Replace("（俯视工面）", "")
+                          .Replace("（仰视工面）", "").Replace("（斜视角）", "");
+        }
+
+        private void Station_ReadinessPropChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (ReadinessSensitiveProps.Contains(e.PropertyName))
+            {
+                RefreshReadiness();
+            }
+        }
+
+        private static void AddStep(List<ReadinessStep> list, int index, string icon, string title, string desc,
+            string tabLabel, int targetTab, int actionKind, bool required, bool done, string detail)
+        {
+            list.Add(new ReadinessStep
+            {
+                Index = index,
+                Icon = icon,
+                Title = title,
+                Description = desc,
+                TabLabel = tabLabel,
+                TargetTabIndex = targetTab,
+                ActionKind = actionKind,
+                Required = required,
+                Done = done,
+                State = done ? 2 : 0,
+                Detail = detail ?? string.Empty
+            });
+        }
+
+        private void SetTabGlyph(int tabIndex, string glyph)
+        {
+            TabHeaderTexts[tabIndex] = string.IsNullOrEmpty(glyph)
+                ? TabTitles[tabIndex]
+                : glyph + " " + TabTitles[tabIndex];
+            // 数组索引绑定 {Binding TabHeaderTexts[i]} 需整体重取通知
+            OnPropertyChanged(nameof(TabHeaderTexts));
+        }
+
+        /// <summary>步骤点击：ActionKind 1=保存同步 / 2=模板工作台页 / 3=标定中心页；否则定位到对应 Tab</summary>
+        private void OnGotoReadinessStep(ReadinessStep step)
+        {
+            if (step == null) return;
+            switch (step.ActionKind)
+            {
+                case 1:
+                    SaveStationConfigCommand.Execute(null);
+                    return;
+                case 2:
+                    OnOpenTemplateWorkbench();
+                    return;
+                case 3:
+                    OnOpenCalibrationCenter();
+                    return;
+                default:
+                    ActiveTabIndex = step.TargetTabIndex;
+                    return;
+            }
+        }
+
+        private void OnGoMonitor()
+        {
+            if (SelectedStation == null) return;
+            var nav = NavigationService.Current;
+            if (nav != null)
+            {
+                nav.NavigateTo(PageType.StationMonitor, SelectedStation.StationCode);
+            }
+        }
+
         /// <summary>
         /// 主动刷新 UI 命令状态
         /// </summary>
@@ -396,10 +1370,18 @@ namespace Grayson.Vision.WpfUI.ViewModel
             RemoveHardwareCommand.RaiseCanExecuteChanged();
             SaveStationConfigCommand.RaiseCanExecuteChanged();
             OpenCalibrationCenterCommand.RaiseCanExecuteChanged();
+            OpenTemplateWorkbenchCommand.RaiseCanExecuteChanged();
+            OpenTemplateCenterCommand?.RaiseCanExecuteChanged();
+            OpenFlowEditCommand.RaiseCanExecuteChanged();
+            OpenRecipeManageCommand.RaiseCanExecuteChanged();
+            OpenProfileCommand.RaiseCanExecuteChanged();
         }
 
         private void OnStationSelectedChanged()
         {
+            // 工位切换先卸载旧引擎面板（含 SelectedStation==null 取消选中场景）
+            DetachEngineTeachPanel();
+
             if (SelectedStation == null) return;
 
             // 订阅工位的配方切换回调
@@ -409,6 +1391,70 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 SyncRecipeMappings();
             }
+
+            // ④ 执行方案 Tab：按工位 ProcessKey 就地挂 参数/示教 面板（无注册则留空不显示）
+            AttachEngineTeachPanel();
+        }
+
+        // ===== 引擎参数/示教面板 挂载（④执行方案 Tab 就地；ProcessKey 需已落库）=====
+
+        private void AttachEngineTeachPanel()
+        {
+            var station = SelectedStation;
+            if (station == null || string.IsNullOrWhiteSpace(station.ProcessKey))
+            {
+                RefreshEngineTeachNotice();
+                return;
+            }
+
+            try
+            {
+                var panel = StationMonitorExtensionRegistry.Create(station.ProcessKey);
+                if (panel == null)
+                {
+                    RefreshEngineTeachNotice(); // 该引擎无注册面板（纯视觉/无需参数）
+                    return;
+                }
+
+                if (panel.DataContext is IStationMonitorExtension ext)
+                {
+                    ext.Log += TeachExtension_OnLog;
+                    ext.Bind(station.StationCode);
+                    _teachExtension = ext;
+                }
+                _teachPanelView = panel;
+                EngineTeachPanel = panel;
+                RefreshEngineTeachNotice();
+            }
+            catch (Exception ex)
+            {
+                EngineTeachLogText = $"[ERROR] 引擎面板加载失败: {ex.Message}";
+                DetachEngineTeachPanel();
+            }
+        }
+
+        private void DetachEngineTeachPanel()
+        {
+            if (_teachExtension != null)
+            {
+                try { _teachExtension.Log -= TeachExtension_OnLog; } catch { }
+                try { _teachExtension.Dispose(); } catch { }
+                _teachExtension = null;
+            }
+            _teachPanelView = null;
+            EngineTeachPanel = null;
+            RefreshEngineTeachNotice();
+        }
+
+        private void TeachExtension_OnLog(string level, string message)
+        {
+            EngineTeachLogText = $"[{level}] {message}";
+        }
+
+        /// <summary>页面卸载钩子（View Unloaded 时调用）：退订 worker 事件并释放引擎面板，防事件泄漏。</summary>
+        public void NotifyPageUnloaded()
+        {
+            DetachEngineTeachPanel();
         }
 
         private void SyncRecipeMappings()
@@ -435,6 +1481,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     });
                 }
             }
+            RefreshReadiness();
         }
 
         #endregion
@@ -467,6 +1514,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 // 仅显示保存成功提示，不进行 Runtime 操作
                 // (Runtime 操作由用户显式点击"保存工位并同步 Runtime"按钮时触发)
+                RefreshReadiness();
             }
             catch (Exception ex)
             {
@@ -556,7 +1604,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         WorkMode.Production,
                         stationConfig.TriggerSource,
                         stationConfig.ProcessKey,
-                        stationConfig.ProcessConfigJson);
+                        stationConfig.ProcessConfigJson,
+                        stationConfig.TaskTemplateCode);
                 }
 
                 if (client == null)
@@ -579,6 +1628,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 MessageBox.Show($"工位 [{SelectedStation.StationName}] ({SelectedStation.StationCode}) 配置已保存并初始化 Core 站点成功！",
                                 "保存成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                // 引擎 ProcessKey 落库成功 → 按最新引擎重挂 参数/示教 面板（就地编辑）
+                AttachEngineTeachPanel();
+                RefreshReadiness();
             }
             catch (Exception ex)
             {
@@ -624,9 +1676,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // 保存触发源配置
             config.TriggerSource = station.ToTriggerSourceConfig();
 
-            // 保存业务过程绑定（机器结构级时序，不随产品变化）
+            // 保存业务过程绑定（机器结构级时序，不随产品变化；stage9-2：由任务模板绑定派生）
             config.ProcessKey = string.IsNullOrWhiteSpace(station.ProcessKey) ? null : station.ProcessKey.Trim();
             config.ProcessConfigJson = station.ProcessConfigJson;
+
+            // 保存任务模板绑定（任务模板=工位任务唯一入口）
+            config.TaskTemplateCode = string.IsNullOrWhiteSpace(station.TaskTemplateCode) ? null : station.TaskTemplateCode.Trim();
+            config.TaskTemplateName = station.TaskTemplateName;
+            config.TaskTemplateKindText = station.TaskTemplateKindText;
 
             return config;
         }
@@ -663,7 +1720,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 LineName = GenerateUniqueLineName()
             };
             ProductionLines.Add(newLine);
+            OnPropertyChanged(nameof(HasAnyLine));
             SelectedLine = newLine;
+            // 新产线从"零工位"开始：清掉旧选择，右侧进入该产线空态引导（用户视角下一步=向导建工位），
+            // 也避免"SelectedStation 属于旧产线 + SelectedLine 指向新产线"的保存错位。
+            SelectedStation = null;
         }
 
         private string GenerateUniqueStationCode()
@@ -707,7 +1768,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             return candidate;
         }
 
-        private async void OnAddStation()
+        private void OnAddStation()
         {
             if (SelectedLine == null)
             {
@@ -715,23 +1776,97 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return;
             }
 
+            var line = SelectedLine;
+            // 需求驱动新建向导（v1.1 §0.2 问卷 + §0.3 实时推导）：取代"直接生成空壳"的旧行为。
+            // 建议代码/名称由现有唯一命名规则生成，向导内可改；创建前做唯一性校验。
+            var win = new View.StationWizardWindow(line.LineId, line.LineName,
+                GenerateUniqueStationCode(), GenerateUniqueStationName(line))
+            {
+                Owner = Application.Current.MainWindow
+            };
+
+            if (win.ShowDialog() != true || !(win.DataContext is StationWizardViewModel wvm))
+            {
+                return; // 取消
+            }
+
+            // 仅存草稿：已落盘 StationProfile(Draft)，不建真实工位（树不插入）
+            if (wvm.ExitAsDraft)
+            {
+                MessageBox.Show(
+                    $"方案草稿已保存：{wvm.ResultProfile.StationName}（代码 {wvm.ResultProfile.StationCode}）\n" +
+                    $"随时可在向导『载入草稿』续编，或回到列表点【+ 工位】重新进入向导继续创建。",
+                    "已存草稿", MessageBoxButton.OK, MessageBoxImage.Information);
+                LogBus.Info("StationWizard",
+                    $"工位方案草稿保存: 代码={wvm.ResultProfile.StationCode} 名称={wvm.ResultProfile.StationName} " +
+                    $"任务={wvm.ResultProfile.Requirement?.TaskType ?? "未填"} 模板={wvm.ResultProfile.IndustryTemplateCode ?? "自由问卷"}");
+                return;
+            }
+
+            CreateStationFromWizard(wvm.ResultProfile);
+        }
+
+        /// <summary>
+        /// 向导产物 → 真实工位（替换旧"空壳新建"链路）：
+        /// 1) 代码唯一性校验 → 2) 建 StationModel 入树 → 3) 复用 AutoPersistAndRegisterIfEnabledAsync
+        ///    （SaveStation 落库 + 注册 Runtime）→ 4) 成功后补 StationId/Status=Active 落 StationProfile 档案。
+        /// 保存失败回滚树节点。
+        /// </summary>
+        private async void CreateStationFromWizard(StationProfile profile)
+        {
+            var line = SelectedLine;
+            if (line == null) return;
+
+            bool dup = line.Stations.Any(s => string.Equals(s.StationCode, profile.StationCode, StringComparison.OrdinalIgnoreCase));
+            if (dup)
+            {
+                MessageBox.Show($"工位代码 [{profile.StationCode}] 已在该产线下存在，请返回向导修改后再创建。",
+                    "代码冲突", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             var newStation = new StationModel
             {
                 StationId = _configService.GenerateStationId(),
-                StationCode = GenerateUniqueStationCode(),
-                StationName = GenerateUniqueStationName(SelectedLine),
-                IsEnabled = true,
-                TimeoutMs = 3000
+                StationCode = profile.StationCode,
+                StationName = profile.StationName,
+                IsEnabled = profile.IsEnabled,
+                TimeoutMs = profile.TimeoutMs
             };
-            SelectedLine.Stations.Add(newStation);
+            line.Stations.Add(newStation);
             SelectedStation = newStation;
 
-            await AutoPersistAndRegisterIfEnabledAsync(newStation);
+            bool persisted = await AutoPersistAndRegisterIfEnabledAsync(newStation);
+            if (!persisted)
+            {
+                line.Stations.Remove(newStation);
+                SelectedStation = line.Stations.FirstOrDefault();
+                return;
+            }
+
+            // 关联并存档需求元数据（Active）：后续工作台 S 页读此档案做"待补"提示与建议刷新
+            profile.StationId = newStation.StationId;
+            profile.StationCode = newStation.StationCode;
+            profile.LineId = line.LineId;
+            profile.LineName = line.LineName;
+            profile.Status = StationProfileStatus.Active;
+            bool saved = new StationProfileRepository().Save(profile);
+
+            LogBus.Info("StationWizard",
+                $"向导创建工位成功: {profile.StationCode} 名称={profile.StationName} 任务={profile.Requirement?.TaskType ?? "未填"} " +
+                $"建议链={profile.SuggestedFlowSkeleton} 档案落盘={saved}");
+            MessageBox.Show(
+                $"工位 [{profile.StationName}] 创建成功。\n\n" +
+                $"建议视觉链：{profile.SuggestedFlowSkeleton}\n" +
+                $"建议标定：{profile.CalibrationSuggestion}\n" +
+                $"待建资产：\n{string.Join("\n", (profile.AssetSuggestions ?? new System.Collections.Generic.List<string>()).Select(a => "· " + a))}\n\n" +
+                "请在右侧工作台逐项确认/细化（S1 硬件绑定 → S2 模板 → S3 标定 → S4 配方）。",
+                "创建工位", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
-        private async Task AutoPersistAndRegisterIfEnabledAsync(StationModel station)
+        private async Task<bool> AutoPersistAndRegisterIfEnabledAsync(StationModel station)
         {
-            if (station == null) return;
+            if (station == null) return false;
 
             try
             {
@@ -739,20 +1874,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (!_configService.SaveStation(stationConfig))
                 {
                     MessageBox.Show("新增工位自动保存失败！", "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
+                    return false;
                 }
 
                 // 禁用工位：仅自动保存，不注册 Runtime
                 if (!station.IsEnabled)
                 {
-                    return;
+                    return true;
                 }
 
                 var hostRuntime = App.StationHostRuntime as IStationHostRuntime
                                   ?? StationHostRuntime.GlobalInstance;
                 if (hostRuntime == null)
                 {
-                    return;
+                    return true;
                 }
 
                 if (hostRuntime.GetStationClient(station.StationCode) != null)
@@ -771,11 +1906,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     WorkMode.Production,
                     null,
                     stationConfig.ProcessKey,
-                    stationConfig.ProcessConfigJson);
+                    stationConfig.ProcessConfigJson,
+                    stationConfig.TaskTemplateCode);
+                return true;
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"新增工位自动保存/注册失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
             }
         }
 
@@ -792,6 +1930,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                     // 2. 删除数据库配置
                     _configService.DeleteStation(SelectedStation.StationId);
+                    // 3. 联动清理方案档案（Active StationId.json）
+                    new StationProfileRepository().Delete(null, SelectedStation.StationId);
                     SelectedLine.Stations.Remove(SelectedStation);
                     SelectedStation = SelectedLine.Stations.FirstOrDefault();
                 }
@@ -807,11 +1947,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     {
                         hostRuntime?.RemoveStation(station.StationCode);
                         _configService.DeleteStation(station.StationId);
+                        new StationProfileRepository().Delete(null, station.StationId);
                     }
 
                     // 2. 删除产线本身
                     _configService.DeleteLine(SelectedLine.LineId);
                     ProductionLines.Remove(SelectedLine);
+                    OnPropertyChanged(nameof(HasAnyLine));
                     SelectedLine = ProductionLines.FirstOrDefault();
                     SelectedStation = null;
                 }
@@ -911,29 +2053,18 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 AvailableRecipes.Add(recipe);
             }
-
-            // 业务过程注册表（Core 侧工厂）：下拉数据源，空=未注册任何过程
-            AvailableProcessKeys.Clear();
-            try
-            {
-                var runtime = App.StationHostRuntime as IStationHostRuntime
-                              ?? StationHostRuntime.GlobalInstance;
-                var keys = runtime?.GetSupportedProcessKeys();
-                if (keys != null)
-                {
-                    foreach (var key in keys) AvailableProcessKeys.Add(key);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[StationManage] 加载业务过程列表失败: {ex.Message}");
-            }
+            OnPropertyChanged(nameof(HasRecipesAvailable));
 
             ProductionLines.Clear();
             foreach (var lineConfig in _configService.LoadAllLines())
             {
                 ProductionLines.Add(MapFromLineConfig(lineConfig));
             }
+            OnPropertyChanged(nameof(HasAnyLine));
+
+            RefreshAllStationBadges();
+            // 首帧空态文案（无产线/有产线未选工位），供右侧空态引导层显示
+            RefreshEmptyGuide();
         }
 
         /// <summary>
@@ -1006,6 +2137,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 // 从持久化数据恢复业务过程绑定
                 station.ProcessKey = stationConfig.ProcessKey;
                 station.ProcessConfigJson = stationConfig.ProcessConfigJson;
+
+                // 从持久化数据恢复任务模板绑定（stage9-2：模板=唯一入口）
+                station.TaskTemplateCode = stationConfig.TaskTemplateCode;
+                station.TaskTemplateName = stationConfig.TaskTemplateName;
+                station.TaskTemplateKindText = stationConfig.TaskTemplateKindText;
 
                 line.Stations.Add(station);
             }

@@ -58,6 +58,23 @@ namespace Grayson.Vision.Core
         /// <summary>最近工单追踪</summary>
         public WorkOrderTracker WorkOrderTracker { get; }
 
+        /// <summary>
+        /// 业务周期是否正在执行（互斥锁被占用）。
+        /// UI（工位监视页）用它区分「视觉链完成」与「完整业务周期完成」，
+        /// 周期内头部状态应显示"进行中"而非提前报 OK/NG。
+        /// </summary>
+        public bool IsProcessBusy => _processExecLock.CurrentCount == 0;
+
+        /// <summary>
+        /// 自动节拍运行态：工位已【启动】且触发源仍在监听信号（Timer/PLC/IO 等按节拍驱动）。
+        /// 自动节拍下，单次业务周期/视觉链完成后状态保持 Running——节拍间隙仍属于"运行中"，
+        /// 只有【停止/暂停/急停】停掉触发源或锁定状态才退出 Running（PackML 语义）。
+        /// 未点启动的手动「单次触发」不满足此条件，完成后回落 Idle（原语义不变）。
+        /// </summary>
+        public bool IsAutoCycleRunning =>
+            HostRuntime != null
+            && HostRuntime.GetTriggerSource(StationId)?.IsRunning == true;
+
         #region 业务过程挂载（配置驱动：机器结构级时序，不随产品变化）
 
         /// <summary>
@@ -76,6 +93,12 @@ namespace Grayson.Vision.Core
 
         /// <summary>工位配置声明的业务过程参数 JSON（原样回传给工厂重挂）。</summary>
         public string DesiredProcessConfigJson { get; set; }
+
+        /// <summary>
+        /// 工位绑定的任务模板代码（CreateStationWithRecipeAsync 装配时随配置记录）。
+        /// 独立视觉任务引擎据此读取模板级判据/参数（Config\TaskLibrary\{Code}.json）。
+        /// </summary>
+        public string TaskTemplateCode { get; set; }
 
         /// <summary>已挂载业务过程的键（未挂载为 null），供 UI 提示使用。</summary>
         public string ProcessKey => Process?.ProcessKey;
@@ -285,10 +308,36 @@ namespace Grayson.Vision.Core
             bool isOk = e.Result == ChainExecutionResult.Success || e.Result == ChainExecutionResult.StepEndReached;
             Metrics.RecordWorkOrderCompleted(isOk);
 
+            // #4 追溯打通：纯视觉链工位(Process==null)以链结果作为该工单最终判定并落库。
+            //    挂了业务过程的工位其内部视觉段也会走到本回调(Process!=null)，但最终判定由
+            //    RunProcessOnceAsync 负责，故此处只处理纯视觉链，避免业务过程重复落库。
+            // #3 报警联动：链以 Failed 结束=引擎/节点执行级故障 → 上报告警。
+            if (Process == null)
+            {
+                Metrics.RecordCycleFinalized(); // 纯视觉链：整链结束即该工单最终定案
+                StationRunRecorder.Record(StationId, isOk, e.ExecutionTimeMs,
+                    recipeName: _currentRecipe?.ProcessName,
+                    errorMessage: isOk ? null : e.Exception?.Message ?? "执行链失败");
+
+                if (e.Result == ChainExecutionResult.Failed)
+                {
+                    try
+                    {
+                        Grayson.Vision.Core.Infrastructure.Alarm.AlarmBus.Instance.Raise(
+                            Grayson.Vision.Contracts.Infrastructure.Alarm.AlarmSeverity.Fault,
+                            0x2002, StationId, "ExecutionChain",
+                            $"执行链失败: {e.Exception?.Message ?? "未知错误"}",
+                            "请检查视觉节点/相机/参数后复位重试");
+                    }
+                    catch { /* 告警上报失败不影响运行 */ }
+                }
+            }
+
             switch (e.Result)
             {
                 case ChainExecutionResult.Success:
-                    UpdateState(StationState.Idle);
+                    // 纯视觉链完成：自动节拍中保持 Running（节拍间隙仍属运行中），手动单次回落 Idle
+                    ReturnToRestStateAfterCycle();
                     break;
 
                 case ChainExecutionResult.Failed:
@@ -300,7 +349,7 @@ namespace Grayson.Vision.Core
                     break;
 
                 case ChainExecutionResult.StepEndReached:
-                    UpdateState(StationState.Idle);
+                    ReturnToRestStateAfterCycle();
                     break;
             }
 
@@ -531,10 +580,20 @@ namespace Grayson.Vision.Core
 
                 bool ok = await process.RunAsync(_processCts.Token).ConfigureAwait(false);
                 sw.Stop();
-                Metrics.RecordWorkOrderCompleted(ok);
+                Metrics.RecordWorkOrderCompleted(ok, (long)sw.Elapsed.TotalMilliseconds);
+                Metrics.RecordCycleFinalized(); // 业务过程完整周期定案(机械段结束后的最终 OK/NG)
                 LogBus.Info("StationWorker",
                     $"工位 [{StationId}] 业务过程 [{process.ProcessKey}] 完成: {(ok ? "OK" : "NG")}，耗时 {sw.Elapsed.TotalMilliseconds:F0}ms");
-                UpdateState(StationState.Idle);
+
+                // #4 追溯/放错打通：把本次最终判定落一条持久化检测记录(业务过程权威结果)，
+                //    供【本地追溯与防错】页实时查询。视觉NG/未吸住/放错等 NG 以 NG+错误语义落库。
+                StationRunRecorder.Record(StationId, ok, sw.Elapsed.TotalMilliseconds,
+                    recipeName: process.ProcessKey,
+                    batchId: batchId,
+                    errorMessage: ok ? null : $"业务过程 [{process.ProcessKey}] 判定 NG");
+
+                // 自动节拍（触发源驱动）中保持 Running：定时循环工位启动后只有停止/暂停/急停才退出运行态
+                ReturnToRestStateAfterCycle();
             }
             catch (OperationCanceledException)
             {
@@ -548,7 +607,27 @@ namespace Grayson.Vision.Core
             {
                 sw.Stop();
                 Metrics.RecordWorkOrderCompleted(false);
+                Metrics.RecordCycleFinalized(); // 异常也定案为 NG
                 LogBus.Error("StationWorker", $"工位 [{StationId}] 业务过程 [{process?.ProcessKey}] 异常: {ex.Message}", ex);
+
+                // #4 追溯：异常周期同样落一条 NG 记录，避免丢失
+                StationRunRecorder.Record(StationId, false, sw.Elapsed.TotalMilliseconds,
+                    recipeName: process?.ProcessKey,
+                    batchId: batchId,
+                    errorCode: "FAULT",
+                    errorMessage: ex.Message);
+
+                // #3 报警联动：业务过程异常=设备/执行级故障 → 上报告警总线(报警与诊断页实时显示)
+                try
+                {
+                    Grayson.Vision.Core.Infrastructure.Alarm.AlarmBus.Instance.Raise(
+                        Grayson.Vision.Contracts.Infrastructure.Alarm.AlarmSeverity.Fault,
+                        0x2001, StationId, "StationWorker",
+                        $"业务过程 [{process?.ProcessKey}] 执行异常: {ex.Message}",
+                        "请检查设备/工艺参数后复位重试");
+                }
+                catch { /* 告警上报失败不影响运行 */ }
+
                 UpdateState(StationState.Faulted);
             }
             finally
@@ -685,6 +764,17 @@ namespace Grayson.Vision.Core
             //    必须先置 ErrorLocked，并让 OCE 分支检测到锁定态后保持不覆盖。
             UpdateState(StationState.ErrorLocked);
             LogBus.Error("StationWorker", $"工位 [{StationId}] 触发急停！原因: {reason ?? "未指定"}");
+
+            // #3 报警联动：急停=Critical 级报警，实时进入【报警与诊断】页
+            try
+            {
+                Grayson.Vision.Core.Infrastructure.Alarm.AlarmBus.Instance.Raise(
+                    Grayson.Vision.Contracts.Infrastructure.Alarm.AlarmSeverity.Fault,
+                    0xE001, StationId, "EmergencyStop",
+                    $"工位急停触发: {reason ?? "操作员触发"}",
+                    "确认机械安全后执行复位解锁");
+            }
+            catch { /* 告警上报失败不影响急停 */ }
         }
 
         #region 事件路由与状态更新
@@ -717,6 +807,20 @@ namespace Grayson.Vision.Core
         {
             Metrics.RecordWorkOrderCompleted(isOk: false);
             OnExecutionError?.Invoke(this, e);
+        }
+
+        /// <summary>
+        /// 周期/链完成后的状态回写：
+        /// - 自动节拍中（已启动 + 触发源运行）：保持 Running，不再"每跑一拍就闪一下空闲"——
+        ///   定时/PLC 循环工位一旦启动，只有停止/暂停/急停才退出运行态；
+        /// - 已暂停(Paused)/急停(ErrorLocked)：不覆盖（暂停=当前周期跑完不再接新周期，停在暂停态）；
+        /// - 其余（未启动的手动单次触发等）：回落 Idle（原语义不变）。
+        /// </summary>
+        private void ReturnToRestStateAfterCycle()
+        {
+            if (State == StationState.Running && IsAutoCycleRunning) return; // 已运行，保持
+            if (State == StationState.Paused || State == StationState.ErrorLocked) return; // 不覆盖暂停/急停
+            UpdateState(StationState.Idle);
         }
 
         private void UpdateState(StationState newState)

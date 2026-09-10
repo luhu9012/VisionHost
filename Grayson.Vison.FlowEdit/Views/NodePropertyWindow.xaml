@@ -79,7 +79,7 @@
                     </DockPanel>
 
                     <Grid Grid.Row="1">
-                        <halconHost:HalconImageDisplayHost x:Name="PreviewHost"/>
+                        <halconHost:HalconImageDisplayHost x:Name="PreviewHost" ShowToolbar="False"/>
                         <TextBlock x:Name="PreviewHint" Text="运行该节点后显示预览"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    Foreground="#666" FontSize="13" IsHitTestVisible="False"/>

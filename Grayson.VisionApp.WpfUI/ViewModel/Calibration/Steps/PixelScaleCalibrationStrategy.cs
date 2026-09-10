@@ -22,7 +22,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
 
         public void TriggerSample(CalibrationWizardViewModel context)
         {
-            if (context.CurrentStep <= 1)
+            if (context.LegacyPhase <= 2)
             {
                 context.CaptureFeatureFrame("像素当量预览");
                 return;

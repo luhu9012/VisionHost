@@ -251,7 +251,14 @@ namespace Grayson.Vision.Contracts.Flow.Enums
         SaveData,           // 测量结果追加写入本地文件或数据库
 
         [NodeFieldMeta("🌐", "#64748B", "MES 上报", "MES 系统对接 (WebAPI/MQTT)")]
-        MesReport           // WebAPI/HTTP/MQTT 对接 MES 上报数据
+        MesReport,           // WebAPI/HTTP/MQTT 对接 MES 上报数据
+
+        // ==========================================
+        // 11. 🧠 深度学习原生推理 (HalconDL - #B45309 琥珀系)
+        //     注意：只能追加在末尾（配方 JSON 的 Type 为枚举整数值，中间插入会使存量配方错位）
+        // ==========================================
+        [NodeFieldMeta("🎇", "#B45309", "HALCON 原生 DL", "HALCON 原生 .hdl/.hdict 深度学习推理 (C#+halcondotnet 直调，不走 HDevEngine)")]
+        HalconDlInference   // DLTool 导出模型端到端推理（分割/分类；对应 HTH DL Demo 翻译落地）
     }
 
 

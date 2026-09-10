@@ -25,6 +25,31 @@
 
                     <TextBlock Text="最小匹配分数 (Min Score):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding MinScore, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <!-- 搜索区域（Search ROI）：限定"在哪里找"，与模板 ROI（学什么）分离 -->
+                    <CheckBox Content="启用搜索区域（限定匹配范围）" IsChecked="{Binding SearchRoiEnabled}"
+                              Foreground="#DCDCDC" Margin="0 4 0 6"/>
+                    <StackPanel IsEnabled="{Binding SearchRoiEnabled}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="左上(Row, Col):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                            <StackPanel Grid.Column="0" Margin="0 2 0 4">
+                                <TextBox Text="{Binding SearchRow1, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 2 0 0"/>
+                                <TextBox Text="{Binding SearchCol1, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 2 0 0"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="右下(Row, Col):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                            <StackPanel Grid.Column="2" Margin="0 2 0 4">
+                                <TextBox Text="{Binding SearchRow2, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 2 0 0"/>
+                                <TextBox Text="{Binding SearchCol2, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 2 0 0"/>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="留空=全图搜索；坐标从预览图像中目标大致区域读取（0~图像尺寸）"
+                                   Foreground="#9E9E9E" FontSize="11" TextWrapping="Wrap"/>
+                    </StackPanel>
                 </StackPanel>
             </DataTemplate>
         </ResourceDictionary>

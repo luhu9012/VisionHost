@@ -72,6 +72,21 @@
                 </Setter>
             </Style>
 
+            <!-- 图标型工具栏按钮：紧凑内边距，内容为纯 emoji 图标（配合 ToolTip 使用，节省横向空间） -->
+            <Style x:Key="IconToolBarBtnStyle" TargetType="Button" BasedOn="{StaticResource ToolBarBtnStyle}">
+                <Setter Property="Padding" Value="6 2"/>
+                <Setter Property="MinWidth" Value="32"/>
+            </Style>
+
+            <!-- emoji 图标文本：统一字体族，前景继承按钮色（hover/禁用时自动跟随按钮变色，支持语义色区分） -->
+            <Style x:Key="EmojiIconTextStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI Emoji"/>
+                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+            </Style>
+
             <!-- ================= Dark Theme Custom Styles ================= -->
             <!-- 1. Dark TabControl Style -->
             <Style TargetType="TabControl">
@@ -231,9 +246,9 @@
                     <Border Background="#252526" CornerRadius="4" Padding="3" BorderBrush="#3F3F46" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <!-- 运行按钮 (绿色主题，禁用时压暗) -->
-                            <Button Command="{Binding RunContinuousCmd}" ToolTip="连续运行 (F5)">
+                            <Button Command="{Binding RunContinuousCmd}" ToolTip="连续运行流程 (F5)">
                                 <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource ToolBarBtnStyle}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconToolBarBtnStyle}">
                                         <Setter Property="Background" Value="#1E4620"/>
                                         <Setter Property="Foreground" Value="#4EC9B0"/>
                                         <Setter Property="BorderBrush" Value="#275D2B"/>
@@ -246,34 +261,28 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="▶" Margin="0 0 4 0" FontSize="10"/>
-                                    <TextBlock Text="运行"/>
-                                </StackPanel>
+                                <TextBlock Text="▶" Style="{StaticResource EmojiIconTextStyle}"/>
                             </Button>
 
-                            <Button Command="{Binding StepRunCmd}" ToolTip="单步运行 (F10)" Style="{StaticResource ToolBarBtnStyle}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="⏯" Margin="0 0 4 0" FontSize="10"/>
-                                    <TextBlock Text="单步"/>
-                                </StackPanel>
+                            <!-- 单步按钮 (青色图标) -->
+                            <Button Command="{Binding StepRunCmd}" ToolTip="单步运行，逐节点执行 (F10)" Style="{StaticResource IconToolBarBtnStyle}" Foreground="#4FC1E9">
+                                <TextBlock Text="⏯" Style="{StaticResource EmojiIconTextStyle}"/>
                             </Button>
 
-                            <Button Command="{Binding PauseRunCmd}" ToolTip="暂停" Style="{StaticResource ToolBarBtnStyle}">
-                                <TextBlock Text="⏸ 暂停"/>
+                            <!-- 暂停按钮 (琥珀色图标) -->
+                            <Button Command="{Binding PauseRunCmd}" ToolTip="暂停 / 继续当前运行" Style="{StaticResource IconToolBarBtnStyle}" Foreground="#FFC46B">
+                                <TextBlock Text="⏸" Style="{StaticResource EmojiIconTextStyle}"/>
                             </Button>
 
-                            <Button Command="{Binding ResetCmd}" ToolTip="复位流程至初始就绪状态 (Shift+F5)" Style="{StaticResource ToolBarBtnStyle}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="🔄" Margin="0 0 4 0" FontSize="10"/>
-                                    <TextBlock Text="复位"/>
-                                </StackPanel>
+                            <!-- 复位按钮 (蓝色图标) -->
+                            <Button Command="{Binding ResetCmd}" ToolTip="复位流程至初始就绪状态 (Shift+F5)" Style="{StaticResource IconToolBarBtnStyle}" Foreground="#58ACFA">
+                                <TextBlock Text="🔄" Style="{StaticResource EmojiIconTextStyle}"/>
                             </Button>
 
                             <!-- 停止按钮 (红色主题，禁用时压暗) -->
-                            <Button Command="{Binding StopRunCmd}" ToolTip="停止运行">
+                            <Button Command="{Binding StopRunCmd}" ToolTip="停止运行" FontWeight="Bold">
                                 <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource ToolBarBtnStyle}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconToolBarBtnStyle}">
                                         <Setter Property="Background" Value="#4A1818"/>
                                         <Setter Property="Foreground" Value="#F44336"/>
                                         <Setter Property="BorderBrush" Value="#662222"/>
@@ -286,27 +295,43 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
-                                <TextBlock Text="⏹ 停止" FontWeight="Bold"/>
+                                <TextBlock Text="⏹" Style="{StaticResource EmojiIconTextStyle}"/>
                             </Button>
                         </StackPanel>
                     </Border>
                 </StackPanel>
-                <!-- 中间：文件与画布编辑工具组 -->
+                <!-- 中间：文件与画布编辑工具组 (纯 emoji 图标 + ToolTip，节省横向空间) -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Margin="0 0 10 0">
-                        <Button Content="💾 保存" Command="{Binding SaveRecipeCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
-                        <Button Content="📥 导入" Command="{Binding ImportRecipeCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
-                        <Button Content="📤 导出" Command="{Binding ExportRecipeCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
+                        <Button Command="{Binding SaveRecipeCmd}" ToolTip="保存当前配方" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="💾" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
+                        <Button Command="{Binding ImportRecipeCmd}" ToolTip="从文件导入配方" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="📥" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
+                        <Button Command="{Binding ExportRecipeCmd}" ToolTip="导出配方到文件" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="📤" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
                     </StackPanel>
 
-                    <Rectangle Width="1" Height="16" Fill="#3F3F46" Margin="4 0"/>
+                    <Rectangle Width="1" Height="18" Fill="#3F3F46" Margin="4 0"/>
 
                     <StackPanel Orientation="Horizontal" Margin="10 0 0 0">
-                        <Button Content="✨ 自动重排" Command="{Binding AutoLayoutCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
-                        <Button Content="🔍 预检" Command="{Binding RunPreflightCmd}" Style="{StaticResource ToolBarBtnStyle}"/>
-                        <Button Content="📦 另存模板" Command="{Binding SaveCurrentPipelineAsRecipeCommand}" Style="{StaticResource ToolBarBtnStyle}"/>
-                        <Button Content="🗑️ 清空" Command="{Binding ClearCanvasCommand}" Style="{StaticResource ToolBarBtnStyle}" Foreground="#E74C3C"/>
-                        <Button Content="🗑️ 删除" Command="{Binding DeleteNodeCmd}" Style="{StaticResource ToolBarBtnStyle}" />
+                        <Button Command="{Binding AutoLayoutCmd}" ToolTip="自动重排画布节点布局" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="✨" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
+                        <Button Command="{Binding RunPreflightCmd}" ToolTip="预检：检查流程节点与连线问题" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="🔍" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
+                        <Button Command="{Binding SaveCurrentPipelineAsRecipeCommand}" ToolTip="将当前流程另存为可复用模板" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="📦" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
+                        <Button Command="{Binding ClearCanvasCommand}" ToolTip="清空画布上所有节点与连线" Style="{StaticResource IconToolBarBtnStyle}" Foreground="#E74C3C">
+                            <TextBlock Text="🗑️" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
+                        <Button Command="{Binding DeleteNodeCmd}" ToolTip="删除当前选中的节点" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="✂️" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </DockPanel>
@@ -631,7 +656,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- 1. 图像展示区 -->
-                <halconHost:HalconImageDisplayHost 
+                <halconHost:HalconImageDisplayHost x:Name="MainPreviewHost"
                     DataContext="{Binding ImageDisplayVm}"
                     RenderContext="{Binding ActiveImageContext}" />
 

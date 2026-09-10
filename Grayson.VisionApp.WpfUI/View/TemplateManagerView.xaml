@@ -9,6 +9,30 @@
              Foreground="{DynamicResource TextPrimaryBrush}">
     <UserControl.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:BoolToStepBrushConverter x:Key="StepTextConv"/>
+
+        <!-- P1 分步引导：步骤段按钮（无边框胶囊，悬停微亮） -->
+        <Style x:Key="StepSegmentButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#14FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <!-- 源图模式分段按钮（RadioButton 无圆形 glyph 的胶囊样式） -->
         <Style x:Key="SegmentRadioStyle" TargetType="RadioButton">
@@ -41,7 +65,33 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="10">
+    <!-- 页头：标题 + 定位胶囊 + 模式说明 + 回全库（原 TemplateWorkbenchView 壳 UI 合并下沉，页面单层化） -->
+    <DockPanel Margin="12">
+        <Border DockPanel.Dock="Top" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="← 回全库"
+                        Style="{StaticResource SecondaryButtonStyle}" Padding="12,5" VerticalAlignment="Center"
+                        Command="{Binding BackToGlobalCommand}"
+                        Visibility="{Binding IsStationScope, Converter={StaticResource BoolToVis}}"
+                        ToolTip="解除工位定位，回到全库浏览模式"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="🎯 模板工作台" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                    <Border Background="#1E378ADD" CornerRadius="10" Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="定位：" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ScopeChipText}" FontSize="11.5" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                <TextBlock Text="{Binding ScopeHintText}"
+                           FontSize="11.5" Foreground="{StaticResource TextDisabledBrush}"
+                           TextWrapping="Wrap" VerticalAlignment="Center" Margin="16,0,0,0"/>
+            </DockPanel>
+        </Border>
+
+        <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="280"/>
             <ColumnDefinition Width="10"/>
@@ -106,6 +156,12 @@
                                         <Border Background="#7F5BB8" CornerRadius="3" Padding="4,2" Margin="0,0,4,0">
                                             <TextBlock Text="{Binding Type}" Foreground="White" FontSize="10"/>
                                         </Border>
+                                        <!-- 自测分 Tag（-1 = 未执行） -->
+                                        <Border Background="#605E5C" CornerRadius="3" Padding="4,2" Margin="0,0,4,0"
+                                                ToolTip="创建时质量自测分（≥0.9 合格）；-1 表示未执行。真正合格还要过【实拍验证】两步法">
+                                            <TextBlock Text="{Binding QualityScore, StringFormat=自测 {0:F2}}"
+                                                       Foreground="White" FontSize="10"/>
+                                        </Border>
                                         <!-- 创建日期 Tag -->
                                         <Border Background="#0078D4" CornerRadius="3" Padding="4,2">
                                             <TextBlock Text="{Binding CreateTime, StringFormat={}{0:MM-dd HH:mm}}"
@@ -127,29 +183,105 @@
 
         <!-- ==================== 右侧：模板创建向导 ==================== -->
         <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}" Padding="12" CornerRadius="4">
-            <Grid>
+            <!-- 双区布局(2026-09-09 抽屉化)：col0=主区(步骤条+图像+报告+操作条)，图像行占满；
+                 col1=分隔条(可拖宽) ；col2=属性抽屉(参数分组 Expander，可整体收起/展开) -->
+                        <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="7"/>
+                    <ColumnDefinition Width="Auto" x:Name="DrawerCol"/>
+                </Grid.ColumnDefinitions>
+                <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="8"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="10"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="8"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="*" MinHeight="140"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="8"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-
                 <!-- 头部 -->
                 <Grid Grid.Row="0">
                     <TextBlock Text="创建视觉模板" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
-                    <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
-                               Text="模板按名称被 ShapeMatch / NccMatch 节点引用"
-                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock Text="模板按名称被 ShapeMatch / NccMatch 节点引用"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
+                                   VerticalAlignment="Center"/>
+                        <Button Content="✏️ 编辑选中" Style="{StaticResource SecondaryButtonStyle}" Margin="10,0,0,0"
+                                Height="26" Padding="10,0"
+                                Command="{Binding EditTemplateCommand}"
+                                ToolTip="把左侧选中模板载入右侧编辑器（参数+源图+掩膜），修改后点【🚀 创建模板】即同名覆盖重学，引用该模板的节点无需改动"/>
+                        <Button x:Name="BtnExpandDrawer" Content="⚙ 展开面板" Style="{StaticResource SecondaryButtonStyle}"
+                                Margin="10,0,0,0" Height="26" Padding="10,0" Visibility="Collapsed"
+                                Click="BtnToggleDrawer_Click"
+                                ToolTip="展开右侧属性抽屉（📐卡尺/🖊掩膜/📍特征/🔍搜索框等编辑面板）——抽屉收起时点这里找回"/> 
+                    </StackPanel>
                 </Grid>
 
+                <!-- P1 分步引导：步骤条 + 当前步横幅（轻量向导，不锁各区块；点步骤直达） -->
+                <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Padding="10,6">
+                    <StackPanel>
+                        <UniformGrid Rows="1" Margin="0,0,0,5">
+                            <Button Style="{StaticResource StepSegmentButtonStyle}" Tag="0" Click="StepBtn_Click">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Border Width="18" Height="18" CornerRadius="9" Background="#FF0078D4" VerticalAlignment="Center">
+                                        <TextBlock Text="1" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text=" 选源图" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{Binding Step0Active, Converter={StaticResource StepTextConv}}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource StepSegmentButtonStyle}" Tag="1" Click="StepBtn_Click">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Border Width="18" Height="18" CornerRadius="9" Background="#FF0078D4" VerticalAlignment="Center">
+                                        <TextBlock Text="2" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text=" 框学习框" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{Binding Step1Active, Converter={StaticResource StepTextConv}}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource StepSegmentButtonStyle}" Tag="2" Click="StepBtn_Click">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Border Width="18" Height="18" CornerRadius="9" Background="#FF8C6D1F" VerticalAlignment="Center">
+                                        <TextBlock Text="3" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text=" 掩膜∪/∖" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{Binding Step2Active, Converter={StaticResource StepTextConv}}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource StepSegmentButtonStyle}" Tag="3" Click="StepBtn_Click">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Border Width="18" Height="18" CornerRadius="9" Background="#FF7F5BB8" VerticalAlignment="Center">
+                                        <TextBlock Text="4" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text=" 特征/基准" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{Binding Step3Active, Converter={StaticResource StepTextConv}}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource StepSegmentButtonStyle}" Tag="4" Click="StepBtn_Click">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Border Width="18" Height="18" CornerRadius="9" Background="#FF107C41" VerticalAlignment="Center">
+                                        <TextBlock Text="5" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text=" 参数与创建" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{Binding Step4Active, Converter={StaticResource StepTextConv}}"/>
+                                </StackPanel>
+                            </Button>
+                        </UniformGrid>
+                        <Border Background="#1E0078D4" CornerRadius="3" Padding="8,4">
+                            <TextBlock Text="{Binding WizardStepHint}" FontSize="11.5" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
                 <!-- 源图模式与采集操作 -->
-                <Grid Grid.Row="2">
+                <Grid Grid.Row="4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="8"/>
@@ -196,16 +328,11 @@
                             ToolTip="清空已框选的 ROI 数值"/>
                 </Grid>
 
-                <!-- 图像显示 + ROI 框选 -->
-                <Grid Grid.Row="4" ClipToBounds="True" Background="#FF111111" x:Name="ImageArea"
-                      PreviewMouseLeftButtonDown="ImageArea_PreviewMouseLeftButtonDown"
-                      PreviewMouseMove="ImageArea_PreviewMouseMove"
-                      PreviewMouseLeftButtonUp="ImageArea_PreviewMouseLeftButtonUp">
-                    <controls:HalconImageDisplayHost x:Name="ImageHost" DataContext="{Binding DisplayVm}"/>
-                    <Canvas x:Name="RoiCanvas" IsHitTestVisible="False">
-                        <Rectangle x:Name="RoiRect" Stroke="#FFFFE600" StrokeThickness="1.5"
-                                   Fill="#33FFE600" Visibility="Collapsed"/>
-                    </Canvas>
+                <!-- 图像显示 + ROI 编辑（使用视图内置绘制/选择工具；RoiCommitted/RoiEdited 写回 VM，见 code-behind） -->
+                <Grid Grid.Row="6" ClipToBounds="True" Background="#FF111111" x:Name="ImageArea">
+                    <controls:HalconImageDisplayHost x:Name="ImageHost" DataContext="{Binding DisplayVm}"
+                                                     PersistRoiInScene="False"
+                                                     ShowToolbar="True"/>
 
                     <!-- 空态提示（未加载图像时） -->
                     <Border HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -216,113 +343,752 @@
                                        Foreground="#FFFFFF" HorizontalAlignment="Center"/>
                             <TextBlock Text="请在上方选择【本地图片】载入文件，或切换【相机采集】抓取一帧"
                                        Foreground="#CCCCCC" FontSize="12" Margin="0,6,0,0"/>
-                            <TextBlock Text="图像上屏后，按住鼠标左键拖拽即可框选模板 ROI（黄色框）"
+                            <TextBlock Text="图像上屏后：点视图顶部工具栏的【📐▾】下拉选【▭ 平行矩形】，在图上按住左键拖出模板区域，右键完成创建（绿色草绘→黄框）"
                                        Foreground="#CCCCCC" FontSize="12" Margin="0,4,0,0"/>
+                            <TextBlock Text="创建后可点 🖱 选择工具点选黄框：拖内部移动 · 拖四角手柄改大小 · 右键删除/改色 · 改完点【创建模板】"
+                                       Foreground="#999999" FontSize="11" Margin="0,4,0,0"/>
+                            <TextBlock Text="技巧：滚轮以鼠标为锚缩放 · 空白左键拖拽平移 · 🔍 框选放大看细节，放大后再框更紧的 ROI"
+                                       Foreground="#999999" FontSize="11" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
                 </Grid>
-
-                <!-- 参数表单 -->
-                <Border Grid.Row="6" Style="{StaticResource CardBorderStyle}" Padding="10">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="8"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- 第一行：名称 / 类型 / 备注 -->
-                        <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="160"/>
-                                <ColumnDefinition Width="16"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="130"/>
-                                <ColumnDefinition Width="16"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Grid.Column="0" Text="模板名称:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Grid.Column="1" Text="{Binding TemplateName, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}"
-                                     ToolTip="节点引用模板的唯一名称（全局唯一），如 mahjong_tile_1"/>
-
-                            <TextBlock Grid.Column="3" Text="匹配类型:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
-                                      ItemsSource="{Binding TemplateTypeOptions}" SelectedItem="{Binding TemplateType}"
-                                      ToolTip="Shape=形状匹配（边缘轮廓，工件定位首选）；Ncc=灰度匹配（纹理/印刷图案）"/>
-
-                            <TextBlock Grid.Column="6" Text="备注:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Grid.Column="7" Text="{Binding Remark, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}"/>
+                <!-- 模板体检报告（创建成功 / 实拍验证后常驻显示） -->
+                <Border Grid.Row="8" Style="{StaticResource CardBorderStyle}" Padding="10"
+                        BorderBrush="{Binding QualityReportBrush}"
+                        Visibility="{Binding QualityReportVisible, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <TextBlock Text="📋 模板体检报告" FontWeight="Bold" FontSize="13"
+                                       Foreground="{Binding QualityReportBrush}"/>
+                            <Button Content="✕" HorizontalAlignment="Right" Width="22" Height="22"
+                                    Style="{StaticResource SecondaryButtonStyle}" Padding="0"
+                                    ToolTip="关闭报告" Click="BtnCloseQualityReport_Click"/>
                         </Grid>
-
-                        <!-- 第二行：角度范围 / ROI -->
-                        <Grid Grid.Row="2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="70"/>
-                                <ColumnDefinition Width="20"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="60"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Grid.Column="0" Text="角度范围(°):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Grid.Column="1" Text="{Binding AngleStart, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="起始角度（度），Shape 模板的角度搜索范围"/>
-                            <TextBlock Grid.Column="2" Text="~" VerticalAlignment="Center" Margin="3,0"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Column="3" Text="{Binding AngleEnd, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="结束角度（度）"/>
-
-                            <TextBlock Grid.Column="5" Text="ROI:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Grid.Column="6" Text="{Binding RoiRow1, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 左上角 Row（图像 Y）"/>
-                            <TextBlock Grid.Column="7" Text="," VerticalAlignment="Center" Margin="2,0"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Column="8" Text="{Binding RoiCol1, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 左上角 Col（图像 X）"/>
-                            <TextBlock Grid.Column="9" Text="→" VerticalAlignment="Center" Margin="3,0"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Column="10" Text="{Binding RoiRow2, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 右下角 Row（图像 Y）"/>
-                            <TextBlock Grid.Column="11" Text="," VerticalAlignment="Center" Margin="2,0"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            <TextBox Grid.Column="12" Text="{Binding RoiCol2, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="ROI 右下角 Col（图像 X）"/>
-                            <TextBlock Grid.Column="13" Text="（在图像上拖拽框选，或直接修改数值）"
-                                       VerticalAlignment="Center" Margin="8,0,0,0"
-                                       Foreground="{DynamicResource TextDisabledBrush}" FontSize="11"/>
-                        </Grid>
-                    </Grid>
+                        <TextBlock Text="{Binding QualityReportText}" FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{Binding QualityReportBrush}" Margin="0,6,0,0"
+                                   LineHeight="18"/>
+                    </StackPanel>
                 </Border>
 
-                <!-- 底部：状态 + 创建 -->
-                <Grid Grid.Row="8">
+
+                <!-- 底部：状态 + 创建 + 验证 -->
+                <Grid Grid.Row="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{Binding StatusText}"
                                Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusText}"/>
-                    <Button Grid.Column="1" Content="🚀 创建模板" Style="{StaticResource SuccessButtonStyle}"
+                    <Button Grid.Column="1" Content="🧠 模板学习" Style="{StaticResource PrimaryButtonStyle}"
+                            Command="{Binding LearnTemplateCommand}" Padding="14,9" Margin="0,0,8,0" FontSize="13"
+                            ToolTip="按当前 ROI/掩膜/卡尺/基准点在内存学习一次（不写盘）：把将学到的模板轮廓画上屏 + 同链自测给分数。编辑掩膜/几何/参数后可再次点击重新学习；满意后再点【创建模板】落盘"/>
+                    <Button Grid.Column="2" Content="🔍 实拍验证" Style="{StaticResource SecondaryButtonStyle}"
+                            Command="{Binding VerifyTemplateCommand}" Padding="14,9" Margin="0,0,8,0"
+                            FontSize="13"
+                            ToolTip="相机模式会先自动重采一帧再匹配（无需先点采集）；本地图片模式用当前显示的图。低门槛(0.4)匹配选中模板，并把轮廓+十字+分数画到图上。两步法：验证一次 → 挪目标≥20mm 再验证一次，两次分数≥0.7 且位置跟着目标走才算合格（防锁死背景）"/>
+                    <Button Grid.Column="3" Content="🚀 创建模板" Style="{StaticResource SuccessButtonStyle}"
                             Command="{Binding CreateTemplateCommand}" Padding="22,9"
                             FontSize="14" FontWeight="Bold"
                             ToolTip="按当前参数生成模板并落盘（后台线程执行 HALCON 算子）"/>
+
                 </Grid>
+                </Grid>
+                <!-- ============ col1/col2：分隔条 + 属性抽屉（可收起；组可折叠） ============ -->
+                <GridSplitter Grid.Column="1" Width="7" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" ShowsPreview="True">
+                    <GridSplitter.Style>
+                        <Style TargetType="GridSplitter">
+                            <Setter Property="Background" Value="#22333333"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#FF0078D4"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </GridSplitter.Style>
+                </GridSplitter>
+                <Border Grid.Column="2" x:Name="DrawerPanel" Width="560" Background="#FF1F1F1F" CornerRadius="4" Padding="9">
+                    <DockPanel>
+                        <Grid DockPanel.Dock="Top" Margin="2,0,2,7">
+                            <TextBlock Text="⚙ 模板参数" FontSize="12.5" FontWeight="Bold" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <Button Content="» 收起面板" HorizontalAlignment="Right" FontSize="11" Height="22" Padding="8,0"
+                                    Style="{StaticResource SecondaryButtonStyle}" Click="BtnToggleDrawer_Click"
+                                    ToolTip="收起属性抽屉：图像区吃满剩余宽度（点主区右上 ⚙ 展开）"/>
+                        </Grid>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      PanningMode="VerticalOnly">
+                            <StackPanel>
+                <Expander IsExpanded="True" Margin="0,0,0,6">
+                    <Expander.Header>
+                        <Border Background="#14FFFFFF" CornerRadius="3" Padding="8,5" Margin="0,1,0,0">
+                            <TextBlock Text="📄 基本信息" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       ToolTip="模板名称/类型/备注/归属工位" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </Expander.Header>
+                    <Border Background="#0EFFFFFF" CornerRadius="3" Padding="8,6" Margin="0,4,0,0">
+<Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="5"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="5"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="模板名称:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Grid.Column="2" Text="{Binding TemplateName, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}"
+                                         ToolTip="节点引用模板的唯一名称（全局唯一），如 mahjong_tile_1"/>
+                            </Grid>
+                            <Grid Grid.Row="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="118"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="匹配类型:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <ComboBox Grid.Column="2" Style="{StaticResource ModernComboBoxStyle}" FontSize="11"
+                                          ItemsSource="{Binding TemplateTypeOptions}" SelectedItem="{Binding TemplateType}"
+                                          ToolTip="Shape=形状匹配（边缘轮廓，工件定位首选）；Ncc=灰度匹配（纹理/印刷图案）"/>
+                                <TextBlock Grid.Column="4" Text="归属:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Grid.Column="6" Text="{Binding TemplateOwnerStation, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="11"
+                                         ToolTip="模板归属工位 Code（可空=全局模板）"/>
+                            </Grid>
+                            <Grid Grid.Row="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="备注:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <TextBox Grid.Column="2" Text="{Binding Remark, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Expander>                <Expander IsExpanded="True" Margin="0,0,0,6">
+                    <Expander.Header>
+                        <Border Background="#14FFFFFF" CornerRadius="3" Padding="8,5" Margin="0,1,0,0">
+                            <TextBlock Text="🎚 匹配参数" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       ToolTip="角度范围与学习框 ROI（图上黄框联动）" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </Expander.Header>
+                    <Border Background="#0EFFFFFF" CornerRadius="3" Padding="8,6" Margin="0,4,0,0">
+<Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="5"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="角度范围(°):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}" FontSize="11"/>
+                                <TextBox Grid.Column="1" Text="{Binding AngleStart, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="11" ToolTip="起始角度（度），建议 -180"/>
+                                <TextBlock Grid.Column="2" Text="~" VerticalAlignment="Center" Margin="3,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBox Grid.Column="3" Text="{Binding AngleEnd, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="11" ToolTip="结束角度（度），建议 180"/>
+                                <TextBlock Grid.Column="4" Text="（旋转识别范围）" FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0"
+                                           Foreground="{DynamicResource TextDisabledBrush}"/>
+                            </Grid>
+                            <Grid Grid.Row="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="52"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="52"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="52"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="52"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="ROI(行,列):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}" FontSize="10.5"/>
+                                <TextBox Grid.Column="1" Text="{Binding RoiRow1, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="10.5" ToolTip="学习框左上角 Row（图像 Y，图上黄框联动）"/>
+                                <TextBlock Grid.Column="2" Text="," VerticalAlignment="Center" Margin="2,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBox Grid.Column="3" Text="{Binding RoiCol1, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="10.5" ToolTip="学习框左上角 Col（图像 X）"/>
+                                <TextBlock Grid.Column="4" Text="→" VerticalAlignment="Center" Margin="2,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBox Grid.Column="5" Text="{Binding RoiRow2, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="10.5" ToolTip="学习框右下角 Row（图像 Y）"/>
+                                <TextBlock Grid.Column="6" Text="," VerticalAlignment="Center" Margin="2,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBox Grid.Column="7" Text="{Binding RoiCol2, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}" FontSize="10.5" ToolTip="学习框右下角 Col（图像 X）"/>
+                                <TextBlock Grid.Column="8" Text="（在图上拖框更直观）" FontSize="10" VerticalAlignment="Center" Margin="6,0,0,0"
+                                           Foreground="{DynamicResource TextDisabledBrush}"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Expander>                <Expander IsExpanded="False" Margin="0,0,0,6">
+                    <Expander.Header>
+                        <Border Background="#14FFFFFF" CornerRadius="3" Padding="8,5" Margin="0,1,0,0">
+                            <TextBlock Text="🔍 搜索框（可选）" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       ToolTip="限定运行时“在哪找目标”：橙框=匹配搜索区；学习框=学什么。标定/验证≈整图，生产=工件+来料偏差 1.5~2 倍" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </Expander.Header>
+                    <Border Background="#0EFFFFFF" CornerRadius="3" Padding="8,6" Margin="0,4,0,0">
+                        <!-- 🔍 搜索框（模板资产"在哪找"，P1 2026-09-09）：与学习框分离的可选限制区。
+                             橙色 Region 叠加（搜索框=匹配时搜索范围；学习框=学什么）。引擎 MatchWithDatum/
+                             生产节点匹配时按此自动裁剪（ReduceDomain 保留全图坐标，输出仍是全图坐标）。 -->
+                        <Border  BorderBrush="#33555555" BorderThickness="1" CornerRadius="4" Padding="8,5">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="3"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="🔍 搜索框(可选):" FontWeight="Bold" VerticalAlignment="Center"
+                                               ToolTip="限定运行时'在哪里找目标'的区域（模板资产之一，橙框显示）。学习框=学什么（黄色），搜索框=在哪找。建议：标定/验证阶段≈整图不限制；生产阶段=工件尺寸+来料最大偏差的 1.5~2 倍，框太大费 CPU、太小目标出框即丢失"/>
+                                    <CheckBox Grid.Column="2" Content="启用搜索框" VerticalAlignment="Center" FontSize="12"
+                                              IsChecked="{Binding SearchRoiEnabled}"
+                                              ToolTip="勾选后匹配只在搜索框内找目标（首次启用默认整图，可再框选/手填收紧）；不勾选=全图搜索"/>
+                                    <CheckBox Grid.Column="4" Content="🖱 在图上框选" VerticalAlignment="Center" FontSize="12"
+                                              IsChecked="{Binding SearchRoiDrawMode}"
+                                              Click="ChkSearchRoiDraw_Click"
+                                              ToolTip="进入框选模式并自动切 ▭ 矩形工具：左键拖出搜索范围 → 右键完成，收笔自动回填橙色框并退出；范围建议 ⊇ 学习框"/>
+                                    <Button Grid.Column="6" Content="⛶ 整图" FontSize="11" Height="24" Padding="10,0"
+                                            Style="{StaticResource SecondaryButtonStyle}" Click="BtnSearchRoiFull_Click"
+                                            ToolTip="搜索框恢复整图范围（=不限制搜索；标定/验证阶段常用）"/>
+                                    <Button Grid.Column="8" Content="✖ 清除" FontSize="11" Height="24" Padding="10,0"
+                                            Style="{StaticResource SecondaryButtonStyle}" Click="BtnSearchRoiClear_Click"
+                                            ToolTip="禁用并清空搜索框（回归全图搜索）"/>
+                                </Grid>
+
+                                <Grid Grid.Row="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="60"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="范围 左上(行,列) ~ 右下(行,列):" VerticalAlignment="Center"
+                                               Style="{StaticResource FormLabelStyle}" FontSize="11"/>
+                                    <TextBox Grid.Column="1" Text="{Binding SearchRoiRow1, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" IsEnabled="{Binding SearchRoiEnabled}"
+                                             ToolTip="搜索框左上角 Row（图像 Y，含）"/>
+                                    <TextBlock Grid.Column="2" Text="," VerticalAlignment="Center" Margin="2,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBox Grid.Column="3" Text="{Binding SearchRoiCol1, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" IsEnabled="{Binding SearchRoiEnabled}"
+                                             ToolTip="搜索框左上角 Col（图像 X，含）"/>
+                                    <TextBlock Grid.Column="4" Text="→" VerticalAlignment="Center" Margin="3,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBox Grid.Column="5" Text="{Binding SearchRoiRow2, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" IsEnabled="{Binding SearchRoiEnabled}"
+                                             ToolTip="搜索框右下角 Row（图像 Y，含）"/>
+                                    <TextBlock Grid.Column="6" Text="," VerticalAlignment="Center" Margin="2,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBox Grid.Column="7" Text="{Binding SearchRoiCol2, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" IsEnabled="{Binding SearchRoiEnabled}"
+                                             ToolTip="搜索框右下角 Col（图像 X，含）"/>
+                                    
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+
+                    </Border>
+                </Expander>                <Expander IsExpanded="True" Margin="0,0,0,6">
+                    <Expander.Header>
+                        <Border Background="#14FFFFFF" CornerRadius="3" Padding="8,5" Margin="0,1,0,0">
+                            <TextBlock Text="📐 测量卡尺与基准点" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       ToolTip="卡尺=匹配后亚像素精测（紫带=将采样）；基准点=模型锚点（红大十字），0,0=自动" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </Expander.Header>
+                    <Border Background="#0EFFFFFF" CornerRadius="3" Padding="8,6" Margin="0,4,0,0">
+                        <!-- 📐 测量卡尺 + 基准点（P1 2026-09-09）：工件形状选型 → 按形状一键生成建议卡尺 →
+                             逐条微调（紫色测量带=将采样区域，实时预览）；基准点=模型锚点（红大十字），0,0=自动。
+                             创建时随模板落盘：匹配后引擎把卡尺仿射到工件上做亚像素精测覆盖锚点（RefinedByCaliper）。 -->
+                        <Border  BorderBrush="#33555555" BorderThickness="1" CornerRadius="4" Padding="8,5">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="3"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="4"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="3"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- 形状选型 + 生成/清空 -->
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="📐 卡尺与基准点:" FontWeight="Bold" VerticalAlignment="Center" FontSize="11.5"
+                                               ToolTip="按工件形状生成测量卡尺并在图上预览（紫色测量带=将采样区域）。模板创建后引擎在匹配位姿上把卡尺仿射过去做亚像素精测，可精修锚点（基准点支持三种方式：固定点锚点直出 / 圆卡尺拟心 / 两线交点精测，见下方选区）"/>
+                                    <TextBlock Grid.Column="2" Text="工件形状:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                    <ComboBox Grid.Column="4" Width="104" Height="24" FontSize="11.5"
+                                              Style="{StaticResource ModernComboBoxStyle}"
+                                              ItemsSource="{Binding WorkpieceShapeItems}" SelectedItem="{Binding WorkpieceShape}"
+                                              ToolTip="Rectangle→四边 4 条线卡尺；Circle→整圆环卡尺；Cross/Generic→无通用建议（十字需按臂宽手动拆 2 条线卡尺测臂边求交点）"/>
+                                    <Button Grid.Column="6" Content="✨ 生成建议卡尺" FontSize="11" Height="24" Padding="8,0"
+                                            Style="{StaticResource SecondaryButtonStyle}" Click="BtnSuggestCalipers_Click"
+                                            ToolTip="按【工件形状+当前学习框】自动布卡尺：矩形=四边各 1 条（C1顶/C2底/C3左/C4右），圆形=整圆环 C1（半径≈ROI 内切）。紫色测量带即刻上屏；之后拖动 ROI/改形状请重新生成"/>
+                                    <Button Grid.Column="8" Content="🧹 清空卡尺" FontSize="11" Height="24" Padding="8,0"
+                                            Style="{StaticResource SecondaryButtonStyle}" Click="BtnClearCalipers_Click"
+                                            ToolTip="清空全部卡尺行，回到【基准点=模型锚点直出】（显式基准点十字保留）"/>
+                                </Grid>
+
+                                <!-- 基准点行：方式=固定点(锚点直出)/圆心精测/两线交点精测 → 各自参数 + 操作提示。
+                                     红大十字仅=固定点方式显式非 0 坐标（0,0=自动钉学习域中心/重心）；
+                                     圆心/交点精测=运行时引擎在匹配位姿上对来源卡尺采样（拟圆/拟线求交，亚像素）覆盖锚点。 -->
+                                <Grid Grid.Row="2" Margin="0,4,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="2"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="2"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 行0：精测方式下拉 -->
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="🎯 基准点:" VerticalAlignment="Center"
+                                               Style="{StaticResource FormLabelStyle}"
+                                               ToolTip="模型锚点=find/匹配输出位置（创建时 set_shape_model_origin 钉住；卡尺/特征偏移都相对它）。三种方式：固定点=锚点直出（0,0=自动钉学习域中心/重心；填坐标=该绝对点为锚点）；圆心精测=运行时把来源圆卡尺圆周边缘点拟圆，圆心=基准点；两线交点精测=两条线卡尺拟合直线求交点=基准点（均亚像素）"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" Width="200" Height="22" FontSize="11"
+                                              Style="{StaticResource ModernComboBoxStyle}"
+                                              ItemsSource="{Binding DatumKindOptions}" SelectedIndex="{Binding DatumKindIndex}"
+                                              ToolTip="基准点精测方式（顺序=TemplateDatumKind 枚举）：固定点=匹配锚点直出；圆心精测/两线交点精测=运行时以所选卡尺边缘点亚像素覆盖锚点（需要先有对应类型且启用的卡尺）"/>
+
+                                    <!-- 行2：按方式切换的参数区（三种面板同一单元格互斥显示） -->
+                                    <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+                                        <!-- A. 固定点：显式绝对坐标（0,0=自动） -->
+                                        <Grid>
+                                            <Grid.Style>
+                                                <Style TargetType="Grid">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding DatumKindIndex}" Value="1">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding DatumKindIndex}" Value="2">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Grid.Style>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="4"/>
+                                                <ColumnDefinition Width="52"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="4"/>
+                                                <ColumnDefinition Width="52"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="(行,列):" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            <TextBox Grid.Column="2" Text="{Binding DatumRow, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource ModernTextBoxStyle}" Height="22" FontSize="11"
+                                                     ToolTip="固定点方式：基准点绝对行 Row（图像 Y）。0=自动=学习域中心/重心（红大十字消失）"/>
+                                            <TextBlock Grid.Column="3" Text="," VerticalAlignment="Center" Margin="2,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            <TextBox Grid.Column="5" Text="{Binding DatumCol, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource ModernTextBoxStyle}" Height="22" FontSize="11"
+                                                     ToolTip="固定点方式：基准点绝对列 Col（图像 X）。0=自动"/>
+                                            <Button Grid.Column="7" Content="↺ 复位 0,0" FontSize="11" Height="22" Padding="8,0"
+                                                    Style="{StaticResource SecondaryButtonStyle}" Click="BtnDatumAuto_Click"
+                                                    ToolTip="清掉显式坐标回到自动：创建时锚点钉在学习域中心（矩形学习框=ROI 中心），红大十字消失"/>
+                                        </Grid>
+
+                                        <!-- B. 圆心精测：来源圆/弧卡尺 -->
+                                        <Grid>
+                                            <Grid.Style>
+                                                <Style TargetType="Grid">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding DatumKindIndex}" Value="1">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Grid.Style>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="6"/>
+                                                <ColumnDefinition Width="180"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="来源 圆/弧卡尺:" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       ToolTip="运行时把该卡尺采样到的圆周边缘点拟合成圆，圆心作为精测基准点（亚像素）覆盖锚点输出"/>
+                                            <ComboBox Grid.Column="2" Height="22" FontSize="11"
+                                                      Style="{StaticResource ModernComboBoxStyle}"
+                                                      ItemsSource="{Binding DatumSourceCircleOptions}" SelectedItem="{Binding DatumSource1}"
+                                                      ToolTip="候选=启用中的圆/弧卡尺（不含线卡尺）。列表空=还没有圆/弧卡尺：先用 ✨ 生成建议(圆形工件) 或开启卡尺拖绘画 ⭘ 圆"/>
+                                        </Grid>
+
+                                        <!-- C. 两线交点精测：两条来源线卡尺 -->
+                                        <Grid>
+                                            <Grid.Style>
+                                                <Style TargetType="Grid">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding DatumKindIndex}" Value="2">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Grid.Style>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="4"/>
+                                                <ColumnDefinition Width="104"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="4"/>
+                                                <ColumnDefinition Width="104"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="线1:" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       ToolTip="第一条来源线卡尺（运行时拟合直线）"/>
+                                            <ComboBox Grid.Column="2" Height="22" FontSize="11"
+                                                      Style="{StaticResource ModernComboBoxStyle}"
+                                                      ItemsSource="{Binding DatumSourceLineOptions}" SelectedItem="{Binding DatumSource1}"
+                                                      ToolTip="候选=启用中的线卡尺（不含圆/弧）。列表空=还没有线卡尺：先 ✨ 生成建议(矩形工件) 或开启卡尺拖绘画 〰 线"/>
+                                            <TextBlock Grid.Column="4" Text="线2:" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       ToolTip="第二条来源线卡尺（须与线1 不同边：两拟合直线交点=精测基准点）"/>
+                                            <ComboBox Grid.Column="6" Height="22" FontSize="11"
+                                                      Style="{StaticResource ModernComboBoxStyle}"
+                                                      ItemsSource="{Binding DatumSourceLineOptions}" SelectedItem="{Binding DatumSource2}"
+                                                      ToolTip="候选=启用中的线卡尺。两条来源应相交于目标角点/交叉点"/>
+                                        </Grid>
+                                    </Grid>
+
+                                    <!-- 行4：方式/来源操作提示 -->
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3"
+                                               Text="{Binding DatumKindHint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,1,0,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               ToolTip="基准点方式与来源的操作提示；创建/学习时按此快照落盘（来源失效自动回退锚点直出并提示）"/>
+                                    
+                                </Grid>
+
+                                <!-- 资产状态行 -->
+                                <TextBlock Grid.Row="4" Text="{Binding CaliperStatusText}" FontSize="10.5" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           ToolTip="卡尺统计。L1/L2/点数/阈值逐条可调，紫色测量带实时跟手；创建时只有勾选启用的卡尺随模板落盘"/>
+
+                                <!-- 逐条参数表头 -->
+                                <Grid Grid.Row="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="86"/>
+                                        <ColumnDefinition Width="44"/>
+                                        <ColumnDefinition Width="40"/>
+                                        <ColumnDefinition Width="40"/>
+                                        <ColumnDefinition Width="40"/>
+                                        <ColumnDefinition Width="38"/>
+                                        <ColumnDefinition Width="46"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="卡尺（几何见提示）" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="启用" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                               ToolTip="是否参与匹配后精测（不勾=保留配置但跳过）"/>
+                                    <TextBlock Grid.Column="2" Text="L1" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                               ToolTip="线卡尺=探针沿边散布半跨距；圆卡尺=目标半径（px）"/>
+                                    <TextBlock Grid.Column="3" Text="L2" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                               ToolTip="线卡尺=跨边探测半长；圆卡尺=环形半宽（采样带厚度，px）"/>
+                                    <TextBlock Grid.Column="4" Text="探宽" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                               ToolTip="线卡尺：单探针沿边平均半宽（px，默认 2）"/>
+                                    <TextBlock Grid.Column="5" Text="点数" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                               ToolTip="线卡尺=沿边探针数；圆卡尺=圆周探针数（1=自适应整环，默认 7）"/>
+                                    <TextBlock Grid.Column="6" Text="阈值" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                               ToolTip="边缘对比度阈值（灰度差，默认 30；太小=抓噪声，太大=漏边）"/>
+                                </Grid>
+
+                                <!-- 卡尺行列表（参数编辑实时写回 → 紫色测量带跟手） -->
+                                <ScrollViewer Grid.Row="7" MaxHeight="116" VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+                                <ItemsControl ItemsSource="{Binding CaliperRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                            <Grid Margin="0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="86"/>
+                                                    <ColumnDefinition Width="44"/>
+                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="38"/>
+                                                    <ColumnDefinition Width="46"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Title}" FontSize="10.5" VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding GeometryHint}"/>
+                                                <CheckBox Grid.Column="1" IsChecked="{Binding Enabled}" VerticalAlignment="Center"
+                                                          ToolTip="参与匹配后精测"/>
+                                                <TextBox Grid.Column="2" Text="{Binding Length1, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="20" FontSize="10.5" Padding="2,0"
+                                                         ToolTip="{Binding GeometryHint}"/>
+                                                <TextBox Grid.Column="3" Text="{Binding Length2, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="20" FontSize="10.5" Padding="2,0"/>
+                                                <TextBox Grid.Column="4" Text="{Binding ProbeWidth, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="20" FontSize="10.5" Padding="2,0"/>
+                                                <TextBox Grid.Column="5" Text="{Binding NumPoints, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="20" FontSize="10.5" Padding="2,0"/>
+                                                <TextBox Grid.Column="6" Text="{Binding Threshold, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="20" FontSize="10.5" Padding="2,0"/>
+                                                <Button Grid.Column="7" Content="✖" FontSize="10" Width="20" Height="20" Padding="0"
+                                                        Style="{StaticResource SecondaryButtonStyle}" Click="BtnRemoveCaliper_Click"
+                                                        ToolTip="删除这条卡尺" VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <!-- 圆/弧卡尺弧段参数（起角/跨角 °；线卡尺隐藏）——拖 1 个整圆后可改成局部圆弧 -->
+                                            <Grid Margin="0,1,0,3">
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsArcEditable}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Grid.Style>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="86"/>
+                                                    <ColumnDefinition Width="54"/>
+                                                    <ColumnDefinition Width="4"/>
+                                                    <ColumnDefinition Width="54"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="弧段起/跨角°:" FontSize="10" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextDisabledBrush}"
+                                                           ToolTip="圆/弧卡尺角段：起角=起始角、跨角=张角（°；跨角 360=整圆环，改小即局部圆弧）。图像坐标 0°=圆心向右，正向=朝图像下行旋转"/>
+                                                <TextBox Grid.Column="1" Text="{Binding ArcStartDeg, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="19" FontSize="10.5" Padding="2,0"
+                                                         ToolTip="弧段起始角（°；0=圆心右侧，正向=朝下行旋转）"/>
+                                                <TextBox Grid.Column="3" Text="{Binding ArcExtentDeg, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource ModernTextBoxStyle}" Height="19" FontSize="10.5" Padding="2,0"
+                                                         ToolTip="弧段张角（°；360=整圆环，改小即圆弧。拟合仍按全部有效边缘点求整圆圆心/半径）"/>
+                                            </Grid>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                </ScrollViewer>
+                                <!-- 批3：图上拖绘/编辑模式开关（开启后行以宿主形状回注、新笔画即卡尺；与掩膜/特征/搜索框互斥见 VM） -->
+                                <Grid Grid.Row="8" Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox x:Name="ChkCaliperDraw" Grid.Column="0" IsChecked="{Binding CaliperDrawMode}"
+                                              FontSize="11.5" Foreground="{DynamicResource TextPrimaryBrush}"
+                                              Click="ChkCaliperDraw_Click" VerticalAlignment="Center"
+                                              ToolTip="开关卡尺图上拖绘/编辑：开=在图上直接画卡尺（视图工具条 📐▾ 的 〰线/⭘圆/▭▣旋转矩形），画好的青色形状可点选拖动/拉手柄微调，行与形状双向同步；关=回到静态紫带预览"/>
+                                    <TextBlock Grid.Column="2" Text="画 〰线=线卡尺 / ⭘圆=圆卡尺 / ▭▣旋转矩形=四边卡尺；青色形状可拖动微调；行内 ✖ / Delete 删除"
+                                               FontSize="10" TextWrapping="Wrap" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+
+                    </Border>
+                </Expander>                <Expander IsExpanded="False" Margin="0,0,0,6">
+                    <Expander.Header>
+                        <Border Background="#14FFFFFF" CornerRadius="3" Padding="8,5" Margin="0,1,0,0">
+                            <TextBlock Text="🖊 学习掩膜" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       ToolTip="涂抹∪/∖ 编辑学习域：灰化预览=引擎将学内容；改后【模板学习】刷新" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </Expander.Header>
+                    <Border Background="#0EFFFFFF" CornerRadius="3" Padding="8,6" Margin="0,4,0,0">
+                        <Border BorderBrush="#33555555" BorderThickness="1" CornerRadius="4" Padding="8,5">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="3"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="4"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <!-- 行0：开关 + 模式 + 撤销/清空（归属工位移入基本信息组，抽屉窄栏） -->
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="4"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="🖊 学习掩膜:" FontWeight="Bold" VerticalAlignment="Center" FontSize="11"
+                                               ToolTip="用区域并∪/差∖把 ROI 内编辑成一块“学习域版图”（引擎按此 reduce_domain 学模板）：点工具条 🖌 涂抹自动开启；也可先勾选本开关再用 📐▾ 画矩形/圆等精确区域，每笔实时并入整域"/>
+                                    <CheckBox Grid.Column="2" Content="掩膜编辑中" VerticalAlignment="Center" FontSize="11"
+                                              IsChecked="{Binding MaskEditVisible}"
+                                              ToolTip="开启后：图上的涂抹/形状实时并入“学习域版图”（整域 ∪/∖），画面灰化预览即引擎将学内容；关闭后绘制仅作用于基底 ROI"/>
+                                    <RadioButton Grid.Column="4" Content="保留 ∪" GroupName="MaskMode" FontSize="11"
+                                                 IsChecked="{Binding MaskAddMode}" Style="{StaticResource SegmentRadioStyle}"
+                                                 ToolTip="∪ 模式：涂/画的区域=版图（第一笔把学习域定义为所涂处，之后越涂越大）"/>
+                                    <RadioButton Grid.Column="6" Content="排除 ∖" GroupName="MaskMode" FontSize="11"
+                                                 IsChecked="{Binding MaskRemoveMode}" Style="{StaticResource SegmentRadioStyle}"
+                                                 ToolTip="∖ 模式：涂/画的区域从版图上实时抠洞——最常用于剔除 ROI 内的字符/划痕/背景纹理干扰"/>
+                                    <Button Grid.Column="8" Content="↩ 撤销上笔" FontSize="10.5" Height="22" Padding="8,0"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding UndoMaskCommand}"
+                                            ToolTip="撤销最后一笔 ∪/∖：学习域版图实时回退到上一状态"/>
+                                    <Button Grid.Column="10" Content="🧹 清空掩膜" FontSize="10.5" Height="22" Padding="8,0"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ClearMaskCommand}"
+                                            ToolTip="清空整块学习域版图（所有 ∪/∖ 笔画），回到整框 ROI 学习"/>
+                                </Grid>
+                                <TextBlock Grid.Row="2" Text="{Binding MaskStatusText}" FontSize="10.5" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           ToolTip="掩膜统计。创建/重学时学习域=(存在保留笔画? ∪保留∩ROI : ROI) − ∪排除；结果为空自动回退整 ROI 并记日志"/>
+                                <!-- 行4：涂抹画笔半径滑杆 + 学习域预览状态 -->
+                                <Grid Grid.Row="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="110"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="🖌 画笔半径:" FontSize="10.5" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <Slider Grid.Column="2" Minimum="2" Maximum="40"
+                                            Value="{Binding MaskBrushRadius}" VerticalAlignment="Center"
+                                            ValueChanged="MaskBrushSlider_ValueChanged"
+                                            ToolTip="涂抹画笔半径（图像像素）：涂出的圆盘带宽度=2×半径；激活中拖动即时生效"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding MaskBrushRadiusText}" FontSize="10.5"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBlock Grid.Column="5" Text="{Binding LearnPreviewStatus}" FontSize="10" TextWrapping="Wrap"
+                                               VerticalAlignment="Center" Foreground="#FF9CCB6B" Margin="4,0,0,0"
+                                               ToolTip="学习域预览：掩膜编辑开启时显示帧自动切成“高亮=引擎将学内容”预览（域外灰化）；关闭恢复原图"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Border>
+                </Expander>                <Expander IsExpanded="False" Margin="0,0,0,6">
+                    <Expander.Header>
+                        <Border Background="#14FFFFFF" CornerRadius="3" Padding="8,5" Margin="0,1,0,0">
+                            <TextBlock Text="📍 模板特征" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       ToolTip="特征点/面随模板落盘（相对基准点偏移），识别后仿射显示" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Border>
+                    </Expander.Header>
+                    <Border Background="#0EFFFFFF" CornerRadius="3" Padding="8,6" Margin="0,4,0,0">
+                        <Border BorderBrush="#33555555" BorderThickness="1" CornerRadius="4" Padding="8,5">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="3"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="4"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="📍 模板特征:" FontWeight="Bold" VerticalAlignment="Center" FontSize="11"
+                                               ToolTip="特征点/面随模板落盘，存的是相对基准点（模型锚点）的偏移。识别后按匹配位姿（vector_angle_to_rigid）仿射，特征跟模板一起转——十字=点、青色轮廓=面"/>
+                                    <CheckBox Grid.Column="2" Content="特征标注中" VerticalAlignment="Center" FontSize="11"
+                                              IsChecked="{Binding FeatureEditVisible}"
+                                              ToolTip="开启后：图上绘制的每个形状=一个模板特征（点取中心/面保留形状）；关闭后绘制仅作用于基底 ROI（与掩膜编辑互斥）"/>
+                                    <RadioButton Grid.Column="4" Content="⭕ 点" GroupName="FeatureKind" FontSize="11"
+                                                 IsChecked="{Binding FeatureAddIsPoint}" Style="{StaticResource SegmentRadioStyle}"
+                                                 ToolTip="特征点：画任意小形状取几何中心（越小越贴近目标角点/圆点），识别后画十字标记"/>
+                                    <RadioButton Grid.Column="6" Content="▨ 面" GroupName="FeatureKind" FontSize="11"
+                                                 IsChecked="{Binding FeatureAddIsFace}" Style="{StaticResource SegmentRadioStyle}"
+                                                 ToolTip="特征面：保留所画形状作为闭合区域（矩形/圆/椭圆/多边形），识别后画其轮廓——用于量测/看区域"/>
+                                    <Button Grid.Column="8" Content="↩ 撤销上笔" FontSize="10.5" Height="22" Padding="8,0"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding UndoFeatureCommand}"
+                                            ToolTip="撤销最后一个特征"/>
+                                    <Button Grid.Column="10" Content="🧹 清空特征" FontSize="10.5" Height="22" Padding="8,0"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Command="{Binding ClearFeatureCommand}"
+                                            ToolTip="清空全部特征标注"/>
+                                </Grid>
+                                <TextBlock Grid.Row="2" Text="{Binding FeatureStatusText}" FontSize="10.5" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           ToolTip="特征统计。特征以基准点（模型锚点）为原点存偏移；创建/覆盖重学时随模板落盘，实拍验证/识别时按匹配位姿仿射显示"/>
+                            </Grid>
+                        </Border>
+                    </Border>
+                </Expander>                            </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
             </Grid>
         </Border>
-    </Grid>
+        </Grid>
+    </DockPanel>
 </UserControl>

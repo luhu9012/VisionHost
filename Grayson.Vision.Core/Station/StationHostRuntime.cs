@@ -165,15 +165,15 @@ namespace Grayson.Vision.Core.Station
             var source = TriggerSourceFactory.Create(stationId, config, DevicePool);
             _triggerSources[stationId] = source;
 
-            // 绑定触发事件 → 调用 TriggerStationAsync
+            // 绑定触发事件 → 调用整周期执行
             source.OnTriggered += (s, e) =>
             {
                 try
                 {
                     LogBus.Debug("StationHostRuntime",
-                        $"[{stationId}] 收到触发信号 ({e.SourceType})，执行 TriggerOnceAsync");
+                        $"[{stationId}] 收到触发信号 ({e.SourceType})，执行一次完整周期");
                     var sw = Stopwatch.StartNew();
-                    TriggerStationAsync(stationId, e.BatchId).ContinueWith(t =>
+                    TriggerStationFullCycleAsync(stationId, e.BatchId).ContinueWith(t =>
                     {
                         sw.Stop();
                         // 通知触发源执行完成（恢复可接受新触发状态 + 记录节拍）
@@ -233,10 +233,10 @@ namespace Grayson.Vision.Core.Station
             }
             else
             {
-                // 无触发源时直接走旧路径（兼容未配置触发源的工位）
+                // 无触发源时直接走整周期路径（兼容未配置触发源的工位）
                 LogBus.Info("StationHostRuntime",
-                    $"[{stationId}] 无触发源，直接调用 TriggerStationAsync");
-                TriggerStationAsync(stationId).ConfigureAwait(false);
+                    $"[{stationId}] 无触发源，直接调用 TriggerStationFullCycleAsync");
+                TriggerStationFullCycleAsync(stationId).ConfigureAwait(false);
             }
         }
 
@@ -286,10 +286,12 @@ namespace Grayson.Vision.Core.Station
             WorkMode mode = WorkMode.Production,
             TriggerSourceConfig triggerSourceConfig = null,
             string processKey = null,
-            string processConfigJson = null)
+            string processConfigJson = null,
+            string taskTemplateCode = null)
         {
             var client = await CreateEmbeddedStationAsync(stationId);
             var worker = _workers[stationId];
+            worker.TaskTemplateCode = taskTemplateCode; // 任务模板代码贯通（独立引擎读模板判据）
 
             var recipeMappings = (deviceMappings ?? recipe?.LogicalDevices)?.ToList();
             if (recipeMappings != null)
@@ -384,6 +386,38 @@ namespace Grayson.Vision.Core.Station
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// 触发源驱动的一次完整周期执行（生产节拍语义，2026-09-09 修正）：
+        /// - 工位挂载业务过程 → TriggerOnceAsync（完整业务周期：走位/拍照/吸放/判定，
+        ///   过程内部用 RunContinuousAsync 直连调度器跑完整视觉段）；
+        /// - 纯视觉链工位（未挂业务过程）→ RunContinuousAsync（一次完整视觉链，而非单节点步进）。
+        /// 此前触发源一律走 TriggerOnceAsync：有过程时正确，但纯视觉链工位会退化成
+        /// "每个触发信号只执行 1 个节点"，节拍与整链任务对不上（每拍采一张图只跑一步）。
+        /// </summary>
+        private async Task TriggerStationFullCycleAsync(string stationId, string batchId = null)
+        {
+            if (_workers.TryGetValue(stationId, out var worker))
+            {
+                if (worker.Process != null)
+                {
+                    await worker.TriggerOnceAsync(batchId).ConfigureAwait(false);
+                }
+                else
+                {
+                    await worker.RunContinuousAsync(batchId).ConfigureAwait(false);
+                }
+                return;
+            }
+
+            if (_clients.TryGetValue(stationId, out var client))
+            {
+                await client.TriggerOnceAsync(batchId).ConfigureAwait(false);
+                return;
+            }
+
+            LogBus.Warn("StationHostRuntime", $"[{stationId}] 触发执行失败：找不到工位 Worker/Client。");
         }
 
         public StationWorker GetStationWorker(string stationId)

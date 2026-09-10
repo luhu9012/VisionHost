@@ -132,37 +132,37 @@
                     <UniformGrid Columns="2">
                         <StackPanel Margin="2,4">
                             <TextBlock Text="运行速度 (Units/s):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Speed, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamSpeed, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
                         <StackPanel Margin="2,4">
                             <TextBlock Text="脉冲当量 (Pulse/Unit):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Unit, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamUnit, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
                         <StackPanel Margin="2,4">
                             <TextBlock Text="加速度 (Units/s²):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Accel, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamAccel, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
                         <StackPanel Margin="2,4">
                             <TextBlock Text="减速度 (Units/s²):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Decel, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamDecel, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
                         <StackPanel Margin="2,4">
                             <TextBlock Text="起始速度 (Lspeed):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Lspeed, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamLspeed, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
                         <StackPanel Margin="2,4">
                             <TextBlock Text="S曲线时间 (Sramp):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.Sramp, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamSramp, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
 
                         <StackPanel Margin="2,4">
                             <TextBlock Text="回零慢速 (Creep):" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CurrentMotionParam.CreepSpeed, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBox Style="{StaticResource ModernTextBoxStyle}" Text="{Binding ParamCreep, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
                     </UniformGrid>
 

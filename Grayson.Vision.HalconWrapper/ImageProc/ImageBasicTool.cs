@@ -171,6 +171,32 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
         }
 
         /// <summary>
+        /// 取图像宽高（按 HALCON 惯例：width=列数 Column，height=行数 Row）。
+        /// 与 GetImageInfo 的区别：本方法返回数值，供上层计算视野中心、判断目标是否贴近视野边缘；
+        /// HObject 类型不外泄（与 GetImageInfo 同模式）。
+        /// </summary>
+        public static bool TryGetImageSize(object nativeImage, out int width, out int height)
+        {
+            width = 0;
+            height = 0;
+            var hImg = nativeImage as HObject;
+            if (hImg == null || !hImg.IsInitialized())
+                return false;
+            try
+            {
+                HOperatorSet.GetImageSize(hImg, out HTuple w, out HTuple h);
+                width = w.I;
+                height = h.I;
+                return width > 0 && height > 0;
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error(nameof(ImageBasicTool), "获取图像尺寸失败", ex);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 通道提取：从多通道彩色图像中抽取指定色彩空间的单通道灰度图。
         /// RGB 空间直接 Decompose3 取通道；HSV 空间先 Decompose3 再 RgbToHsv 转换后取通道。
         /// </summary>

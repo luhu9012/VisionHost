@@ -77,7 +77,11 @@ namespace Plugins.Robot.Epson
     }
 
     /// <summary>
-    /// SDK 工厂入口：根据 DLLLib\spelnet64.dll 是否存在自动选择真实/仿真适配层。
+    /// SDK 工厂入口：按 DLLLib 下 SDK DLL 是否存在自动选择适配层（优先级从高到低）：
+    ///   1. DLLLib\spelnet64.dll → RC+ 8.0 真实 SDK（EPSON_SPEL 宏，SpeLNetAdapter.cs）；
+    ///   2. DLLLib\RCAPINet.dll  → RC+ 7.x 真实 SDK（EPSON_SPEL7 宏，RCAPINet7Adapter.cs）
+    ///      ★ 当前调试形态：本机装有 RC+ 7.5.1 模拟器（D:\EpsonRC70），走这一层；
+    ///   3. 都没有 → 离线仿真机械手（运动瞬时完成、IO 输入回环输出）。
     /// </summary>
     internal static class EpsonSdkFactory
     {
@@ -94,14 +98,40 @@ namespace Plugins.Robot.Epson
                     {
 #if EPSON_SPEL
                         _instance = new SpeLNetSdk();
+#elif EPSON_SPEL7
+                        _instance = new RCAPINet7Sdk();
 #else
-                        // 未检测到 DLLLib\spelnet64.dll，使用离线仿真机械手：
+                        // 未检测到任何 Epson SDK DLL，使用离线仿真机械手：
                         // 运动瞬时完成、IO 输入回环输出，业务流可完整走通。
                         _instance = new SimulatedEpsonSdk();
 #endif
                     }
                     return _instance;
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Epson IO 业务号 → SPEL+ 物理端口号映射（现场实测 2026-09-02）。
+    ///
+    /// 业务约定（EpsonRobot / 调试台 / 工位业务流统一使用 0 基业务号）：
+    ///   0 = 吸嘴1 真空阀 → SPEL+ Out(15)   （On/Off 15）
+    ///   1 = 吸嘴2 真空阀 → SPEL+ Out(14)   （On/Off 14，单吸嘴机型无此阀）
+    /// 其他业务号（预留 IO）按「业务号 + 1」换算为 SPEL+ 1 基端口。
+    ///
+    /// ⚠ 真空阀接的可能是机械手控制器 IO 板或远程/本地 IO 模块，端口号因机型/接线而异，
+    ///   换机接线后只需改本映射表，业务层零改动。
+    /// </summary>
+    internal static class EpsonIoMap
+    {
+        public static int SpelPort(int ioNumber)
+        {
+            switch (ioNumber)
+            {
+                case 0: return 15;   // 吸嘴1 真空
+                case 1: return 14;   // 吸嘴2 真空
+                default: return ioNumber + 1;
             }
         }
     }

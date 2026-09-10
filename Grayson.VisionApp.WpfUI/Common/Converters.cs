@@ -37,6 +37,30 @@ namespace Grayson.Vision.WpfUI.Common.Converters
     }
 
     /// <summary>
+    /// 布尔 → 前景色（分步引导当前步文字高亮，P1 2026-09-09）：
+    /// true=橙金 #FFFFB900（当前步） / false=浅灰 #FF8E8E8E（未到步）。
+    /// </summary>
+    public class BoolToStepBrushConverter : IValueConverter
+    {
+        private static readonly Brush ActiveBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xB9, 0x00));
+        private static readonly Brush IdleBrush = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0x8E));
+        private static readonly Brush DoneBrush = new SolidColorBrush(Color.FromRgb(0x6C, 0xC6, 0x6C));
+
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            // 参数 Done 时 true=已完成绿（用于"可跳过/已完成步骤"的常显绿）；默认 true=当前步橙金
+            bool doneMode = parameter?.ToString() == "Done";
+            bool b = value is bool bv && bv;
+            return b ? (doneMode ? DoneBrush : ActiveBrush) : IdleBrush;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
     /// 配方审批状态转中文文本。
     /// </summary>
     public class RecipeApprovalStatusToTextConverter : IValueConverter
@@ -50,6 +74,7 @@ namespace Grayson.Vision.WpfUI.Common.Converters
                     case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Draft: return "草稿";
                     case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.PendingApproval: return "待审批";
                     case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved: return "已审批";
+                    case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Rejected: return "已驳回";
                     case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Frozen: return "已冻结";
                     case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Archived: return "已归档";
                     case Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Deprecated: return "已废弃";
@@ -431,5 +456,38 @@ namespace Grayson.Vision.WpfUI.Common.Converters
         }
     }
 
+    /// <summary>
+    /// 标定类型枚举 → 中文可读名（列表 Tag / KPI 显示用，避免裸显示 C# 枚举名）。
+    /// 与 CalibrationManagerViewModel.CalibrationTypeOptions 的 DisplayName 保持一致。
+    /// </summary>
+    public class CalibrationTypeToTextConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is Grayson.Vision.Contracts.Calibration.Models.CalibrationType t)
+            {
+                switch (t)
+                {
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.NinePointHandEye:
+                        return "九点手眼";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.HandEyeWithRotation:
+                        return "九点+旋转(偏心)";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.PickPlaceHandEye:
+                        return "吸放式 Pick&Place";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.Checkerboard2D:
+                        return "棋盘格 2D";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.CameraLensDistortion:
+                        return "相机内参";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.PixelScale:
+                        return "像素比例";
+                }
+            }
+            return value?.ToString() ?? "";
+        }
 
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return Binding.DoNothing;
+        }
+    }
 }

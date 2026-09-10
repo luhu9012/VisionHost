@@ -1062,7 +1062,18 @@ namespace Plugins.Camera.Hikvision
                 return Result<List<DeviceInfo>>.Fail(errorMsg);
             }
 
-            var list = cCameraInfos.Select(c =>
+            // 厂商过滤（2026-09-01）：海康 MVS 的 GigE 枚举走 GigE Vision 标准发现协议（GVCP），
+            // 会把任何支持 GigE Vision 的相机都扫出来——包括巴斯勒等第三方品牌。
+            // 现场实测：1 台 Basler 被海康插件误报为"海康相机"。这里按 ManufacturerName 过滤，
+            // 只保留海康（HIKVISION / HIK）自家设备，其他品牌留给对应品牌插件接管。
+            var hikOnly = cCameraInfos.Where(IsHikvisionDevice).ToList();
+            if (cCameraInfos.Count != hikOnly.Count)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Hikvision] 枚举到 {cCameraInfos.Count} 台 GigE/USB 相机，" +
+                                                   $"其中 {cCameraInfos.Count - hikOnly.Count} 台非海康品牌已过滤（留给对应品牌插件）");
+            }
+
+            var list = hikOnly.Select(c =>
             {
                 string sn = "";
                 string model = "";
@@ -1090,6 +1101,40 @@ namespace Plugins.Camera.Hikvision
 
             return Result<List<DeviceInfo>>.Ok(list);
         }
+
+        /// <summary>
+        /// 判断枚举出的相机是否海康品牌（按结构体 ManufacturerName / VendorName 过滤）。
+        /// GigE Vision 是标准协议，海康 MVS 枚举能发现 Basler 等第三方相机；
+        /// 只有厂商名含 "HIK" 的设备才归海康插件接管。
+        /// </summary>
+        private static bool IsHikvisionDevice(CCameraInfo c)
+        {
+            string manufacturer = null;
+            string vendor = null;
+            try
+            {
+                if (c.nTLayerType == CSystem.MV_GIGE_DEVICE)
+                {
+                    var gige = (CGigECameraInfo)c;
+                    manufacturer = gige.chManufacturerName;
+                }
+                else if (c.nTLayerType == CSystem.MV_USB_DEVICE)
+                {
+                    var usb = (CUSBCameraInfo)c;
+                    manufacturer = usb.chManufacturerName;
+                    vendor = usb.chVendorName;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Hikvision] 读取相机厂商信息失败: {ex.Message}");
+                return false;
+            }
+
+            string text = (manufacturer + " " + vendor).ToUpperInvariant();
+            return text.Contains("HIK") || text.Contains("HIKVISION");
+        }
+
         /// <summary>
         /// 无论是从 UI 扫描创建，还是从 LiteDB 恢复，都能顺利返回 IDevice 实例！
         /// </summary>

@@ -1,0 +1,100 @@
+<Window x:Class="Grayson.Vision.WpfUI.View.NewTaskTemplateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:service="clr-namespace:Grayson.Vision.WpfUI.Service"
+        mc:Ignorable="d"
+        Title="新建任务模板 · 行业任务类型目录"
+        Height="620" Width="980" WindowStartupLocation="CenterOwner"
+        Background="#1B1F27" Foreground="#E8EDF2" ShowInTaskbar="False">
+    <DockPanel Margin="16">
+        <!-- 顶部说明 -->
+        <Border DockPanel.Dock="Top" Background="#232A36" CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"
+                           Text="🗂️ 新建任务 · 行业全量目录（仅三大任务族已实现）"/>
+                <TextBlock Margin="0,6,0,0" FontSize="12" Foreground="#9FB0C3" TextWrapping="Wrap"
+                           Text="以下是机器视觉行业常见任务类型全量目录：绿色「✓ 已实现」条目可一键生成对应任务模板（引导定位 → 工位联动＋执行方案；深度学习 / 外观测量 → 独立纯软件，无需相机/运控/PLC）；灰色「规划中」条目仅供行业全量展示，暂不落地（双击无效）。"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 目录列表 -->
+        <DataGrid x:Name="CatalogGrid" DockPanel.Dock="Top" Height="400"
+                  AutoGenerateColumns="False" IsReadOnly="True"
+                  CanUserAddRows="False" CanUserDeleteRows="False"
+                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                  SelectionMode="Single" Background="#12161D" RowBackground="#12161D"
+                  AlternatingRowBackground="#171C25" Foreground="#E8EDF2"
+                  BorderBrush="#2A3340" BorderThickness="1" RowHeight="38" FontSize="12.5"
+                  MouseDoubleClick="CatalogGrid_MouseDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="任务类型" Width="230">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Icon}" FontSize="16" Margin="0,0,8,0"/>
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="所属族" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border CornerRadius="8" Padding="8,2" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="#3A4150"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsImplemented}" Value="True">
+                                                <Setter Property="Background" Value="#23455C"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding FamilyText}" FontSize="11" Foreground="#C6D2DF"/>
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="状态" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock VerticalAlignment="Center" FontWeight="Bold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="规划中"/>
+                                        <Setter Property="Foreground" Value="#7E8A99"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsImplemented}" Value="True">
+                                                <Setter Property="Text" Value="✓ 已实现 · 可生成"/>
+                                                <Setter Property="Foreground" Value="#4ADE80"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="说明" Width="*" MinWidth="380">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="#A9B6C6"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- 底部操作 -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <TextBlock x:Name="HintText" VerticalAlignment="Center" Margin="0,0,16,0" Foreground="#9FB0C3" FontSize="12"/>
+            <Button x:Name="OkButton" Content="✏️ 生成任务模板（选中后编辑）" Width="200" Height="32"
+                    Click="OkButton_Click" Background="#2F7BD6" Foreground="White" BorderThickness="0"/>
+            <Button Content="关闭" Width="88" Height="32" Margin="10,0,0,0" Click="CancelButton_Click"
+                    Background="#2A3340" Foreground="#D7DEE7" BorderThickness="0"/>
+        </StackPanel>
+    </DockPanel>
+</Window>

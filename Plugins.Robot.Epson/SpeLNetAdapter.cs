@@ -204,23 +204,24 @@ namespace Plugins.Robot.Epson
         }
 
         /// <summary>
-        /// 数字输出。外部 0 基编号 → SPEL+ 1 基编号（On/Off 指令）。
-        /// 例：业务层写 0 号口（吸嘴1真空）→ 控制器 Out(1)。
+        /// 数字输出。业务 0 基号 → SPEL+ 物理口（EpsonIoMap：吸嘴1=15/吸嘴2=14，现场实测 2026-09-02）。
+        /// 例：业务层写 0 号口（吸嘴1真空）→ 控制器 On(15)。
         /// </summary>
         public string SetOutput(int ioNumber, bool state)
         {
             if (_spel == null) return "控制器未连接";
             try
             {
-                if (state) _spel.On(ioNumber + 1);
-                else _spel.Off(ioNumber + 1);
+                int port = EpsonIoMap.SpelPort(ioNumber);
+                if (state) _spel.On(port);
+                else _spel.Off(port);
 
                 _outputs[ioNumber] = state;
                 return null;
             }
             catch (Exception ex)
             {
-                return $"输出 On/Off({ioNumber + 1}) 失败: {ex.Message}";
+                return $"输出 On/Off({EpsonIoMap.SpelPort(ioNumber)}) 失败: {ex.Message}";
             }
         }
 

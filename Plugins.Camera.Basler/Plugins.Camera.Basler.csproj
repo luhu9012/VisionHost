@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{8f3a1c27-5d64-4b9e-a1f0-3c7e9a2b6d01}</ProjectGuid>
+    <ProjectGuid>{8F3A1C27-5D64-4B9E-A1F0-3C7E9A2B6D01}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Plugins.Camera.Basler</RootNamespace>
@@ -21,6 +21,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -44,9 +45,16 @@
     <DefineConstants Condition="Exists('$(PylonSdkDllPath)')">$(DefineConstants);BASLER_PYLON</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Basler.Pylon" Condition="Exists('$(PylonSdkDllPath)')">
-      <HintPath>$(PylonSdkDllPath)</HintPath>
-      <Private>True</Private>
+    <!--
+      ⚠ 版本选择（2026-09-01）：
+      DLLLib\Basler.Pylon.dll 必须是 pylon 安装目录下的 **net4.0/x64** 版本
+      （C:\Program Files\Basler\pylon\Development\Assemblies\Basler.Pylon\net4.0\x64\）。
+      若误放 net8.0 版本（引用 System.Runtime 而非 mscorlib），net472 工程编译期可能侥幸通过，
+      但运行时必抛 TypeLoadException / FileNotFoundException。
+    -->
+    <Reference Include="Basler.Pylon, Version=1.2.0.0, Culture=neutral, PublicKeyToken=e389355f398382ab, processorArchitecture=AMD64">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLLLib\Basler.Pylon.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />

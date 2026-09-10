@@ -32,21 +32,28 @@
   </PropertyGroup>
   <!--
     ============================================================
-    Epson RC+ SPEL .NET SDK 条件编译：
-    - 安装 Epson RC+ 8.0 后，将安装目录 (如 C:\EpsonRC80\bin) 下的
-      spelnet64.dll 复制到解决方案根 DLLLib\ 目录，本项目自动启用
-      真实 SDK 适配层（SpeLNetAdapter.cs，EPSON_SPEL 宏）；
-    - 若 DLLLib\spelnet64.dll 不存在，则退回“离线仿真机械手”，
-      保证工程随时可编译、业务流可先行联调。
+    Epson RC+ SPEL .NET SDK 条件编译（按 DLLLib 下的 SDK DLL 探测）：
+    - DLLLib\spelnet64.dll（RC+ 8.0）→ EPSON_SPEL   → SpeLNetAdapter.cs
+    - DLLLib\RCAPINet.dll （RC+ 7.x）→ EPSON_SPEL7   → RCAPINet7Adapter.cs
+      ★ 当前调试形态：本机 D:\EpsonRC70（RC+ 7.5.1 模拟器），
+        已复制 exe\RCAPINet.dll 到 DLLLib，自动启用 RC+ 7 真实适配层；
+    - 两者皆无 → 离线仿真机械手（工程随时可编译，业务流先行联调）。
+    两个 DLL 互斥：先探测 RC+ 8，再探测 RC+ 7。
     ============================================================
   -->
   <PropertyGroup>
     <EpsonSdkDllPath>$(MSBuildThisFileDirectory)..\DLLLib\spelnet64.dll</EpsonSdkDllPath>
+    <EpsonSdk7DllPath>$(MSBuildThisFileDirectory)..\DLLLib\RCAPINet.dll</EpsonSdk7DllPath>
     <DefineConstants Condition="Exists('$(EpsonSdkDllPath)')">$(DefineConstants);EPSON_SPEL</DefineConstants>
+    <DefineConstants Condition="!Exists('$(EpsonSdkDllPath)') AND Exists('$(EpsonSdk7DllPath)')">$(DefineConstants);EPSON_SPEL7</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="spelnet64" Condition="Exists('$(EpsonSdkDllPath)')">
       <HintPath>$(EpsonSdkDllPath)</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="RCAPINet" Condition="!Exists('$(EpsonSdkDllPath)') AND Exists('$(EpsonSdk7DllPath)')">
+      <HintPath>$(EpsonSdk7DllPath)</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="System" />
@@ -63,6 +70,8 @@
     <Compile Include="EpsonRobot.cs" />
     <Compile Include="EpsonSdkAdapters.cs" />
     <Compile Include="SpeLNetAdapter.cs" />
+    <Compile Include="RCAPINet7Adapter.cs" />
+    <Compile Include="EpsonTcpScriptAdapter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

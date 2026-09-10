@@ -9,6 +9,10 @@ namespace Grayson.Vision.HalconWrapper.Calibration
     {
         public string SavedFilePath { get; set; }
         public double RmsError { get; set; }
+
+        /// <summary>矩阵健康检查报告（多行文本，供向导展示）：
+        /// 两轴像素当量一致性 / 正交性 / 行列式(镜像检测) / 网格重建边长与正交性 / 建议。</summary>
+        public string HealthReport { get; set; }
     }
 
     public class DetectionResult
@@ -140,6 +144,13 @@ namespace Grayson.Vision.HalconWrapper.Calibration
         /// <param name="imageHandle">Halcon HObject/HImage 或 IRenderImage 包装（取 NativeHandle）</param>
         /// <param name="featureType">特征类型：CircleMark / CrossMark</param>
         Result<(double PixelX, double PixelY)> ExtractFeaturePreview(object imageHandle, CalibrationFeatureType featureType);
+
+        /// <summary>
+        /// 最近一次特征提取（预览/调参重试/采样）的质量报告（含匹配分 0~100 与成分明细）。
+        /// 每次提取结束更新；提取未执行过时为 null。
+        /// 标定向导第二步据此实时展示"当前参数下的识别质量分"，指导操作员调参。
+        /// </summary>
+        FeatureMatchReport LastMatchReport { get; }
 
     }
 }

@@ -136,15 +136,12 @@ namespace Grayson.Vision.Contracts.Recipe.Models
         public List<string> RequiredDeviceKeys { get; set; } = new List<string>();
         #endregion
 
-        #region 3. 工位运行配置与工艺参数分离
+        #region 3. 工艺参数集
         /// <summary>
-        /// 工位运行配置（调度器、IO、超时、阈值）
-        /// </summary>
-        public StationRuntimeConfiguration RuntimeConfiguration { get; set; }
-            = new StationRuntimeConfiguration();
-
-        /// <summary>
-        /// 当前工艺参数集（阈值、曝光、模型、标定结果）
+        /// 当前工艺参数集（阈值、曝光、模型、标定结果）。
+        /// ⚠ 2026-09-05 决策：工位运行配置（调度器/工作模式/IO/安全联锁/语言等）已从配方整卡移除——
+        ///   运行配置属工位侧能力（StationConfigModel.RuntimeParams/TriggerSource/ProcessKey），
+        ///   配方只承载"随产品变化的工艺内容"。
         /// </summary>
         public ProcessParameterSet ProcessParameters { get; set; }
             = new ProcessParameterSet();

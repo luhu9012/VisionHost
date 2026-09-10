@@ -8,6 +8,7 @@
 
     <UserControl.Resources>
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
 
     <Grid Margin="12">
@@ -182,6 +183,24 @@
                     </Border>
                 </Grid>
             </Grid>
+        </Border>
+
+        <!-- ==================== 扫描在线硬件的等待遮罩 ====================
+             在线扫描（相机枚举 / Epson 控制器试连等）可能耗时数秒到十几秒，
+             期间展示进度遮罩，同时防止用户重复点击“扫描”导致并发扫描
+             （Epson RC+ 只允许单客户端，并发探测会互相串扰导致扫不出来）。 -->
+        <Border Grid.ColumnSpan="2" Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}"
+                Background="#66000000" Panel.ZIndex="50" CornerRadius="4">
+            <Border Width="340" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{StaticResource BackgroundBrush}" CornerRadius="10" Padding="28,24">
+                <StackPanel>
+                    <ProgressBar IsIndeterminate="True" Height="6" Margin="0,0,0,16"/>
+                    <TextBlock Text="{Binding ScanStatusText}" HorizontalAlignment="Center"
+                               Foreground="{StaticResource TextPrimaryBrush}" FontSize="15" FontWeight="Bold"/>
+                    <TextBlock Text="正在枚举相机 / 运动控制卡 / PLC / Epson 机械手…" HorizontalAlignment="Center"
+                               Style="{StaticResource FormLabelStyle}" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
         </Border>
     </Grid>
 </UserControl>

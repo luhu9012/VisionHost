@@ -61,8 +61,20 @@ namespace Grayson.Vision.Contracts.Devices
         /// <summary>设置轴基础运动参数 (速度/加减速)</summary>
         Result SetMotionParam(int axis, MotionParam param);
 
+        /// <summary>
+        /// 回读轴基础运动参数 (速度/加减速/当量等)。
+        /// 供硬件控制台等 UI 显示控制器当前真实参数；不支持的控制器返回 Fail（调用方回退默认值）。
+        /// </summary>
+        Result<MotionParam> GetMotionParam(int axis);
+
         /// <summary>设置软限位</summary>
         Result SetSoftLimits(int axis, float positiveLimit, float negativeLimit);
+
+        /// <summary>
+        /// 回读轴软限位。Data 为 float[2]：[0]=正软限位，[1]=负软限位。
+        /// 不支持的控制器返回 Fail（调用方回退默认值）。
+        /// </summary>
+        Result<float[]> GetSoftLimits(int axis);
 
         /// <summary>设置轴指令位置 (DPOS)</summary>
         Result SetCommandPosition(int axis, float position);

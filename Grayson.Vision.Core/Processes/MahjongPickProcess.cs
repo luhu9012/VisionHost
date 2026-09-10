@@ -8,7 +8,15 @@ using System.Threading.Tasks;
 namespace Grayson.Vision.Core.Processes
 {
     /// <summary>
-    /// 双滑台工位「麻将吸取摆盘」业务过程。
+    /// 双滑台工位「工件吸取摆盘」业务过程。
+    /// 
+    /// 硬件结构复述：
+
+    //1. ** 相机、吸嘴机械刚性固定在 X 滑台上，两者之间 XY 机械偏移是固定常量，Z 轴也挂载在 X 滑台；X 轴左右移动；**
+    //2. ** 左工件工台：由左 Y 轴（轴 3）前后滑动；右摆盘工台：右 Y 轴（轴 2）前后滑动；工台带着工件跑，相机 / 吸嘴不动 Y，工台动 Y。**
+
+    //> 
+    //> 关键点：** 目标物体（工件）在 Y 方向是工台带着它运动，相机、吸嘴本身 Y 坐标不变化！**
     ///
     /// 职责分层：
     /// - 视觉定位段（编辑器节点编排，换产品调参）：
@@ -37,7 +45,7 @@ namespace Grayson.Vision.Core.Processes
     ///   - 急停按钮 IN9 软件轮询：运动等待/真空等待期间每 20ms 采样，命中即中止
     ///     并补触发 Worker 级急停（ErrorLocked 锁定 + 红灯蜂鸣，与 UI 急停同一链路）；
     ///   - 真空检知 IN16 确认：开真空后等待真空表检知，超时判定吸取失败 NG
-    ///     （防止"没吸住麻将被误认为吸取成功"空跑放料）。
+    ///     （防止"没吸住工件被误认为吸取成功"空跑放料）。
     /// </summary>
     public class MahjongPickProcess : StationProcessBase
     {
@@ -52,6 +60,14 @@ namespace Grayson.Vision.Core.Processes
         /// <summary>三色灯当前状态缓存（避免无变化重复写 OUT）</summary>
         private (bool green, bool yellow, bool red, bool buzzer)? _lastLight;
 
+        /// <summary>上一周期的匹配结果（跨周期一致性自检用，仅诊断，不参与运动控制）</summary>
+        private double _lastMatchRow, _lastMatchCol, _lastMatchAngle;
+        private bool _lastMatchValid;
+
+        /// <summary>上一次示教的视觉输出（跨周期公式判定用，仅诊断）</summary>
+        private double _lastTeachWx, _lastTeachWy;
+        private bool _lastTeachValid;
+
         public MahjongPickProcess(StationWorker worker, MahjongPickConfig config = null)
             : base(worker, (config ?? new MahjongPickConfig()).CardAlias)
         {
@@ -64,7 +80,7 @@ namespace Grayson.Vision.Core.Processes
         /// </summary>
         public override async Task<bool> RunAsync(CancellationToken token = default)
         {
-            Log("========== 麻将吸取摆盘 开始 ==========");
+            Log("========== 工件吸取摆盘 开始 ==========");
             _eStopSignalled = false;
             try
             {
@@ -102,7 +118,33 @@ namespace Grayson.Vision.Core.Processes
                 double worldX = GetOutValue<double>(calibNode, "OutputX");
                 double worldY = GetOutValue<double>(calibNode, "OutputY");
 
+                double matchRow = GetOutValue<double>(matchNode, "MatchRow");
+                double matchCol = GetOutValue<double>(matchNode, "MatchCol");
+                double matchAng = GetOutValue<double>(matchNode, "MatchAngle");
                 Log($"[Phase1] 视觉结果: Score={score:F3}, World=({worldX:F3}, {worldY:F3})（阈值 {_cfg.MinScore:F2}）");
+                Log($"[Phase1] 匹配像素: Row={matchRow:F1} Col={matchCol:F1} Angle={matchAng:F2}°");
+
+                // ---- 匹配一致性自检 ----
+                // 「换了位置/角度就吸不到」的头号根因往往不是引导公式，而是匹配压根没跟上目标：
+                // 模板 ROI 远大于目标本体时，find_shape_model 学到的是 ROI 内的背景（工台纹理），
+                // 于是无论目标怎么挪，输出的像素与角度都几乎不变（锁死在模板创建时的位姿）。
+                // 这里跨周期比对，一旦「两次结果几乎一模一样」就直接点名，省去现场逐项排查。
+                if (_lastMatchValid)
+                {
+                    double dRow = matchRow - _lastMatchRow;
+                    double dCol = matchCol - _lastMatchCol;
+                    double dPix = Math.Sqrt(dRow * dRow + dCol * dCol);
+                    if (dPix < 1.0 && Math.Abs(matchAng - _lastMatchAngle) < 0.5)
+                    {
+                        Log("⚠️ [Phase1] 匹配结果与上一周期几乎一致（位移 < 1px、角度差 < 0.5°）——" +
+                            "若工件的位置/角度确实变了，说明匹配锁死在背景或模板原位姿，并未真正找到工件。" +
+                            "请检查模板 ROI 是否远大于工件本体（建议目标本体占 ROI 面积 50% 以上）并重建模板。");
+                    }
+                }
+                _lastMatchRow = matchRow;
+                _lastMatchCol = matchCol;
+                _lastMatchAngle = matchAng;
+                _lastMatchValid = true;
 
                 if (score < _cfg.MinScore)
                 {
@@ -112,11 +154,73 @@ namespace Grayson.Vision.Core.Processes
                     return false;
                 }
 
-                // ---- Phase 2: 移动至麻将上方并吸取 ----
+                // ---- Phase 2: 移动至工件上方并吸取 ----
+                // 🌟 视觉引导坐标的镜像修正（详见 MahjongPickConfig.MirrorGuideEnabled 注释）：
+                //    矩阵输出 = "让标定位置的 Mark 出现在该像素所需的轴坐标"；
+                //    吸取需要 = "追上已挪窝的目标" = 2 × 拍照位 − 矩阵输出。
+                //    两者在工件恰处标定(模板)点位时相等，一偏移就差 2×偏移量。
+                double guideX = _cfg.MirrorGuideEnabled ? (2 * _cfg.LeftPhotoX - worldX) : worldX;
+                double guideY = _cfg.MirrorGuideEnabled ? (2 * _cfg.LeftPhotoY - worldY) : worldY;
+
+                double curX = worldX + _cfg.NozzleXOffset;
+                double curY = worldY + _cfg.NozzleYOffset;
+                double mirX = 2 * _cfg.LeftPhotoX - worldX + _cfg.NozzleXOffset;
+                double mirY = 2 * _cfg.LeftPhotoY - worldY + _cfg.NozzleYOffset;
+                Log($"[Phase2] 视觉输出 wx={worldX:F3}, wy={worldY:F3}" +
+                    $"（= 工件相对「标定 Mark 位置」的偏移量 mm；把工件放回标定时 Mark 所在处，这两个数应接近 0）；" +
+                    $"拍照位=({_cfg.LeftPhotoX:F3}, {_cfg.LeftPhotoY:F3})");
+                Log($"[Phase2] 落点候选 → 当前公式 X={curX:F3} Y={curY:F3} ｜ 镜像公式 X={mirX:F3} Y={mirY:F3}" +
+                    $"（MirrorGuideEnabled={_cfg.MirrorGuideEnabled} → 采用{(_cfg.MirrorGuideEnabled ? "镜像" : "当前")}）");
+
+                // NozzleOffset 的现场标定提示：这两个值是「相机→吸嘴」的机械常量，只需标定一次；
+                // 标定方法是走位到落点后目测吸嘴与工件中心的偏差 (ΔX, ΔY)，直接加到原值上即可。
+                // 与工件每次放在工台哪个位置无关——位置差异由 wx/wy 反映，不靠这两个偏移吸收。
+                Log($"[Phase2] 修偏方法：走位后若吸嘴与工件中心差 (ΔX, ΔY) mm，" +
+                    $"把 NozzleXOffset 由 {_cfg.NozzleXOffset:F1} 改为 {_cfg.NozzleXOffset:F1}+ΔX、" +
+                    $"NozzleYOffset 由 {_cfg.NozzleYOffset:F1} 改为 {_cfg.NozzleYOffset:F1}+ΔY（标定一次即可，之后工件放哪都不用再改）。");
+
+                // ---- 示教模式：不走位、不吸取，只把「反算 NozzleOffset 的公式」摆出来 ----
+                // 基准用「吸嘴对准工件背面图案」而不是「相机视野中心」：后者屏幕上没有参照物，
+                // 肉眼估不准；前者下探目测或真空吸附一试便知。标定矩阵只提供相对量，
+                // 绝对基准就靠这一步定死——定完之后工件放工台任何位置都不用再改。
+                if (_cfg.TeachMode)
+                {
+                    Log("[Phase2] 👉【示教模式】不执行走位与吸取。请手动点动轴，让吸嘴正对工件背面圆/十字的中心，");
+                    Log("[Phase2] 👉【示教模式】然后记下此刻 X 轴(轴1)读数 X* 与 左Y 轴(轴3)读数 Y*，代入下面两式：");
+                    Log($"[Phase2] 👉【示教模式】  采用【当前公式】(+wx/+wy)：" +
+                        $"NozzleXOffset = X* − ({worldX:F3})    NozzleYOffset = Y* − ({worldY:F3})");
+                    Log($"[Phase2] 👉【示教模式】  采用【镜像公式】(−wx/−wy)：" +
+                        $"NozzleXOffset = X* + ({worldX:F3})    NozzleYOffset = Y* + ({worldY:F3})");
+                    Log($"[Phase2] 👉【示教模式】对照：程序算出的落点是 X={curX:F3} Y={curY:F3}（镜像为 X={mirX:F3} Y={mirY:F3}）；" +
+                        $"若手动对准后读回的 X*、Y* 与其中一组接近，那组公式就是对的。");
+                    // 一行式反馈记录：把本周期所有关键数收进一行，人工对准工件读回 X*/Y* 后，
+                    // 直接复制此行（补上 X*、Y*）发回即可完成 NozzleOffset 标定，无需任何界面操作。
+                    Log($"[示教记录] wx={worldX:F3}, wy={worldY:F3}, 拍照位=({_cfg.LeftPhotoX:F2},{_cfg.LeftPhotoY:F2}), " +
+                        $"当前NozzleOffset=({_cfg.NozzleXOffset:F1},{_cfg.NozzleYOffset:F1}), 当前落点=({curX:F2},{curY:F2})/({mirX:F2},{mirY:F2}), " +
+                        $"→ 对准工件后读回 X*=____, Y*=____（连同此行一起反馈）");
+
+                    // 跨周期判定：同一个 NozzleOffset 必须能同时满足两个不同位置。
+                    // 把两次的 X*/Y* 分别代入两式，算出的 N 一致的那组公式才是对的——
+                    // 错的那组会相差 2×(wx₂−wx₁)，两次一比就露馅，且全程不走位零风险。
+                    if (_lastTeachValid)
+                    {
+                        Log($"[Phase2] 👉【示教模式】上一次：wx={_lastTeachWx:F3} wy={_lastTeachWy:F3} → " +
+                            $"本次变化 Δwx={worldX - _lastTeachWx:+0.000;-0.000} Δwy={worldY - _lastTeachWy:+0.000;-0.000}");
+                        Log("[Phase2] 👉【示教模式】判定：把两次的 X*/Y* 各按两式算出 N，" +
+                            "两次结果一致（差值 <1mm）的那组公式正确；另一组会差出 2×Δwx。");
+                    }
+                    _lastTeachWx = worldX;
+                    _lastTeachWy = worldY;
+                    _lastTeachValid = true;
+
+                    await BackToStandbyAsync(token).ConfigureAwait(false);
+                    return true;
+                }
+
                 Log("[Phase2] 移动至吸取位...");
-                await MoveAbsAsync(_cfg.AxisX, (float)(worldX + _cfg.NozzleXOffset), _cfg.XySpeed, _cfg.SettleMs, token: token).ConfigureAwait(false);
+                await MoveAbsAsync(_cfg.AxisX, (float)(guideX + _cfg.NozzleXOffset), _cfg.XySpeed, _cfg.SettleMs, token: token).ConfigureAwait(false);
                 EnsureNoEStop();
-                await MoveAbsAsync(_cfg.AxisLeftY, (float)(worldY + _cfg.NozzleYOffset), _cfg.XySpeed, _cfg.SettleMs, token: token).ConfigureAwait(false);
+                await MoveAbsAsync(_cfg.AxisLeftY, (float)(guideY + _cfg.NozzleYOffset), _cfg.XySpeed, _cfg.SettleMs, token: token).ConfigureAwait(false);
                 EnsureNoEStop();
 
                 Log("[Phase2] Z 下探吸取...");
@@ -127,12 +231,26 @@ namespace Grayson.Vision.Core.Processes
                 bool sensed = await WaitVacuumSenseAsync(token).ConfigureAwait(false);
                 if (!sensed)
                 {
-                    Log("❌ [Phase2] 真空检知超时，未吸住麻将，本次 NG（关真空抬 Z 回待机）");
+                    // 失败时把本次用到的完整坐标链回显一遍：吸取失败几乎都是落点偏了，
+                    // 把"看到什么 → 算成什么 → 走到哪"摊开，配合成功案例对比即可定位到是哪一环错。
+                    Log("❌ [Phase2] 真空检知超时，未吸住工件，本次 NG（关真空抬 Z 回待机）");
+                    Log($"❌ [Phase2] 失败回显：匹配 Score={score:F3} 像素=({matchRow:F1}, {matchCol:F1}) 角度={matchAng:F2}° " +
+                        $"→ wx={worldX:F3} wy={worldY:F3} → 实际落点 X={curX:F3} Y={curY:F3}（镜像本应 X={mirX:F3} Y={mirY:F3}）");
+                    Log("❌ [Phase2] 排查提示：抬 Z 后请保持工件不动，手动点动轴到吸嘴正对工件，读回 X*/Y* " +
+                        "与上面的落点比较——差多少就是 NozzleOffset 要补多少（或开示教模式 TeachMode 直接取数）。");
                     try { SetOutput(_cfg.VacuumIo, false); } catch (Exception ex) { Log($"⚠️ 关闭真空失败: {ex.Message}"); }
                     await MoveAbsAsync(_cfg.AxisZ, _cfg.SafeZ, _cfg.ZSpeed, settleMs: 0, token: token).ConfigureAwait(false);
                     await BackToStandbyAsync(token).ConfigureAwait(false);
                     await IndicateNgAsync("吸取失败", token).ConfigureAwait(false);
                     return false;
+                }
+
+                // 检知到位 ≠ 吸牢：真空度刚过门槛时吸附力仍在爬升，立即抬 Z 有概率带不牢。
+                // 额外保压一段时间，确保吸附充分建立后 Z 轴才动作（可界面调 VacuumDwellAfterSenseMs）。
+                if (_cfg.VacuumDwellAfterSenseMs > 0)
+                {
+                    Log($"[Phase2] 真空保压 {_cfg.VacuumDwellAfterSenseMs}ms（等吸附充分建立后再抬 Z）...");
+                    await Task.Delay(_cfg.VacuumDwellAfterSenseMs, token).ConfigureAwait(false);
                 }
 
                 await MoveAbsAsync(_cfg.AxisZ, _cfg.SafeZ, _cfg.ZSpeed, settleMs: 0, token: token).ConfigureAwait(false);
@@ -155,7 +273,7 @@ namespace Grayson.Vision.Core.Processes
 
                 SetStartLamps(false);
                 LightStandby("周期完成");
-                Log("========== 麻将吸取摆盘 成功 ==========");
+                Log("========== 工件吸取摆盘 成功 ==========");
                 return true;
             }
             catch (OperationCanceledException)
@@ -382,7 +500,7 @@ namespace Grayson.Vision.Core.Processes
                 bool active = _cfg.VacuumSenseActiveHigh ? raw : !raw;
                 if (active)
                 {
-                    Log($"✅ 真空检知到位（IN{_cfg.InVacuumSense} = {(raw ? "ON" : "OFF")}），麻将已吸住。");
+                    Log($"✅ 真空检知到位（IN{_cfg.InVacuumSense} = {(raw ? "ON" : "OFF")}），工件已吸住。");
                     return true;
                 }
                 await Task.Delay(20, token).ConfigureAwait(false);
@@ -428,6 +546,7 @@ namespace Grayson.Vision.Core.Processes
         {
             Log("[Phase4] 回待机位...");
             await MoveAbsAsync(_cfg.AxisX, _cfg.StandbyX, _cfg.XySpeed, settleMs: 0, token: token).ConfigureAwait(false);
+            await MoveAbsAsync(_cfg.AxisLeftY, _cfg.StandbyY, _cfg.XySpeed, settleMs: 0, token: token).ConfigureAwait(false);
         }
     }
 }

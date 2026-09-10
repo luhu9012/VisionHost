@@ -10,22 +10,72 @@
         <TabControl x:Name="HardwareTabControl" Style="{StaticResource ModernTabControlStyle}" SelectionChanged="OnTabSelectionChanged">
 
             <!-- 1. 相机调试 Panel -->
-            <TabItem Header="📷 相机调试" Style="{StaticResource ModernTabItemStyle}">
+            <TabItem x:Name="TabCamera" Style="{StaticResource ModernTabItemStyle}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="📷 相机调试" VerticalAlignment="Center"/>
+                        <Button Content="⧉" Tag="Camera" Click="OnDetachTab_Click" Margin="10,0,0,0" Padding="4,0"
+                                Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                ToolTip="独立窗口：本面板在单独窗口打开，不阻塞主界面，可并行操作/观看"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <subViews:CameraDebugView DataContext="{Binding CameraDebugVM}"/>
             </TabItem>
 
             <!-- 2. 运动控制轴 Panel -->
-            <TabItem Header="⚙️ 轴点动调试" Style="{StaticResource ModernTabItemStyle}">
+            <TabItem x:Name="TabAxis" Style="{StaticResource ModernTabItemStyle}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="⚙️ 轴点动调试" VerticalAlignment="Center"/>
+                        <Button Content="⧉" Tag="Axis" Click="OnDetachTab_Click" Margin="10,0,0,0" Padding="4,0"
+                                Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                ToolTip="独立窗口：本面板在单独窗口打开，不阻塞主界面，可并行操作/观看"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <subViews:AxisControlView DataContext="{Binding AxisControlVM}"/>
             </TabItem>
 
-            <!-- 3. 数字量 IO 监视 Panel -->
-            <TabItem Header="🔌 数字量 IO 监视" Style="{StaticResource ModernTabItemStyle}">
+            <!-- 3. 机械臂调试 Panel（Epson SCARA：四轴坐标/整点走位/示教点/真空阀） -->
+            <TabItem x:Name="TabRobot" Style="{StaticResource ModernTabItemStyle}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🤖 机械臂调试" VerticalAlignment="Center"/>
+                        <Button Content="⧉" Tag="Robot" Click="OnDetachTab_Click" Margin="10,0,0,0" Padding="4,0"
+                                Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                ToolTip="独立窗口：本面板在单独窗口打开，不阻塞主界面，可并行操作/观看"/>
+                    </StackPanel>
+                </TabItem.Header>
+                <subViews:RobotDebugView DataContext="{Binding RobotDebugVM}"/>
+            </TabItem>
+
+            <!-- 4. 数字量 IO 监视 Panel -->
+            <TabItem x:Name="TabIo" Style="{StaticResource ModernTabItemStyle}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🔌 数字量 IO 监视" VerticalAlignment="Center"/>
+                        <Button Content="⧉" Tag="IO" Click="OnDetachTab_Click" Margin="10,0,0,0" Padding="4,0"
+                                Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                ToolTip="独立窗口：本面板在单独窗口打开，不阻塞主界面，可并行操作/观看"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <subViews:IoMonitorView DataContext="{Binding IoMonitorVM}"/>
             </TabItem>
 
-            <!-- 4. 通信调试 Panel -->
-            <TabItem Header="📡 通信调测" Style="{StaticResource ModernTabItemStyle}">
+            <!-- 5. 通信调试 Panel -->
+            <TabItem x:Name="TabComm" Style="{StaticResource ModernTabItemStyle}">
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="📡 通信调测" VerticalAlignment="Center"/>
+                        <Button Content="⧉" Tag="Comm" Click="OnDetachTab_Click" Margin="10,0,0,0" Padding="4,0"
+                                Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                ToolTip="独立窗口：本面板在单独窗口打开，不阻塞主界面，可并行操作/观看"/>
+                    </StackPanel>
+                </TabItem.Header>
                 <subViews:CommDebugView DataContext="{Binding CommDebugVM}"/>
             </TabItem>
 

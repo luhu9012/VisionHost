@@ -2,11 +2,14 @@ using Grayson.Vision.Contracts.Calibration.Models;
 using Grayson.Vision.Contracts.Core;
 using Grayson.Vision.Contracts.Imaging;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
+using Grayson.Vision.HalconWrapper.Core; // AsWindow()：从显示上下文取 IHalconWindowSurface 直通通道
+using Grayson.Vision.HalconWrapper.Templates; // TemplateManager.MatchWithDatum：标定模板匹配特征复用全局模板库（datum 唯一口径）
 using HalconDotNet;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Grayson.Vision.HalconWrapper.Calibration
 {
@@ -34,6 +37,200 @@ namespace Grayson.Vision.HalconWrapper.Calibration
         /// 默认值与改造前硬编码参数一致；标定向导"特征配置"步骤可实时调节。
         /// </summary>
         public FeatureExtractOptions ExtractOptions { get; set; } = new FeatureExtractOptions();
+
+        /// <summary>
+        /// 最近一次特征提取（预览/调参重试/采样）的质量报告（含匹配分 0~100 与成分明细）。
+        /// 每次提取结束更新；提取未执行过时为 null。线程模型：提取统一在后台单飞任务内
+        /// （标定向导 _samplingBusy 门闩），无并发读写；UI 侧应在提取调用返回后读取。
+        /// </summary>
+        public FeatureMatchReport LastMatchReport { get; private set; }
+
+        /// <summary>clamp 0..1</summary>
+        private static double Clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+
+        /// <summary>分数等级文字</summary>
+        private static string ScoreVerdict(double score)
+        {
+            if (score >= 85) return "极佳";
+            if (score >= 70) return "良好";
+            if (score >= 55) return "可用";
+            return "偏弱";
+        }
+
+        /// <summary>
+        /// 组装圆 Mark 匹配质量报告（成功路径）：从几何筛选后的候选区域重新读取
+        /// 圆度/面积/中心，对照选中点、参考半径、期望位置综合评分。
+        /// 失败时置 Score=0、Detail=失败诊断（供向导界面直观显示，不参与控制流）。
+        /// </summary>
+        private FeatureMatchReport ComposeCircleReport(
+            HObject selectedRegions, int candidateCount,
+            double finalPixelX, double finalPixelY, double chosenRadius,
+            double expectedPx, double expectedPy, double searchRadius,
+            bool usedFallback, bool success, string failDetail, string pointTag)
+        {
+            var report = new FeatureMatchReport
+            {
+                Success = success,
+                PixelX = finalPixelX,
+                PixelY = finalPixelY,
+                CandidateCount = candidateCount,
+                UsedFallback = usedFallback,
+                Detail = failDetail
+            };
+
+            var sb = new System.Text.StringBuilder();
+            double circ = 0.85, radiusVal = chosenRadius, areaVal = 0;
+            double nearestOtherDist = double.MaxValue;
+            try
+            {
+                if (success && candidateCount > 0 && selectedRegions != null && selectedRegions.IsInitialized())
+                {
+                    HOperatorSet.AreaCenter(selectedRegions, out HTuple areas, out HTuple rows, out HTuple cols);
+                    HOperatorSet.RegionFeatures(selectedRegions, "circularity", out HTuple circs);
+                    int n = areas.Length;
+                    int chosenIdx = -1;
+                    double bestD = double.MaxValue;
+                    for (int i = 0; i < n; i++)
+                    {
+                        double dx = cols[i].D - finalPixelX;
+                        double dy = rows[i].D - finalPixelY;
+                        double d = dx * dx + dy * dy;
+                        if (d < bestD)
+                        {
+                            bestD = d;
+                            chosenIdx = i;
+                        }
+                    }
+                    if (chosenIdx >= 0)
+                    {
+                        circ = circs.Length > chosenIdx ? circs[chosenIdx].D : 0.85;
+                        areaVal = areas.Length > chosenIdx ? areas[chosenIdx].D : 0;
+                        if (radiusVal <= 0.001 && areaVal > 0)
+                        {
+                            radiusVal = Math.Sqrt(areaVal / Math.PI); // 区域中心兜底路径补等效半径
+                        }
+                        // 与最近其它候选的距离 → 唯一性评分
+                        for (int i = 0; i < n; i++)
+                        {
+                            if (i == chosenIdx) continue;
+                            double dx = cols[i].D - finalPixelX;
+                            double dy = rows[i].D - finalPixelY;
+                            double d = Math.Sqrt(dx * dx + dy * dy);
+                            if (d < nearestOtherDist) nearestOtherDist = d;
+                        }
+                        // 候选列表（最多 8 条，供界面展示）
+                        int top = Math.Min(n, 8);
+                        for (int i = 0; i < top; i++)
+                        {
+                            double candR = Math.Sqrt((areas.Length > i ? areas[i].D : 0) / Math.PI);
+                            report.Candidates.Add(new MatchCandidateInfo
+                            {
+                                Index = i + 1,
+                                IsSelected = i == chosenIdx,
+                                PixelX = cols[i].D,
+                                PixelY = rows[i].D,
+                                Radius = candR,
+                                Circularity = circs.Length > i ? circs[i].D : 0.5,
+                                Area = areas.Length > i ? areas[i].D : 0
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn(nameof(CalibrationService), $"报告候选明细组装失败（不影响识别）: {ex.Message}");
+            }
+
+            if (!success)
+            {
+                report.Verdict = "失败";
+                report.Score = 0;
+                sb.AppendLine(failDetail ?? "识别失败");
+                report.Detail = sb.ToString();
+                return report;
+            }
+
+            // ── 综合评分（0~100）：圆度0.35 + 半径一致性0.25 + 唯一性0.2 + 可预测性0.2 ──
+            double circScore = Clamp01((circ - 0.4) / 0.6);                       // 圆度 0.4→0, 1.0→1
+            double radiusScore;
+            string radiusLine;
+            if (_referenceMarkRadius > 1.0 && radiusVal > 0.001)
+            {
+                double devRatio = Math.Abs(radiusVal - _referenceMarkRadius) / _referenceMarkRadius;
+                radiusScore = Clamp01(1 - devRatio / 0.4);                        // 偏差≤40% 内线性
+                radiusLine = $"半径一致性: {radiusVal:F1}px vs 参考 {_referenceMarkRadius:F1}px (偏差 {devRatio * 100:F0}%) → 分 {radiusScore * 100:F0}";
+            }
+            else
+            {
+                radiusScore = 0.8; // 无参考半径（首点/预览）中性给分
+                radiusLine = radiusVal > 0.001
+                    ? $"半径: {radiusVal:F1}px（暂无参考，中性分 80）"
+                    : "半径: 未知";
+            }
+
+            double uniqueScore;
+            string uniqueLine;
+            if (candidateCount <= 1 || nearestOtherDist >= double.MaxValue)
+            {
+                uniqueScore = 1.0;
+                uniqueLine = "唯一候选，无歧义 → 分 100";
+            }
+            else if (nearestOtherDist > 2.5 * Math.Max(radiusVal, 10))
+            {
+                uniqueScore = 1.0;
+                uniqueLine = $"另 {candidateCount - 1} 个候选均远离选中点(最近 {nearestOtherDist:F0}px)，无歧义 → 分 100";
+            }
+            else
+            {
+                uniqueScore = 0.35 + 0.65 * Clamp01(nearestOtherDist / (2.5 * Math.Max(radiusVal, 10)));
+                uniqueLine = $"⚠ 存在近距离干扰候选(最近 {nearestOtherDist:F0}px) → 分 {uniqueScore * 100:F0}";
+            }
+
+            double devScore;
+            string devLine;
+            if (expectedPx > 0 && expectedPy > 0)
+            {
+                double dev = Math.Sqrt((finalPixelX - expectedPx) * (finalPixelX - expectedPx)
+                                     + (finalPixelY - expectedPy) * (finalPixelY - expectedPy));
+                devScore = Clamp01(1 - dev / (3 * Math.Max(searchRadius, 10)));
+                devLine = $"距期望位置 {dev:F0}px (搜索半径 {searchRadius:F0}) → 分 {devScore * 100:F0}";
+            }
+            else
+            {
+                devScore = 0.85;
+                devLine = "无期望位置引导(全图搜索)，中性分 85";
+            }
+
+            double score = 100 * (0.35 * circScore + 0.25 * radiusScore + 0.2 * uniqueScore + 0.2 * devScore);
+            if (usedFallback)
+            {
+                score *= 0.85; // 降级路径（动态阈值/区域中心）命中 → 打折
+            }
+            score = Math.Max(1, Math.Min(99, score));
+
+            report.Score = score;
+            report.Verdict = ScoreVerdict(score);
+            sb.AppendLine($"{pointTag} 候选 {candidateCount} 个，综合匹配分 {score:F0}/100 · {report.Verdict}");
+            sb.AppendLine($"圆度: {circ:F2} (权重0.35) → 分 {circScore * 100:F0}" + (usedFallback ? "  [降级路径命中，总分×0.85]" : ""));
+            sb.AppendLine(radiusLine);
+            sb.AppendLine(uniqueLine);
+            sb.AppendLine(devLine);
+            if (report.Candidates.Count > 0)
+            {
+                sb.AppendLine("─ 候选明细 ─");
+                foreach (var c in report.Candidates)
+                {
+                    sb.AppendLine($"{(c.IsSelected ? "★选中" : "  候选")} #{c.Index}: P({c.PixelX:F0},{c.PixelY:F0}) 半径{c.Radius:F1}px 圆度{c.Circularity:F2}" +
+                                 (c.IsSelected ? "  ← 识别结果" : (c.Radius > radiusVal * 0.6 && c.Radius < radiusVal * 1.4 ? "  ⚠同尺度(可能干扰)" : "")));
+                }
+            }
+            sb.AppendLine(score >= 70
+                ? "→ 该参数下识别质量高，走位采样不易丢点。"
+                : "→ 分数偏低：建议优先放宽圆度/阈值或增大搜索半径；若候选有干扰请用面积/圆度滤除。");
+            report.Detail = sb.ToString();
+            return report;
+        }
 
         #region 场景式逐步上屏（HDevelop 语义：算子执行一步、结果上屏一步）
 
@@ -201,6 +398,47 @@ namespace Grayson.Vision.HalconWrapper.Calibration
             }
         }
 
+        /// <summary>
+        /// 把匹配分叠加到视图左上角（黑底大号文字，任意亮度底图可读）。
+        /// 分数颜色：≥85 绿、≥70 黄绿、≥55 黄、&lt;55 红；失败显示红色"未识别"。
+        /// </summary>
+        private void SubmitScoreOverlay(FeatureMatchReport report)
+        {
+            if (report == null) return;
+            var win = DisplayContext?.AsWindow();
+            string text;
+            string color;
+            if (!report.Success)
+            {
+                text = "✗ 未识别 (0/100)";
+                color = "red";
+            }
+            else
+            {
+                text = $"匹配分 {report.Score:F0}/100 · {report.Verdict}";
+                color = report.Score >= 85 ? "lime green" : report.Score >= 70 ? "yellow green" : report.Score >= 55 ? "yellow" : "orange red";
+            }
+            try
+            {
+                if (win != null && win.IsReady)
+                {
+                    win.DrawRecorded(w =>
+                    {
+                        w.SetFont("-Adobe-Helvetica-Bold-*-*-*-*-28-*-*-*-*-*-*");
+                        HalconGlobalHelper.DispTextSafe(w, text, "window", 8, 8, color);
+                    });
+                }
+                else
+                {
+                    SubmitText(text, 10, 10, color);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn(nameof(CalibrationService), $"匹配分叠加失败（已忽略）: {ex.Message}");
+            }
+        }
+
         /// <summary>提交圆标记（image 坐标系；失败仅记日志）</summary>
         private void SubmitCircle(double row, double col, double radius, string color)
         {
@@ -228,17 +466,66 @@ namespace Grayson.Vision.HalconWrapper.Calibration
         /// <param name="row">识别中心行（全图像素坐标）</param>
         /// <param name="col">识别中心列（全图像素坐标）</param>
         /// <param name="label">随标记显示的说明文字（点号+像素坐标）</param>
-        private void SubmitResultMarker(double row, double col, string label)
+        /// <param name="imgWidth">图像宽（列数）；&gt;0 时额外画"视野中心 → 识别中心"的偏移向量</param>
+        /// <param name="imgHeight">图像高（行数）；同 imgWidth</param>
+        private void SubmitResultMarker(double row, double col, string label,
+            double imgWidth = 0, double imgHeight = 0)
         {
-            // 十字：黑色大十字打底 + 绿色小十字叠上，形成黑描边效果（两色对比任何底色可见）
-            SubmitCross(row, col, 100, "black");
-            SubmitCross(row, col, 80, "green");
-            // 圆环：黑外圈 + 绿内圈，把识别中心圈出来（尺寸远大于 Mark 本体，一眼定位）
-            SubmitCircle(row, col, 70, "black");
-            SubmitCircle(row, col, 65, "green");
-            // 文字：黑色阴影偏移 2px + 黄色前景，避免亮背景上黄字不可读
             double textRow = Math.Max(0, row - 90);
             double textCol = Math.Max(10, col + 45);
+
+            // ★ HDevelop 式直通：拿到 HWindow 想画什么直接调算子，不必再为每种画法去
+            //   扩展 ICalibrationDisplayContext 接口。下面每一行都与 HDevelop 里的
+            //   dev_set_color + disp_cross / disp_circle / disp_arrow / disp_text 一一对应。
+            //   走 DrawRecorded：内容登记进场景，用户缩放/平移后由显示层重放本闭包。
+            //   闭包只捕获值类型与字符串，重放无生命周期风险。
+            var win = DisplayContext.AsWindow();
+            if (win != null && win.IsReady)
+            {
+                win.DrawRecorded(w =>
+                {
+                    // 十字：黑色大十字打底 + 绿色小十字叠上，形成黑描边效果（两色对比任何底色可见）
+                    w.SetColor("black");
+                    HOperatorSet.DispCross(w, row, col, 100, 0.785398);
+                    w.SetColor("green");
+                    HOperatorSet.DispCross(w, row, col, 80, 0.785398);
+
+                    // 圆环：黑外圈 + 绿内圈，把识别中心圈出来（尺寸远大于 Mark 本体，一眼定位）
+                    w.SetColor("black");
+                    HOperatorSet.DispCircle(w, row, col, 70);
+                    w.SetColor("green");
+                    HOperatorSet.DispCircle(w, row, col, 65);
+
+                    // ★ 场景式 API 画不出来的增强：视野中心 → 识别中心的偏移向量。
+                    //   Mark 越靠近视野边缘箭头越长，一眼判断该点是否"半出视野/落在暗角/畸变大"，
+                    //   这正是九点标定个别点取错特征、RMS 偏大的高频根因。
+                    //   （row 对应图像高、col 对应图像宽，注意别写反）
+                    if (imgWidth > 0 && imgHeight > 0)
+                    {
+                        double centerRow = imgHeight / 2.0;
+                        double centerCol = imgWidth / 2.0;
+                        double offset = Math.Sqrt((row - centerRow) * (row - centerRow)
+                                                + (col - centerCol) * (col - centerCol));
+                        w.SetColor("orange");
+                        w.SetLineWidth(2);
+                        HOperatorSet.DispArrow(w, centerRow, centerCol, row, col, 4);
+                        w.SetColor("white");
+                        HalconGlobalHelper.DispTextSafe(w, $"距视野中心 {offset:F0}px", "image",
+                            (row + centerRow) / 2.0, (col + centerCol) / 2.0, "white");
+                    }
+
+                    // 文字：黑色阴影偏移 2px + 黄色前景，避免亮背景上黄字不可读
+                    HalconGlobalHelper.DispTextSafe(w, label, "image", textRow + 2, textCol + 2, "black");
+                    HalconGlobalHelper.DispTextSafe(w, label, "image", textRow, textCol, "yellow");
+                });
+                return;
+            }
+
+            // 降级：宿主未提供直通通道（旧版显示上下文实现）时沿用场景式 API，行为与改造前一致
+            SubmitCross(row, col, 100, "black");
+            SubmitCross(row, col, 80, "green");
+            SubmitCircle(row, col, 70, "black");
+            SubmitCircle(row, col, 65, "green");
             SubmitText(label, textRow + 2, textCol + 2, "black");
             SubmitText(label, textRow, textCol, "yellow");
         }
@@ -381,6 +668,60 @@ namespace Grayson.Vision.HalconWrapper.Calibration
             return bestIdx;
         }
 
+        /// <summary>
+        /// 组装十字 Mark 匹配质量报告（成功路径）：found=找到近似垂直直线对（精确十字）→高分；
+        /// 兜底取最大候选区域中心 → 中低分；失败 → 0 分 + 诊断。
+        /// </summary>
+        private FeatureMatchReport ComposeCrossReport(
+            int candidateCount, bool found, double angleDevDeg,
+            double centerCol, double centerRow,
+            bool success, string failDetail, string pointTag)
+        {
+            var report = new FeatureMatchReport
+            {
+                Success = success,
+                PixelX = centerCol,
+                PixelY = centerRow,
+                CandidateCount = candidateCount,
+                UsedFallback = !found,
+                Verdict = "失败",
+                Score = 0
+            };
+
+            var sb = new System.Text.StringBuilder();
+            if (!success)
+            {
+                sb.AppendLine(failDetail ?? "十字 Mark 识别失败");
+                report.Detail = sb.ToString();
+                return report;
+            }
+
+            double score;
+            if (found)
+            {
+                // 精确命中：直线对夹角越接近 90° 分越高；夹角误差容忍 30°
+                double angleScore = Clamp01(1 - Math.Abs(angleDevDeg) / 30.0);
+                double uniqueScore = candidateCount <= 1 ? 1.0 : 0.85; // 多候选略降
+                score = 100 * (0.7 * (0.75 + 0.25 * angleScore) + 0.3 * uniqueScore);
+                sb.AppendLine($"{pointTag} 十字直线对命中：候选 {candidateCount} 个，综合匹配分 {score:F0}/100 · {ScoreVerdict(score)}");
+                sb.AppendLine($"两臂夹角误差 {Math.Abs(angleDevDeg):F1}°（容忍 30°）→ 角度分 {angleScore * 100:F0}");
+                sb.AppendLine(candidateCount > 1 ? $"⚠ 存在 {candidateCount} 个候选，直线对已按期望位置择近（如误配请调面积/阈值过滤干扰）" : "唯一候选，无歧义");
+                sb.AppendLine(score >= 70 ? "→ 十字结构清晰，走位采样不易丢点。" : "→ 分数偏低：十字两臂夹角偏差大或候选有干扰，建议检查画面/参数。");
+            }
+            else
+            {
+                // 兜底：未找到垂直直线对，取最大候选区域中心（十字可能残缺/遮挡）
+                score = 45 + 15 * Clamp01((candidateCount - 1) / 3.0);
+                score = Math.Min(score, 65);
+                sb.AppendLine($"{pointTag} ⚠ 兜底命中（未找到垂直直线对，取最大候选区域中心）→ 分 {score:F0}/100 · {ScoreVerdict(score)}");
+                sb.AppendLine("两臂未能形成近似垂直直线对：十字可能残缺、粘连或对比度不足；建议调阈值/检查 Mark 完整性。");
+            }
+            report.Score = Math.Max(1, Math.Min(99, score));
+            report.Verdict = ScoreVerdict(report.Score);
+            report.Detail = sb.ToString();
+            return report;
+        }
+
         /// <summary>平方距离（避免开方）</summary>
         private static double DistanceSq(double dx, double dy)
         {
@@ -445,8 +786,23 @@ namespace Grayson.Vision.HalconWrapper.Calibration
         {
             try
             {
-                // ── 诊断日志：拟合前逐点打印原始数据，便于排查"哪个点像素坐标不可靠" ──
+                // ── 2026-09-04 前置硬校验（防病态输入打到 HALCON 算子层）──
+                //   vector_to_hom_mat2d 求 2D 映射至少 4 对点；向导层要求 ≥6，此处兜底 4。
+                if (pixelXList == null || pixelYList == null || worldXList == null || worldYList == null)
+                {
+                    return Result<CalibrationResult>.Fail("标定输入坐标数组为空");
+                }
                 int n = pixelXList.Length;
+                if (n != pixelYList.Length || n != worldXList.Length || n != worldYList.Length)
+                {
+                    return Result<CalibrationResult>.Fail("标定像素/世界坐标数组长度不一致");
+                }
+                if (n < 4)
+                {
+                    return Result<CalibrationResult>.Fail("标定点数不足：vector_to_hom_mat2d 至少需要 4 对点（推荐 9 点）");
+                }
+
+                // ── 诊断日志：拟合前逐点打印原始数据，便于排查"哪个点像素坐标不可靠" ──
                 LogBus.Info(nameof(CalibrationService), $"═══ 九点标定拟合开始，共 {n} 个点 ═══");
                 for (int i = 0; i < n; i++)
                 {
@@ -454,17 +810,12 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                         $"  点{i + 1}: Pixel({pixelXList[i]:F2}, {pixelYList[i]:F2})  World({worldXList[i]:F3}, {worldYList[i]:F3})");
                 }
 
-                // ── 数据合理性检查：像素坐标不能全相同（Mark 没动/识别始终命中同一处） ──
-                bool allPxSame = true, allPySame = true;
-                for (int i = 1; i < n; i++)
+                // ── 数据合理性检查：像素坐标必须二维展开，否则矩阵病态/无解（原仅告警，现直接拦下） ──
+                string degenerate = Calib2DTool.CheckDegeneratePoints(pixelXList, pixelYList);
+                if (degenerate != null)
                 {
-                    if (Math.Abs(pixelXList[i] - pixelXList[0]) > 0.1) allPxSame = false;
-                    if (Math.Abs(pixelYList[i] - pixelYList[0]) > 0.1) allPySame = false;
-                }
-                if (allPxSame && allPySame)
-                {
-                    LogBus.Error(nameof(CalibrationService),
-                        "⚠ 所有点的像素坐标几乎相同——Mark 识别可能始终命中同一位置或未真正走位！RMS 必然异常。");
+                    LogBus.Error(nameof(CalibrationService), "⚠ " + degenerate);
+                    return Result<CalibrationResult>.Fail(degenerate);
                 }
 
                 HTuple px = new HTuple(pixelXList);
@@ -503,16 +854,132 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 var save = Calib2DTool.SaveHomMatToFile(res.Data, tmp);
                 if (!save.Success) return Result<CalibrationResult>.Fail("矩阵保存失败: " + save.Message);
 
+                // ── 矩阵健康检查（面试/现场亮点：不止 RMS，还要度量矩阵几何合理性）──
+                // ① 两轴像素当量一致性：理想正交安装下 H11≈H22（像素→mm 缩放应各向同性）
+                // ② 正交性：|H12|、|H21| 相对主轴缩放应很小（否则轴/相机安装有剪切）
+                // ③ 行列式：负值 = 镜像变换（轴方向/相机成像镜像，标定语义可能不对）
+                // ④ 网格重建：把采样像素点映射回世界，检查 3x3 网格边长一致性（±10%）与行/列夹角正交性
+                string health = BuildHomMatHealthReport(res.Data, px, py, wx, wy, rms);
+
                 return Result<CalibrationResult>.Ok(new CalibrationResult
                 {
                     SavedFilePath = tmp,
-                    RmsError = rms
+                    RmsError = rms,
+                    HealthReport = health
                 });
             }
             catch (Exception ex)
             {
                 return Result<CalibrationResult>.Fail("标定计算异常: " + ex.Message, -1, ex);
             }
+        }
+
+        /// <summary>
+        /// 构建标定矩阵健康检查报告（多行文本，供向导展示）。
+        /// 指标：两轴像素当量一致性 / 正交性(剪切) / 行列式(镜像检测) / 网格重建边长与夹角 / RMS 阈值。
+        /// </summary>
+        private static string BuildHomMatHealthReport(HTuple hom, HTuple px, HTuple py, HTuple wx, HTuple wy, double rms)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("═══ 标定矩阵健康检查 ═══");
+            try
+            {
+                double h11 = hom[0].D, h12 = hom[1].D, h13 = hom[2].D;
+                double h21 = hom[3].D, h22 = hom[4].D, h23 = hom[5].D;
+
+                // ① 两轴像素当量一致性（2026-09-09 改为旋转不变口径）
+                //    ⚠ 旧判据拿 |h11| vs |h22| 比对：图像旋转 ~45° 时二者都趋近 0，判据失效
+                //      （本工位图像旋转 151°，h11=-0.0607 / h22=+0.0866，看起来"差 30%"纯属巧合，
+                //       换个旋转角就可能完全漏报）。
+                //    正确做法：
+                //      · 两轴当量取【列向量范数】sCol=√(h11²+h21²)、sRow=√(h12²+h22²)（旋转不变）
+                //      · 更硬的判据是【奇异值比 σ1/σ2】（AᵀA 特征值开方），对旋转/镜像完全不变；
+                //        平面成像 + 方形像素下必须 ≈1，偏离即"九点数据被污染"。
+                //    为什么必须硬拦：落点用差分 P_go−P_photo=H(p_tip)−H(u)，
+                //    形状失真会按差分距离线性放大（本工位失真 22.7% × 84mm ≈ 19mm，
+                //    而九点 RMS 只有 0.541mm —— 残差小根本发现不了）。
+                double sCol = Math.Sqrt(h11 * h11 + h21 * h21);
+                double sRow = Math.Sqrt(h12 * h12 + h22 * h22);
+                double scaleRatio = Math.Abs(sCol - sRow) / Math.Max(sCol, sRow);
+                double trA = h11 * h11 + h21 * h21 + h12 * h12 + h22 * h22;
+                double detA = h11 * h22 - h12 * h21;
+                double discA = Math.Sqrt(Math.Max(0.0, trA * trA - 4.0 * detA * detA));
+                double sig1 = Math.Sqrt(Math.Max(0.0, (trA + discA) / 2.0));
+                double sig2 = Math.Sqrt(Math.Max(1e-18, (trA - discA) / 2.0));
+                double aniso = (sig2 > 1e-12) ? sig1 / sig2 : double.NaN;
+                bool badShape = double.IsNaN(aniso) || Math.Abs(aniso - 1.0) > 0.03;
+                sb.Append($"① 像素当量: col={sCol:F5} row={sRow:F5} mm/px，两轴差 {scaleRatio * 100:F2}% ｜ "
+                    + (badShape
+                        ? $"⛔ 形状非法（各向异性 σ1/σ2={aniso:F3}，应≈1.000）→ 九点数据被污染（走位没到位/点对错位/采样 Z 不一致/模板误匹配），此矩阵禁止用于引导"
+                        : $"✓ 形状合法（各向异性 σ1/σ2={aniso:F3}）"));
+                sb.AppendLine();
+
+                // ② 正交性：非对角项相对主轴缩放
+                double shearX = Math.Abs(h12) / Math.Max(Math.Abs(h11), 1e-9);
+                double shearY = Math.Abs(h21) / Math.Max(Math.Abs(h22), 1e-9);
+                sb.Append($"② 正交性: 剪切比 X={shearX * 100:F2}% Y={shearY * 100:F2}% "
+                    + (shearX > 0.05 || shearY > 0.05 ? "⚠ 剪切偏大，相机/轴安装有倾斜" : "✓ 近正交"));
+                sb.AppendLine();
+
+                // ③ 行列式：负值 = 镜像（EyeInHand 相机随动为固有镜像，正常；EyeToHand 固定相机才需核查）
+                double det = h11 * h22 - h12 * h21;
+                sb.Append($"③ 行列式: det={det:F4} "
+                    + (det < 0
+                        ? "⚠ 负值=镜像变换（相机随动/EyeInHand 属固有镜像属正常；固定相机需检查轴方向/相机成像）"
+                        : "✓ 正向（无镜像）"));
+                sb.AppendLine();
+
+                // ④ 网格重建：像素→世界后检查 3x3 网格边长一致性（CV）与行/列夹角
+                int n = px.Length;
+                if (n >= 9)
+                {
+                    HOperatorSet.AffineTransPoint2d(hom, px, py, out HTuple wxp, out HTuple wyp);
+                    var hDists = new List<double>();
+                    for (int row = 0; row < 3; row++)
+                        for (int c = 0; c < 2; c++)
+                        {
+                            int i = row * 3 + c, j = i + 1;
+                            hDists.Add(Math.Sqrt(Math.Pow(wxp[i].D - wxp[j].D, 2) + Math.Pow(wyp[i].D - wyp[j].D, 2)));
+                        }
+                    var vDists = new List<double>();
+                    for (int col = 0; col < 3; col++)
+                        for (int r = 0; r < 2; r++)
+                        {
+                            int i = r * 3 + col, j = i + 3;
+                            vDists.Add(Math.Sqrt(Math.Pow(wxp[i].D - wxp[j].D, 2) + Math.Pow(wyp[i].D - wyp[j].D, 2)));
+                        }
+                    double hMean = hDists.Average(), hCv = StdDev(hDists) / Math.Max(hMean, 1e-9);
+                    double vMean = vDists.Average(), vCv = StdDev(vDists) / Math.Max(vMean, 1e-9);
+                    sb.Append($"④ 网格重建: 行边长均值 {hMean:F2}mm(CV={hCv * 100:F1}%)，列边长均值 {vMean:F2}mm(CV={vCv * 100:F1}%) "
+                        + (hCv > 0.1 || vCv > 0.1 ? "⚠ 边长离散大，个别采样点不可靠" : "✓ 网格规整"));
+                    sb.AppendLine();
+
+                    // ⑤ 行/列夹角正交性（中心点上下向量 vs 左右向量）
+                    double vx = wxp[7].D - wxp[1].D, vy = wyp[7].D - wyp[1].D;
+                    double hx = wxp[5].D - wxp[3].D, hy = wyp[5].D - wyp[3].D;
+                    double cosAng = (vx * hx + vy * hy) / (Math.Sqrt(vx * vx + vy * vy) * Math.Sqrt(hx * hx + hy * hy));
+                    double angDeg = Math.Acos(Math.Max(-1, Math.Min(1, cosAng))) * 180.0 / Math.PI;
+                    sb.Append($"⑤ 网格夹角: {angDeg:F1}° "
+                        + (Math.Abs(angDeg - 90) > 3 ? "⚠ 偏离 90°，轴/相机安装不垂直" : "✓ 近正交"));
+                    sb.AppendLine();
+                }
+
+                sb.Append($"RMS 重投影误差: {rms:F4} mm" + (rms > 0.5 ? " ⚠ 建议 <0.5mm 才可用于高精度引导" : " ✓ 可接受"));
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"健康检查异常（不影响矩阵）: {ex.Message}");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>样本标准差</summary>
+        private static double StdDev(IEnumerable<double> vals)
+        {
+            var arr = vals as double[] ?? vals.ToArray();
+            if (arr.Length == 0) return 0;
+            double mean = arr.Average();
+            return Math.Sqrt(arr.Sum(v => (v - mean) * (v - mean)) / arr.Length);
         }
 
         public Result SaveHomMatFile(string sourceFilePath, string destFilePath)
@@ -677,6 +1144,13 @@ namespace Grayson.Vision.HalconWrapper.Calibration
             HObject hImage = ResolveHObject(imageHandle);
             if (hImage == null || !hImage.IsInitialized())
             {
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = false,
+                    Score = 0,
+                    Verdict = "失败",
+                    Detail = $"[标定点 #{pointIndex}] 提取失败：当前图像缓冲区无效或相机未成功取图。"
+                };
                 return Result<(double, double)>.Fail($"[标定点 #{pointIndex}] 提取失败：当前图像缓冲区无效或相机未成功取图。");
             }
 
@@ -691,6 +1165,8 @@ namespace Grayson.Vision.HalconWrapper.Calibration
 
             double searchRadius = ExtractOptions.SearchRadius;
             double fitRadius = 0;
+            // 本次提取是否走过降级路径（动态阈值兜底 / 区域中心兜底）——计入质量报告并打折
+            bool usedFallback = false;
 
             try
             {
@@ -771,13 +1247,37 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                     HObject dynUnion = null;
                     try
                     {
-                        // 均值窗口需显著大于 Mark（约 3 倍直径），保证 Mark 整体落在"局部背景"内
-                        int markDiameter = (int)Math.Ceiling(2.0 * Math.Sqrt(ExtractOptions.MaxArea / Math.PI));
-                        int meanWin = Math.Max(31, markDiameter * 3 | 1);
-                        HOperatorSet.MeanImage(imageReduced, out meanImage, meanWin, meanWin);
-                        HOperatorSet.DynThreshold(imageReduced, meanImage, out dynDark, 8, "dark");
-                        HOperatorSet.DynThreshold(imageReduced, meanImage, out dynLight, 8, "light");
-                        HOperatorSet.Union2(dynDark, dynLight, out dynUnion);
+                        // ★ 均值窗口修复（2026-09-03）：旧逻辑按 MaxArea 上限推算窗口尺寸——
+                        //   MaxArea 默认 999999 → markDiameter≈1128 → meanWin≈3385px，
+                        //   大于 ROI/局部图短边（SearchRadius=150 的 ROI 仅 ~300px），
+                        //   mean_image 抛 HALCON #3033 "Filter size exceeds image size"，
+                        //   兜底从未真正生效（日志"动态阈值兜底失败"刷屏）——暗/低对比 Mark
+                        //   在全局阈值无候选后必失败（九点边缘点 / 旋转点掉点的直接根因）。
+                        //   现改为：窗口 = 3×真实 Mark 直径（参考半径 2R；无参考时保守 ≥40px），
+                        //   clamp 到 [31, 局部图短边-2] 且奇数；图过小时跳过兜底不抛错。
+                        HOperatorSet.GetImageSize(imageReduced, out HTuple redRows, out HTuple redCols);
+                        int shortSide = (int)Math.Min(redRows.D, redCols.D);
+                        double markDiameterPx = _referenceMarkRadius > 1.0
+                            ? _referenceMarkRadius * 2.0
+                            : 60.0; // 无参考半径时保守取 60px 直径（约 3 倍于常见小 Mark）
+                        int meanWin = (int)Math.Ceiling(markDiameterPx * 3.0) | 1; // 3×直径，奇数
+                        if (meanWin < 31) meanWin = 31;
+                        int cap = (shortSide - 2) | 1;
+                        if (cap >= 31 && meanWin > cap) meanWin = cap;
+                        if (meanWin < 31 || meanWin >= shortSide)
+                        {
+                            // 局部图太小无法承载均值窗口：跳过动态阈值兜底（不抛错）
+                            LogBus.Warn(nameof(CalibrationService),
+                                $"动态阈值兜底跳过（局部图短边 {shortSide}px 过小，均值窗口需 {meanWin}px）");
+                            meanImage = null;
+                        }
+                        else
+                        {
+                            HOperatorSet.MeanImage(imageReduced, out meanImage, meanWin, meanWin);
+                            HOperatorSet.DynThreshold(imageReduced, meanImage, out dynDark, 8, "dark");
+                            HOperatorSet.DynThreshold(imageReduced, meanImage, out dynLight, 8, "light");
+                            HOperatorSet.Union2(dynDark, dynLight, out dynUnion);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -795,6 +1295,7 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                         DisposeAndNull(ref thresholdRegion);
                         thresholdRegion = dynUnion;
                         dynUnion = null;
+                        usedFallback = true; // 动态阈值兜底命中 → 报告打折提示
                         if (DebugDrawProcessEnabled)
                         {
                             SubmitRegion(thresholdRegion, 0, 0, "blue", 1);
@@ -827,6 +1328,13 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                         100, Math.Max(10, imgWidth.D - 560), "white");
                     SubmitText($"#{pointIndex} 未识别到 Mark 点（检查光源/曝光/ROI）",
                         20, 20, "red");
+                    LastMatchReport = ComposeCircleReport(null, 0, -1, -1, 0,
+                        expectedPx, expectedPy, searchRadius, usedFallback, false,
+                        $"[标定点 #{pointIndex}] 失败诊断：阈值分割区域数 {SafeCount(thresholdRegion)} → 几何筛选后候选 0 个。" +
+                        $"当前参数 圆度≥{ExtractOptions.MinCircularity:F2} 面积 {ExtractOptions.MinArea:F0}-{ExtractOptions.MaxArea:F0}。" +
+                        "若画面中 Mark 可见：放宽圆度下限或面积范围再试；若不可见则查光源/曝光/ROI。",
+                        $"#{pointIndex}");
+                    SubmitScoreOverlay(LastMatchReport);
                     return Result<(double, double)>.Fail($"[标定点 #{pointIndex}] 视觉算子未识别到符合几何圆度特征的 Mark 点，请检查光源与曝光！");
                 }
 
@@ -882,14 +1390,32 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 {
                     SubmitCircle(finalPixelY, finalPixelX, fitRadius, "red");
                 }
+                // 识别结果标注：把匹配分带进标签（如 "#5 92分"），随缩放跟随 —— 操作员不用切页看分数
                 SubmitResultMarker(finalPixelY, finalPixelX,
-                    $"#{pointIndex}  Px:{finalPixelX:F1}  Py:{finalPixelY:F1}");
+                    $"#{pointIndex}  Px:{finalPixelX:F1}  Py:{finalPixelY:F1}",
+                    imgWidth.D, imgHeight.D);
+
+                // 质量报告：候选明细 + 综合分（圆度/半径一致性/唯一性/可预测性）
+                LastMatchReport = ComposeCircleReport(selectedRegions, matchCount.I,
+                    finalPixelX, finalPixelY, fitRadius,
+                    expectedPx, expectedPy, searchRadius,
+                    usedFallback || fitRadius <= 0.0001, true, null, $"#{pointIndex}");
+                // 分数同步叠加到视图左上角（黄底绿字醒目；HDevelop 直通通道安全绘制）
+                SubmitScoreOverlay(LastMatchReport);
 
                 return Result<(double, double)>.Ok((finalPixelX, finalPixelY));
             }
             catch (Exception ex)
             {
                 LogBus.Error(nameof(CalibrationService), $"[标定点 #{pointIndex}] Halcon 算子执行异常: {ex.Message}");
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = false,
+                    Score = 0,
+                    Verdict = "失败",
+                    Detail = $"[标定点 #{pointIndex}] 算子执行异常: {ex.Message}\n" +
+                             "请检查图像格式/参数组合是否合法；日志已记录详细堆栈。"
+                };
                 return Result<(double, double)>.Fail($"算子执行异常: {ex.Message}");
             }
             finally
@@ -989,9 +1515,197 @@ namespace Grayson.Vision.HalconWrapper.Calibration
             {
                 case CalibrationFeatureType.CrossMark:
                     return ExtractCrossMarkPoint(imageHandle, pointIndex, expectedPx, expectedPy, forceFullImage);
+                case CalibrationFeatureType.TemplateMatch:
+                    return ExtractTemplateMatchPoint(imageHandle, pointIndex, expectedPx, expectedPy, forceFullImage);
                 case CalibrationFeatureType.CircleMark:
                 default:
                     return ExtractFeaturePoint(imageHandle, pointIndex, expectedPx, expectedPy, forceFullImage);
+            }
+        }
+
+        /// <summary>
+        /// 【模板匹配特征提取】按模板名（全局模板库 Shape/NCC）在当前图像上做模板匹配定位特征中心（v2 datum 口径）：
+        /// 1) 从 ExtractOptions 取模板名与参数（名称缺失/无候选 → 明确失败诊断）；
+        /// 2) 有期望位置时在期望点 ±SearchRadius 开搜索窗口——引擎内与模板内建 SearchRoi 取交集
+        ///    （ReduceDomain 不改变坐标系，匹配输出仍是全图坐标）；无期望位置或 forceFullImage=true 不加窗口；
+        /// 3) 引擎入口=TemplateManager.MatchWithDatum——与生产 ShapeMatch 节点 / 模板管理页实拍验证同一条
+        ///    "匹配锚点 → 卡尺精测 → datum"链路（唯一口径）：模板资产带卡尺且基准点=CircleCenter/LineIntersection 时，
+        ///    采样点=卡尺亚像素精测覆盖的 datum；无卡尺/基准点=Point 时 datum=锚点直出（同一语义默认，无"旧路径"分支）。
+        /// 与生产 ShapeMatch 节点同源——对光照/反光最稳，且能匹配"工件整体/正面图案"这类无圆十字 Mark 的特征源。
+        /// </summary>
+        private Result<(double PixelX, double PixelY)> ExtractTemplateMatchPoint(
+            object imageHandle,
+            int pointIndex,
+            double expectedPx,
+            double expectedPy,
+            bool forceFullImage = false)
+        {
+            string templateName = ExtractOptions?.TemplateName;
+            if (string.IsNullOrWhiteSpace(templateName))
+            {
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = false,
+                    Score = 0,
+                    Verdict = "失败",
+                    Detail = "[模板特征] 未选择模板：请在特征配置中选择已创建的模板（模板管理页创建），" +
+                             "或暂时切回十字 / 圆特征；吸放式标定中可对工件正面整体建模板。"
+                };
+                return Result<(double, double)>.Fail("模板特征：未选择模板。请在特征配置中选择模板后再试。");
+            }
+
+            HObject hImage = ResolveHObject(imageHandle);
+            if (hImage == null || !hImage.IsInitialized())
+            {
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = false,
+                    Score = 0,
+                    Verdict = "失败",
+                    Detail = $"[标定点 #{pointIndex}] 模板匹配提取失败：当前图像缓冲区无效或相机未成功取图。"
+                };
+                return Result<(double, double)>.Fail($"[标定点 #{pointIndex}] 提取失败：当前图像缓冲区无效或相机未成功取图。");
+            }
+
+            try
+            {
+                HOperatorSet.GetImageSize(hImage, out HTuple imgWidth, out HTuple imgHeight);
+                BeginScene(hImage); // 场景：底图 + 后续标记叠加
+
+                // 期望点搜索窗口：有期望位置且非强制全图时在期望点 ±SearchRadius 开窗
+                // （引擎内与模板内建 SearchRoi 取交集；此处只画示意框，实际裁剪由引擎完成）
+                bool hasExpected = expectedPx > 0 && expectedPy > 0;
+                bool useRoi = hasExpected && !forceFullImage;
+                if (useRoi)
+                {
+                    double sr = ExtractOptions.SearchRadius;
+                    double r1 = Math.Max(0, expectedPy - sr);
+                    double c1 = Math.Max(0, expectedPx - sr);
+                    double r2 = Math.Min(imgHeight.D - 1, expectedPy + sr);
+                    double c2 = Math.Min(imgWidth.D - 1, expectedPx + sr);
+                    HObject roiBox = null;
+                    try
+                    {
+                        HOperatorSet.GenRectangle1(out roiBox, r1, c1, r2, c2);
+                        SubmitRegion(roiBox, 0, 0, "green", 2);
+                    }
+                    catch { /* 叠加失败不阻断主流程 */ }
+                    finally
+                    {
+                        roiBox?.Dispose();
+                    }
+                }
+
+                // v2 唯一口径：MatchWithDatum（匹配锚点→卡尺精测→datum），与生产 ShapeMatch 节点/实拍验证同一条链路
+                var mgr = new TemplateManager();
+                var outRes = mgr.MatchWithDatum(
+                    templateName, hImage, ExtractOptions.TemplateMinScore,
+                    ExtractOptions.TemplateAngleStart, ExtractOptions.TemplateAngleEnd,
+                    hasExpected ? (double?)expectedPy : null,
+                    hasExpected ? (double?)expectedPx : null,
+                    useRoi ? (double?)ExtractOptions.SearchRadius : null);
+
+                if (!outRes.Success)
+                {
+                    LastMatchReport = new FeatureMatchReport
+                    {
+                        Success = false,
+                        Score = 0,
+                        Verdict = "失败",
+                        Detail = $"[标定点 #{pointIndex}] 模板匹配失败：{outRes.Message}"
+                    };
+                    SubmitText($"#{pointIndex} 模板匹配失败: {outRes.Message}", 20, 20, "red");
+                    return Result<(double, double)>.Fail($"[标定点 #{pointIndex}] 模板匹配失败: {outRes.Message}");
+                }
+
+                var mo = outRes.Data;
+                var chosen = mo.Match;
+                if (chosen == null)
+                {
+                    string roiDesc = useRoi ? $"（期望点附近 ±{ExtractOptions.SearchRadius:F0}px）" : "（全图/模板内建搜索框）";
+                    LastMatchReport = new FeatureMatchReport
+                    {
+                        Success = false,
+                        Score = 0,
+                        Verdict = "失败",
+                        Detail = $"[标定点 #{pointIndex}] 模板 [{templateName}] {roiDesc} 无候选，" +
+                                 $"最低分阈值 {ExtractOptions.TemplateMinScore:F2}。\n若画面中工件可见：降低 MinScore 或调整角度范围；" +
+                                 "若不可见则检查模板视角/曝光/是否回到拍照位。"
+                    };
+                    SubmitText($"#{pointIndex} 模板 [{templateName}] 无候选（MinScore {ExtractOptions.TemplateMinScore:F2}）", 20, 20, "red");
+                    return Result<(double, double)>.Fail($"[标定点 #{pointIndex}] 模板匹配无候选（MinScore={ExtractOptions.TemplateMinScore:F2}）。");
+                }
+
+                // 候选清单（引擎已按分数降序；供评分报告回放）
+                var hits = mo.Candidates;
+
+                // 采样点 = datum（v2 消费端特征点）：模板带卡尺且 CircleCenter/LineIntersection 时=卡尺亚像素
+                // 精测覆盖；无卡尺/基准点=Point 时=匹配锚点直出（同一语义默认）——喂九点拟合的就是该点。
+                double px = mo.DatumCol;
+                double py = mo.DatumRow;
+                double score100 = Math.Max(1, Math.Min(99, chosen.Score * 100));
+
+                // 结果层上屏：醒目标记 + 分数文字（左上角）+ 精测信息
+                string refineTag = mo.RefinedByCaliper ? $"  精测:{mo.RefineKind}" : "";
+                SubmitResultMarker(py, px,
+                    $"#{pointIndex}  Px:{px:F1}  Py:{py:F1}  分:{chosen.Score * 100:F0}  角:{chosen.RotateDegree:F1}°{refineTag}",
+                    imgWidth.D, imgHeight.D);
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"#{pointIndex} 模板 [{templateName}] 候选 {hits.Count} 个，综合匹配分 {score100:F0}/100 · {ScoreVerdict(score100)}");
+                sb.AppendLine($"匹配分: {chosen.Score:F3}（模板 MinScore {ExtractOptions.TemplateMinScore:F2}）  角度: {chosen.RotateDegree:F1}°");
+                sb.AppendLine($"锚点: ({chosen.PixelCol:F1}, {chosen.PixelRow:F1})  →  基准点(datum): ({px:F1}, {py:F1})" +
+                    (mo.RefinedByCaliper ? $"  [{mo.RefineKind} 卡尺亚像素精测]" : "  [锚点直出]") +
+                    (useRoi ? "  [期望点±局部搜索]" : "  [全图/模板内建搜索框]"));
+                sb.AppendLine(score100 >= 70
+                    ? "→ 模板命中分数高，走位/旋转采样不易丢点。"
+                    : "→ 分数偏低：建议降低 MinScore 或检查模板与当前成像（光照/角度）差异。");
+                if (mo.Issues.Count > 0)
+                {
+                    sb.AppendLine("⚠ " + string.Join("；", mo.Issues));
+                }
+
+                var candidates = new List<MatchCandidateInfo>();
+                for (int i = 0; i < Math.Min(hits.Count, 8); i++)
+                {
+                    var h = hits[i];
+                    candidates.Add(new MatchCandidateInfo
+                    {
+                        Index = i + 1,
+                        IsSelected = h == chosen,
+                        PixelX = h.PixelCol,
+                        PixelY = h.PixelRow,
+                        Score = h.Score * 100,
+                        Radius = 0,
+                        Circularity = 0
+                    });
+                }
+
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = true,
+                    Score = score100,
+                    Verdict = ScoreVerdict(score100),
+                    Detail = sb.ToString(),
+                    CandidateCount = hits.Count,
+                    Candidates = candidates,
+                    PixelX = px,
+                    PixelY = py,
+                    UsedFallback = false
+                };
+                return Result<(double, double)>.Ok((px, py));
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error(nameof(CalibrationService), $"模板匹配提取异常: {ex.Message}");
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = false,
+                    Score = 0,
+                    Verdict = "失败",
+                    Detail = $"[标定点 #{pointIndex}] 模板匹配算子异常: {ex.Message}"
+                };
+                return Result<(double, double)>.Fail($"模板匹配算子执行异常: {ex.Message}");
             }
         }
 
@@ -1012,6 +1726,9 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                     return ExtractFeaturePoint(imageHandle, 0, -1, -1);
                 case CalibrationFeatureType.CrossMark:
                     return ExtractCrossMarkPoint(imageHandle, 0, -1, -1);
+                case CalibrationFeatureType.TemplateMatch:
+                    // 预览 = 全图模板匹配（无期望位置）：所见即所得验证模板与当前成像是否匹配
+                    return ExtractTemplateMatchPoint(imageHandle, 0, -1, -1);
                 default:
                     return Result<(double, double)>.Fail($"不支持的特征类型: {featureType}");
             }
@@ -1186,6 +1903,12 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 {
                     // 失败路径：场景中已逐步上屏阈值/连通域结果，此处只补失败提示
                     SubmitText($"#{pointIndex} 未检测到十字 Mark（检查光源/曝光/对焦）", 20, 20, "red");
+                    LastMatchReport = ComposeCrossReport(candCount.I, false, 0, -1, -1, false,
+                        $"[标定点 #{pointIndex}] 十字 Mark 失败诊断：暗/亮全局阈值+动态阈值均无候选。" +
+                        $"当前参数 面积 {ExtractOptions.CrossMinArea:F0}-{ExtractOptions.CrossMaxArea:F0}，宽高 {ExtractOptions.CrossMinSize:F0}-{ExtractOptions.CrossMaxSize:F0}。" +
+                        "若画面中十字可见：放宽面积/宽高范围或调整暗/亮阈值再试。",
+                        $"#{pointIndex}");
+                    SubmitScoreOverlay(LastMatchReport);
                     return Result<(double, double)>.Fail($"[标定点 #{pointIndex}] 十字 Mark 提取失败：阈值分割后无候选区域，请检查光源与曝光。");
                 }
 
@@ -1248,6 +1971,7 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 bool found = false;
                 bool hasExpected = expectedPx > 0 && expectedPy > 0;
                 double bestPairDistSq = double.MaxValue;
+                double chosenAngleDevDeg = 0; // 被采纳直线对的夹角偏差（用于匹配分）
                 const double AngleTolerance = 30.0;   // 与 90° 的允许偏差
                 const double MaxDistToLines = 120.0;  // 交点距两线段的最大距离
 
@@ -1305,6 +2029,7 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                         centerRow = ix;
                         centerCol = iy;
                         found = true;
+                        chosenAngleDevDeg = Math.Abs(diff - 90.0);
                     }
                 }
 
@@ -1340,11 +2065,23 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                     : $"#{pointIndex}·兜底最大区域  Px:{centerCol:F1}  Py:{centerRow:F1}";
                 SubmitResultMarker(centerRow, centerCol, centerLabel);
 
+                // 质量报告（十字）：found=精确命中按夹角误差给分；兜底取区域中心则降分提示
+                LastMatchReport = ComposeCrossReport(candCount.I, found, chosenAngleDevDeg,
+                    centerCol, centerRow, true, null, $"#{pointIndex}");
+                SubmitScoreOverlay(LastMatchReport);
+
                 return Result<(double, double)>.Ok((centerCol, centerRow));
             }
             catch (Exception ex)
             {
                 LogBus.Error(nameof(CalibrationService), $"十字 Mark 提取异常: {ex.Message}");
+                LastMatchReport = new FeatureMatchReport
+                {
+                    Success = false,
+                    Score = 0,
+                    Verdict = "失败",
+                    Detail = $"[标定点 #{pointIndex}] 十字 Mark 算子执行异常: {ex.Message}"
+                };
                 return Result<(double, double)>.Fail($"十字 Mark 算子执行异常: {ex.Message}");
             }
             finally

@@ -68,17 +68,30 @@ namespace Grayson.Vision.Core.Devices
             var list = new List<DeviceInfo>();
             foreach (var plugin in _pluginManager.LoadedPlugins)
             {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     Result<List<DeviceInfo>> result = plugin.EnumerateDevices();
+                    sw.Stop();
+                    int count = result?.Data?.Count ?? 0;
                     if (result?.Success == true && result.Data != null)
                     {
                         list.AddRange(result.Data);
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[DevicePool] 扫描插件 [{plugin.BrandName}] 完成: 发现 {count} 台, 耗时 {sw.ElapsedMilliseconds}ms");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[DevicePool] 扫描插件 [{plugin.BrandName}] 失败: {(result == null ? "返回 null" : result.Message)}");
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 忽略单个驱动扫描失败
+                    sw.Stop();
+                    // 单个驱动扫描失败不应中断整体扫描，但记录原因便于排查"某类设备扫不到"
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[DevicePool] 扫描插件 [{plugin.BrandName}] 异常 (耗时 {sw.ElapsedMilliseconds}ms): {ex.Message}");
                 }
             }
             return list;

@@ -3,6 +3,7 @@ using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -24,7 +25,7 @@ namespace Plugins.Camera.Basler
     ///
     /// 硬件访问全部经 BaslerSdkFactory 选择的适配层完成：
     /// - 装有 pylon SDK（DLLLib\Basler.Pylon.dll）→ 真实相机；
-    /// - 未装 → 离线仿真相机（合成麻将测试图），流程可先行联调。
+    /// - 未装 → 离线仿真相机（合成工件测试图），流程可先行联调。
     /// </summary>
     public class BaslerCamera : ICamera
     {
@@ -114,9 +115,12 @@ namespace Plugins.Camera.Basler
 
                 // 连接后双向同步参数：
                 // 先从硬件读回当前值，再把本地配置（如有）覆盖下发
+                var syncSw = System.Diagnostics.Stopwatch.StartNew();
                 SyncTriggerModeFromDevice();
                 SyncParamsFromDevice();
                 SyncParamsToDevice();
+                syncSw.Stop();
+                System.Diagnostics.Debug.WriteLine($"[Basler] Connect 参数同步耗时 {syncSw.ElapsedMilliseconds} ms（含读回+下发）");
 
                 return Result.Ok();
             }
@@ -347,6 +351,18 @@ namespace Plugins.Camera.Basler
                 if (key == "IP" || key == "Port" || key == "TriggerModeSelect" ||
                     key == "TriggerSource" || key == "TriggerMode" || key == "SaveImageFile" ||
                     key == "PixelFormat")
+                {
+                    continue;
+                }
+
+                // ★ 只读节点黑名单（2026-09-01 修复「连接慢 5-8s」）：
+                //   SyncParamsFromDevice 会把 ResultingFrameRate/Width/Height 等只读节点读进
+                //   ConfigParams，这里再写回硬件必然 InvalidOperationException；GigE 上每次失败
+                //   的寄存器写都要超时重试 → 连接被拖慢到 5-8s。只读节点一律跳过下发。
+                if (key == "ResultingFrameRate" || key == "Width" || key == "Height" ||
+                    key == "PayloadSize" || key == "OffsetX" || key == "OffsetY" ||
+                    key == "DeviceID" || key == "ModelName" || key == "DeviceVersion" ||
+                    key == "MaxNumBuffer" || key == "GevSCPSPacketSize")
                 {
                     continue;
                 }
@@ -639,6 +655,16 @@ namespace Plugins.Camera.Basler
                 var infos = BaslerSdkFactory.Instance.EnumerateDevices();
                 _lastEnumerated.Clear();
                 _lastEnumerated.AddRange(infos);
+
+                // 未安装 pylon SDK 时（DLLLib 无 Basler.Pylon.dll，BASLER_PYLON 宏未定义），
+                // 枚举到的是离线仿真相机，不是真实相机画面——必须让用户一眼看到区别。
+                if (BaslerSdkFactory.Instance.IsSimulated)
+                {
+                    Debug.WriteLine("[Basler] ⚠ 当前为离线仿真模式：未检测到 pylon SDK（DLLLib\\Basler.Pylon.dll）。");
+                    Debug.WriteLine("[Basler]   扫描到的 SIM-BASLER-* 是虚拟相机，图像为程序合成图，不是真实相机画面！");
+                    Debug.WriteLine("[Basler]   要连接真实巴斯勒相机：安装 pylon Camera Software Suite，" +
+                                    "将 Basler.Pylon.dll（及 pylonC 等依赖）放入 DLLLib 并重编本插件。");
+                }
 
                 var list = infos.Select(i => new DeviceInfo
                 {

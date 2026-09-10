@@ -9,8 +9,13 @@ namespace Grayson.Vision.HalconWrapper.Match2D
     public static class NccMatchTool
     {
         /// <summary>创建 NCC 灰度模板</summary>
+        /// <param name="learnDomain">学习域 Region（可选，掩膜裁剪；null=全 ROI 矩形）。所有权归调用方，只借用不释放。</param>
+        /// <param name="datumRow/datumCol">基准点（v2 锚点语义，创建图绝对坐标；null=不设锚点）。
+        /// NCC set_ncc_model_origin 语义同 shape 版（相对默认参考点偏移），此处按 ROI 矩形中心作基准
+        /// （NCC 无学习域重心语义假设，掩膜+NCC+锚点组合留待实测）。</param>
         /// <returns>模板句柄（HTuple，HHandle 元素），算子要求 handle 类型，全程不解包</returns>
-        public static Result<HTuple> CreateNccModel(HObject templateImage, double roiRow1, double roiCol1, double roiRow2, double roiCol2, double angleStart, double angleEnd)
+        public static Result<HTuple> CreateNccModel(HObject templateImage, double roiRow1, double roiCol1, double roiRow2, double roiCol2, double angleStart, double angleEnd,
+            HObject learnDomain = null, double? datumRow = null, double? datumCol = null)
         {
             if (templateImage == null || !templateImage.IsInitialized())
                 return Result<HTuple>.Fail("模板图像为空");
@@ -22,7 +27,7 @@ namespace Grayson.Vision.HalconWrapper.Match2D
                 {
                     HOperatorSet.GenRectangle1(out roiRect, roiRow1, roiCol1, roiRow2, roiCol2);
                     guard.Register(roiRect);
-                    HOperatorSet.ReduceDomain(templateImage, roiRect, out roiImg);
+                    HOperatorSet.ReduceDomain(templateImage, learnDomain ?? roiRect, out roiImg);
                     guard.Register(roiImg);
 
                     // ⚠ 通道统一：create_ncc_model 要求单通道灰度图（同 ShapeMatch 的 BGR24 坑）
@@ -33,6 +38,19 @@ namespace Grayson.Vision.HalconWrapper.Match2D
 
                     HOperatorSet.CreateNccModel(modelImg, "auto", angleStart / 180 * Math.PI, (angleEnd - angleStart) / 180 * Math.PI,
                         "auto", "use_polarity", out modelId);
+
+                    // ⚠ 模型原点（v2 锚点语义，2026-09-05 回归修复）：set_ncc_model_origin 参数=相对默认
+                    //   参考点的偏移量（误传绝对坐标会把返回坐标推到 ≈2×中心）。基准=ROI 矩形中心；
+                    //   仅在显式传入 datum 时钉锚点（默认不设，锚点=默认参考点，行为不变）。
+                    if (datumRow.HasValue && datumCol.HasValue)
+                    {
+                        HOperatorSet.AreaCenter(roiRect, out HTuple ar, out HTuple cr, out HTuple cc);
+                        double offRow = datumRow.Value - cr.D;
+                        double offCol = datumCol.Value - cc.D;
+                        HOperatorSet.SetNccModelOrigin(modelId, offRow, offCol);
+                        LogBus.Info(nameof(NccMatchTool),
+                            $"NCC 模板锚点已钉: 基准点=({datumRow.Value:F2},{datumCol.Value:F2}) ROI中心=({cr.D:F2},{cc.D:F2}) 偏移=({offRow:F2},{offCol:F2})");
+                    }
                 }
                 // 句柄直接返回（不解包成数字）：HHandle 元素保持 handle 类型，Write/Clear/Find 才可再传回算子
                 return Result<HTuple>.Ok(modelId);
@@ -45,7 +63,10 @@ namespace Grayson.Vision.HalconWrapper.Match2D
         }
 
         /// <summary>查找 NCC 灰度模板</summary>
-        public static Result<TemplateMatchResult[]> FindNccModel(HObject searchImage, HTuple modelId, double minScore = 0.7)
+        /// <param name="angleStartDeg">覆盖起始角度（°），null 表示使用模板内建范围</param>
+        /// <param name="angleEndDeg">覆盖终止角度（°），null 表示使用模板内建范围</param>
+        public static Result<TemplateMatchResult[]> FindNccModel(HObject searchImage, HTuple modelId, double minScore = 0.7,
+            double? angleStartDeg = null, double? angleEndDeg = null)
         {
             if (searchImage == null || !searchImage.IsInitialized())
                 return Result<TemplateMatchResult[]>.Fail("搜索图像无效");
@@ -55,14 +76,23 @@ namespace Grayson.Vision.HalconWrapper.Match2D
                 // ⚠ 通道统一：find_ncc_model 要求单通道灰度图（EnsureGray 内部自动转灰度并打日志）
                 HObject findImg = TemplateMatchTool.EnsureGray(searchImage, out gray);
 
+                // 角度参数：未指定或无效范围时使用 0/0（模板内建范围）
+                double angleStartRad = 0;
+                double angleExtentRad = 0;
+                if (angleStartDeg.HasValue && angleEndDeg.HasValue && angleEndDeg.Value > angleStartDeg.Value)
+                {
+                    angleStartRad = angleStartDeg.Value / 180.0 * Math.PI;
+                    angleExtentRad = (angleEndDeg.Value - angleStartDeg.Value) / 180.0 * Math.PI;
+                }
+
                 HTuple rows, cols, angles, scores;
-                HOperatorSet.FindNccModel(findImg, modelId, 0, 0, minScore, 1, 0.5, "true", 0, out rows, out cols, out angles, out scores);
+                HOperatorSet.FindNccModel(findImg, modelId, angleStartRad, angleExtentRad, minScore, 1, 0.5, "true", 0, out rows, out cols, out angles, out scores);
 
                 int count = rows.Length;
                 if (count == 0)
                 {
                     // 0 结果不等于"无从判断"：低阈值回扫给出真实最佳相似度（同 ShapeMatch 诊断）
-                    DiagnoseNccMatch(findImg, modelId, minScore);
+                    DiagnoseNccMatch(findImg, modelId, minScore, angleStartRad, angleExtentRad);
                 }
                 TemplateMatchResult[] resultArr = new TemplateMatchResult[count];
                 for (int i = 0; i < count; i++)
@@ -75,6 +105,28 @@ namespace Grayson.Vision.HalconWrapper.Match2D
                         Score = scores[i].D
                     };
                 }
+                // 🌟 调试日志（同 ShapeMatchTool.FindShapeModel）：一次匹配一条，打印 MinScore/图像尺寸/候选详情
+                try
+                {
+                    HOperatorSet.GetImageSize(findImg, out HTuple iw, out HTuple ih);
+                    if (count == 0)
+                    {
+                        LogBus.Info(nameof(NccMatchTool),
+                            $"NCC匹配: MinScore={minScore:F2} 图像{iw.I}x{ih.I} → 0 命中（低于门槛，真实最佳分见上方诊断回扫）");
+                    }
+                    else
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        for (int i = 0; i < count; i++)
+                        {
+                            if (i > 0) sb.Append(" | ");
+                            sb.Append($"#{i} Score={scores[i].D:F3} @({rows[i].D:F1},{cols[i].D:F1}) {angles[i].D / Math.PI * 180:F2}°");
+                        }
+                        LogBus.Info(nameof(NccMatchTool),
+                            $"NCC匹配: MinScore={minScore:F2} 图像{iw.I}x{ih.I} → 命中{count}个 {sb}");
+                    }
+                }
+                catch { /* 日志失败不影响匹配结果 */ }
                 return Result<TemplateMatchResult[]>.Ok(resultArr);
             }
             catch (Exception ex)
@@ -93,11 +145,11 @@ namespace Grayson.Vision.HalconWrapper.Match2D
         /// 报告当前搜索图与 NCC 模板的真实最佳相似度，让调参有数字依据。
         /// 仅在 0 结果时触发，诊断自身异常不影响主流程。
         /// </summary>
-        private static void DiagnoseNccMatch(HObject findImg, HTuple modelId, double minScore)
+        private static void DiagnoseNccMatch(HObject findImg, HTuple modelId, double minScore, double angleStartRad = 0, double angleExtentRad = 0)
         {
             try
             {
-                HOperatorSet.FindNccModel(findImg, modelId, 0, 0, 0.1, 5, 0.5, "true", 0,
+                HOperatorSet.FindNccModel(findImg, modelId, angleStartRad, angleExtentRad, 0.1, 5, 0.5, "true", 0,
                     out HTuple rows, out HTuple cols, out HTuple angles, out HTuple scores);
 
                 if (scores.Length == 0)

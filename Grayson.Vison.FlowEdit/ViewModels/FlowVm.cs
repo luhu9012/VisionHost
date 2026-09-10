@@ -809,8 +809,50 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 RefreshWatchData();
                 RecordNodeExecution(e.Node, success: true);
 
+                // 🌟 节点执行完成 → 主视图跟随该节点输出图（编辑器「单步/连续」的核心体验）。
+                // 说明：帧推送事件 OnFrameRendered 走 Dispatcher Background 优先级且与
+                // OnNodeExecuted 分属两条回调，若仅依赖它，会出现「缩略图已加、主视图没切」
+                // 的时序缺口；这里在节点完成回调（Normal 优先级、每节点必触发）内直接按
+                // 输出端口取图推入显示层。AddOrUpdateImageContext 按 NodeId 幂等：若帧事件
+                // 稍后到达，同 NodeId 同图原地替换，无闪烁。节点无图像输出（纯数值/点集）时
+                // 跳过——其叠加图形已由 Executor 经 Preview 场景直接上屏，不抢占主视图。
+                FollowExecutedNodeImage(e.Node);
+
                 OnNodeExecuted?.Invoke(e.Node);
             });
+        }
+
+        /// <summary>
+        /// 把「刚执行完的节点」的图像输出推给显示层并自动选中（主视图跟随）。
+        /// 与 WorkerClient_OnFrameRendered 的判定口径一致（DataType=="Image" 或端口名含 Image），
+        /// 重复调用同 NodeId 幂等（替换路径按 NativeHandle 共享判定释放，不泄漏）。
+        /// </summary>
+        private void FollowExecutedNodeImage(FlowNodeBase node)
+        {
+            if (node?.OutputPorts == null || ImageDisplayVm == null) return;
+            try
+            {
+                var imagePort = node.OutputPorts.FirstOrDefault(p =>
+                    (p.DataType != null && p.DataType == "Image") ||
+                    (p.PortName != null && p.PortName.IndexOf("Image", StringComparison.OrdinalIgnoreCase) >= 0));
+                if (imagePort?.DataValue == null) return;
+
+                var renderImg = _renderService.WrapImage(imagePort.DataValue);
+                if (renderImg == null) return;
+
+                var context = new WpfImageRenderContext
+                {
+                    NodeId = node.NodeId,
+                    NodeName = node.DisplayName,
+                    Image = renderImg,
+                    Thumbnail = _renderService.CreateThumbnail(renderImg)
+                };
+                ImageDisplayVm.AddOrUpdateImageContext(context);
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("FlowVm", $"节点输出图跟随显示失败 [{node.DisplayName}]: {ex.Message}");
+            }
         }
 
         private void Worker_OnExecutionError(object sender, NodeExecutionErrorEventArgs e)
@@ -840,26 +882,20 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 {
                     var renderImg = _renderService.WrapImage(e.RenderData);
                     if (renderImg == null) return;
-                    WpfImageRenderContext renderContext;
 
-                    renderContext = ImageDisplayVm.ImageHistoryList.FirstOrDefault(x => x.NodeId == e.NodeId);
-                    if (renderContext != null)
+                    // ⚠ 每次都新建上下文交给 AddOrUpdateImageContext 统一释放旧图：
+                    // 旧实现"就地换 Image 再 AddOrUpdate"会命中 existing==newContext 分支
+                    // Dispose 当场销毁刚换上的新图（第二帧起黑屏）。新建 + 共享判定释放，
+                    // 兼容 MatchImage 借用语义（与相机输出同一 HImage 实例）。
+                    var node = CurrentProcess?.Nodes?.FirstOrDefault(n => n.NodeId == e.NodeId);
+                    var renderContext = new WpfImageRenderContext
                     {
-                        renderContext.Image = renderImg;
-                        renderContext.Thumbnail = _renderService.CreateThumbnail(renderImg);
+                        NodeId = e.NodeId,
+                        NodeName = node?.DisplayName ?? $"[{e.NodeName}]",
+                        Image = renderImg,
+                        Thumbnail = _renderService.CreateThumbnail(renderImg)
+                    };
 
-                    }
-                    else
-                    {
-                        var node = CurrentProcess?.Nodes?.FirstOrDefault(n => n.NodeId == e.NodeId);
-                        renderContext = new WpfImageRenderContext
-                        {
-                            NodeId = e.NodeId,
-                            NodeName = node?.DisplayName ?? $"[{e.NodeName}]",
-                            Image = renderImg,
-                            Thumbnail = _renderService.CreateThumbnail(renderImg)
-                        };
-                    }
                     ImageDisplayVm.AddOrUpdateImageContext(renderContext);
                 }
                 catch (Exception ex)
@@ -1105,11 +1141,51 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (_workerClient == null) return;
             await _workerClient.LoadRecipeAsync(CurrentProcess);
 
+            // 单步前重新武装预览目标（依赖当前已注入的上下文，可能被共享 Worker 的其他宿主覆盖）
+            EnsurePreviewTarget();
+
             // StationHostRuntime 已统一创建 EmbeddedWorkerClientProxy，直接调用接口即可
             await _workerClient.StepNodeAsync(SelectedNode);
         }
 
         #region 实时预览执行链（属性面板专用）
+
+        /// <summary>主编辑器视图的预览适配器（常驻默认目标），由 FlowEditView 注册</summary>
+        private IFlowPreviewContext _defaultPreview;
+
+        /// <summary>属性面板的预览适配器（临时目标，优先级高于默认）</summary>
+        private IFlowPreviewContext _panelPreview;
+
+        /// <summary>
+        /// 注册默认预览目标（主编辑器视图窗口）。
+        /// 属性面板未打开时，节点的 Preview?.Add(...) 就画到这里；
+        /// 面板打开时临时切到面板，关闭后自动回切。
+        /// </summary>
+        public void SetDefaultPreview(IFlowPreviewContext previewContext)
+        {
+            _defaultPreview = previewContext;
+            if (_panelPreview == null)
+            {
+                _workerClient?.SetPreviewContext(previewContext);
+            }
+        }
+
+        /// <summary>
+        /// 执行前确认预览目标已注入：面板优先，其次主视图。
+        /// 目的：工位监视页与 FlowEdit 共享同一个 Worker（单槽），
+        /// 别的宿主 SetPreviewContext 会直接覆盖，因此每次跑之前重新武装一次。
+        /// </summary>
+        private void EnsurePreviewTarget()
+        {
+            if (_panelPreview != null)
+            {
+                _workerClient?.SetPreviewContext(_panelPreview);
+            }
+            else if (_defaultPreview != null)
+            {
+                _workerClient?.SetPreviewContext(_defaultPreview);
+            }
+        }
 
         /// <summary>
         /// 挂接实时预览：把属性面板视图窗口的适配器注入引擎（经 WorkerClient → StationWorker
@@ -1124,6 +1200,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             DetachPreview();
 
             _previewTargetNode = node;
+            _panelPreview = previewContext;
             _workerClient?.SetPreviewContext(previewContext);
 
             if (node.ParameterModel is INotifyPropertyChanged pcm)
@@ -1148,7 +1225,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             }
             _previewDebounce?.Stop();
             _previewTargetNode = null;
-            _workerClient?.SetPreviewContext(null);
+            _panelPreview = null;
+            // 属性面板关闭后回切主视图预览目标，而非置空——否则工具栏「单步」无处可画
+            _workerClient?.SetPreviewContext(_defaultPreview);
         }
 
         /// <summary>参数属性变化 → 防抖 300ms（拖动滑块高频触发时只跑最后一次）</summary>

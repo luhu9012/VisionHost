@@ -142,6 +142,33 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public RelayCommand ConnectCommand { get; }
         public RelayCommand DisconnectCommand { get; }
 
+        /// <summary>
+        /// 是否正在执行在线扫描（用于进度遮罩 + 防止重复点击导致并发扫描）。
+        /// 并发扫描是 Epson RC+ 探测失败的高危诱因：RC+ 同一时刻只允许一个
+        /// API 客户端，多轮并发探测会互相串扰（连接号被污染、机型读串）。
+        /// </summary>
+        private bool _isScanning;
+        public bool IsScanning
+        {
+            get => _isScanning;
+            private set
+            {
+                if (Set(ref _isScanning, value))
+                {
+                    OnPropertyChanged(nameof(ScanStatusText));
+                    RaiseCommandsCanExecuteChanged();
+                }
+            }
+        }
+
+        /// <summary>扫描过程/结果的状态文字（展示在等待遮罩上）</summary>
+        private string _scanStatusText = "就绪";
+        public string ScanStatusText
+        {
+            get => _scanStatusText;
+            private set => Set(ref _scanStatusText, value);
+        }
+
         public DevicePoolViewModel(Contracts.Devices.Services.IDevicePool devicePool = null)
         {
             _devicePool = App.StationHostRuntime?.DevicePool;
@@ -149,7 +176,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             RefreshCommand = new RelayCommand(_ => LoadFromPool());
             ManualAddDeviceCommand = new RelayCommand(_ => OnManualAddDevice());
-            ScanHardwareCommand = new RelayCommand(async _ => await OnScanHardwareAsync());
+            ScanHardwareCommand = new RelayCommand(OnScanHardwareAsync, () => !IsScanning);
             SaveConfigCommand = new RelayCommand(async _ => await OnSaveConfigAsync(), _ => SelectedDevice != null);
             DeleteDeviceCommand = new RelayCommand(_ => OnDeleteDevice(), _ => SelectedDevice != null);
 
@@ -176,6 +203,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// </summary>
         private void RaiseCommandsCanExecuteChanged()
         {
+            ScanHardwareCommand?.RaiseCanExecuteChanged();
             SaveConfigCommand?.RaiseCanExecuteChanged();
             DeleteDeviceCommand?.RaiseCanExecuteChanged();
             ConnectCommand?.RaiseCanExecuteChanged();
@@ -211,46 +239,79 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 扫描在线硬件并在弹窗中让工程师二次确认导入
+        /// 扫描在线硬件并在弹窗中让工程师二次确认导入。
+        /// 扫描期间展示等待进度（IsScanning/ScanStatusText 驱动遮罩），
+        /// 并禁止重复触发——多次并发扫描会让 Epson RC+ 探测互相冲突，
+        /// 表现为"扫到了但列表里没有 Epson"。
         /// </summary>
         private async Task OnScanHardwareAsync()
         {
-            // 1. 执行扫描
-            var scannedInfos = await Task.Run(() => _devicePool.ScanAllPhysicalDevices());
+            if (IsScanning) return; // 双保险：命令 CanExecute 已拦截，防并发重入
 
-            if (!scannedInfos.Any())
+            IsScanning = true;
+            ScanStatusText = "正在扫描在线硬件，请稍候…";
+            try
             {
-                MessageBox.Show("未扫描到任何在线的物理硬件设备！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
+                // 1. 执行扫描（后台线程；相机/PLC/Epson 枚举可能耗时数秒）
+                List<DeviceInfo> scannedInfos;
+                try
+                {
+                    scannedInfos = await Task.Run(() => _devicePool.ScanAllPhysicalDevices());
+                }
+                catch (Exception ex)
+                {
+                    ScanStatusText = "扫描失败";
+                    MessageBox.Show($"扫描在线硬件时发生异常:\n\n{ex.Message}", "扫描失败",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                if (scannedInfos == null || !scannedInfos.Any())
+                {
+                    ScanStatusText = "扫描完成：未发现在线硬件";
+                    MessageBox.Show("未扫描到任何在线的物理硬件设备！\n请确认相机 / 运动控制卡 / PLC / Epson 机械手等硬件已上电并连接。",
+                        "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                ScanStatusText = $"扫描完成：发现 {scannedInfos.Count} 个在线设备";
+
+                // 2. 弹出选择确认窗口
+                var dialogVm = new ScanDeviceDialogViewModel(scannedInfos);
+                var dialog = new ScanDeviceDialog { DataContext = dialogVm, Owner = Application.Current.MainWindow };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    // 3. 拿到用户勾选并指定的 DeviceKey 列表进行批量入库
+                    //    透传扫描时携带的 ConnectionString（如 Epson TCP 通道的
+                    //    "Protocol=TCP;IP=127.0.0.1;Port=502"），保证导入后"扫到即能连"。
+                    int addedCount = 0;
+                    foreach (var item in dialogVm.ScannedDevices.Where(x => x.IsSelected))
+                    {
+                        var res = await _devicePool.AddDeviceToPoolAndSaveAsync(
+                            item.RawInfo, item.TargetDeviceKey, item.ConnectionString);
+                        if (res.Success)
+                        {
+                            addedCount++;
+                        }
+                        else
+                        {
+                            MessageBox.Show($"设备 [{item.TargetDeviceKey}] 导入失败: {res.Message}", "导入错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+
+                    if (addedCount > 0)
+                    {
+                        // 4. 重新从设备池载入最新设备列表并刷 UI
+                        LoadFromPool();
+                        MessageBox.Show($"成功添加并保存了 {addedCount} 个设备！", "完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                }
             }
-
-            // 2. 弹出选择确认窗口
-            var dialogVm = new ScanDeviceDialogViewModel(scannedInfos);
-            var dialog = new ScanDeviceDialog { DataContext = dialogVm, Owner = Application.Current.MainWindow };
-
-            if (dialog.ShowDialog() == true)
+            finally
             {
-                // 3. 拿到用户勾选并指定的 DeviceKey 列表进行批量入库
-                int addedCount = 0;
-                foreach (var item in dialogVm.ScannedDevices.Where(x => x.IsSelected))
-                {
-                    var res = await _devicePool.AddDeviceToPoolAndSaveAsync(item.RawInfo, item.TargetDeviceKey);
-                    if (res.Success)
-                    {
-                        addedCount++;
-                    }
-                    else
-                    {
-                        MessageBox.Show($"设备 [{item.TargetDeviceKey}] 导入失败: {res.Message}", "导入错误", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-
-                if (addedCount > 0)
-                {
-                    // 4. 重新从设备池载入最新设备列表并刷 UI
-                    LoadFromPool();
-                    MessageBox.Show($"成功添加并保存了 {addedCount} 个设备！", "完成", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
+                IsScanning = false;
+                ScanStatusText = "就绪";
             }
         }
 
@@ -274,8 +335,32 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 MessageBox.Show($"保存失败: {res.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
-        private void OnConnect() => SelectedDevice?.Model.Connect();
-        private void OnDisconnect() => SelectedDevice?.Model.Disconnect();
+        /// <summary>
+        /// 连接设备（v2：显示失败原因，2026-08-31）。
+        /// 之前直接丢弃 Connect() 的 Result，设备连接失败时 UI 无任何提示，
+        /// 只能在 VS 调试输出里看到 first-chance 异常——排查很痛苦。
+        /// </summary>
+        private void OnConnect()
+        {
+            if (SelectedDevice == null) return;
+            var res = SelectedDevice.Model.Connect();
+            if (res != null && !res.Success)
+            {
+                MessageBox.Show($"设备 [{SelectedDevice.DeviceKey}] 连接失败:\n\n{res.Message}",
+                    "连接失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void OnDisconnect()
+        {
+            if (SelectedDevice == null) return;
+            var res = SelectedDevice.Model.Disconnect();
+            if (res != null && !res.Success)
+            {
+                MessageBox.Show($"设备 [{SelectedDevice.DeviceKey}] 断开失败:\n\n{res.Message}",
+                    "断开失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
 
         private void OnDeleteDevice()
         {

@@ -60,6 +60,40 @@ namespace Grayson.Vision.WpfUI
         private EventHandler _userLoggedOutHandler;
 
         /// <summary>
+        /// 工位监视页缓存实例：该页注册为「缓存单例」——导航离开再进入时
+        /// 复用同一 View+VM，统计/日志/图像历史/工位连接全部存活，
+        /// 任务进行中切换页面回来信息不丢（图像由 Halcon 窗口重建事件补渲染）。
+        /// </summary>
+        private StationMonitorView _stationMonitorPage;
+
+        /// <summary>
+        /// 产线拓扑总览页缓存实例：该页注册为「缓存单例」——导航离开再进入时
+        /// 复用同一 View+VM，统计数据轮询与缩略图事件订阅不重复、不泄漏，
+        /// 统计卡片从持久化文件恢复 + 实时水位累计。
+        /// </summary>
+        private LineOverviewView _lineOverviewPage;
+
+        /// <summary>
+        /// 模板工作台页缓存实例（v3 信息架构：模板独立菜单页）：该页注册为「缓存单例」——
+        /// 源图/ROI/掩膜笔画/验证叠加等编辑现场跨导航存活；OnNavigatedTo 接收 StationCode
+        /// 时按 OwnerStation 定位并钉住归属（进入时经 TemplateManagerViewModel 处理；
+        /// 2026-09-05 起 Workbench 壳已合并下沉，页面直挂 TemplateManagerView）。
+        /// </summary>
+        private TemplateManagerView _templateManagerPage;
+
+        /// <summary>
+        /// 标定中心页缓存实例（2026-09-05 起为「缓存单例」，镜像模板工作台）：进入即保留当前
+        /// 工位定位态（钉住/回全库），方案编辑、新建自动归属现场跨导航存活。
+        /// </summary>
+        private CalibrationManagerView _calibrationPage;
+
+        /// <summary>
+        /// 配方管理页缓存实例（2026-09-05 中等重构改「缓存单例」）：列表选中态、审批操作上下文
+        /// 跨导航存活；从工位工作台带 BoundRecipe 跳入时经 OnNavigatedTo 定位到该配方。
+        /// </summary>
+        private RecipeManageView _recipeManagePage;
+
+        /// <summary>
         /// 应用程序启动入口事件，程序打开时第一个执行的方法
         /// 类比前端main.ts入口函数，统一完成全局初始化工作
         /// </summary>
@@ -145,6 +179,18 @@ namespace Grayson.Vision.WpfUI
                 {
                     // FlowEditApp 类型不可用时不影响主程序启动
                 }
+
+                // 🌟 引擎参数/示教面板注册表（StationMonitorExtensionRegistry，命名沿用）：
+                // 2026-09-06 职责收敛——示教/参数面板不再挂「单工位监控」扩展位（监视页回归纯看板），
+                // 改由「工位工程工作台 → ④ 执行方案」Tab 按工位 ProcessKey 就地挂载（StationManageViewModel）。
+                // 新增业务引擎只需 Register 面板，④Tab 选中该引擎并保存同步后自动出现表单。
+                StationMonitorExtensionRegistry.Register("MahjongPick",
+                    () => new View.StationMonitorExtensions.MahjongPickTeachPanel());
+
+                // 通用取放引擎 VisionPickPlace 示教面板（S2 双吸嘴 / S3 同心吸嘴共用）：
+                // 角度策略 + TeachMode + 位点/偏心/真空 IO 参数表单。
+                StationMonitorExtensionRegistry.Register("VisionPickPlace",
+                    () => new View.StationMonitorExtensions.VisionPickPlaceTeachPanel());
 
                 var elapsed = DateTime.Now - splashShownAt;
                 var minimumDuration = TimeSpan.FromMilliseconds(1200);
@@ -280,6 +326,22 @@ namespace Grayson.Vision.WpfUI
 
             // 程序登录成功默认跳转到【产线拓扑总览】页面
             navigationService.NavigateTo(PageType.LineOverview);
+
+            // 🌟 启动自动全量同步（2026-09-09）：把数据库已启用工位完整装配进 StationHostRuntime。
+            // 背景：Core 不做 DB 自动还原，启动后监视页连接只建「裸工位」（不装配方/设备/过程/触发源），
+            // 此前每次启动都要先去工位工程工作台点一次「💾 保存并同步」才能到监视页启动。
+            // 此处登录进主界面即后台按数据库逐个装配所有已启用工位 → 监视页/总览页直接可启动。
+            // 时序：Application_Startup 已完成 设备池初始化 + NodeFactory + 节点插件加载，
+            //      DevicePool/Recipe 存储均就绪，可安全装配。幂等 + 逐工位容错 + 只记日志不弹窗。
+            try
+            {
+                new Grayson.Vision.WpfUI.Service.StationRuntimeBootstrap()
+                    .SyncAllEnabledStationsInBackground();
+            }
+            catch (Exception bootstrapEx)
+            {
+                LogBus.Error("System", $"触发启动自动同步失败: {bootstrapEx.Message}", bootstrapEx);
+            }
         }
 
         /// <summary>
@@ -291,20 +353,60 @@ namespace Grayson.Vision.WpfUI
         private void RegisterPages(NavigationService navigationService)
         {
 
-            // 产线拓扑总览页面
-            navigationService.RegisterPage(PageType.LineOverview, () => new LineOverviewView());
-            // 单工位监控页面
-            navigationService.RegisterPage(PageType.StationMonitor, () => new StationMonitorView());
+            // 产线拓扑总览页面——缓存单例：统计轮询与缩略图订阅跨导航存活，
+            // 避免每次新建导致事件重复订阅/泄漏、统计数据归零
+            navigationService.RegisterPage(PageType.LineOverview, () =>
+            {
+                if (_lineOverviewPage == null)
+                {
+                    _lineOverviewPage = new LineOverviewView();
+                }
+                return _lineOverviewPage;
+            });
+            // 单工位监控页面——缓存单例：工位任务进行中离开页面再进入，
+            // 统计/日志/图像历史/连接全部保留（其余页面保持原「每次全新」策略）
+            navigationService.RegisterPage(PageType.StationMonitor, () =>
+            {
+                if (_stationMonitorPage == null)
+                {
+                    _stationMonitorPage = new StationMonitorView();
+                }
+                return _stationMonitorPage;
+            });
             // 报警记录页面
             navigationService.RegisterPage(PageType.Alarm, () => new AlarmView());
             // 流程编辑页面
             navigationService.RegisterPage(PageType.FlowEdit, () => new FlowEditViewWrapper());
             // 工位管理页面
             navigationService.RegisterPage(PageType.StationManage, () => new StationManageView());
-            // 配方管理页面
-            navigationService.RegisterPage(PageType.RecipeManage, () => new RecipeManageView());
-            // 校准管理页面
-            navigationService.RegisterPage(PageType.CalibrationManage, () => new CalibrationManagerView());
+            // 模板工作台页面——缓存单例：源图/ROI/掩膜/特征编辑现场跨导航存活（v3 信息架构独立菜单页）
+            navigationService.RegisterPage(PageType.TemplateManage, () =>
+            {
+                if (_templateManagerPage == null)
+                {
+                    _templateManagerPage = new TemplateManagerView();
+                }
+                return _templateManagerPage;
+            });
+            // 配方管理页面——缓存单例（2026-09-05 中等重构）：列表选中/审批上下文跨导航存活；
+            // OnNavigatedTo 接收 BoundRecipe 参数时定位选中（来自工位工作台跳转）
+            navigationService.RegisterPage(PageType.RecipeManage, () =>
+            {
+                if (_recipeManagePage == null)
+                {
+                    _recipeManagePage = new RecipeManageView();
+                }
+                return _recipeManagePage;
+            });
+            // 校准管理页面——缓存单例（2026-09-05）：工位定位态与方案编辑现场跨导航存活
+            navigationService.RegisterPage(PageType.CalibrationManage, () =>
+            {
+                if (_calibrationPage == null)
+                {
+                    _calibrationPage = new CalibrationManagerView();
+                }
+                return _calibrationPage;
+            });
             // 插件管理页面
             navigationService.RegisterPage(PageType.PluginManage, () => new PluginManageView());
             //设备池页面 
@@ -317,6 +419,12 @@ namespace Grayson.Vision.WpfUI
             navigationService.RegisterPage(PageType.MesBridge, () => new MesBridgeView());
             // 系统与存储设置页面
             navigationService.RegisterPage(PageType.SystemSetting, () => new SystemSettingView());
+            // 工程工具:相机装调助手(垂直度检测与三点对焦调平闭环, 2026-09-06;每次全新不缓存,离开即清理)
+            navigationService.RegisterPage(PageType.CameraTuneTool, () => new CameraTuneView());
+            // 任务模板中心（T 层任务模板库：引导定位/深度学习推理/外观测量，2026-09-09 新增；数据即库即读，每次全新）
+            navigationService.RegisterPage(PageType.TaskTemplateCenter, () => new TaskTemplateCenterView());
+            // 模型仓库（深度学习/测量推理资产注册中心，任务模板按 ModelAssetCode 引用）
+            navigationService.RegisterPage(PageType.ModelRegistry, () => new ModelRegistryView());
             // 用户权限管理页面
             navigationService.RegisterPage(PageType.UserManage, () => new UserManageView());
 

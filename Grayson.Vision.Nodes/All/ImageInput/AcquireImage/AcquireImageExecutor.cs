@@ -33,6 +33,12 @@ namespace Grayson.Vision.Nodes.All.ImageInput.AcquireImage
 
             EnsureCameraReady(camera, param.CameraAlias, context);
 
+            // 相机独占让渡兜底：工位监视的 Live 连续采集正常会在本节点开始执行前
+            // （OnNodeExecuting 事件链）同步停流；若该事件链缺失（如 FlowEdit 直跑、
+            // 外部占用），此处再停一次连续采集，保证下方触发模式配置不与连续采集冲突。
+            // 未在采集时调用停止无副作用（失败忽略）。
+            try { camera.StopContinuousGrab(); } catch { /* 兜底停流失败交由后续显式调用报错 */ }
+
             EnsureSuccess(camera.SetExposureTime(param.ExposureTime), "设置曝光失败");
             EnsureSuccess(camera.SetGain(param.Gain), "设置增益失败");
 
@@ -62,9 +68,25 @@ namespace Grayson.Vision.Nodes.All.ImageInput.AcquireImage
                         EnsureSuccess(camera.StartGrabbing(), "启动采集流失败");
                         shouldStopAfterSingle = true;
 
-                        var waitTask = WaitForSingleFrameAsync(camera, param.TimeoutMs, token);
-                        EnsureSuccess(camera.SoftTrigger(), "发送软触发失败");
-                        frame = await waitTask.ConfigureAwait(false);
+                        // 先挂帧等待再发软触发（防丢帧）。若软触发失败：
+                        // 必须取消 waitTask 使其 finally 退订 FrameReceived，避免 handler 泄漏
+                        //（残留 handler 会在下一帧到达时继续 TrySetResult，虽无害但随失败次数累积）。
+                        using (var triggerCts = CancellationTokenSource.CreateLinkedTokenSource(token))
+                        {
+                            var waitTask = WaitForSingleFrameAsync(camera, param.TimeoutMs, triggerCts.Token);
+                            try
+                            {
+                                EnsureSuccess(camera.SoftTrigger(), "发送软触发失败");
+                            }
+                            catch
+                            {
+                                triggerCts.Cancel();
+                                try { await waitTask.ConfigureAwait(false); }
+                                catch { /* 忽略取消失败 */ }
+                                throw;
+                            }
+                            frame = await waitTask.ConfigureAwait(false);
+                        }
                         break;
                 }
 

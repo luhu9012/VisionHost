@@ -33,9 +33,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="halcondotnet, Version=19.11.0.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
+    <Reference Include="halcondotnet, Version=24.11.1.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\Grayson.VisionApp\Grayson.VisionApp.Core\bin\Debug\halcondotnet.dll</HintPath>
+      <HintPath>..\DLLLib\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -53,6 +53,10 @@
     <Compile Include="Controls\HalconImageDisplayHost.xaml.cs">
       <DependentUpon>HalconImageDisplayHost.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Controls\HalconImageDisplayHost.RoiEditor.cs">
+      <DependentUpon>HalconImageDisplayHost.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\RoiShape.cs" />
     <Compile Include="Controls\HalconDisplayContextAdapter.cs" />
     <Compile Include="Imaging\\WpfImageRenderContext.cs" xmlns="" />
     <Compile Include="ViewModels\ImageDisplayVm.cs" />

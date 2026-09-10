@@ -40,7 +40,21 @@ namespace Grayson.Vision.Contracts.Station.Models
         /// <summary>结果文本呈现</summary>
         public string ResultText => Result;
 
-        /// <summary>结果对应的 UI 颜色键（SuccessBrush/DangerBrush）</summary>
-        public string ResultBrushKey => Result == "OK" ? "SuccessBrush" : "DangerBrush";
+        /// <summary>结果对应的 UI 颜色键：OK→SuccessBrush、NG→DangerBrush、其余(Error/Skip/—)=中性灰。</summary>
+        public string ResultBrushKey
+        {
+            get
+            {
+                switch (Result)
+                {
+                    case "OK": return "SuccessBrush";
+                    case "NG": return "DangerBrush";
+                    default: return "TextSecondaryBrush"; // Error/Skip/未知不做误红处理
+                }
+            }
+        }
+
+        /// <summary>是否 NG 结果（供整行红色高亮触发）。</summary>
+        public bool IsNg => Result == "NG";
     }
 }

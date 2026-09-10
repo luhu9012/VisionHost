@@ -85,6 +85,18 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             }
         }
 
+        private bool _isDetached;
+        /// <summary>
+        /// 是否已打开独立窗口（2026-09-02）。为 true 时本 Tab 的 View 切走（Unloaded）
+        /// 不再自动停日志订阅——独立窗口仍保持刷新，实现"并行操作/观看"。
+        /// 由 HardwareConsoleView 在打开/关闭独立窗口时维护。
+        /// </summary>
+        public bool IsDetached
+        {
+            get => _isDetached;
+            set => Set(ref _isDetached, value);
+        }
+
         public ICommand ConnectCommand { get; private set; }
         public ICommand DisconnectCommand { get; private set; }
         public ICommand ClearCommLogCommand { get; private set; }

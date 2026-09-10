@@ -162,6 +162,11 @@
     <Compile Include="All\Identification\DlInference\DlInferenceTemplateView.xaml.cs">
       <DependentUpon>DlInferenceTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\Identification\HalconDlInference\HalconDlInferenceExecutor.cs" />
+    <Compile Include="All\Identification\HalconDlInference\HalconDlInferenceParam.cs" />
+    <Compile Include="All\Identification\HalconDlInference\HalconDlInferenceTemplateView.xaml.cs">
+      <DependentUpon>HalconDlInferenceTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="All\Identification\ReadBarcode\ReadBarcodeExecutor.cs" />
     <Compile Include="All\Identification\ReadBarcode\ReadBarcodeParam.cs" />
     <Compile Include="All\Identification\ReadBarcode\ReadBarcodeTemplateView.xaml.cs">
@@ -203,6 +208,21 @@
     <Compile Include="All\ImagePreprocess\ROIOperation\ROIOperationTemplateView.xaml.cs">
       <DependentUpon>ROIOperationTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\Measurement2D\FitCircle\FitCircleExecutor.cs" />
+    <Compile Include="All\Measurement2D\FitCircle\FitCircleParam.cs" />
+    <Compile Include="All\Measurement2D\FitCircle\FitCircleTemplateView.xaml.cs">
+      <DependentUpon>FitCircleTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\Measurement2D\FitLine\FitLineExecutor.cs" />
+    <Compile Include="All\Measurement2D\FitLine\FitLineParam.cs" />
+    <Compile Include="All\Measurement2D\FitLine\FitLineTemplateView.xaml.cs">
+      <DependentUpon>FitLineTemplateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="All\Measurement2D\CaliperMeasure\CaliperMeasureExecutor.cs" />
+    <Compile Include="All\Measurement2D\CaliperMeasure\CaliperMeasureParam.cs" />
+    <Compile Include="All\Measurement2D\CaliperMeasure\CaliperMeasureTemplateView.xaml.cs">
+      <DependentUpon>CaliperMeasureTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Class1.cs" />
     <Compile Include="Common\NodeExecutorBase.cs" />
     <Compile Include="Common\ParamBase.cs" />
@@ -235,7 +255,6 @@
     <None Include="file1.md" />
     <None Include="packages.config" />
     <None Include="README.md" />
-    <None Include="README_nodes.md" />
     <None Include="参数传递.md" />
     <None Include="双机台业务流演示.md" />
   </ItemGroup>
@@ -328,6 +347,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="All\Identification\HalconDlInference\HalconDlInferenceTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="All\Identification\ReadBarcode\ReadBarcodeTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -361,6 +384,18 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="All\ImagePreprocess\ROIOperation\ROIOperationTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Measurement2D\CaliperMeasure\CaliperMeasureTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Measurement2D\FitCircle\FitCircleTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Measurement2D\FitLine\FitLineTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

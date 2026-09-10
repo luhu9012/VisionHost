@@ -7,18 +7,22 @@ using System.Collections.Generic;
 namespace Plugins.Robot.Epson
 {
     /// <summary>
-    /// Epson SCARA 4 轴机械手设备实现（本工位：双吸嘴麻将分拣）。
+    /// Epson SCARA 4 轴机械手设备实现（本工位：双吸嘴工件分拣）。
     ///
     /// 契约映射：
     /// - 实现 IMotionCard：把 Epson 的 X/Y/Z/U 四轴映射为统一的轴号
     ///   0=X（大臂）、1=Y（小臂）、2=Z（上下）、3=U（旋转），
     ///   单轴 MoveAbsolute 内部自动补全其余三轴当前值后整点位运动（Go/Move）；
-    /// - 实现 IIoDevice：双吸嘴的真空阀即两路数字输出（0=吸嘴1真空、1=吸嘴2真空），
-    ///   业务层用 0 基编号，适配层内部换算为 SPEL+ 的 1 基编号。
+    /// - 实现 IIoDevice：双吸嘴的真空阀即两路数字输出，业务层统一 0 基编号
+    ///   （0=吸嘴1真空、1=吸嘴2真空；单吸嘴机型只有吸嘴1），适配层经 EpsonIoMap
+    ///   映射为 SPEL+ 物理口：吸嘴1=OUT15、吸嘴2=OUT14（现场实测 2026-09-02）。
     ///
-    /// 硬件访问全部经 EpsonSdkFactory 选择的适配层完成：
-    /// - 装有 RC+（DLLLib\spelnet64.dll）→ 真实控制器；
-    /// - 未装 → 离线仿真机械手（运动瞬时完成、输入回环输出）。
+    /// 硬件访问全部经适配层完成，传输层按优先级/配置自动选择：
+    /// - 设备参数 ConnectionString 含 Protocol=TCP（如 Protocol=TCP;IP=192.168.3.11;Port=8000）
+    ///   → TCP 脚本协议适配层（EpsonTcpScriptAdapter）：与 RC+ 工程里 OpenNet 开的
+    ///   TCP 服务器对话（实机可用，TCP 探测/连接详见 EpsonPlugin 与通信模式文档）；
+    /// - 否则按 EpsonSdkFactory 默认链：DLLLib\spelnet64.dll（RC+8）→
+    ///   DLLLib\RCAPINet.dll（RC+7.x）→ 离线仿真机械手。
     /// </summary>
     public class EpsonRobot : IMotionCard, IIoDevice
     {
@@ -95,13 +99,40 @@ namespace Plugins.Robot.Epson
             {
                 if (IsSdkOpen) return Result.Ok();
 
-                if (_sdk == null)
+                // ---- 传输层选择 ----
+                // 设备管理手动添加时 ConnectionString 会写入 ConfigParams：
+                //   "Protocol=TCP;IP=127.0.0.1;Port=502" → TCP 脚本协议（模拟器联调）；
+                //   未填写 / 其他值 → 工厂默认链（RC+8 SDK → RC+7 SDK → 离线仿真）。
+                string connStr = ConfigParams.TryGetValue("ConnectionString", out var connObj)
+                    ? connObj?.ToString() : null;
+                bool tcpMode = connStr != null &&
+                               connStr.IndexOf("Protocol=TCP", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                // 传输模式变化（用户改过连接串）→ 丢弃旧控制器重建
+                if (_sdk != null && (_sdk is EpsonTcpScriptController) != tcpMode)
                 {
-                    _sdk = EpsonSdkFactory.Instance.CreateController();
+                    _sdk.Dispose();
+                    _sdk = null;
                 }
 
-                // DeviceId 即控制器地址：IP（如 192.168.1.10）或 localhost
-                string err = _sdk.Open(DeviceId);
+                if (_sdk == null)
+                {
+                    _sdk = tcpMode
+                        ? (IEpsonSdkController)new EpsonTcpScriptController()
+                        : EpsonSdkFactory.Instance.CreateController();
+                }
+
+                // TCP 模式：IP/Port 从连接串解析（默认 127.0.0.1:502，与 SPEL+ SetNet 对应）；
+                // SDK 模式：DeviceId 即控制器地址（IP 或 localhost）
+                string address = DeviceId;
+                if (tcpMode)
+                {
+                    string ip = ParseConnValue(connStr, "IP") ?? "127.0.0.1";
+                    string port = ParseConnValue(connStr, "Port") ?? "502";
+                    address = $"{ip}:{port}";
+                }
+
+                string err = _sdk.Open(address);
                 if (err != null)
                 {
                     State = DeviceState.Error;
@@ -110,8 +141,15 @@ namespace Plugins.Robot.Epson
 
                 State = DeviceState.Connected;
 
-                // 连接后默认伺服上电（生产环境如需人工确认上电，可注释此行）
-                _sdk.SetMotorsOn(true);
+                // 连接后默认伺服上电（生产环境如需人工确认上电，可注释此行）。
+                // 注意：模拟器/下电状态下 MotorsOn 可能抛 SpelException——
+                // 适配层已 catch 并返回错误文本，这里仅记录不阻断
+                //（连接本身已成功，上电失败只影响后续运动指令）。
+                string motorErr = _sdk.SetMotorsOn(true);
+                if (motorErr != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Epson] 连接成功但伺服上电失败（不影响连接状态）: {motorErr}");
+                }
 
                 return Result.Ok();
             }
@@ -144,7 +182,8 @@ namespace Plugins.Robot.Epson
         {
             LastHeartbeatAt = DateTime.UtcNow;
 
-            if (!IsSdkOpen)
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen)
             {
                 State = DeviceState.Disconnected;
                 return Result.Fail("Epson 控制器未连接");
@@ -195,10 +234,22 @@ namespace Plugins.Robot.Epson
             return IsValidAxis(axis) ? Result.Ok() : Result.Fail($"非法轴号 {axis}");
         }
 
+        public Result<MotionParam> GetMotionParam(int axis)
+        {
+            // Epson 速度/加速度由 RC+ 工程管理，上位机无法逐轴回读 → 返回 Fail，调用方回退默认值
+            return Result<MotionParam>.Fail("Epson 轴参数由 RC+ 工程管理，不支持回读");
+        }
+
         public Result SetSoftLimits(int axis, float positiveLimit, float negativeLimit)
         {
             // 软限位由 RC+ 安全配置管理，上位机不修改
             return IsValidAxis(axis) ? Result.Ok() : Result.Fail($"非法轴号 {axis}");
+        }
+
+        public Result<float[]> GetSoftLimits(int axis)
+        {
+            // 软限位由 RC+ 安全配置管理，无法回读 → 返回 Fail，调用方回退默认值
+            return Result<float[]>.Fail("Epson 软限位由 RC+ 安全配置管理，不支持回读");
         }
 
         public Result SetCommandPosition(int axis, float position)
@@ -210,9 +261,10 @@ namespace Plugins.Robot.Epson
 
         public Result<float> GetCommandPosition(int axis)
         {
-            if (!IsSdkOpen) return Result<float>.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<float>.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result<float>.Fail($"非法轴号 {axis}");
-            return Result<float>.Ok(_sdk.GetPosition(axis));
+            return Result<float>.Ok(sdk.GetPosition(axis));
         }
 
         public Result<float> GetFeedbackPosition(int axis)
@@ -229,7 +281,8 @@ namespace Plugins.Robot.Epson
 
         public Result<AxisStatusFlags> GetAxisStatus(int axis)
         {
-            if (!IsSdkOpen) return Result<AxisStatusFlags>.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<AxisStatusFlags>.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result<AxisStatusFlags>.Fail($"非法轴号 {axis}");
 
             // 报警/限位等详细状态由 RC+ 系统事件管理，此处返回正常。
@@ -239,9 +292,10 @@ namespace Plugins.Robot.Epson
 
         public Result<bool> IsAxisIdle(int axis)
         {
-            if (!IsSdkOpen) return Result<bool>.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<bool>.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result<bool>.Fail($"非法轴号 {axis}");
-            return Result<bool>.Ok(_sdk.IsMotionDone());
+            return Result<bool>.Ok(sdk.IsMotionDone());
         }
 
         #endregion
@@ -251,24 +305,27 @@ namespace Plugins.Robot.Epson
         public Result SetAxisEnable(int axis, bool enable)
         {
             if (!IsValidAxis(axis)) return Result.Fail($"非法轴号 {axis}");
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
 
             // Epson 伺服为整机上电（MotorsOn），不分轴使能
-            string err = _sdk.SetMotorsOn(enable);
+            string err = sdk.SetMotorsOn(enable);
             return err != null ? Result.Fail(err) : Result.Ok();
         }
 
         public Result StopAxis(int axis)
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
-            string err = _sdk.Halt();
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
+            string err = sdk.Halt();
             return err != null ? Result.Fail(err) : Result.Ok();
         }
 
         public Result RapidStop()
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
-            string err = _sdk.Halt();
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
+            string err = sdk.Halt();
             return err != null ? Result.Fail(err) : Result.Ok();
         }
 
@@ -280,18 +337,20 @@ namespace Plugins.Robot.Epson
         {
             // SCARA 点动通常在示教器/RC+ 界面完成；
             // 这里提供 1mm 微动以便上位机微调（走 Go 全坐标）
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result.Fail($"非法轴号 {axis}");
 
             float delta = (direction >= 0 ? 1f : -1f);
-            return MoveAbsolute(axis, _sdk.GetPosition(axis) + delta, 0);
+            return MoveAbsolute(axis, sdk.GetPosition(axis) + delta, 0);
         }
 
         public Result MoveRelative(int axis, float distance, float speed)
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result.Fail($"非法轴号 {axis}");
-            return MoveAbsolute(axis, _sdk.GetPosition(axis) + distance, speed);
+            return MoveAbsolute(axis, sdk.GetPosition(axis) + distance, speed);
         }
 
         /// <summary>
@@ -300,14 +359,15 @@ namespace Plugins.Robot.Epson
         /// </summary>
         public Result MoveAbsolute(int axis, float position, float speed)
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result.Fail($"非法轴号 {axis}（Epson SCARA 仅支持 0=X/1=Y/2=Z/3=U）");
 
             // 以控制器当前位置为基准，仅替换目标轴 → 组成四轴目标点
-            float x = _sdk.GetPosition(AxisX);
-            float y = _sdk.GetPosition(AxisY);
-            float z = _sdk.GetPosition(AxisZ);
-            float u = _sdk.GetPosition(AxisU);
+            float x = sdk.GetPosition(AxisX);
+            float y = sdk.GetPosition(AxisY);
+            float z = sdk.GetPosition(AxisZ);
+            float u = sdk.GetPosition(AxisU);
 
             switch (axis)
             {
@@ -317,7 +377,7 @@ namespace Plugins.Robot.Epson
                 case AxisU: u = position; break;
             }
 
-            string err = _sdk.MoveTo(x, y, z, u, speed, linear: false);
+            string err = sdk.MoveTo(x, y, z, u, speed, linear: false);
             if (err != null) return Result.Fail($"轴{axis} 运动失败: {err}");
 
             _pos[axis] = position;
@@ -327,10 +387,11 @@ namespace Plugins.Robot.Epson
         /// <summary>整轴回零（Epson Home 全轴回原点）</summary>
         public Result Home(int axis, int homeMode)
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
             if (!IsValidAxis(axis)) return Result.Fail($"非法轴号 {axis}");
 
-            string err = _sdk.Home();
+            string err = sdk.Home();
             if (err != null) return Result.Fail(err);
 
             for (int i = 0; i < AxisCount; i++) _pos[i] = 0f;
@@ -342,13 +403,15 @@ namespace Plugins.Robot.Epson
         #region IMotionCard —— IO 读写
 
         /// <summary>
-        /// 数字输出（0 基编号）。本工位约定：
-        /// 输出 0 = 吸嘴1 真空阀、输出 1 = 吸嘴2 真空阀。
+        /// 数字输出（业务 0 基编号，经 EpsonIoMap 映射 SPEL+ 物理口）。本工位约定：
+        /// 业务 0 = 吸嘴1 真空阀 → SPEL+ OUT15；业务 1 = 吸嘴2 真空阀 → SPEL+ OUT14。
+        /// 单吸嘴机型只有吸嘴1（业务 0）。
         /// </summary>
         public Result SetOutput(int ioNum, bool state)
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
-            string err = _sdk.SetOutput(ioNum, state);
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
+            string err = sdk.SetOutput(ioNum, state);
             if (err != null) return Result.Fail(err);
 
             _outputStates[ioNum] = state;
@@ -358,8 +421,9 @@ namespace Plugins.Robot.Epson
         /// <summary>数字输入读取（0 基编号；仿真层为输出回环）</summary>
         public Result<bool> GetInput(int ioNum)
         {
-            if (!IsSdkOpen) return Result<bool>.Fail("控制器未连接");
-            bool? v = _sdk.GetInput(ioNum);
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<bool>.Fail("控制器未连接");
+            bool? v = sdk.GetInput(ioNum);
             return v.HasValue ? Result<bool>.Ok(v.Value) : Result<bool>.Fail($"读取输入 {ioNum} 失败");
         }
 
@@ -396,6 +460,44 @@ namespace Plugins.Robot.Epson
 
         #endregion
 
+        #region 机械手专属 —— 四轴整点定位（调试台/业务流共用）
+
+        /// <summary>
+        /// 四轴整点 PTP 定位（Go 关节插补）：X/Y/Z/U 同时运动到目标点。
+        /// SCARA 走 PTP 比逐轴补全更符合机械手习惯（各轴按关节插补同时到达），
+        /// 供机械手调试台的"整点走位"与后续工位业务的吸取/放置点位运动使用。
+        /// speed 单位 mm/s，&lt;= 0 时沿用控制器当前速度。
+        /// </summary>
+        public Result MoveToPtp(float x, float y, float z, float u, float speed)
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
+            string err = sdk.MoveTo(x, y, z, u, speed, linear: false);
+            if (err != null) return Result.Fail($"PTP 定位失败: {err}");
+
+            _pos[AxisX] = x;
+            _pos[AxisY] = y;
+            _pos[AxisZ] = z;
+            _pos[AxisU] = u;
+            return Result.Ok();
+        }
+
+        /// <summary>一次性读取四轴当前位置（X/Y/Z/U，指令位置口径）。</summary>
+        public Result<float[]> GetPositionsAll()
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<float[]>.Fail("控制器未连接");
+            return Result<float[]>.Ok(new[]
+            {
+                sdk.GetPosition(AxisX),
+                sdk.GetPosition(AxisY),
+                sdk.GetPosition(AxisZ),
+                sdk.GetPosition(AxisU)
+            });
+        }
+
+        #endregion
+
         #region IMotionCard —— 多轴插补
 
         /// <summary>
@@ -403,23 +505,24 @@ namespace Plugins.Robot.Epson
         /// </summary>
         public Result LineInterpolation(int[] axisList, float[] targetPositions, float speed, bool isAbsolute = true)
         {
-            if (!IsSdkOpen) return Result.Fail("控制器未连接");
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
             if (axisList == null || targetPositions == null || axisList.Length != targetPositions.Length)
             {
                 return Result.Fail("插补参数非法：轴列表与目标位置数量不一致");
             }
 
-            float x = _sdk.GetPosition(AxisX);
-            float y = _sdk.GetPosition(AxisY);
-            float z = _sdk.GetPosition(AxisZ);
-            float u = _sdk.GetPosition(AxisU);
+            float x = sdk.GetPosition(AxisX);
+            float y = sdk.GetPosition(AxisY);
+            float z = sdk.GetPosition(AxisZ);
+            float u = sdk.GetPosition(AxisU);
 
             for (int i = 0; i < axisList.Length; i++)
             {
                 int axis = axisList[i];
                 if (!IsValidAxis(axis)) return Result.Fail($"非法轴号 {axis}");
                 float target = isAbsolute ? targetPositions[i]
-                                          : _sdk.GetPosition(axis) + targetPositions[i];
+                                          : sdk.GetPosition(axis) + targetPositions[i];
                 switch (axis)
                 {
                     case AxisX: x = target; break;
@@ -429,7 +532,7 @@ namespace Plugins.Robot.Epson
                 }
             }
 
-            string err = _sdk.MoveTo(x, y, z, u, speed, linear: true);
+            string err = sdk.MoveTo(x, y, z, u, speed, linear: true);
             if (err != null) return Result.Fail($"直线插补失败: {err}");
 
             for (int i = 0; i < axisList.Length; i++) _pos[axisList[i]] = targetPositions[i];
@@ -491,6 +594,25 @@ namespace Plugins.Robot.Epson
         #endregion
 
         private static bool IsValidAxis(int axis) => axis >= 0 && axis < AxisCount;
+
+        /// <summary>
+        /// 从分号分隔的连接串中取键值（大小写不敏感）。
+        /// 例：ParseConnValue("Protocol=TCP;IP=127.0.0.1;Port=502", "IP") → "127.0.0.1"
+        /// </summary>
+        private static string ParseConnValue(string connStr, string key)
+        {
+            if (string.IsNullOrEmpty(connStr)) return null;
+            foreach (string pair in connStr.Split(';', ',', '&'))
+            {
+                int eq = pair.IndexOf('=');
+                if (eq > 0 &&
+                    string.Equals(pair.Substring(0, eq).Trim(), key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return pair.Substring(eq + 1).Trim();
+                }
+            }
+            return null;
+        }
 
         /// <summary>默认构造（DeviceId = 控制器地址）</summary>
         public EpsonRobot(string deviceId)

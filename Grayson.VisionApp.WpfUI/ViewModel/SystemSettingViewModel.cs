@@ -37,9 +37,36 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OpenLogFolderCommand = new RelayCommand(_ => OpenFolder(LogPath));
             OpenImageFolderCommand = new RelayCommand(_ => OpenFolder(ImageStorePath));
             OpenDataFolderCommand = new RelayCommand(_ => OpenFolder(DataPath));
+            ClearProductionStatsCommand = new RelayCommand(_ => OnClearProductionStats());
 
             BrowseLogFolderCommand = new RelayCommand(_ => BrowseFolder(path => LogPath = path));
             BrowseImageFolderCommand = new RelayCommand(_ => BrowseFolder(path => ImageStorePath = path));
+        }
+
+        /// <summary>
+        /// 清除所有工位生产统计数据（工位监视页头部的 总数/OK/NG/良率 累计）。
+        /// 删除 Data\StationStats\*.stats.json；运行中的监视页下次轮询（500ms）以当前
+        /// Worker 计数为新基线重建，已跑过的周期不会重新计入。
+        /// </summary>
+        private void OnClearProductionStats()
+        {
+            if (!_dialogService.ShowConfirm(
+                "确认清除所有工位的生产统计数据（总数 / OK / NG / 良率累计）？\n该操作不可恢复；正在运行的工位将从当前计数重新累计。",
+                "清除生产统计"))
+            {
+                return;
+            }
+
+            try
+            {
+                var statsService = new StationStatisticsService();
+                int count = statsService.ClearAll();
+                _dialogService.ShowInfo($"已清除 {count} 个工位的生产统计数据。", "清除完成");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"清除失败: {ex.Message}", "错误");
+            }
         }
 
         #region 1. 存储与路径属性
@@ -115,6 +142,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand OpenDataFolderCommand { get; }
         public ICommand BrowseLogFolderCommand { get; }
         public ICommand BrowseImageFolderCommand { get; }
+        /// <summary>清除所有工位生产统计数据（OK/NG 累计）</summary>
+        public ICommand ClearProductionStatsCommand { get; }
         #endregion
 
         private void MarkDirty()

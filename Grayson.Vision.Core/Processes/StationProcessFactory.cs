@@ -1,6 +1,5 @@
 using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Station.Processes;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,9 +13,14 @@ namespace Grayson.Vision.Core.Processes
     /// StationConfigModel.ProcessKey + ProcessConfigJson，经此工厂实例化
     /// 业务过程并 AttachProcess 到 StationWorker。
     ///
+    /// ⚠ ProcessConfigJson 语义（2026-09-01 起）＝「字段级覆盖补丁」而非全量快照：
+    ///   读取 = 代码默认值（Config 类属性初始化器）+ 补丁覆盖。
+    ///   只有被显式写回的字段（如示教的 NozzleOffset/TeachMode）优先于代码默认值，
+    ///   其余参数改 Config.cs 即生效。详见 ProcessConfigOverlay。
+    ///
     /// 新增业务过程三步：
     ///   1. Core/Processes 下新建 Process 类（继承 StationProcessBase）+ Config 类；
-    ///   2. 在构造函数中 Register("键", (json, worker) => new XxxProcess(worker, 反序列化(json)));
+    ///   2. 在构造函数中 Register("键", (json, worker) => new XxxProcess(worker, ProcessConfigOverlay.LoadEffective<XxxConfig>(json)));
     ///   3. WpfUI 工位管理"业务过程"下拉即自动出现（数据源 = GetSupportedKeys()）。
     /// </summary>
     public static class StationProcessFactory
@@ -27,10 +31,20 @@ namespace Grayson.Vision.Core.Processes
         static StationProcessFactory()
         {
             Register("MahjongPick", (json, worker) =>
-                new MahjongPickProcess(worker, Deserialize(json, new MahjongPickConfig())));
+                new MahjongPickProcess(worker, ProcessConfigOverlay.LoadEffective<MahjongPickConfig>(json)));
 
             Register("MahjongDualNozzle", (json, worker) =>
-                new MahjongDualNozzleProcess(worker, Deserialize(json, new MahjongDualNozzleConfig())));
+                new MahjongDualNozzleProcess(worker, ProcessConfigOverlay.LoadEffective<MahjongDualNozzleConfig>(json)));
+
+            // 2026-09-06 通用取放引擎：S2(双吸嘴)/S3(同心吸嘴+多相机) 共用一码，新机型零代码建档
+            Register("VisionPickPlace", (json, worker) =>
+                new VisionPickPlaceProcess(worker, ProcessConfigOverlay.LoadEffective<VisionPickPlaceConfig>(json)));
+
+            // 2026-09-09 独立视觉任务引擎（stage9-2a）：深度学习推理/外观测量等不依赖工位硬件
+            // （无相机/运控/PLC，仅本地图像源+模型/算法）。绑定配方链 + 定时器触发源即可离线连续跑，
+            // 见 StandaloneVisionProcess 头注与《任务模板中心_…_设计与实现_2026-09-09.md》§7。
+            Register(StandaloneVisionProcess.ProcessKeyValue, (json, worker) =>
+                new StandaloneVisionProcess(worker, ProcessConfigOverlay.LoadEffective<StandaloneVisionConfig>(json)));
         }
 
         private static void Register(string key, Func<string, StationWorker, IStationProcess> factory)
@@ -38,23 +52,6 @@ namespace Grayson.Vision.Core.Processes
             if (!_registry.ContainsKey(key))
             {
                 _registry[key] = factory;
-            }
-        }
-
-        /// <summary>
-        /// 反序列化过程参数 JSON；空/非法时回退默认参数（保证工位能启动并给出可诊断日志）。
-        /// </summary>
-        private static T Deserialize<T>(string json, T fallback) where T : class
-        {
-            if (string.IsNullOrWhiteSpace(json)) return fallback;
-            try
-            {
-                return JsonConvert.DeserializeObject<T>(json) ?? fallback;
-            }
-            catch (Exception ex)
-            {
-                LogBus.Warn("StationProcessFactory", $"过程配置 JSON 反序列化失败，使用默认参数: {ex.Message}");
-                return fallback;
             }
         }
 

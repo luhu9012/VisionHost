@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.Contracts.Station.WorkOrderTracking;
@@ -23,10 +24,18 @@ namespace Grayson.Vision.WpfUI.ViewModel
     // DataTraceEntry 已迁移至 Grayson.Vision.Contracts.Station.Models
     // 此处通过 using 导入保持兼容性
 
-    public class DataTraceViewModel : ViewModelBase
+    public class DataTraceViewModel : ViewModelBase, INavigationAware
     {
         private readonly IInspectionLogRepository _logRepo;
         private readonly StationConfigService _configService;
+
+        /// <summary>页面可见期间的自动刷新定时器：工位运行结果由 Core 实时落 inspection_logs，
+        /// 本页(本地追溯与防错)在可见时每 1s 自动重查，实现「运行中实时联动」(#4)。
+        /// 页面每次导航重建，离开(OnNavigatedFrom)即停，杜绝后台空转。</summary>
+        private readonly DispatcherTimer _liveTimer;
+
+        /// <summary>自动刷新进行中标记：防 OnSearch 里再触发重入。</summary>
+        private bool _refreshing;
 
         public DataTraceViewModel(IInspectionLogRepository logRepo = null, StationConfigService configService = null)
         {
@@ -42,11 +51,34 @@ namespace Grayson.Vision.WpfUI.ViewModel
             LoadLiveWorkOrdersCommand = new RelayCommand(_ => OnLoadLiveWorkOrders());
             ShowWorkOrderDetailCommand = new RelayCommand(_ => OnShowWorkOrderDetail(), _ => SelectedEntry != null);
 
+            _liveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+            _liveTimer.Tick += (s, e) => AutoRefresh();
+
             StartTime = DateTime.Today.AddDays(-1);
             EndTime = DateTime.Today.AddDays(1).AddSeconds(-1);
 
             LoadStations();
             OnSearch();
+        }
+
+        /// <summary>导航进入：开始自动实时刷新（页面可见才查，关闭自动停）。</summary>
+        public void OnNavigatedTo(object parameter)
+        {
+            try { _liveTimer.Start(); } catch { }
+        }
+
+        /// <summary>导航离开：停止自动刷新（页面不可见不再查库）。</summary>
+        public void OnNavigatedFrom()
+        {
+            try { _liveTimer.Stop(); } catch { }
+        }
+
+        private void AutoRefresh()
+        {
+            if (_refreshing) return;
+            _refreshing = true;
+            try { OnSearch(); }
+            finally { _refreshing = false; }
         }
 
         public ObservableCollection<DataTraceEntry> TraceEntries { get; set; }

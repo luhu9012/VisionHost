@@ -5,6 +5,23 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
              d:DesignHeight="720" d:DesignWidth="1280">
+    <UserControl.Resources>
+        <!-- NG 行整行浅红高亮（深色工控主题用半透明红底），OK/正常行维持默认底色 -->
+        <Style x:Key="TraceRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource ModernDataGridRowStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsNg}" Value="True">
+                    <Setter Property="Background" Value="#26FF3D00"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="TraceCellStyle" TargetType="DataGridCell" BasedOn="{StaticResource ModernDataGridCellStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsNg}" Value="True">
+                    <Setter Property="Foreground" Value="#FFFFF3F3"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
     <Grid Background="{StaticResource BackgroundBrush}" Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -65,7 +82,9 @@
                 <DataGrid Grid.Row="1" Margin="8" BorderThickness="0" 
                           Style="{StaticResource ModernDataGridStyle}"
                           ItemsSource="{Binding TraceEntries}" 
-                          SelectedItem="{Binding SelectedEntry}">
+                          SelectedItem="{Binding SelectedEntry}"
+                          RowStyle="{StaticResource TraceRowStyle}"
+                          CellStyle="{StaticResource TraceCellStyle}">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="打开检测图片" Command="{Binding OpenImageCommand}"/>

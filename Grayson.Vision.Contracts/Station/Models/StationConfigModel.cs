@@ -167,6 +167,21 @@ namespace Grayson.Vision.Contracts.Station.Models
         /// </summary>
         public string ProcessConfigJson { get; set; }
 
+        // ==================== 任务模板绑定（2026-09-09 新增，任务模板中心 T 层） ====================
+        // 任务模板=对"执行方案+视觉链+资产+输出契约"的可复用封装（TaskTemplateInfo，落 Config\TaskLibrary\{Code}.json）。
+        // 工位装配语义升级：不再只对着裸 ProcessKey 填 JSON，而是从任务模板中心选模板 → 自动获得建议
+        //   · 引导定位类(StationBound)：建议 EngineKey=ProcessKey + 配方 + 标定/模板资产，监视页【启动】沿用现有链路；
+        //   · 深度学习/外观测量类(Standalone)：无硬件依赖，工位=执行载体容器（后续 stage9-2 独立运行器/批量离线跑）。
+        // 三个字段均为可选冗余（旧 JSON/LiteDB 无字段不报错），以模板库为主数据源，避免双写漂移。
+        /// <summary>绑定的任务模板代码（TaskTemplateInfo.TemplateCode；空=未走任务模板装配，兼容旧直接配置）</summary>
+        public string TaskTemplateCode { get; set; }
+
+        /// <summary>绑定的任务模板名称（UI 列表展示冗余）</summary>
+        public string TaskTemplateName { get; set; }
+
+        /// <summary>绑定任务类型族（冗余快照，UI 图标/徽章展示用；字符串避免与库模型强耦合）</summary>
+        public string TaskTemplateKindText { get; set; }
+
         /// <summary>
         /// 配置创建时间戳
         /// 用于审计和版本追踪

@@ -31,8 +31,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="halcondotnet">
-      <HintPath>..\..\Grayson.VisionApp\Grayson.VisionApp.Core\bin\Debug\halcondotnet.dll</HintPath>
+    <Reference Include="halcondotnet, Version=24.11.1.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLLLib\halcondotnet.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
@@ -53,12 +54,15 @@
     <Compile Include="Calibration\FixtureTool.cs" />
     <Compile Include="Calibration\ICalibrationDisplayContext.cs" />
     <Compile Include="Calibration\ICalibrationService.cs" />
+    <Compile Include="Calibration\PerpendicularityMeter.cs" />
     <Compile Include="Class1.cs" />
     <Compile Include="Core\HalconGlobalHelper.cs" />
     <Compile Include="Core\HalconMemoryGuard.cs" />
+    <Compile Include="Core\IHalconWindowSurface.cs" />
     <Compile Include="Identification\BarcodeTool.cs" />
     <Compile Include="Identification\ColorTool.cs" />
     <Compile Include="Identification\DeepLearningTool.cs" />
+    <Compile Include="Identification\HalconDlNativeTool.cs" />
     <Compile Include="Identification\OCRTool.cs" />
     <Compile Include="ImageProc\AffineImageTool.cs" />
     <Compile Include="ImageProc\ImageBasicTool.cs" />
@@ -70,7 +74,12 @@
     <Compile Include="Match2D\NccMatchTool.cs" />
     <Compile Include="Match2D\TemplateMatchTool.cs" />
     <Compile Include="Templates\TemplateManager.cs" />
+    <Compile Include="Templates\TemplateMaskRegionBuilder.cs" />
+    <Compile Include="Templates\TemplateCaliperRunner.cs" />
+    <Compile Include="Templates\TemplatePreviewComposer.cs" />
     <Compile Include="Measure2D\EdgeMeasureTool.cs" />
+    <Compile Include="Measure2D\CaliperMeasureTool.cs" />
+    <Compile Include="Measure2D\CaliperNodeMeasure.cs" />
     <Compile Include="NodePreviewHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

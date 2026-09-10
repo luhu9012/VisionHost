@@ -2,43 +2,228 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:halcon="clr-namespace:HalconDotNet;assembly=halcondotnet">
-    <Grid Background="#000" MouseMove="Grid_MouseMove">
-        <!-- 1. Halcon 智能窗口 -->
-        <halcon:HSmartWindowControlWPF x:Name="SmartWindow"
-                                       HInitWindow="SmartWindow_HInitWindow"
-                                   
-                                       />
-
-        <!-- 2. 右上角悬浮控制按钮组 -->
-        <!-- ⚠ 绑定走 RelativeSource 指向控件自身：本控件可能被嵌入任意 DataContext 宿主
-             （如 FlowEdit 节点属性窗口的预览区，DataContext 是 FlowNode），
-             若绑外部 VM 的 FitImageCmd 会报 Binding Error 40。 -->
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10">
-            <Button Content="🔲 适应窗口" 
-                    Command="{Binding FitImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" 
-                    ToolTip="重置缩放，自适应居中显示"
-                    Background="#80000000" Foreground="#FFFFFF" BorderBrush="#555" BorderThickness="1"
-                    Padding="6,3" FontSize="11" Cursor="Hand">
-                <Button.Style>
-                    <Style TargetType="Button">
-                        <Style.Triggers>
+    <UserControl.Resources>
+        <!-- 工具栏普通按钮样式：透明底 + 悬停高亮；自包含，不依赖宿主主题资源 -->
+        <Style x:Key="ToolBtnStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#E8E8E8"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="7,3"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#A0007ACC"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#45FFFFFF"/>
                             </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Button.Style>
-            </Button>
-        </StackPanel>
-        <!-- 🌟 3. 新增：左下角悬浮图像/像素信息栏（绑定控件自身 SelectedImageInfo 依赖属性，
-             由代码在 VM.PropertyChanged / 内部鼠标移动时维护，不依赖外部 DataContext） -->
-        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10"
-                Background="#99000000" CornerRadius="3" Padding="8,4" IsHitTestVisible="False">
-            <TextBlock Text="{Binding SelectedImageInfo, RelativeSource={RelativeSource AncestorType=UserControl}}" 
-                       Foreground="#00FF00" 
-                       FontFamily="Consolas, Microsoft YaHei" 
-                       FontSize="12" 
-                       FontWeight="Bold"/>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 工具栏工具模式单选样式：激活态高亮（与普通按钮同风格，仅加选中底色） -->
+        <Style x:Key="ToolRadioStyle" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#E8E8E8"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="3" Padding="7,3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#45FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF0078D4"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- "📐 绘制"形状选择钮（ToggleButton）：选中态高亮，点击弹出形状下拉 -->
+        <Style x:Key="ToolRoiPickerStyle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="#E8E8E8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="3" Padding="8,3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#45FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF0078D4"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 工具条内竖分隔线 -->
+        <Style x:Key="ToolSepStyle" TargetType="Border">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Background" Value="#44FFFFFF"/>
+            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid x:Name="RootGrid" Background="#000" MouseMove="Grid_MouseMove">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 1. 顶部工具条（emoji 图标按钮；Visible 由 ShowToolbar 依赖属性控制，代码切换） -->
+        <Border x:Name="Toolbar" Grid.Row="0" MinHeight="32"
+                Background="#D91A1A1A" BorderBrush="#4D4D4D" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Margin="4,1">
+                <!-- 清空 -->
+                <Button x:Name="BtnClearAnnotations" Style="{StaticResource ToolBtnStyle}"
+                        Content="🧹"
+                        ToolTip="清空画面标注（ROI 框 / 叠加图形 / 文字），保留底图继续显示"
+                        Click="BtnClearAnnotations_Click"/>
+                <Border Style="{StaticResource ToolSepStyle}"/>
+
+                <!-- 工具模式（互斥单选） -->
+                <RadioButton x:Name="ToolSelect" Style="{StaticResource ToolRadioStyle}" GroupName="ViewToolGroup"
+                             Content="🖱️" Tag="Pointer"
+                             ToolTip="选择/浏览（默认）：滚轮以鼠标为锚缩放 · 左键拖拽平移 · 双击适应窗口"
+                             Checked="Tool_Checked"/>
+                <RadioButton x:Name="ToolHand" Style="{StaticResource ToolRadioStyle}" GroupName="ViewToolGroup"
+                             Content="✋" Tag="Hand"
+                             ToolTip="拖动移动：左键拖拽平移画面（观察大图）；滚轮缩放同样可用"
+                             Checked="Tool_Checked"/>
+                <RadioButton x:Name="ToolZoomRect" Style="{StaticResource ToolRadioStyle}" GroupName="ViewToolGroup"
+                             Content="🔍" Tag="ZoomRect"
+                             ToolTip="框选放大：按住左键拖出矩形，松开后放大到该区域"
+                             Checked="Tool_Checked"/>
+                <Border Style="{StaticResource ToolSepStyle}"/>
+
+                <!-- 绘制 ROI：单一入口按钮，点击弹出形状下拉（矩形/旋转矩形/圆形/椭圆/多边形/手绘区域/线段）。
+                     选中任一绘制形状后本按钮保持高亮，可在下拉内随时换形状或退出。 -->
+                <ToggleButton x:Name="ToolRoiPicker" Style="{StaticResource ToolRoiPickerStyle}"
+                              Content="📐 ▾"
+                              ToolTip="绘制 ROI：点击选择形状（矩形 / 旋转矩形 / 圆形 / 椭圆 / 多边形 / 手绘区域 / 线段）；涂抹画笔见工具条 🖌"
+                              Click="ToolRoiPicker_Click">
+                    <ToggleButton.ContextMenu>
+                        <ContextMenu x:Name="RoiShapeMenu" Placement="Bottom" HasDropShadow="False">
+                            <MenuItem Header="▭ 平行矩形" Tag="Rect1"
+                                      ToolTip="左键拖出矩形，右键完成（模板创建首选）" Click="RoiShapeMenu_Click"/>
+                            <MenuItem Header="⬗ 旋转矩形" Tag="Rect2"
+                                      ToolTip="左键拖出主轴（长度+角度），松手后移动调整宽度，右键完成"
+                                      Click="RoiShapeMenu_Click"/>
+                            <MenuItem Header="⭘ 圆形" Tag="Circle"
+                                      ToolTip="左键按下定圆心拖出半径，右键完成" Click="RoiShapeMenu_Click"/>
+                            <MenuItem Header="⬭ 椭圆" Tag="Ellipse"
+                                      ToolTip="左键拖出主轴，松手后移动调整副轴，右键完成" Click="RoiShapeMenu_Click"/>
+                            <MenuItem Header="⬠ 多边形区域（逐点）" Tag="Polygon"
+                                      ToolTip="左键逐点添加顶点（实时预览精确可控），右键闭合完成" Click="RoiShapeMenu_Click"/>
+                            <MenuItem Header="✒️ 任意区域（手绘）" Tag="Freehand"
+                                      ToolTip="按住左键沿轮廓自由描线（跟随鼠标路径），右键自动闭合创建 —— 仿 HALCON draw_region"
+                                      Click="RoiShapeMenu_Click"/>
+                            <MenuItem Header="↗ 线段" Tag="Line"
+                                      ToolTip="左键拖出/点击定端点，右键完成" Click="RoiShapeMenu_Click"/>
+                            <Separator/>
+                            <MenuItem Header="✓ 完成绘制（切回选择浏览）" Tag="Pointer"
+                                      Click="RoiShapeMenu_Click"/>
+                        </ContextMenu>
+                    </ToggleButton.ContextMenu>
+                </ToggleButton>
+
+                <!-- 涂抹画笔（掩膜画笔）：高频工具，独立按钮直达（等价 📐 下拉里的 🖌 涂抹） -->
+                <RadioButton x:Name="ToolBrush" Style="{StaticResource ToolRadioStyle}" GroupName="ViewToolGroup"
+                             Content="🖌" Tag="Brush" Margin="2,0,0,0"
+                             ToolTip="🖌 涂抹画笔：按住左键沿目标区域涂抹成圆盘带（半径由调用页提供），松开=收笔一笔，可连续涂 —— 掩膜∪/∖涂抹首选"
+                             Checked="Tool_Checked"/>
+                <Border Style="{StaticResource ToolSepStyle}"/>
+
+                <!-- 视图缩放 -->
+                <Button x:Name="BtnZoomOut" Style="{StaticResource ToolBtnStyle}"
+                        Content="➖" ToolTip="缩小视图"
+                        Click="BtnZoomOut_Click"/>
+                <Button x:Name="BtnZoomIn" Style="{StaticResource ToolBtnStyle}"
+                        Content="➕" ToolTip="放大视图"
+                        Click="BtnZoomIn_Click"/>
+                <Button x:Name="BtnFit" Style="{StaticResource ToolBtnStyle}"
+                        Content="🖼️"
+                        ToolTip="适应窗口：整幅图像铺满视口居中显示"
+                        Command="{Binding FitImageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                <Button x:Name="BtnActualSize" Style="{StaticResource ToolBtnStyle}"
+                        Content="1:1" FontSize="12"
+                        ToolTip="100% 实际大小（1 图像像素 ≈ 1 屏幕像素），保持当前视野中心"
+                        Click="BtnActualSize_Click"/>
+            </StackPanel>
         </Border>
+
+        <!-- 2. 视图区（Halcon 智能窗口 + 交互覆盖层 + 提示/信息栏） -->
+        <Grid Grid.Row="1">
+            <halcon:HSmartWindowControlWPF x:Name="SmartWindow"
+                                           HInitWindow="SmartWindow_HInitWindow"/>
+
+            <!-- 交互事件层：覆盖在 Halcon 视口上方承接 WPF 鼠标/键盘事件（SmartWindow 内部原生画面层
+                 会截断视口上的 WPF 输入，直接绑控件不可靠——见 Grid_MouseMove 注释）。
+                 本层不承载任何视觉/命中图形：ROI 视觉全部由 HALCON 窗口层绘制
+                 （DrawRoiEditorLayerToWindow，实证 WPF 覆盖层内容在视口上方不参与合成），
+                 点选/拖动/手柄命中为纯几何算法（图像坐标判定），故本层为空元素 + Transparent
+                 背景仅用于可靠命中自身以便接收事件。 -->
+            <Canvas x:Name="OverlayLayer" Background="Transparent" IsHitTestVisible="False" ClipToBounds="True"
+                    Focusable="True"
+                    PreviewMouseLeftButtonDown="Overlay_MouseLeftButtonDown"
+                    PreviewMouseMove="Overlay_MouseMove"
+                    PreviewMouseLeftButtonUp="Overlay_MouseLeftButtonUp"
+                    PreviewMouseRightButtonDown="Overlay_MouseRightButtonDown"
+                    PreviewMouseWheel="Overlay_MouseWheel"/>
+
+            <!-- 工具操作提示（绘制类工具激活时显示，右下角） -->
+            <Border x:Name="DrawHint" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Margin="10" Background="#B3000000" CornerRadius="3" Padding="8,4"
+                    Visibility="Collapsed" IsHitTestVisible="False">
+                <TextBlock x:Name="DrawHintText" Foreground="#FFFFE600" FontSize="11"/>
+            </Border>
+
+            <!-- 左下角悬浮图像/像素信息栏 -->
+            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10"
+                    Background="#99000000" CornerRadius="3" Padding="8,4" IsHitTestVisible="False">
+                <TextBlock Text="{Binding SelectedImageInfo, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                           Foreground="#00FF00"
+                           FontFamily="Consolas, Microsoft YaHei"
+                           FontSize="12"
+                           FontWeight="Bold"/>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

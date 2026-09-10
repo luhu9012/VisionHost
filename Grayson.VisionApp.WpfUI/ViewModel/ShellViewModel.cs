@@ -266,10 +266,25 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
      // ------------------ 2. 核心工程配置 ------------------
         new MenuItemViewModel { IsSectionHeader = true, Title = "核心工程配置" },
-        new MenuItemViewModel { Icon = "🏭", Title = "产线工位与映射", PageType = PageType.StationManage, RequiredRole = UserRole.Engineer },
-        new MenuItemViewModel { Icon = "📦", Title = "配方管理", PageType = PageType.RecipeManage, RequiredRole = UserRole.Engineer },
-        new MenuItemViewModel { Icon = "📐", Title = "标定管理", PageType = PageType.CalibrationManage, RequiredRole = UserRole.Engineer },
-        new MenuItemViewModel { Icon = "🌿", Title = "视觉流程编辑器", PageType = PageType.FlowEdit, RequiredRole = UserRole.Engineer },
+        // 主入口（★）：工位从需求向导新建 → 工作台 S1-S6 逐段装配，一站式完成
+        new MenuItemViewModel { Icon = "🏭", Title = "★ 工位工程工作台", PageType = PageType.StationManage, RequiredRole = UserRole.Engineer },
+        // 工程工具（主入口的配套/专项工具，收敛为折叠子组；替换先行、功能未下线）
+        new MenuItemViewModel
+        {
+            Icon = "🧰", Title = "工程工具", RequiredRole = UserRole.Engineer,
+            Children = new ObservableCollection<MenuItemViewModel>
+            {
+                new MenuItemViewModel { Icon = "📦", Title = "配方管理", PageType = PageType.RecipeManage, RequiredRole = UserRole.Engineer },
+                new MenuItemViewModel { Icon = "🎯", Title = "模板工作台", PageType = PageType.TemplateManage, RequiredRole = UserRole.Engineer },
+                // 任务模板中心（T 层：执行方案/视觉链/资产的族级封装，2026-09-09 新增入口）
+                new MenuItemViewModel { Icon = "🗂️", Title = "任务模板中心", PageType = PageType.TaskTemplateCenter, RequiredRole = UserRole.Engineer },
+                // 模型仓库（深度学习推理/外观测量任务的模型资产注册，2026-09-09 新增入口）
+                new MenuItemViewModel { Icon = "🧠", Title = "模型仓库", PageType = PageType.ModelRegistry, RequiredRole = UserRole.Engineer },
+                new MenuItemViewModel { Icon = "📐", Title = "标定中心", PageType = PageType.CalibrationManage, RequiredRole = UserRole.Engineer },
+                new MenuItemViewModel { Icon = "🌿", Title = "视觉流程编辑器", PageType = PageType.FlowEdit, RequiredRole = UserRole.Engineer },
+                new MenuItemViewModel { Icon = "📏", Title = "相机装调助手", PageType = PageType.CameraTuneTool, RequiredRole = UserRole.Engineer }
+            }
+        },
 
         // ------------------ 3. 硬件设备池 (插件驱动) ------------------
         //硬件设备池 (Hardware Device Pool)

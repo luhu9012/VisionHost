@@ -13,10 +13,14 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
     [Node(NodeType.ImageThreshold, NodeCategory.ImagePreprocess, typeof(ImageThresholdParam))]
     [NodePort("InputImage", PortType.In, PortCategory.Data, dataType: "object", colorHex: "#9B59B6")]
     [NodePort("OutputRegion", PortType.Out, PortCategory.Data, dataType: "object", colorHex: "#2ECC71")]
+    // 处理效果图输出：端口名含 "Image" → 帧事件自动推送，缩略图列表/主视图/工位监视上屏，
+    // 值 = 输入图同实例（借用），场景叠加层（分割区域副本+参数文本）随帧重放不被清除。
+    [NodePort("OutputImage", PortType.Out, PortCategory.Data, dataType: "object", colorHex: "#9B59B6")]
     public class ImageThresholdExecutor : NodeExecutorBase<ImageThresholdParam>
     {
         public const string PORT_IN_IMAGE = "InputImage";
         public const string PORT_OUT_REGION = "OutputRegion";
+        public const string PORT_OUT_IMAGE = "OutputImage";
 
         protected override async Task ExecuteCoreAsync(FlowNodeBase node, ImageThresholdParam param, NodeExecutionContext context, CancellationToken token)
         {
@@ -34,6 +38,9 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
             var disp = context.Preview;
             disp?.BeginScene();
             disp?.AddBorrowed(inputImage);
+
+            // 处理效果图输出（同实例借用）：帧推送上缩略图/主视图，场景叠加层共存
+            context.SetOutputValue(node, PORT_OUT_IMAGE, inputImage);
 
             var res = ImagePreprocessTool.ApplyThreshold(
                 inputImage,

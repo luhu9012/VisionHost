@@ -30,8 +30,13 @@ packages/
 *.log
 *.tmp
 *.bak
+*.bak_*
+*.bak-*
 Logs/
 Temp/
+
+# 第三方 SDK 备份目录
+DLLLib/backup_*/
 
 # 机器视觉本地素材（运行期产生的图/模板/标定文件，不上仓库）
 Images/

@@ -264,6 +264,35 @@ namespace Plugins.Motion.Zmc
             return Result.Fail($"下发轴 [{axis}] 运动参数失败。");
         }
 
+        /// <summary>回读轴运动参数（速度/加减速/当量等），供 UI 显示控制器当前真实值</summary>
+        public Result<MotionParam> GetMotionParam(int axis)
+        {
+            if (CardHandle == IntPtr.Zero) return Result<MotionParam>.Fail("运动卡未连接");
+
+            float speed = 0, accel = 0, decel = 0, creep = 0, unit = 0, lspeed = 0, sramp = 0;
+            int r1 = zmcaux.ZAux_Direct_GetSpeed(CardHandle, axis, ref speed);
+            int r2 = zmcaux.ZAux_Direct_GetAccel(CardHandle, axis, ref accel);
+            int r3 = zmcaux.ZAux_Direct_GetDecel(CardHandle, axis, ref decel);
+            int r4 = zmcaux.ZAux_Direct_GetCreep(CardHandle, axis, ref creep);
+            int r5 = zmcaux.ZAux_Direct_GetUnits(CardHandle, axis, ref unit);
+            int r6 = zmcaux.ZAux_Direct_GetLspeed(CardHandle, axis, ref lspeed);
+            int r7 = zmcaux.ZAux_Direct_GetSramp(CardHandle, axis, ref sramp);
+
+            if (r1 != 0 || r2 != 0 || r3 != 0 || r4 != 0 || r5 != 0 || r6 != 0 || r7 != 0)
+                return Result<MotionParam>.Fail($"回读轴 [{axis}] 运动参数失败。");
+
+            return Result<MotionParam>.Ok(new MotionParam
+            {
+                Speed = speed,
+                Accel = accel,
+                Decel = decel,
+                CreepSpeed = creep,
+                Unit = unit,
+                Lspeed = lspeed,
+                Sramp = sramp
+            });
+        }
+
         /// <summary>下发轴的正/反向软限位坐标</summary>
         public Result SetSoftLimits(int axis, float positiveLimit, float negativeLimit)
         {
@@ -271,6 +300,20 @@ namespace Plugins.Motion.Zmc
             int ret2 = zmcaux.ZAux_Direct_SetRsLimit(CardHandle, axis, negativeLimit);
 
             return (ret1 == 0 && ret2 == 0) ? Result.Ok() : Result.Fail($"设置轴 [{axis}] 软限位失败。");
+        }
+
+        /// <summary>回读轴软限位：[0]=正软限位(FsLimit)，[1]=负软限位(RsLimit)</summary>
+        public Result<float[]> GetSoftLimits(int axis)
+        {
+            if (CardHandle == IntPtr.Zero) return Result<float[]>.Fail("运动卡未连接");
+
+            float fs = 0, rs = 0;
+            int r1 = zmcaux.ZAux_Direct_GetFsLimit(CardHandle, axis, ref fs);
+            int r2 = zmcaux.ZAux_Direct_GetRsLimit(CardHandle, axis, ref rs);
+            if (r1 != 0 || r2 != 0)
+                return Result<float[]>.Fail($"回读轴 [{axis}] 软限位失败。");
+
+            return Result<float[]>.Ok(new[] { fs, rs });
         }
 
         /// <summary>修改规划位置指令 DPOS</summary>

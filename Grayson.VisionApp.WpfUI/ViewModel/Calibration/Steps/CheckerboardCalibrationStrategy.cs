@@ -22,15 +22,14 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
 
         public void TriggerSample(CalibrationWizardViewModel context)
         {
-            if (context.CurrentStep <= 1)
+            if (context.LegacyPhase <= 2)
             {
                 context.CaptureFeatureFrame("棋盘格预览");
                 return;
             }
 
             context.CaptureCheckerboardSample();
-            context.AppendLog($"提取棋盘格角点: 阵列 [{context.CheckerboardRows}x{context.CheckerboardCols}], 间距 [{context.CheckerboardSpacingMm}mm]");
-            MessageBox.Show("棋盘格图像已采集，可继续接入角点检测算法。", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            context.AppendLog("提取棋盘格角点: 当前版本尚未实现真实角点检测（占位类型），仅采集图像供调试。");
         }
 
         public void AutoRunAll(CalibrationWizardViewModel context)
@@ -40,13 +39,15 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
 
         public void ExecuteCalibration(CalibrationWizardViewModel context)
         {
-            context.AppendLog("开始求解 2D 棋盘格畸变与相机参数...");
-            var res = context.CalibService.CalcNinePointHomMat(
-                new double[] { 100, 200, 300, 100, 200, 300, 100, 200, 300 },
-                new double[] { 100, 100, 100, 200, 200, 200, 300, 300, 300 },
-                new double[] { 0, 10, 20, 0, 10, 20, 0, 10, 20 },
-                new double[] { 0, 0, 0, 10, 10, 10, 20, 20, 20 });
-            context.ProcessCalibrationResult(res);
+            // ⚠ 2026-09-04 真实性修复：此前这里用硬编码 9 对伪点跑 HomMat，"求解畸变"得到的是与图像无关的
+            //   假矩阵（RMS≈0 还能通过健康检查入库），用户以为做了标定板/畸变标定，实际拿到的是废数据。
+            //   真正的 find_caltab/calibrate_cam 未实现前，一律明确拒绝，绝不产出假数据。
+            context.AppendLog("[棋盘格/相机内参] ⛔ 已阻止假标定：真实标定板角点检测（find_caltab/calibrate_cam）尚未实现。");
+            MessageBox.Show(
+                "「棋盘格 2D / 相机内参」标定尚未实现：缺少真实标定板角点检测（HALCON find_caltab / calibrate_cam 未接入）。\n\n" +
+                "为避免无效标定数据入库，本次计算已中止。请在标定管理页把方案类型切换为：\n" +
+                "九点手眼 / 九点+旋转(偏心) / 吸放式 Pick&Place。",
+                "类型未实现", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

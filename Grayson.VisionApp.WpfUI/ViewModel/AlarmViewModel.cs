@@ -9,6 +9,7 @@ using Grayson.Vision.Contracts.Infrastructure.Alarm;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Core.Infrastructure.Alarm;
 using Grayson.Vision.WpfUI.Common;
+using Grayson.Vision.WpfUI.Service;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -62,7 +63,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
     }
 
-    public class AlarmViewModel : ViewModelBase, IAlarmSink
+    public class AlarmViewModel : ViewModelBase, IAlarmSink, INavigationAware
     {
         public AlarmViewModel()
         {
@@ -74,16 +75,28 @@ namespace Grayson.Vision.WpfUI.ViewModel
             AlarmList = new ObservableCollection<AlarmRecordModel>();
             AlarmList.CollectionChanged += (s, e) => UpdateAlarmCounts();
 
-            // 注册为 Core 告警总线的 UI Sink
+            // 注册为 Core 告警总线的 UI Sink（页面重建每次导航 → OnNavigatedTo 再确保注册）
             AlarmBus.Instance.RegisterSink(this);
         }
 
+        /// <summary>导航进入：确保已注册为告警 Sink（重建页面时构造已注册）。</summary>
+        public void OnNavigatedTo(object parameter)
+        {
+            try { AlarmBus.Instance.RegisterSink(this); } catch { }
+        }
+
+        /// <summary>导航离开：从 AlarmBus 注销，避免页面重建后旧 Sink 残留导致内存泄漏/重复显示。</summary>
+        public void OnNavigatedFrom()
+        {
+            try { AlarmBus.Instance.UnregisterSink(this); } catch { }
+        }
+
         /// <summary>
-        /// 页面离开或 VM 释放时，从 AlarmBus 注销，避免内存泄漏。
+        /// 页面释放时从 AlarmBus 注销，避免内存泄漏。
         /// </summary>
         public void Dispose()
         {
-            AlarmBus.Instance.UnregisterSink(this);
+            OnNavigatedFrom();
         }
 
         /// <summary>

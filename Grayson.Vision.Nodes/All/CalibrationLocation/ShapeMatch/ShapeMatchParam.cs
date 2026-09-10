@@ -62,20 +62,53 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.ShapeMatch
             set => Set(ref _minScore, value);
         }
 
-        private double _angleStart = -20.0;
-        /// <summary>搜索起始角度（°），运行时实际由模板内建角度范围决定，此处供界面参考</summary>
+        // 默认全角度搜索：配合模板训练时的 -180~180，节点新建时直接覆盖任意旋转。
+        // 旧配方仍使用其序列化值；如需提速可在此收窄范围（必须在模板训练范围内）。
+        private double _angleStart = -180.0;
+        /// <summary>搜索起始角度（°），运行时传给 find_shape_model；需在模板训练角度范围内</summary>
         public double AngleStart
         {
             get => _angleStart;
             set => Set(ref _angleStart, value);
         }
 
-        private double _angleEnd = 20.0;
-        /// <summary>搜索终止角度（°）</summary>
+        private double _angleEnd = 180.0;
+        /// <summary>搜索终止角度（°），运行时传给 find_shape_model；需在模板训练角度范围内</summary>
         public double AngleEnd
         {
             get => _angleEnd;
             set => Set(ref _angleEnd, value);
         }
+
+        // ── 搜索区域（Search ROI）：与模板 ROI（学习区域）分离 ──
+        // 模板 ROI = 学什么（模板管理界面框选）；搜索区域 = 在哪里找（本节点限定）。
+        // 视野大/背景干扰多时限定搜索区域可显著提速并降低误检；为空 = 全图搜索。
+        private bool _searchRoiEnabled;
+        /// <summary>是否启用搜索区域限定（false = 全图搜索）</summary>
+        public bool SearchRoiEnabled
+        {
+            get => _searchRoiEnabled;
+            set => Set(ref _searchRoiEnabled, value);
+        }
+
+        private double _searchRow1;
+        /// <summary>搜索区域左上角行（图像 Y 坐标）</summary>
+        public double SearchRow1 { get => _searchRow1; set => Set(ref _searchRow1, value); }
+
+        private double _searchCol1;
+        /// <summary>搜索区域左上角列（图像 X 坐标）</summary>
+        public double SearchCol1 { get => _searchCol1; set => Set(ref _searchCol1, value); }
+
+        private double _searchRow2;
+        /// <summary>搜索区域右下角行</summary>
+        public double SearchRow2 { get => _searchRow2; set => Set(ref _searchRow2, value); }
+
+        private double _searchCol2;
+        /// <summary>搜索区域右下角列</summary>
+        public double SearchCol2 { get => _searchCol2; set => Set(ref _searchCol2, value); }
+
+        /// <summary>搜索区域是否有效（启用且坐标合法）</summary>
+        public bool HasValidSearchRoi =>
+            _searchRoiEnabled && _searchRow2 > _searchRow1 && _searchCol2 > _searchCol1;
     }
 }

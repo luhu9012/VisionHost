@@ -73,6 +73,17 @@
                                     <TextBox Text="{Binding DataPath}" IsReadOnly="True" Style="{StaticResource ModernTextBoxStyle}"/>
                                     <Button Grid.Column="1" Content="打开" Margin="6,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDataFolderCommand}"/>
                                 </Grid>
+
+                                <!-- 生产统计数据管理（工位监视页头部 KPI 的持久化累计） -->
+                                <Separator Margin="0,4,0,12"/>
+                                <TextBlock Text="生产统计数据" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,8"/>
+                                <TextBlock Text="各工位监视页头部的 总数 / OK / NG / 良率 累计（持久化在 Data\StationStats）。"
+                                           Style="{StaticResource BodyTextStyle}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <Button Content="🗑 清除所有工位生产统计" 
+                                        Style="{StaticResource DangerButtonStyle}" 
+                                        Padding="12,6" 
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding ClearProductionStatsCommand}"/>
                             </StackPanel>
                         </Border>
 

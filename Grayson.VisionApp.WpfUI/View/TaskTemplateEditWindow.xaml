@@ -1,0 +1,382 @@
+<Window x:Class="Grayson.Vision.WpfUI.View.TaskTemplateEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        Title="{Binding WindowTitle}" Height="760" Width="1080"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolVis"/>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ============ 头部：标识与类型族 ============ -->
+        <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="12,10">
+            <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{Binding WindowTitle}" Style="{StaticResource SubTitleTextStyle}"/>
+                    <TextBlock Text="{Binding KindHint}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                               Margin="0,4,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Width="420">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding CodeText, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource ModernTextBoxStyle}" VerticalContentAlignment="Center"
+                                 ToolTip="模板代码（唯一）"/>
+                        <Button Grid.Column="1" Content="自动生成" Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="8,4" Margin="6,0,0,0" VerticalAlignment="Center" Command="{Binding RegenerateCodeCommand}"/>
+                    </Grid>
+                </StackPanel>
+            </Grid>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="10,8" Margin="0,10,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="类型族：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" Width="300" Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding KindOptions}" SelectedItem="{Binding SelectedKindOption}"/>
+                    <TextBlock Grid.Column="2" Text="运行载体：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                    <ComboBox Grid.Column="3" Width="220" Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding DependencyOptions}" SelectedItem="{Binding SelectedDepOption}"/>
+                    <TextBlock Grid.Column="4" Text="状态：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                    <ComboBox Grid.Column="5" Width="100" HorizontalAlignment="Left" Margin="10,0,0,0" Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding SelectedStatusOption}"/>
+                </Grid>
+            </Border>
+
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="300"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="模板名称：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding NameText, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource ModernTextBoxStyle}" VerticalContentAlignment="Center"
+                         ToolTip="示例：通用旋转取放-单吸嘴 / PCB 焊点缺陷检测(YOLO) / 连接器引脚间距测量"/>
+                <TextBlock Grid.Column="3" Text="摘要：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4" Text="{Binding SummaryText, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource ModernTextBoxStyle}" VerticalContentAlignment="Center"/>
+            </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- ============ 主区（Tab） ============ -->
+        <TabControl Grid.Row="2" Style="{StaticResource ModernTabControlStyle}">
+            <TabItem Header="① 运行载体与图像源" Style="{StaticResource ModernTabItemStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,14,12,12">
+                        <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="运行载体（任务对工位硬件的依赖声明）" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <TextBlock Text="· 工位联动：任务由工位监视界面【启动】驱动，需相机/运动/IO 等工位硬件（引导定位典型）；&#10;· 独立纯软件：只需本地图像源 + 算法/模型资产（深度学习推理、外观测量典型），无需相机/运动控制卡/PLC，可离线批量运行。"
+                                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <ComboBox Width="420" HorizontalAlignment="Left" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding DependencyOptions}" SelectedItem="{Binding SelectedDepOption}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorderStyle}" Padding="12,10">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock Text="图像源" FontWeight="Bold"/>
+                                    <Button DockPanel.Dock="Right" Content="📂 浏览本地文件夹…" Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="10,4" Command="{Binding BrowseFolderCommand}"/>
+                                </DockPanel>
+                                <ComboBox Width="420" HorizontalAlignment="Left" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding ImageSourceOptions}" SelectedItem="{Binding SelectedImageSourceOption}"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="文件夹路径：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"
+                                               Visibility="{Binding IsLocalSource, Converter={StaticResource BoolVis}}"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Tpl.ImageSource.LocalFolderPath, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}"
+                                             Visibility="{Binding IsLocalSource, Converter={StaticResource BoolVis}}"
+                                             ToolTip="本地图像源目录（独立任务轮询取图）"/>
+                                </Grid>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="180"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="220"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="相机槽键：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"
+                                               Visibility="{Binding IsCameraSource, Converter={StaticResource BoolVis}}"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Tpl.ImageSource.CameraSlotKey, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}"
+                                             Visibility="{Binding IsCameraSource, Converter={StaticResource BoolVis}}"
+                                             ToolTip="相机源占用工位相机槽（如 Cam_A / Cam_B），引导定位类常用"/>
+                                    <TextBlock Grid.Column="3" Text="循环间隔(ms)：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"
+                                               Visibility="{Binding IsLocalSource, Converter={StaticResource BoolVis}}"/>
+                                    <TextBox Grid.Column="4" Text="{Binding Tpl.ImageSource.RepeatDelayMs, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}"
+                                             Visibility="{Binding IsLocalSource, Converter={StaticResource BoolVis}}"
+                                             ToolTip="文件夹轮询间隔；0=单遍执行"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="② 任务链与视觉资产" Style="{StaticResource ModernTabItemStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,14,12,12">
+
+                        <!-- 引导定位 -->
+                        <StackPanel Visibility="{Binding IsGuidance, Converter={StaticResource BoolVis}}">
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="执行方案引擎（映射工位 ProcessKey，监视页自动挂载示教扩展面板）" FontWeight="Bold" Margin="0,0,0,8"/>
+                                    <ComboBox Width="520" HorizontalAlignment="Left" Style="{StaticResource ModernComboBoxStyle}"
+                                              ItemsSource="{Binding EngineOptions}"
+                                              DisplayMemberPath="DisplayText" SelectedValuePath="Key"
+                                              SelectedValue="{Binding Tpl.EngineKey}"/>
+                                    <TextBlock Text="未选引擎时请确认该工位由配方纯视觉链承载（无取放节拍）。" FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="230"/>
+                                        <ColumnDefinition Width="14"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="230"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="视觉链配方 Code：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Tpl.BoundRecipeId, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" ToolTip="配方管理页中的 Recipe Code；工序链由配方承载"/>
+                                    <TextBlock Grid.Column="3" Text="形状模板名：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="4" Text="{Binding Tpl.ShapeTemplateName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" ToolTip="模板工作台资产名（ShapeMatch 按名引用）"/>
+                                    <TextBlock Grid.Row="2" Text="标定档案名：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Tpl.CalibrationProfileName, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource ModernTextBoxStyle}" ToolTip="标定中心档案（工位级/配方级发布域）"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="模板代码：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding Tpl.TemplateCode, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" IsReadOnly="True"/>
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="示教说明：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Top"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="4" Height="64" AcceptsReturn="True" TextWrapping="Wrap"
+                                             Text="{Binding Tpl.TeachNote, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                                             ToolTip="与工位监视扩展示教面板配套的默认参数/操作语境"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- 深度学习 -->
+                        <StackPanel Visibility="{Binding IsDl, Converter={StaticResource BoolVis}}">
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <TextBlock Text="关联模型资产（模型仓库）" FontWeight="Bold"/>
+                                        <TextBlock DockPanel.Dock="Right" Text="模型在「模型仓库」页注册（ONNX/DLTool，含规格/类别/指标）"
+                                                   FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <ComboBox Width="560" HorizontalAlignment="Left" Style="{StaticResource ModernComboBoxStyle}"
+                                              ItemsSource="{Binding ModelOptions}" SelectedValuePath="AssetCode"
+                                              SelectedValue="{Binding Tpl.ModelAssetCode}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock TextWrapping="NoWrap">
+                                                    <Run Text="{Binding AssetCode, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding DisplayName, Mode=OneWay}"/><Run Text="（"/><Run Text="{Binding ModelKind, Mode=OneWay}"/><Run Text="）"/>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <TextBlock Text="模型为空表示待注册：深度学习推理需 本地图片源 + 训练好的模型 即可运行（检测/分割/分类/异常）。"
+                                               FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="14"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="置信度阈值(0~1)：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}"
+                                             Text="{Binding Tpl.ConfidenceThreshold, TargetNullValue=''}"
+                                             ToolTip="低于阈值判 NG；留空使用模型默认"/>
+                                    <TextBlock Grid.Column="3" Text="输出契约：" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Top"/>
+                                    <TextBox Grid.Column="4" Height="56" AcceptsReturn="True" TextWrapping="Wrap" Style="{StaticResource ModernTextBoxStyle}"
+                                             Text="{Binding Tpl.OutputContractText, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="如：目标框/掩膜/类别+置信度 → OK/NG，上报 MES/CSV"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- 外观测量 -->
+                        <StackPanel Visibility="{Binding IsAppearance, Converter={StaticResource BoolVis}}">
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12,10">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <TextBlock Text="测量项清单（外观测量：本地图 + 卡尺/找线/找圆等算子 → 数值 + OK/NG）" FontWeight="Bold"/>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Content="＋ 添加测量项" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4"
+                                                    Margin="6,0,0,0" Command="{Binding AddMeasureCommand}"/>
+                                            <Button Content="－ 删除选中" Style="{StaticResource DangerButtonStyle}" Padding="10,4"
+                                                    Margin="6,0,0,0" Command="{Binding RemoveMeasureCommand}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <DataGrid ItemsSource="{Binding MeasurementSpecs}" SelectedItem="{Binding SelectedMeasure}"
+                                              Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
+                                              CanUserAddRows="False" HeadersVisibility="Column" Height="240" FontSize="12">
+                                        <DataGrid.Columns>
+                                            <DataGridCheckBoxColumn Header="启用" Binding="{Binding Enabled}" Width="50"/>
+                                            <DataGridTextColumn Header="测量项名称" Binding="{Binding Name}" Width="180"/>
+                                            <DataGridComboBoxColumn Header="算子族" Width="130"
+                                                                     SelectedItemBinding="{Binding ToolKind}">
+                                                <DataGridComboBoxColumn.ItemsSource>
+                                                    <x:Array Type="sys:String" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+                                                        <sys:String>Caliper 卡尺</sys:String>
+                                                        <sys:String>FitLine 找线</sys:String>
+                                                        <sys:String>FitCircle 找圆</sys:String>
+                                                        <sys:String>Blob 面积</sys:String>
+                                                        <sys:String>Intensity 灰度</sys:String>
+                                                    </x:Array>
+                                                </DataGridComboBoxColumn.ItemsSource>
+                                            </DataGridComboBoxColumn>
+                                            <DataGridTextColumn Header="标称(mm)" Binding="{Binding NominalMm}" Width="90"/>
+                                            <DataGridTextColumn Header="公差±(mm)" Binding="{Binding ToleranceMm}" Width="100"/>
+                                            <DataGridTextColumn Header="备注" Binding="{Binding Note}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <TextBlock Text="算子族/区域引用将随配方视觉链（K 层节点）落位；此处先沉淀工艺参数，stage9-3 接 Fit/Blob 执行器。"
+                                               FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="③ 输出契约与附加引用" Style="{StaticResource ModernTabItemStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,14,12,12">
+                        <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <CheckBox Content="结果联动 IO/PLC 判定（工位联动任务；独立任务输出日志/CSV 即可）"
+                                          IsChecked="{Binding Tpl.VerdictToIo}" Margin="0,0,0,8"/>
+                                <TextBlock Text="输出契约（引导=世界坐标 X/Y/U；DL=目标框/掩膜/类别置信度；测量=测量值+OK/NG）" Style="{StaticResource FormLabelStyle}" Margin="0,0,0,4"/>
+                                <TextBox Height="64" AcceptsReturn="True" TextWrapping="Wrap" Style="{StaticResource ModernTextBoxStyle}"
+                                         Text="{Binding Tpl.OutputContractText, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock Text="通用资产引用（专用字段外的附加资产）" FontWeight="Bold"/>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                        <Button Content="＋ 添加" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4"
+                                                Margin="6,0,0,0" Command="{Binding AddRefCommand}"/>
+                                        <Button Content="－ 删除选中" Style="{StaticResource DangerButtonStyle}" Padding="10,4"
+                                                Margin="6,0,0,0" Command="{Binding RemoveRefCommand}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <DataGrid ItemsSource="{Binding AssetRefs}" SelectedItem="{Binding SelectedRef}"
+                                          Style="{StaticResource ModernDataGridStyle}" AutoGenerateColumns="False"
+                                          CanUserAddRows="False" HeadersVisibility="Column" Height="150" FontSize="12">
+                                    <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="种类" Width="140">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Kind}" VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                            <DataGridTemplateColumn.CellEditingTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox ItemsSource="{Binding DataContext.AssetKindOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              SelectedValuePath="Value" SelectedValue="{Binding Kind, UpdateSourceTrigger=PropertyChanged}"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellEditingTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="200"/>
+                                        <DataGridTextColumn Header="引用键" Binding="{Binding RefCode}" Width="160"/>
+                                        <DataGridTextColumn Header="备注" Binding="{Binding Note}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardBorderStyle}" Padding="12,10">
+                            <StackPanel>
+                                <TextBlock Text="备注 / 变更说明" Style="{StaticResource FormLabelStyle}" Margin="0,0,0,4"/>
+                                <TextBox Height="64" AcceptsReturn="True" TextWrapping="Wrap" Style="{StaticResource ModernTextBoxStyle}"
+                                         Text="{Binding Tpl.Remark, UpdateSourceTrigger=PropertyChanged}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="④ 部署到工位" Style="{StaticResource ModernTabItemStyle}">
+                <StackPanel Margin="12,14,12,12">
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="0,0,0,10">
+                        <TextBlock Text="勾选/取消即把本任务模板绑定/解绑到对应工位（stage9-2 迭代：任务模板是工位任务唯一入口）。&#10;· 引导定位模板 → 自动装载模板所选执行方案引擎（EngineKey→ProcessKey）；解绑即卸载引擎；&#10;· 深度学习/外观测量模板 → 自动装载独立视觉引擎 StandaloneVision，且工位未绑定配方时自动带上模板配方——&#10;  之后在工位工作台把触发源选「定时器」，监视页【▶ 启动】即离线连续检测（判据随模板 VerdictRule，结果写 CSV）。"
+                                   FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    </Border>
+                    <DataGrid ItemsSource="{Binding StationItems}" Style="{StaticResource ModernDataGridStyle}"
+                              AutoGenerateColumns="False" CanUserAddRows="False"
+                              HeadersVisibility="Column" FontSize="12" Height="330">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="绑定" Binding="{Binding IsBound}" Width="56"/>
+                            <DataGridTextColumn Header="产线" Binding="{Binding LineName}" Width="120" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="工位" Binding="{Binding Display}" Width="200" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="执行方案/ProcessKey" Binding="{Binding ProcessText}" Width="220" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="绑定提示" Binding="{Binding BoundOtherText}" Width="*" IsReadOnly="True"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <!-- ============ 底部 ============ -->
+        <Border Grid.Row="4" Style="{StaticResource CardBorderStyle}" Padding="12,8">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="保存时：模板落 Config\TaskLibrary\{Code}.json；工位绑定变更立即写回工位配置。"
+                           FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="取消" Style="{StaticResource SecondaryButtonStyle}" Padding="18,7" Margin="0,0,10,0" Click="OnCancel"/>
+                    <Button Content="保存模板" Style="{StaticResource PrimaryButtonStyle}" Padding="22,7" Click="OnSave"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

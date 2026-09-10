@@ -78,36 +78,36 @@ namespace Plugins.Motion.Zmc
                 }
 
                 // 若未自动搜索到网口卡，生成默认回退连接项
-                if (devices.Count == 0)
-                {
-                    devices.Add(new DeviceInfo
-                    {
-                        DeviceId = "192.168.3.11",
-                        ModelName = "ZMC Eth Controller (Default)",
-                        Category = DeviceCategory.MotionCard,
-                        BrandName = BrandName,
-                        ExtraInfo = new ZmcConnectionOptions
-                        {
-                            ConnectionType = ZmcConnectionType.Ethernet,
-                            IpAddress = "192.168.0.11",
-                            Port = 8080
-                        }
-                    });
+                //if (devices.Count == 0)
+                //{
+                //    devices.Add(new DeviceInfo
+                //    {
+                //        DeviceId = "192.168.3.11",
+                //        ModelName = "ZMC Eth Controller (Default)",
+                //        Category = DeviceCategory.MotionCard,
+                //        BrandName = BrandName,
+                //        ExtraInfo = new ZmcConnectionOptions
+                //        {
+                //            ConnectionType = ZmcConnectionType.Ethernet,
+                //            IpAddress = "192.168.0.11",
+                //            Port = 8080
+                //        }
+                //    });
 
-                    devices.Add(new DeviceInfo
-                    {
-                        DeviceId = "COM1",
-                        ModelName = "ZMC Serial Controller",
-                        Category = DeviceCategory.MotionCard,
-                        BrandName = BrandName,
-                        ExtraInfo = new ZmcConnectionOptions
-                        {
-                            ConnectionType = ZmcConnectionType.Serial,
-                            ComPort = "COM1",
-                            BaudRate = 115200
-                        }
-                    });
-                }
+                //    devices.Add(new DeviceInfo
+                //    {
+                //        DeviceId = "COM1",
+                //        ModelName = "ZMC Serial Controller",
+                //        Category = DeviceCategory.MotionCard,
+                //        BrandName = BrandName,
+                //        ExtraInfo = new ZmcConnectionOptions
+                //        {
+                //            ConnectionType = ZmcConnectionType.Serial,
+                //            ComPort = "COM1",
+                //            BaudRate = 115200
+                //        }
+                //    });
+                //}
 
                 return Result<List<DeviceInfo>>.Ok(devices);
             }

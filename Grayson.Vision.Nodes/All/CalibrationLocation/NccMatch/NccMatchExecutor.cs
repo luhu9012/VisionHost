@@ -15,10 +15,14 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.NccMatch
 {
     [Node(NodeType.NccMatch, NodeCategory.CalibrationLocation, typeof(NccMatchParam))]
     [NodePort("InputImage", PortType.In, PortCategory.Data, dataType: "object", colorHex: "#9B59B6")]
-    [NodePort("MatchRow", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#E74C3C")]
-    [NodePort("MatchCol", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#E74C3C")]
-    [NodePort("MatchAngle", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#E74C3C")]
+    // 端口配色约定：X/列=蓝(#3498DB)、Y/行=橙(#E67E22)、角度=青、分数=绿（与 ShapeMatch 一致）
+    [NodePort("MatchRow", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#E67E22")]
+    [NodePort("MatchCol", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#3498DB")]
+    [NodePort("MatchAngle", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#1ABC9C")]
     [NodePort("MatchScore", PortType.Out, PortCategory.Data, dataType: "double", colorHex: "#2ECC71")]
+    // 匹配效果图输出（同 ShapeMatch）：端口名含 "Image" 自动推送帧事件，
+    // 缩略图列表/主视图/工位监视视图自动上屏，同实例保场景叠加层。
+    [NodePort("MatchImage", PortType.Out, PortCategory.Data, dataType: "object", colorHex: "#9B59B6")]
     public class NccMatchExecutor : NodeExecutorBase<NccMatchParam>
     {
         public const string PORT_IN_IMAGE = "InputImage";
@@ -26,6 +30,7 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.NccMatch
         public const string PORT_OUT_COL = "MatchCol";
         public const string PORT_OUT_ANGLE = "MatchAngle";
         public const string PORT_OUT_SCORE = "MatchScore";
+        public const string PORT_OUT_IMAGE = "MatchImage";
 
         protected override async Task ExecuteCoreAsync(FlowNodeBase node, NccMatchParam param, NodeExecutionContext context, CancellationToken token)
         {
@@ -74,8 +79,16 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.NccMatch
             Preview?.BeginScene();
             Preview?.AddBorrowed(inputImage);
 
+            // 匹配效果图输出（同 ShapeMatch：同实例借用，帧推送 + 场景叠加层共存）
+            context.SetOutputValue(node, PORT_OUT_IMAGE, inputImage);
+
             // 运行时经模板管理按名完成"加载句柄→匹配→释放"全流程（句柄类型封装在 HalconWrapper 层，不泄漏到 Nodes）
-            var matchRes = templateMgr.MatchByName(param.TemplateName, inputImage, param.MinScore);
+            // 搜索区域（Search ROI）可选：限定"在哪里找"，全图变局部（提速+防误检）。
+            var matchRes = templateMgr.MatchByName(param.TemplateName, inputImage, param.MinScore, null, null,
+                param.HasValidSearchRoi ? param.SearchRow1 : (double?)null,
+                param.HasValidSearchRoi ? param.SearchCol1 : (double?)null,
+                param.HasValidSearchRoi ? param.SearchRow2 : (double?)null,
+                param.HasValidSearchRoi ? param.SearchCol2 : (double?)null);
             sw.Stop();
 
             if (matchRes.Success && matchRes.Data != null && matchRes.Data.Length > 0)
@@ -127,10 +140,14 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.NccMatch
                 // 与 ShapeMatch 同款坑：Result.Ok() 默认 Message="执行正常"，直接打印误导排查。
                 // 区分"0 候选"与"链路异常"，并附模板名/MinScore/输入信息诊断。
                 string reason = matchRes.Success
-                    ? $"未找到 ≥ {param.MinScore:F2} 的匹配候选（0 个结果），建议调低 MinScore 或检查模板/现场图像差异"
+                    ? $"未找到 ≥ {param.MinScore:F2} 的匹配候选（0 个结果）"
                     : matchRes.Message;
                 context.Log($"[{node.DisplayName}] ❌ NCC 灰度匹配未命中: {reason}（模板: {param.TemplateName}, MinScore: {param.MinScore:F2}, 输入: {(imgInfo.Success ? imgInfo.Data : imgInfo.Message)}, 耗时 {sw.ElapsedMilliseconds} ms）");
-                Preview?.AddText($"❌ {reason}", 12, 12, "red");
+
+                string hint = matchRes.Success
+                    ? $"未找到匹配\n建议：1) 调低 MinScore（当前 {param.MinScore:F2}）\n2) 检查光照/灰度差异\n3) 用当前现场图重新训练 NCC 模板"
+                    : $"NCC 匹配运算异常：{matchRes.Message}";
+                Preview?.AddText(hint, 12, 12, "red");
             }
         }
     }

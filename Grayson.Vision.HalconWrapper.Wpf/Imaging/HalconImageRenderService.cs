@@ -49,9 +49,18 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
                 else if (nativeImage is FrameEventArgs frame)
                 {
                     LogBus.Debug("Halcon", "通过 FrameEventArgs 转换 HImage...");
-                    using (var bitmap = CreateBitmapFromFrame(frame))
+                    // ★ 优先直接从紧致帧缓冲建 HImage（2026-09-02）：
+                    //   Bitmap 中转的 Stride 会按 4 字节对齐填充（如 2590×3=7770 → Stride=7772），
+                    //   而 GenImageInterleaved 按紧致步长读取 → 每行错位 2 字节、逐行累积 →
+                    //   「斜线分屏/扫描纹」伪影。直接由 frame.Buffer 建图可彻底规避。
+                    hImage = CreateHImageFromFrameBuffer(frame);
+                    if (hImage == null)
                     {
-                        hImage = ConvertBitmapToHImage(bitmap);
+                        // 格式不受直接路径支持（或数据不完整）→ 回退旧 Bitmap 路径
+                        using (var bitmap = CreateBitmapFromFrame(frame))
+                        {
+                            hImage = ConvertBitmapToHImage(bitmap);
+                        }
                     }
                 }
                 // 4. 如果是 Bitmap
@@ -88,22 +97,33 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
 
             try
             {
-                using (var bitmap = CreateBitmapFromFrame(frame))
+                // ★ 优先直接从帧缓冲建 HImage（2026-09-02 修复延伸）：
+                //   标定向导/流程预览等所有走 CreateRenderContextFromFrame 的链路此前先把帧转成
+                //   Bitmap（CreateBitmapFromFrame → WrapImage(bitmap)）——Bitmap 的 Stride 按 4 字节
+                //   对齐填充（2590×3=7770 → Stride=7772），而 HImage 按紧致步长读取 → 行间错位逐行
+                //   累积 → 「斜线分屏」伪影（相机调试链路已修，此链路遗漏）。
+                //   改为优先 WrapImage(frame) 走 FrameEventArgs 直连缓冲分支，失败再回退 Bitmap。
+                var renderImage = WrapImage(frame);
+                if (renderImage == null)
                 {
-                    var renderImage = WrapImage(bitmap);
-                    if (renderImage == null)
+                    // 直连路径不支持（未知像素格式/数据不完整）→ 回退旧 Bitmap 路径
+                    using (var bitmap = CreateBitmapFromFrame(frame))
                     {
-                        return null;
+                        renderImage = WrapImage(bitmap);
                     }
-
-                    return new WpfImageRenderContext
-                    {
-                        NodeId = string.IsNullOrWhiteSpace(nodeId) ? Guid.NewGuid().ToString("N") : nodeId,
-                        NodeName = string.IsNullOrWhiteSpace(nodeName) ? "CameraFrame" : nodeName,
-                        Image = renderImage,
-                        Thumbnail = CreateThumbnail(renderImage)
-                    };
                 }
+                if (renderImage == null)
+                {
+                    return null;
+                }
+
+                return new WpfImageRenderContext
+                {
+                    NodeId = string.IsNullOrWhiteSpace(nodeId) ? Guid.NewGuid().ToString("N") : nodeId,
+                    NodeName = string.IsNullOrWhiteSpace(nodeName) ? "CameraFrame" : nodeName,
+                    Image = renderImage,
+                    Thumbnail = CreateThumbnail(renderImage)
+                };
             }
             catch (Exception ex)
             {
@@ -151,6 +171,60 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
             }
 
             return bitmap;
+        }
+
+        /// <summary>
+        /// 直接从相机帧的紧致字节缓冲创建 HImage（2026-09-02）。
+        /// 绕开 Bitmap 中转——Bitmap 的 Stride 按 4 字节对齐（如 2590×3=7770 → Stride=7772），
+        /// 而 GenImageInterleaved/GenImage1 按紧致步长读取，行间错位逐行累积会形成斜线分屏伪影。
+        /// 支持 BGR24/RGB24（GenImageInterleaved）与 MONO8/灰度（GenImage1）。
+        /// 返回 null 表示格式不支持或数据不完整，调用方回退 Bitmap 路径。
+        /// </summary>
+        private HImage CreateHImageFromFrameBuffer(FrameEventArgs frame)
+        {
+            try
+            {
+                if (frame?.Buffer == null || frame.Width <= 0 || frame.Height <= 0) return null;
+
+                string fmtStr = (frame.PixelFormat ?? string.Empty).ToUpperInvariant();
+                int bytesPerPixel;
+                string halconFormat;
+                if (fmtStr.Contains("BGR")) { bytesPerPixel = 3; halconFormat = "bgr"; }
+                else if (fmtStr.Contains("RGB")) { bytesPerPixel = 3; halconFormat = "rgb"; }
+                else if (fmtStr.Contains("MONO") || fmtStr == "GRAY8" || fmtStr == "GRAY") { bytesPerPixel = 1; halconFormat = null; }
+                else return null; // 未知格式交给 Bitmap 兜底
+
+                long expected = (long)frame.Width * frame.Height * bytesPerPixel;
+                if (frame.Buffer.LongLength < expected) return null;
+
+                var gch = System.Runtime.InteropServices.GCHandle.Alloc(frame.Buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    IntPtr ptr = gch.AddrOfPinnedObject();
+                    var img = new HImage();
+                    if (halconFormat == null)
+                    {
+                        // 单通道灰度：GenImage1（与 Bitmap 路径等价）
+                        img.GenImage1("byte", frame.Width, frame.Height, ptr);
+                    }
+                    else
+                    {
+                        // 三通道交织：按紧致步长（canvasWidth=Width）读取，无填充错位
+                        img.GenImageInterleaved(ptr, halconFormat, frame.Width, frame.Height,
+                            -1, "byte", frame.Width, frame.Height, 0, 0, -1, 0);
+                    }
+                    return img;
+                }
+                finally
+                {
+                    gch.Free();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("Halcon", $"直接由帧缓冲创建 HImage 失败，回退 Bitmap 路径: {ex.Message}");
+                return null;
+            }
         }
 
         private HImage ConvertBitmapToHImage(Bitmap bitmap)

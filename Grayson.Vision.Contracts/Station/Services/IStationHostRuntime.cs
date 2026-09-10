@@ -50,6 +50,8 @@ namespace Grayson.Vision.Contracts.Station.Services
         /// （FlowEdit 编辑器调试语义）。
         /// 
         /// 使用统一的 RecipeDeviceMappingModel 模型。
+        /// taskTemplateCode：工位绑定的任务模板代码（写 Worker.TaskTemplateCode，
+        /// 供独立视觉任务引擎读取模板级判据/参数）。
         /// </summary>
         Task<IWorkerClient> CreateStationWithRecipeAsync(
             string stationId,
@@ -58,7 +60,8 @@ namespace Grayson.Vision.Contracts.Station.Services
             WorkMode mode = WorkMode.Production,
             TriggerSourceConfig triggerSourceConfig = null,
             string processKey = null,
-            string processConfigJson = null);
+            string processConfigJson = null,
+            string taskTemplateCode = null);
 
         /// <summary>
         /// 获取已存在的工位客户端。

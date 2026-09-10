@@ -60,5 +60,25 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.NccMatch
             get => _minScore;
             set => Set(ref _minScore, value);
         }
+
+        // ── 搜索区域（Search ROI）：与模板 ROI（学习区域）分离 ──
+        private bool _searchRoiEnabled;
+        public bool SearchRoiEnabled { get => _searchRoiEnabled; set => Set(ref _searchRoiEnabled, value); }
+
+        private double _searchRow1;
+        public double SearchRow1 { get => _searchRow1; set => Set(ref _searchRow1, value); }
+
+        private double _searchCol1;
+        public double SearchCol1 { get => _searchCol1; set => Set(ref _searchCol1, value); }
+
+        private double _searchRow2;
+        public double SearchRow2 { get => _searchRow2; set => Set(ref _searchRow2, value); }
+
+        private double _searchCol2;
+        public double SearchCol2 { get => _searchCol2; set => Set(ref _searchCol2, value); }
+
+        /// <summary>搜索区域是否有效（启用且坐标合法）</summary>
+        public bool HasValidSearchRoi =>
+            _searchRoiEnabled && _searchRow2 > _searchRow1 && _searchCol2 > _searchCol1;
     }
 }

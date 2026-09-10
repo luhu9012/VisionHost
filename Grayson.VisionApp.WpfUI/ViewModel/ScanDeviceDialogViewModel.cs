@@ -24,6 +24,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string BrandName => RawInfo.BrandName;
         public string DeviceId => RawInfo.DeviceId;
 
+        /// <summary>
+        /// 插件在扫描时通过 DeviceInfo.ExtraInfo 携带的通信参数（如 Epson TCP 通道的
+        /// "Protocol=TCP;IP=127.0.0.1;Port=502"），导入设备时透传给 ConnectionString，
+        /// 保证"扫到即能连"（EpsonRobot.Connect 识别 Protocol=TCP 即走 TCP 传输层）。
+        /// </summary>
+        public string ConnectionString => RawInfo.ExtraInfo as string ?? string.Empty;
+
         private string _targetDeviceKey;
         public string TargetDeviceKey
         {

@@ -4,8 +4,48 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:controls="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf"
+             xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
              mc:Ignorable="d" 
              d:DesignHeight="720" d:DesignWidth="1280">
+    <UserControl.Resources>
+        <conv:NullToVisibilityConverter x:Key="NullToVis"/>
+
+        <!-- 本页日志/结果 DataGrid 专用轻量行：选中不高亮成整条蓝底（监视流数据常被程序选中，
+             蓝色反白会闪成一片，观感凌乱）。改为仅轻微变色，文字始终保持可读。 -->
+        <Style x:Key="MonitorLightRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#20FFFFFF"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 本页 DataGrid 轻量单元格：无选中蓝底反白（配合 MonitorLightRowStyle） -->
+        <Style x:Key="MonitorLightCellStyle" TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
     <Grid Background="{StaticResource BackgroundBrush}" Margin="12">
         <Grid.RowDefinitions>
             <!-- 🌟 顶置巨幕焦点 Banner (Hero Banner) -->
@@ -28,12 +68,16 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 工位名称与运行状态 -->
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding SelectedStationCode, StringFormat='工位: {0}'}" Style="{StaticResource TitleTextStyle}" FontSize="20"/>
+                <!-- 工位名称与运行状态（模板唯一入口后：顶栏大字=站名，编码降为副信息） -->
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" MaxWidth="260">
+                    <TextBlock Text="{Binding SelectedStationName, FallbackValue='--'}" Style="{StaticResource TitleTextStyle}" FontSize="20"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedStationName}"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                         <Ellipse Width="10" Height="10" Fill="{Binding StateBrushKey, FallbackValue={StaticResource TextDisabledBrush}}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBlock Text="{Binding StateText}" Style="{StaticResource SubTitleTextStyle}" Foreground="{Binding StateBrushKey, FallbackValue={StaticResource TextDisabledBrush}}"/>
+                        <TextBlock Text="　·　" Style="{StaticResource SubTitleTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
+                        <TextBlock Text="{Binding SelectedStationCode, StringFormat='工位号 {0}'}" Style="{StaticResource CaptionTextStyle}"
+                                   Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -75,6 +119,9 @@
                                 <DataTrigger Binding="{Binding LastResult}" Value="NG">
                                     <Setter Property="Background" Value="#2ED83B01"/>
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding LastResult}" Value="进行中">
+                                    <Setter Property="Background" Value="#2E0067C8"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
@@ -91,6 +138,10 @@
                                         <DataTrigger Binding="{Binding LastResult}" Value="NG">
                                             <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
                                         </DataTrigger>
+                                        <DataTrigger Binding="{Binding LastResult}" Value="进行中">
+                                            <Setter Property="Foreground" Value="{StaticResource InfoBrush}"/>
+                                            <Setter Property="FontSize" Value="26"/>
+                                        </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
@@ -101,48 +152,122 @@
         </Border>
 
         <!-- 2. 下方主工作区 (左控制 + 中图像 + 右数据) -->
+        <!-- 布局优化 2026-09-10：左控制栏 330 / 中间图像自适应 / 右数据栏 430(可经 GridSplitter 左右拖宽)，
+             解决"右栏 380 过窄导致日志/结果文字被截断"的痛点。右栏内部日志与结果之间也可上下拖分。 -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="348"/>
+                <ColumnDefinition Width="10"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="380"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="432"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：工位控制与控制互锁 -->
+            <!-- 左侧：工位选择 + 任务/配方 + 运行控制（模板唯一入口，2026-09 精简口径） -->
             <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Padding="14">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <!-- 工位选择 -->
                         <RowDefinition Height="Auto"/>
-                        <!-- 当前配方 -->
+                        <!-- 任务模板 · 配方 -->
+                        <RowDefinition Height="Auto"/>
+                        <!-- 触发信号 -->
                         <RowDefinition Height="*"/>
-                        <!-- 核心操作区 -->
+                        <!-- 运行控制 / 复位 -->
                         <RowDefinition Height="Auto"/>
                         <!-- 底部急停区 -->
                     </Grid.RowDefinitions>
 
-                    <!-- 1. 工位选择 -->
-                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                        <TextBlock Text="工位选择" Style="{StaticResource FormLabelStyle}" Margin="0,0,0,4"/>
-                        <ComboBox Style="{StaticResource ModernComboBoxStyle}" 
-                      ItemsSource="{Binding AvailableStations}" 
-                      SelectedItem="{Binding SelectedStationCode}"/>
+                    <!-- 1. 工位选择（下拉显示「名称 + 编码」，选中值仍为编码） -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                        <TextBlock Text="切换工位" Style="{StaticResource FormLabelStyle}" Margin="0,0,0,4"/>
+                        <ComboBox Style="{StaticResource ModernComboBoxStyle}"
+                                  ItemsSource="{Binding StationOptions}"
+                                  SelectedValuePath="Code"
+                                  SelectedValue="{Binding SelectedStationCode}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </StackPanel>
 
-                    <!-- 2. 当前配方卡片 -->
+                    <!-- 2. 任务模板 · 当前配方（模板=任务唯一入口） -->
                     <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="10" Margin="0,0,0,8">
                         <StackPanel>
+                            <DockPanel Margin="0,0,0,2">
+                                <TextBlock Text="🧩 绑定任务模板" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding BoundTemplateKindText}" FontSize="10.5"
+                                           Foreground="{StaticResource InfoBrush}" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasBoundTemplate}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DockPanel>
+
+                            <TextBlock Text="{Binding BoundTemplateNameText, FallbackValue='--'}" FontWeight="SemiBold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource SubTitleTextStyle}">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasBoundTemplate}" Value="True">
+                                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- 已绑定：派生引擎（只读） -->
+                            <TextBlock Text="{Binding BoundTemplateEngineText}" FontSize="11" Margin="0,2,0,0"
+                                       Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                       ToolTip="任务模板派生出的执行引擎（只读；到工位工程工作台查看参数与示教）">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasBoundTemplate}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- 未绑定：引导去模板中心部署 -->
+                            <TextBlock Text="未部署 —— 到【任务模板中心】给本工位「部署到工位」，自动挂引擎并带配方。"
+                                       FontSize="11" Margin="0,2,0,0" Foreground="{StaticResource WarningBrush}"
+                                       TextWrapping="Wrap">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasBoundTemplate}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="0,8"/>
                             <TextBlock Text="当前配方" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
                             <TextBlock Text="{Binding CurrentRecipeName, FallbackValue='--'}" Style="{StaticResource SubTitleTextStyle}" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding CurrentRecipeApprovalText, FallbackValue='未绑定配方'}" Style="{StaticResource BodyTextStyle}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- 2b. 触发源与节拍统计卡片 -->
-                    <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="10" Margin="0,0,0,16">
+                    <!-- 3. 触发信号与节拍统计 -->
+                    <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="10" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock Text="触发信号" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}"/>
                             <TextBlock Text="{Binding TriggerSummaryText, FallbackValue='手动触发'}" Style="{StaticResource BodyTextStyle}" FontWeight="Medium" Margin="0,2,0,4" TextTrimming="CharacterEllipsis"/>
@@ -154,10 +279,9 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 3. 核心控制与复位（分组并列） -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <!-- 4. 运行控制 / 复位 -->
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel>
-                            <!-- 运行控制组 -->
                             <TextBlock Text="运行控制" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}" Margin="0,0,0,6"/>
                             <UniformGrid Columns="2" Margin="0,0,0,12">
                                 <Button Content="▶ 启动" Style="{StaticResource SuccessButtonStyle}" Margin="2" Padding="0,10" Command="{Binding StartCommand}"/>
@@ -166,7 +290,72 @@
                                 <Button Content="⏹ 停止" Style="{StaticResource DangerButtonStyle}" Margin="2" Padding="0,10" Command="{Binding StopCommand}"/>
                             </UniformGrid>
 
-                            <Button Content="▶| 单次触发" Style="{StaticResource PrimaryButtonStyle}" Margin="2,0,2,16" Padding="0,8" Command="{Binding TriggerOnceCommand}"/>
+                            <!-- 单次触发（周期进行中禁用防并发撞机）+ 相机 Live 视图开关 -->
+                            <Grid Margin="2,0,2,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="120"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Padding="0,8" Command="{Binding TriggerOnceCommand}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+                                            <Setter Property="Content" Value="▶| 单次触发"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCycleRunning}" Value="True">
+                                                    <Setter Property="Content" Value="⏳ 周期进行中..."/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Grid.Column="2" Padding="0,8" Command="{Binding LiveViewCommand}"
+                                        ToolTip="相机实时画面开关：视觉链执行时自动让出相机给采图，空闲期可直播工台/送料；执行期间建议保持关闭">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+                                            <Setter Property="Content" Value="📷 实时画面"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLiveViewOn}" Value="True">
+                                                    <Setter Property="Content" Value="⏹ 停止直播"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </Grid>
+
+                            <!-- 任务运行提示（模板信息 + 最近视觉输出 + 工作台入口；纯看板回显） -->
+                            <Border Style="{StaticResource CardBorderStyle}" Background="#0A0078D4"
+                                    BorderBrush="#260078D4" Padding="10" Margin="2,0,2,12"
+                                    Visibility="{Binding ActiveClient, Converter={StaticResource NullToVis}}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="🧭 任务运行" FontWeight="Bold" FontSize="12"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        <TextBlock Text="{Binding TemplateChipText, FallbackValue='--'}"
+                                                   FontSize="10.5" VerticalAlignment="Center" Margin="6,0,0,0"
+                                                   Foreground="{StaticResource InfoBrush}" TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding TemplateChipText}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding GuideSummaryText}" FontSize="10.5" TextWrapping="Wrap"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="最近视觉输出" FontSize="10"
+                                                   Foreground="{StaticResource TextDisabledBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding LatestVisionText, FallbackValue='--'}"
+                                                   FontSize="10.5" FontWeight="SemiBold" TextAlignment="Right"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    </Grid>
+                                    <Button Content="⚙️ 工位工程工作台（模板 / 引擎 / 参数）"
+                                            Style="{StaticResource SecondaryButtonStyle}" FontSize="10.5"
+                                            Padding="0,5" Command="{Binding GoEngineConfigCommand}"
+                                            ToolTip="模板部署与派生引擎在任务模板中心；引擎参数 / 示教表单在工位工程工作台就地编辑（保存并同步后挂出）"/>
+                                </StackPanel>
+                            </Border>
 
                             <!-- 复位管理组 -->
                             <TextBlock Text="复位与重置" Style="{StaticResource CaptionTextStyle}" Foreground="{StaticResource TextDisabledBrush}" Margin="0,0,0,6"/>
@@ -178,8 +367,8 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <!-- 4. 底部独立急停按钮 -->
-                    <Border Grid.Row="3" Margin="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="{StaticResource SurfaceBrush}" Padding="0,12,0,0">
+                    <!-- 5. 底部独立急停按钮 -->
+                    <Border Grid.Row="4" Margin="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="{StaticResource SurfaceBrush}" Padding="0,12,0,0">
                         <Button Content="⛔ 紧急停止 (ESTOP)" 
                     Style="{StaticResource DangerButtonStyle}" 
                     Height="44" 
@@ -194,44 +383,81 @@
                 <controls:HalconImageDisplayHost x:Name="ImageHost" DataContext="{Binding ImageDisplayVm}" />
             </Border>
 
+            <!-- 图像区 / 右数据栏 之间的可拖分隔条：拖动改变两列宽度（想更宽看日志就往左拖） -->
+            <GridSplitter Grid.Column="3"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          Background="Transparent"
+                          ShowsPreview="True"
+                          ResizeBehavior="PreviousAndNext"
+                          ToolTip="拖动调节图像区与右侧数据的宽度" />
+
             <!-- 右侧：优化后的日志与结果数据表格 -->
-            <Border Grid.Column="4" Style="{StaticResource CardBorderStyle}" Padding="10">
+            <Border Grid.Column="4" Style="{StaticResource CardBorderStyle}" Padding="8">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="12"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="3*"/>
+                        <RowDefinition Height="8"/>
+                        <RowDefinition Height="2*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- 1. 实时日志 DataGrid -->
-                    <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="8">
+                    <!-- ① 实时日志 DataGrid -->
+                    <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="6">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <DockPanel Margin="4,2,4,6">
-                                <Button Content="🗑 清空" DockPanel.Dock="Right" Style="{StaticResource SecondaryButtonStyle}" Padding="6,2" Command="{Binding ClearLogsCommand}"/>
+                            <DockPanel Margin="4,2,4,4">
+                                <Button Content="🗑 清空" DockPanel.Dock="Right" Style="{StaticResource SecondaryButtonStyle}" Padding="6,2" FontSize="11" Command="{Binding ClearLogsCommand}"/>
                                 <TextBlock Text="实时运行日志" Style="{StaticResource SubTitleTextStyle}" VerticalAlignment="Center"/>
                             </DockPanel>
 
-                            <!-- 将 Grid.Row="1" 处的 DataGrid 补充 Style 参数 -->
+                            <!-- 实时日志 DataGrid：时间→级别色点→消息(消息列占满，长文悬停看全) -->
                             <DataGrid Grid.Row="1" 
           Style="{StaticResource ModernDataGridStyle}"
+          RowStyle="{StaticResource MonitorLightRowStyle}"
+          CellStyle="{StaticResource MonitorLightCellStyle}"
           ItemsSource="{Binding Logs}" 
           AutoGenerateColumns="False" 
           IsReadOnly="True" 
           GridLinesVisibility="None" 
           HeadersVisibility="Column"
           Background="Transparent" 
-          BorderThickness="0">
+          BorderThickness="0"
+          RowHeight="22"
+          FontSize="11.5">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}" Width="65"/>
-                                    <DataGridTextColumn Header="级别" Binding="{Binding Level}" Width="48"/>
+                                    <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}" Width="58"/>
+                                    <DataGridTemplateColumn Header="" Width="30">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Ellipse Width="8" Height="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Ellipse.Style>
+                                                        <Style TargetType="Ellipse">
+                                                            <Setter Property="Fill" Value="{StaticResource TextDisabledBrush}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Level}" Value="ERROR">
+                                                                    <Setter Property="Fill" Value="{StaticResource DangerBrush}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Level}" Value="WARN">
+                                                                    <Setter Property="Fill" Value="{StaticResource WarningBrush}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Level}" Value="INFO">
+                                                                    <Setter Property="Fill" Value="{StaticResource InfoBrush}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Ellipse.Style>
+                                                </Ellipse>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="消息内容" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Message}"/>
+                                                <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding Message, StringFormat='{}{0}'}"
+                                                           VerticalAlignment="Center"/>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
@@ -240,32 +466,45 @@
                         </Grid>
                     </Border>
 
-                    <!-- 2. 最近检测历史 DataGrid -->
-                    <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="8">
+                    <!-- 日志区 / 最近检测 之间的可拖分隔条 -->
+                    <GridSplitter Grid.Row="1"
+                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                  Background="Transparent"
+                                  ShowsPreview="True"
+                                  ResizeBehavior="PreviousAndNext"
+                                  ResizeDirection="Rows"
+                                  ToolTip="拖动上下调节日志区与最近检测的高度" />
+
+                    <!-- ② 最近检测历史 DataGrid -->
+                    <Border Grid.Row="2" Style="{StaticResource CardBorderStyle}" Background="{StaticResource SurfaceBrush}" Padding="6">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Text="最近检测结果" Style="{StaticResource SubTitleTextStyle}" Margin="4,2,4,6"/>
+                            <TextBlock Text="最近检测结果" Style="{StaticResource SubTitleTextStyle}" Margin="4,2,4,4"/>
 
-                            <!-- 将 Grid.Row="1" 处的 DataGrid 补充 Style 参数 -->
+                            <!-- 最近检测 DataGrid：时间→批次→结果色块→详情(长文悬停看全) -->
                             <DataGrid Grid.Row="1" 
           Style="{StaticResource ModernDataGridStyle}"
+          RowStyle="{StaticResource MonitorLightRowStyle}"
+          CellStyle="{StaticResource MonitorLightCellStyle}"
           ItemsSource="{Binding Results}" 
           AutoGenerateColumns="False" 
           IsReadOnly="True" 
           GridLinesVisibility="None" 
           HeadersVisibility="Column"
           Background="Transparent" 
-          BorderThickness="0">
+          BorderThickness="0"
+          RowHeight="22"
+          FontSize="11.5">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}" Width="65"/>
-                                    <DataGridTextColumn Header="批次" Binding="{Binding BatchId}" Width="70"/>
-                                    <DataGridTemplateColumn Header="结果" Width="50">
+                                    <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}" Width="58"/>
+                                    <DataGridTextColumn Header="批次" Binding="{Binding BatchId}" Width="56"/>
+                                    <DataGridTemplateColumn Header="结果" Width="54">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <Border CornerRadius="3" Padding="4,1" HorizontalAlignment="Left">
+                                                <Border CornerRadius="3" Padding="3,1" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
                                                             <Style.Triggers>
@@ -299,7 +538,9 @@
                                     <DataGridTemplateColumn Header="详情" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Message}"/>
+                                                <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding Message, StringFormat='{}{0}'}"
+                                                           VerticalAlignment="Center"/>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>

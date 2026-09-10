@@ -34,7 +34,19 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 IsActive = recipe.IsActive,
                 Description = recipe.Description,
                 Author = recipe.Author,
+                CreatedTime = recipe.CreatedTime,
                 LastModifiedTime = recipe.LastModifiedTime,
+
+                // 审批域（2026-09-05 补齐：审批状态/审批记录/生效/修订/锁定 不再保存即丢）
+                ApprovalStatus = recipe.ApprovalStatus,
+                EffectiveFrom = recipe.EffectiveFrom,
+                ChangeReason = recipe.ChangeReason,
+                Revision = recipe.Revision,
+                IsLocked = recipe.IsLocked,
+                ApprovalInfo = CloneApprovalInfo(recipe.ApprovalInfo),
+                RequiredDeviceKeys = recipe.RequiredDeviceKeys != null
+                    ? new List<string>(recipe.RequiredDeviceKeys)
+                    : new List<string>(),
 
                 // 2. 主流程转换
                 MainProcess = ProcessToDto(recipe.MainProcess),
@@ -48,7 +60,10 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                     RequiredSpec = device.RequiredSpec,
                     Role = device.Role,
                     MappedDeviceId = device.MappedDeviceId
-                }).ToList() ?? new List<RecipeDeviceMappingModel>()
+                }).ToList() ?? new List<RecipeDeviceMappingModel>(),
+
+                // 4. 工艺参数（2026-09-05 补齐：不再随保存丢弃；工位运行配置已整卡移除，见 RecipeModel 注）
+                ProcessParameters = recipe.ProcessParameters
             };
 
             // 4. 子流程字典转换
@@ -121,7 +136,19 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                 IsActive = dto.IsActive,
                 Description = dto.Description,
                 Author = dto.Author,
+                CreatedTime = dto.CreatedTime != default(DateTime) ? dto.CreatedTime : dto.LastModifiedTime,
                 LastModifiedTime = dto.LastModifiedTime,
+
+                // 审批域（2026-09-05 补齐：旧 JSON 无这些字段 → 保持 RecipeModel 默认值，无损兼容）
+                ApprovalStatus = dto.ApprovalStatus,
+                EffectiveFrom = dto.EffectiveFrom,
+                ChangeReason = dto.ChangeReason,
+                Revision = dto.Revision > 0 ? dto.Revision : 1,
+                IsLocked = dto.IsLocked,
+                ApprovalInfo = CloneApprovalInfo(dto.ApprovalInfo),
+                RequiredDeviceKeys = dto.RequiredDeviceKeys != null
+                    ? new List<string>(dto.RequiredDeviceKeys)
+                    : new List<string>(),
 
                 // 恢复主流程 VM
                 MainProcess = ProcessToModel(dto.MainProcess),
@@ -135,7 +162,10 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
                     RequiredSpec = device.RequiredSpec,
                     Role = device.Role,
                     MappedDeviceId = device.MappedDeviceId
-                }).ToList() ?? new List<RecipeDeviceMappingModel>()
+                }).ToList() ?? new List<RecipeDeviceMappingModel>(),
+
+                // 工艺参数（旧 JSON 缺失 → 保留模型默认实例）
+                ProcessParameters = dto.ProcessParameters ?? new ProcessParameterSet()
             };
 
             // 恢复子流程字典 VM
@@ -360,6 +390,34 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
         #endregion
 
         #region 3. 辅助方法
+
+        /// <summary>
+        /// 深拷贝审批记录（含 History 流水）。null 输入返回全新空实例，
+        /// 保证 RecipeModel 缺省 ApprovalInfo 非 null（UI 双向绑定安全）。
+        /// </summary>
+        private static RecipeApprovalInfo CloneApprovalInfo(RecipeApprovalInfo src)
+        {
+            if (src == null) return new RecipeApprovalInfo();
+            return new RecipeApprovalInfo
+            {
+                SubmittedBy = src.SubmittedBy,
+                SubmittedAt = src.SubmittedAt,
+                ApprovedBy = src.ApprovedBy,
+                ApprovedAt = src.ApprovedAt,
+                LastActionAt = src.LastActionAt,
+                ApprovalComment = src.ApprovalComment,
+                RejectionReason = src.RejectionReason,
+                ElectronicSignature = src.ElectronicSignature,
+                History = src.History?.Select(h => new RecipeApprovalHistoryEntry
+                {
+                    ActionAt = h.ActionAt,
+                    ActionBy = h.ActionBy,
+                    Action = h.Action,
+                    Comment = h.Comment,
+                    ElectronicSignature = h.ElectronicSignature
+                }).ToList() ?? new List<RecipeApprovalHistoryEntry>()
+            };
+        }
 
         private static string ResolveNodeDisplayName(NodeType type, string persistedDisplayName)
         {

@@ -22,7 +22,13 @@ using Newtonsoft.Json;
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
-    public class RecipeManageViewModel : ViewModelBase
+    /// <summary>
+    /// 配方管理页 VM。
+    /// 2026-09-05 中等重构：改缓存单例 + INavigationAware（跨页传参定位、返回刷新）；
+    /// 审批按钮按状态/权限显隐（不再常显三按钮）；新增选中配方的绑定工位摘要；
+    /// 移除死代码（ReloadCurrentRecipe / 未接线 SearchCommand —— SearchText 已实时过滤）。
+    /// </summary>
+    public class RecipeManageViewModel : ViewModelBase, INavigationAware
     {
         private readonly StationRuntimeManager _runtimeManager;
         private readonly IStationHostRuntime _hostRuntime;
@@ -48,13 +54,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             RefreshAvailableStations();
             SelectedTargetStationId = AvailableStations.FirstOrDefault();
 
+            // 构造保底加载；缓存单例下每次导航经 OnNavigatedTo 再全量刷新
             LoadAllRecipes();
 
-            // 命令绑定
-            SearchCommand = new RelayCommand(_ => OnSearch());
+            // 命令绑定（SearchCommand 已移除：SearchText 实时过滤，无需额外命令）
             CreateRecipeCommand = new RelayCommand(_ => OnCreateRecipe());
             ApplyRecipeCommand = new RelayCommand(_ => OnApplyRecipe(), _ => SelectedRecipe != null && !string.IsNullOrEmpty(SelectedTargetStationId) && SelectedRecipe.ApprovalStatus == Grayson.Vision.Contracts.Recipe.Enums.RecipeApprovalStatus.Approved);
-            DeleteRecipeCommand = new RelayCommand(_ => OnDeleteRecipe(), _ => SelectedRecipe != null && !SelectedRecipe.IsActive);
+            DeleteRecipeCommand = new RelayCommand(_ => OnDeleteRecipe(), _ => SelectedRecipe != null);
             SaveDetailCommand = new RelayCommand(_ => OnSaveDetail(), _ => SelectedRecipe != null);
             OpenFlowEditCommand = new RelayCommand(_ => OnOpenFlowEdit(), _ => SelectedRecipe != null && SelectedRecipe.IsEditable);
             RefreshDevicesCommand = new RelayCommand(_ => RefreshLogicalDevicesFromFlow(), _ => SelectedRecipe?.MainProcess != null && SelectedRecipe.IsEditable);
@@ -67,9 +73,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 if (e.PropertyName == nameof(GlobalData.CurrentUserRole))
                 {
-                    OnPropertyChanged(nameof(CanEditRuntimeConfig));
                     OnPropertyChanged(nameof(CanEditProcessParameters));
                     OnPropertyChanged(nameof(CanEditRecipe));
+                    OnPropertyChanged(nameof(ShowSubmitApproval));
+                    OnPropertyChanged(nameof(ShowApproveApproval));
+                    OnPropertyChanged(nameof(ShowRejectApproval));
                     RaiseCommandsCanExecuteChanged();
                 }
             };
@@ -88,6 +96,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
             SubmitApprovalCommand?.RaiseCanExecuteChanged();
             ApproveRecipeCommand?.RaiseCanExecuteChanged();
             RejectRecipeCommand?.RaiseCanExecuteChanged();
+
+            // 审批动作后状态已变 → 同步按钮显隐与顶部状态提示
+            OnPropertyChanged(nameof(ApprovalStateHint));
+            OnPropertyChanged(nameof(ShowSubmitApproval));
+            OnPropertyChanged(nameof(ShowApproveApproval));
+            OnPropertyChanged(nameof(ShowRejectApproval));
         }
 
         #region 属性绑定
@@ -116,22 +130,68 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     // 🌟 自动从 FlowEdit 递归提取最新的逻辑设备依赖
                     RefreshLogicalDevicesFromFlow();
-                    OnPropertyChanged(nameof(CanEditRuntimeConfig));
                     OnPropertyChanged(nameof(CanEditProcessParameters));
                     OnPropertyChanged(nameof(CanEditRecipe));
                     OnPropertyChanged(nameof(ApprovalStateHint));
                     OnPropertyChanged(nameof(ReadOnlyHint));
                     OnPropertyChanged(nameof(ShowReadOnlyHint));
+                    OnPropertyChanged(nameof(ShowSubmitApproval));
+                    OnPropertyChanged(nameof(ShowApproveApproval));
+                    OnPropertyChanged(nameof(ShowRejectApproval));
+                    OnPropertyChanged(nameof(BoundStationsSummary));
                     RaiseCommandsCanExecuteChanged();
                 }
             }
         }
 
-        /// <summary>当前用户是否允许编辑运行配置（Engineer 以上且配方可编辑）</summary>
-        public bool CanEditRuntimeConfig =>
-            GlobalData.Instance.CurrentUserRole >= UserRole.Engineer &&
-            SelectedRecipe != null &&
-            SelectedRecipe.IsEditable;
+        // ==================== 2026-09-05 中等重构：审批按钮按状态/权限显隐 ====================
+        /// <summary>显示"提交审批"按钮（仅可提交状态 Draft/Rejected 且角色够）</summary>
+        public bool ShowSubmitApproval => SelectedRecipe != null && CanSubmitApproval();
+        /// <summary>显示"审批通过"按钮（仅 PendingApproval 且 Admin）</summary>
+        public bool ShowApproveApproval => SelectedRecipe != null && CanApproveRecipe();
+        /// <summary>显示"驳回"按钮（PendingApproval/Approved 且 Admin）</summary>
+        public bool ShowRejectApproval => SelectedRecipe != null && CanRejectRecipe();
+
+        /// <summary>
+        /// 选中配方的绑定工位摘要（来自 StationConfig.BoundRecipeId 反向查询；空=未绑定任何工位）。
+        /// 供元数据卡展示，解释"该配方当前被哪些工位运行"。
+        /// </summary>
+        public string BoundStationsSummary
+        {
+            get
+            {
+                if (SelectedRecipe == null) return string.Empty;
+                try
+                {
+                    var bound = GetBoundStationCodes(SelectedRecipe);
+                    return bound.Count == 0
+                        ? "未绑定任何工位"
+                        : $"已绑定 {bound.Count} 个工位：{string.Join("、", bound)}";
+                }
+                catch
+                {
+                    return "绑定信息不可用";
+                }
+            }
+        }
+
+        /// <summary>
+        /// 反向查询绑定了指定配方的工位代码列表（按 StationConfig.BoundRecipeId/Name 匹配）。
+        /// 删除守卫与 BoundStationsSummary 共用，杜绝两处独立查询漂移。
+        /// </summary>
+        private List<string> GetBoundStationCodes(RecipeModel recipe)
+        {
+            if (recipe == null) return new List<string>();
+            return (_stationConfigService.LoadAllLines() ?? new List<LineConfigModel>())
+                .SelectMany(l => l.Stations ?? new List<StationConfigModel>())
+                .Where(s => !string.IsNullOrWhiteSpace(s.BoundRecipeId) &&
+                            (s.BoundRecipeId == recipe.RecipeId ||
+                             (string.IsNullOrEmpty(recipe.RecipeId) && s.BoundRecipeName == recipe.RecipeName)))
+                .Select(s => s.StationCode)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct()
+                .ToList();
+        }
 
         /// <summary>当前用户是否允许编辑工艺参数（Engineer 以上且配方可编辑）</summary>
         public bool CanEditProcessParameters =>
@@ -167,7 +227,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #region 命令定义
 
-        public RelayCommand SearchCommand { get; }
         public RelayCommand CreateRecipeCommand { get; }
         public RelayCommand ApplyRecipeCommand { get; }
         public RelayCommand DeleteRecipeCommand { get; }
@@ -243,28 +302,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // 跨界面跳转并携带 SelectedRecipe 引用
             NavigationService.Current?.NavigateTo(PageType.FlowEdit, SelectedRecipe);
         }
-        /// <summary>
-        /// 🌟 增加配方列表刷新方法（例如从 FlowEdit 页面返回时调用）
-        /// </summary>
-        public void ReloadCurrentRecipe()
-        {
-            if (SelectedRecipe == null) return;
-
-            string targetId = !string.IsNullOrEmpty(SelectedRecipe.RecipeId) ? SelectedRecipe.RecipeId : SelectedRecipe.RecipeCode;
-            var latestRecipe = _recipeStorage.LoadRecipe(targetId);
-
-            if (latestRecipe != null)
-            {
-                // 替换 AllRecipes 与 FilteredRecipes 中的引用，刷新界面
-                int index = AllRecipes.IndexOf(SelectedRecipe);
-                if (index >= 0)
-                {
-                    AllRecipes[index] = latestRecipe;
-                }
-
-                SelectedRecipe = latestRecipe;
-            }
-        }
 
         /// <summary>
         /// 刷新目标工位列表：从工位配置中加载“全工位”。
@@ -331,6 +368,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 _stationConfigService.SaveStation(config);
 
                 // 3. 统一走 Core 标准入口：创建/更新工位 + 绑定设备映射 + 加载配方
+                //    补传工位已配的业务过程与模板代码（此前漏传会把工位已挂的独立视觉引擎/模板判据拆掉，
+                //    导致 StandaloneVision 判据读不到模板 VerdictRule → 分类好件误判 NG）
                 var hostRuntime = _hostRuntime ?? App.StationHostRuntime;
                 if (hostRuntime == null)
                 {
@@ -342,7 +381,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     SelectedTargetStationId,
                     SelectedRecipe,
                     SelectedRecipe.LogicalDevices,
-                    WorkMode.Production);
+                    WorkMode.Production,
+                    null,
+                    config.ProcessKey,
+                    config.ProcessConfigJson,
+                    config.TaskTemplateCode);
 
                 MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 已下发并绑定至工位 [{SelectedTargetStationId}]，重启后仍生效！",
                                 "成功", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -358,7 +401,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (SelectedRecipe == null) return;
 
             // 非草案/被驳回状态下，禁止修改已锁定或已审批的核心内容；
-            // 但允许 Engineer+ 在可编辑状态下保存元数据、运行配置、工艺参数。
+            // 但允许 Engineer+ 在可编辑状态下保存元数据与工艺参数。
             if (!SelectedRecipe.IsEditable && GlobalData.Instance.CurrentUserRole < UserRole.Administrator)
             {
                 MessageBox.Show("当前配方状态不允许编辑，请联系管理员或将配方驳回后再修改。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -370,6 +413,47 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             MessageBox.Show($"配方 [{SelectedRecipe.RecipeName}] 保存成功！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
         }
+
+        #region INavigationAware（2026-09-05 缓存单例：每次进入全量刷新 + 支持传参定位）
+
+        /// <summary>
+        /// 导航进入：全量重载配方与目标工位（缓存单例下页面不重建，靠此刷新数据）。
+        /// parameter 支持：null → 保持当前选中；RecipeModel → 定位选中该配方（来自工位工作台"配方管理"跳转）。
+        /// </summary>
+        public void OnNavigatedTo(object parameter)
+        {
+            RefreshAvailableStations();
+            LoadAllRecipes();
+
+            if (parameter is RecipeModel target)
+            {
+                SelectRecipeByIdentity(target);
+            }
+            else if (parameter is string identity && !string.IsNullOrWhiteSpace(identity))
+            {
+                var matched = AllRecipes.FirstOrDefault(r =>
+                    r.RecipeId == identity || r.RecipeCode == identity || r.RecipeName == identity);
+                if (matched != null) SelectedRecipe = matched;
+            }
+        }
+
+        /// <summary>按 RecipeId/RecipeCode/名称命中选中；命中失败不打扰（保持现状）</summary>
+        private void SelectRecipeByIdentity(RecipeModel target)
+        {
+            if (target == null) return;
+            var matched = AllRecipes.FirstOrDefault(r =>
+                (!string.IsNullOrEmpty(target.RecipeId) && r.RecipeId == target.RecipeId)
+                || (!string.IsNullOrEmpty(target.RecipeCode) && r.RecipeCode == target.RecipeCode)
+                || (!string.IsNullOrEmpty(target.RecipeName) && r.RecipeName == target.RecipeName));
+            if (matched != null) SelectedRecipe = matched;
+        }
+
+        /// <summary>导航离开：无需清理（数据实时落盘）</summary>
+        public void OnNavigatedFrom()
+        {
+        }
+
+        #endregion
 
         private void LoadAllRecipes()
         {
@@ -387,7 +471,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 RecipeName = "新建视觉配方",
                 ProductCategory = "通用分类",
                 Author = GlobalData.Instance.CurrentUserName ?? "Admin",
-                IsActive = false,
+                // 注：IsActive 属旧 LiteDB 体系字段（JSON 主链路恒 false，无需显式赋值）
                 LogicalDevices = new List<RecipeDeviceMappingModel>()
             };
 
@@ -407,17 +491,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         private void OnDeleteRecipe()
         {
-            if (SelectedRecipe == null || SelectedRecipe.IsActive) return;
+            if (SelectedRecipe == null) return;
 
-            // 🌟 删除守卫：先检查是否有工位绑定该配方（不依赖 IsActive，杜绝悬挂引用）
-            var boundStations = (_stationConfigService.LoadAllLines() ?? new List<LineConfigModel>())
-                .SelectMany(l => l.Stations ?? new List<StationConfigModel>())
-                .Where(s => !string.IsNullOrEmpty(s.BoundRecipeId) &&
-                            (s.BoundRecipeId == SelectedRecipe.RecipeId ||
-                             (string.IsNullOrEmpty(SelectedRecipe.RecipeId) && s.BoundRecipeName == SelectedRecipe.RecipeName)))
-                .Select(s => s.StationCode)
-                .Where(c => !string.IsNullOrWhiteSpace(c))
-                .ToList();
+            // 🌟 删除守卫：先检查是否有工位绑定该配方（RecipeModel.IsActive 属旧 LiteDB 体系，
+            //    JSON 主链路恒 false 无拦截意义，真正的守卫是绑定检查，杜绝悬挂引用）
+            var boundStations = GetBoundStationCodes(SelectedRecipe);
 
             if (boundStations.Any())
             {

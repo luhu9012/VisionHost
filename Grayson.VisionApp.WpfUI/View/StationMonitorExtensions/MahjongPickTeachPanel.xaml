@@ -1,0 +1,74 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.StationMonitorExtensions.MahjongPickTeachPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="340">
+    <Border Background="#140078D4" BorderBrush="#420078D4" BorderThickness="1"
+            CornerRadius="4" Padding="10">
+        <StackPanel>
+            <TextBlock Text="🎯 工件吸取示教 / NozzleOffset 写回"
+                       FontWeight="Bold" FontSize="12" Foreground="#FF0078D4"/>
+            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Text="{Binding TeachModeStatusText}"/>
+            <TextBlock FontSize="11" Margin="0,3,0,0"
+                       Foreground="{StaticResource TextSecondaryBrush}">
+                <Run Text="最近视觉输出：wx="/><Run Text="{Binding TeachWxText, Mode=OneWay}" FontWeight="Bold"/><Run Text="  wy="/><Run Text="{Binding TeachWyText, Mode=OneWay}" FontWeight="Bold"/><Run Text="（点【单次触发】后自动更新）"/>
+            </TextBlock>
+
+            <Separator Margin="0,6,0,6" Background="#220078D4"/>
+
+            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,2,0,3"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Text="① 点【单次触发】采图（示教模式安全：不走位不吸取）→ ② 手动点动轴让吸嘴正对工件背面图案中心 → ③ 把此刻轴读数填到下面 → ④ 点【写入】"/>
+            <Grid Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="X*(轴1)" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                <TextBox Grid.Column="1" Text="{Binding TeachXStarText, UpdateSourceTrigger=PropertyChanged}"
+                         FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+                <TextBlock Grid.Column="3" Text="Y*(轴3)" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                <TextBox Grid.Column="4" Text="{Binding TeachYStarText, UpdateSourceTrigger=PropertyChanged}"
+                         FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+            </Grid>
+            <CheckBox FontSize="11" Margin="0,5,0,0"
+                      Foreground="{StaticResource TextSecondaryBrush}"
+                      IsChecked="{Binding TeachUseMirrorFormula}"
+                      Content="采用镜像公式(−wx/−wy)；不勾选=当前公式(+wx/+wy)"/>
+
+            <UniformGrid Columns="2" Margin="0,6,0,0">
+                <Button Content="✅ 写入 NozzleOffset 并退出示教" Style="{StaticResource SuccessButtonStyle}"
+                        FontSize="11" Margin="1" Padding="0,6" Command="{Binding ApplyTeachCommand}"/>
+                <Button Content="直接退出示教模式" Style="{StaticResource WarningButtonStyle}"
+                        FontSize="11" Margin="1" Padding="0,6" Command="{Binding ExitTeachModeCommand}"/>
+            </UniformGrid>
+            <Button Content="🛠 重新开启示教模式" Style="{StaticResource SecondaryButtonStyle}"
+                    FontSize="11" Margin="1,4,1,0" Padding="0,5" Command="{Binding EnableTeachModeCommand}"/>
+
+            <Separator Margin="0,8,0,6" Background="#220078D4"/>
+            <TextBlock Text="⚙ 参数覆盖管理（代码默认 = 基线）"
+                       FontWeight="Bold" FontSize="11" Foreground="#FF0078D4"/>
+            <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Text="{Binding OverlayInfoText}"/>
+            <Button Content="🔄 清除全部覆盖，恢复代码默认值" Style="{StaticResource DangerButtonStyle}"
+                    FontSize="11" Margin="1,6,1,0" Padding="0,5" Command="{Binding ResetToDefaultsCommand}"/>
+            <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
+                       Foreground="{StaticResource TextDisabledBrush}"
+                       Text="说明：示教只持久化 NozzleOffset/公式/TeachMode 等字段；其余参数（PickZ、速度、IO、节拍…）一律以 MahjongPickConfig.cs 代码默认为准，改代码即生效（工位停止状态下即时热挂载，运行中保存则下次启动生效）。"/>
+
+            <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,6,0,0"
+                       Foreground="{StaticResource TextDisabledBrush}"
+                       Text="验证：写入后把工件挪到新位置，点【单次触发】观察吸嘴落点是否正对工件（应同向跟随）。挪动后落点偏差大请核对公式勾选与 X*/Y* 读数。"/>
+        </StackPanel>
+    </Border>
+</UserControl>

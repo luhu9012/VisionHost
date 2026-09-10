@@ -11,19 +11,24 @@
 
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.HalconWrapper.Calibration;
+using Grayson.Vision.HalconWrapper.Core;
 using HalconDotNet;
+using System;
 
 namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 {
     /// <summary>
     /// HalconImageDisplayHost 的显示上下文适配器。
     /// 仅在代码后台创建（不进入 XAML），避免控件公共 API 暴露 halcondotnet 类型。
-    /// 同时实现两个接口：
+    /// 同时实现三个接口：
     ///   - ICalibrationDisplayContext（HalconWrapper，强类型 HObject）：标定服务用；
     ///   - IFlowPreviewContext（Contracts，弱类型 object）：节点属性面板实时预览用，
-    ///     弱类型入口让 Contracts/Nodes 保持零 halcondotnet 引用。
+    ///     弱类型入口让 Contracts/Nodes 保持零 halcondotnet 引用；
+    ///   - IHalconWindowSurface（HalconWrapper，HDevelop 风格直通）：把原生 HWindow 交给
+    ///     算法层自由绘制，绘制内容由调用方书写，不再受限于场景式 API 的固定方法集。
+    ///     三块能力共用同一个实例，算法层用 AsWindow() 判型取用。
     /// </summary>
-    public sealed class HalconDisplayContextAdapter : ICalibrationDisplayContext, IFlowPreviewContext
+    public sealed class HalconDisplayContextAdapter : ICalibrationDisplayContext, IFlowPreviewContext, IHalconWindowSurface
     {
         private readonly HalconImageDisplayHost _host;
 
@@ -81,6 +86,22 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
         {
             _host.SceneAddCircle(row, col, radius, color);
         }
+
+        #region IHalconWindowSurface（HDevelop 风格直通：把 HWindow 交给算法层自由绘制）
+
+        /// <inheritdoc />
+        public void Draw(Action<HWindow> draw)
+        {
+            _host.RunOnWindow(draw);
+        }
+
+        /// <inheritdoc />
+        public void DrawRecorded(Action<HWindow> draw)
+        {
+            _host.SceneAddAction(draw);
+        }
+
+        #endregion
 
         #region IFlowPreviewContext（弱类型显式实现：object 判型转发到同一套场景 API）
 

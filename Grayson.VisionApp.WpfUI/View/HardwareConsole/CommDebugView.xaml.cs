@@ -28,15 +28,16 @@ namespace Grayson.Vision.WpfUI.View.HardwareConsole
             {
                 if (DataContext is CommDebugViewModel vm)
                 {
-                    vm.IsActive = true; // 进入通信调试界面，开启日志监听
+                    vm.IsActive = true; // 进入通信调试界面（含独立窗口），开启日志监听
                 }
             };
 
             Unloaded += (s, e) =>
             {
-                if (DataContext is CommDebugViewModel vm)
+                if (DataContext is CommDebugViewModel vm && !vm.IsDetached)
                 {
-                    vm.IsActive = false; // 切出/关闭通信调试界面，立马关闭日志监听，切断刷屏源头
+                    // 独立窗口模式（IsDetached=true）下主 Tab 切走不停订阅——独立窗口仍要刷新
+                    vm.IsActive = false;
                 }
             };
         }

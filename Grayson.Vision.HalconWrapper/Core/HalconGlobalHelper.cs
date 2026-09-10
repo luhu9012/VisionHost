@@ -19,6 +19,73 @@ namespace Grayson.Vision.HalconWrapper.Core
         /// <summary>Pose固定6个参数</summary>
         private const int PoseElementCount = 6;
 
+        #region 文本绘制（disp_text 通用参数兼容降级）
+
+        /// <summary>
+        /// disp_text 通用参数可用级别：3=box+box_color(黑)+shadow+shadow_offset，
+        /// 2=box+box_color(黑)+shadow，1=box+box_color(黑)，0=仅 box。
+        /// 进程级缓存：首次调用若抛 HALCON #3286（Wrong generic parameter name —— 该版本不识别
+        /// 某个参数名），自动降到下一级并记住，之后不再重复抛异常。
+        /// </summary>
+        private static int s_dispTextLevel = 3;
+
+        /// <summary>
+        /// 兼容各 HALCON 版本的 disp_text 封装。
+        /// disp_text 的通用参数名随版本增删（例如 'shadow_offset' 并非所有版本都支持），
+        /// 传入不被识别的名字会抛 #3286，导致**整段文本画不出来**——节点预览的分数、
+        /// 提示文字会集体消失，日志里只剩一句「场景条目绘制失败（已跳过）」，极难排查。
+        /// 此处按「完整参数 → 去掉 shadow_offset → 只留 box」逐级降级，保证文字一定能上屏。
+        /// ★ 2026-09-03：所有文字统一【黑底】（box_color='black'）——标定/预览画面多为亮色
+        ///   （白桌面/反光工件/过曝区），纯白/黄字在亮背景上不可读；黑底保证任意亮度下可读，
+        ///   前景色仍由调用方指定（白=常规、黄=告警、红=错误、黑=阴影层）。
+        /// </summary>
+        public static void DispTextSafe(HWindow window, string text, string coordSystem,
+            double row, double col, string color)
+        {
+            for (int level = s_dispTextLevel; level >= 0; level--)
+            {
+                try
+                {
+                    switch (level)
+                    {
+                        case 3:
+                            HOperatorSet.DispText(window, text, coordSystem, row, col, color,
+                                new HTuple("box", "box_color", "shadow", "shadow_offset"),
+                                new HTuple("true", "black", "true", 2));
+                            break;
+                        case 2:
+                            HOperatorSet.DispText(window, text, coordSystem, row, col, color,
+                                new HTuple("box", "box_color", "shadow"),
+                                new HTuple("true", "black", "true"));
+                            break;
+                        case 1:
+                            HOperatorSet.DispText(window, text, coordSystem, row, col, color,
+                                new HTuple("box", "box_color"),
+                                new HTuple("true", "black"));
+                            break;
+                        default:
+                            HOperatorSet.DispText(window, text, coordSystem, row, col, color,
+                                new HTuple("box"), new HTuple("true"));
+                            break;
+                    }
+                    if (level != s_dispTextLevel) s_dispTextLevel = level;   // 记住可用级别，后续不再试错
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (level == 0)
+                    {
+                        LogBus.Warn(nameof(HalconGlobalHelper),
+                            $"disp_text 调用失败，文本已放弃绘制: {ex.Message}");
+                        return;
+                    }
+                    // 否则：降到下一级重试
+                }
+            }
+        }
+
+        #endregion
+
         #region Pose 双向转换
         public static Pose3D HtuplePoseToPose3D(HTuple hPose)
         {

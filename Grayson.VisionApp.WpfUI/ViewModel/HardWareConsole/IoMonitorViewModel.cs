@@ -81,6 +81,18 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             }
         }
 
+        private bool _isDetached;
+        /// <summary>
+        /// 是否已打开独立窗口（2026-09-02）。为 true 时本 Tab 的 View 切走（Unloaded）
+        /// 不再自动停轮询——独立窗口仍保持实时刷新，实现"并行操作/观看"。
+        /// 由 HardwareConsoleView 在打开/关闭独立窗口时维护。
+        /// </summary>
+        public bool IsDetached
+        {
+            get => _isDetached;
+            set => Set(ref _isDetached, value);
+        }
+
 
         #endregion
         #region 命令定义
@@ -152,16 +164,22 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         }
 
         /// <summary>
-        /// 从全局设备池装载 Camera、MotionCard、PLC 设备
+        /// 从全局设备池装载 Camera、MotionCard、PLC 设备。
+        /// ⚠ 排除 Epson 机械手：它的 IO 是专用真空阀语义（业务 0/1 → SPEL+ OUT15/14，
+        /// 映射在 EpsonIoMap），通用轮询会按 0/1/2... 读不存在的输入口（IN? 1/2），
+        /// 触发 SPEL+ 2345 IO 越界错误并崩掉 mainTCP 脚本（实测 2026-09-02）。
+        /// Epson 的真空阀请在「🤖 机械臂调试」Tab 操作。
         /// </summary>
         public void LoadIoDevices()
         {
             IoDeviceList.Clear();
             var devices = _devicePool.GetAllDevices()
-                .Where(d => d.Category == DeviceCategory.Camera ||
-                            d.Category == DeviceCategory.MotionCard ||
-                            d.Category == DeviceCategory.Generic||
-                            d.Category == DeviceCategory.PLC);
+                .Where(d => (d.Category == DeviceCategory.Camera ||
+                             d.Category == DeviceCategory.MotionCard ||
+                             d.Category == DeviceCategory.Generic ||
+                             d.Category == DeviceCategory.PLC) &&
+                            !(d.BrandName != null &&
+                              d.BrandName.IndexOf("Epson", StringComparison.OrdinalIgnoreCase) >= 0));
 
             foreach (var dev in devices)
             {
@@ -284,7 +302,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                     try
                     {
                         PollIoStates();
-                        await Task.Delay(100, token); // 100ms 刷新频率
+                        await Task.Delay(50, token); // 100ms 刷新频率
                     }
                     catch (TaskCanceledException) { break; }
                     catch (Exception) { /* 忽略读取异常 */ }

@@ -187,7 +187,14 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             {
                 if (SelectedCameraDevice == null) return;
                 var res = SelectedCameraDevice.Connect();
-                if (res.Success) ReadParamsFromCamera(SelectedCameraDevice);
+                if (res.Success)
+                {
+                    // 连接后显式把硬件触发模式对齐到 UI 当前选择，
+                    // 杜绝「UI 显示连续 / 硬件却停留在 On(上次软触发残留)」导致的零帧无画面。
+                    // （BaslerCamera 底层 Open 已有 TriggerMode=Off 兜底，此处再按 UI 精确对齐）
+                    SelectedCameraDevice.SetTriggerMode(SelectedTriggerMode);
+                    ReadParamsFromCamera(SelectedCameraDevice);
+                }
                 else MessageBox.Show($"连接失败: {res.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }, _ => SelectedCameraDevice != null && !IsConnected);
 
@@ -353,6 +360,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         private void OnCameraFrameReceived(object sender, FrameEventArgs e)
         {
+            // 诊断：帧已到达 VM 层（若能看到此日志但无画面 → 显示层问题；若看不到 → 取流问题）
+            System.Diagnostics.Debug.WriteLine(
+                $"[CameraDebugView] 收到帧 #{e?.FrameNum} {e?.Width}x{e?.Height} {e?.PixelFormat} buf={e?.Buffer?.Length}");
+
             if (e?.Buffer == null || e.Width <= 0 || e.Height <= 0) return;
 
             // 1. UI 限帧 (约 30 FPS)
@@ -368,7 +379,12 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 {
                     // 2. 相机帧 → Halcon HImage 包装（WrapImage 内部处理 BGR/Gray8 转换）
                     var renderImage = _renderService.WrapImage(e);
-                    if (renderImage == null) return;
+                    if (renderImage == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[CameraDebugView] WrapImage 返回 null（像素格式不受支持？{e.PixelFormat}），未渲染");
+                        return;
+                    }
 
                     // 3. 构造渲染上下文并替换 ActiveImageContext
                     //    HalconImageDisplayHost 通过 DataContext(CameraDisplayVm) 订阅了

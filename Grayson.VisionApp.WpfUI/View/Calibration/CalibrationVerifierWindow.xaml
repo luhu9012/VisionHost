@@ -6,6 +6,36 @@
         Width="1180" Height="720"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}">
+    <Window.Resources>
+        <!-- 单轴步进 RepeatButton 小尺寸样式（与机械臂调试台同款遥控器键位，缩放到校验台右栏） -->
+        <Style x:Key="StepRepeatBtnStyleSmall" TargetType="RepeatButton">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Margin" Value="1"/>
+            <Setter Property="Delay" Value="450"/>
+            <Setter Property="Interval" Value="260"/>
+            <Setter Property="ToolTip" Value="单击走一步；按住连续微动（松开即停）"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="0,2">
+                            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -70,27 +100,24 @@
                     <halcon:HalconImageDisplayHost x:Name="ImageHost"
                                                    DataContext="{Binding ImageDisplay}"
                                                    ShowToolbar="True"/>
-                    <!-- 点选覆盖层：视口上 WPF 覆盖"绘制不可见但事件可命中"铁律——仅用于收点击，不画任何东西 -->
+                    <!-- 点选覆盖层：上边距让出工具栏区（TopReservedHeight），鼠标移到工具栏恢复正常点击/悬停，不再被覆盖层抢走 -->
                     <Border Background="Transparent"
                             PreviewMouseLeftButtonDown="Overlay_PreviewMouseLeftButtonDown"
-                            Cursor="Cross">
-                        <TextBlock Text="抓拍/实时后在画面上点击特征点 ——「在线打点」「H 单验」「H+e+t 全量」页签均可点选（到位前不动轴）"
+                            Cursor="Cross"
+                            Margin="{Binding TopReservedHeight, ElementName=ImageHost, Converter={StaticResource TopMarginConverter}}">
+                        <TextBlock Text="抓拍/实时后，在画面上点击特征点 —— 吸嘴会自动去吸那个点（按工位标定组合自动补偿）"
                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4"
                                    Foreground="#88000000" FontSize="11" Background="#22000000" Padding="10,3"/>
                     </Border>
                 </Grid>
             </Border>
 
-            <!-- 右：操作面板（Tab：在线打点 B 块 / 离线残差体检 A 块） -->
+            <!-- 右：操作面板（★2026-09-12 精简：校验台唯一功能=点像素→低速移动→吸嘴贴合，
+                 移除「残差体检」「分步几何校验」诊断 Tab，只留在线打点主链路 + 必要轴操作） -->
             <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="0">
-                <TabControl x:Name="RightTabs"
-                            SelectedIndex="{Binding ActiveTabIndex, Mode=TwoWay}"
-                            SelectionChanged="RightTabs_SelectionChanged"
-                            Background="Transparent" BorderThickness="0" FontSize="12">
-                    <!-- ============ Tab1 在线打点（B 块） ============ -->
-                    <TabItem Header="🟢 在线打点">
-                        <Grid Margin="12">
+                <Grid Margin="12">
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -104,10 +131,19 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0">
-                                <TextBlock Text="打点验收（点哪去哪）" FontSize="14" FontWeight="Bold"
+                                <TextBlock Text="{Binding ShapeName}" FontSize="14" FontWeight="Bold"
                                            Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                <TextBlock Text="{Binding Profile.Name}" FontSize="11" Margin="0,2,0,0"
-                                           Foreground="{DynamicResource TextDisabledBrush}" TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding SlotChipText}" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               ToolTip="本方案所属的工位相机槽（复合工位上/下相机各一条，校验前请确认槽对得上）"/>
+                                    <TextBlock Text="·" FontSize="11" Margin="6,0,0,0"
+                                               Foreground="{DynamicResource TextDisabledBrush}"/>
+                                    <TextBlock Text="{Binding LayoutName}" FontSize="11" Margin="6,0,0,0"
+                                               Foreground="#FF107C41"/>
+                                    <TextBlock Text="{Binding Profile.Name}" FontSize="11" Margin="12,0,0,0"
+                                               Foreground="{DynamicResource TextDisabledBrush}" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
                             </StackPanel>
 
                             <WrapPanel Grid.Row="1" Margin="0,8,0,0">
@@ -117,53 +153,111 @@
                                         Command="{Binding StartLiveCommand}"/>
                             </WrapPanel>
 
-                            <!-- 吸嘴对准锚点/对准像素行(2026-09-06)：v3 差分式消费锚 p_tip 现场标定；与 BasePos(网格中心)解耦 -->
+                            <!-- 相机安装特性(2026-09-08 泛化)：勾=相机随 Z 升降(拍照须回 CalibZ)；不勾=相机固定(成像与 Z 无关)。空=未声明(按随Z保守)。关窗保存档案。 -->
                             <Border Grid.Row="2" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
                                     Background="{DynamicResource SurfaceBrush}">
-                                <DockPanel>
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                        <Button Content="📐 记为对准像素"
-                                                Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" Margin="6,0,0,0"
-                                                Command="{Binding SaveToolAlignCommand}"
-                                                ToolTip="p_tip(设备常量)标定: ① 刚点过【记吸嘴对准锚点】(吸嘴尖压住特征)后保持 XY 只动 Z → ② 抓拍定格 → ③ 点选该特征 → ④ 点此按钮。此后 v3 差分式 R_go=拍照位+H(p_tip)−w 生效，与工件摆放位置无关。抬 Z 高度：相机固定任意、随 Z 机型须回标定高度。"/>	                                <Button Content="📍 记吸嘴对准锚点"
-                                                Style="{StaticResource SecondaryButtonStyle}" Padding="10,5" Margin="6,0,0,0"
-                                                Command="{Binding SaveNozzleAlignCommand}"
-                                                ToolTip="① 手动 JOG：吸嘴1 尖(看实物)压住/对准当前工件特征中心(无需拍照,Z 随意) → ② 点此记录回转中心坐标 R_n(含压住高度 Z) → ③ 抬 Z 离开特征(XY 不动)→抓拍定格→点选同一特征→点【记为对准像素】。"/>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox Content="相机随 Z 升降（拍照须回标定高度）"
+                                                  IsChecked="{Binding CameraMovesWithZ}"
+                                                  VerticalAlignment="Center" FontSize="11"/>
+                                        <TextBlock Text="{Binding CameraMountInfoText}" FontSize="10.5" Margin="8,0,0,0"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
                                     </StackPanel>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding NozzleAlignInfoText}" FontSize="11" TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                        <TextBlock Text="{Binding ToolAlignInfoText}" FontSize="10.5" TextWrapping="Wrap"
-                                                   Margin="0,3,0,0"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                        <!-- 相机安装特性(2026-09-08 泛化)：勾=相机随 Z 升降(拍照须回 CalibZ)；不勾=相机固定(成像与 Z 无关)。空=未声明(按随Z保守)。关窗保存档案。 -->
-                                        <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                                            <CheckBox Content="相机随 Z 升降（拍照须回标定高度）"
-                                                      IsChecked="{Binding CameraMovesWithZ}"
-                                                      VerticalAlignment="Center" FontSize="11"/>
-                                            <TextBlock Text="{Binding CameraMountInfoText}" FontSize="10.5" Margin="8,0,0,0"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </DockPanel>
+                                    <!-- ★2026-09-15 消费口径声明（三态：勾=是 / 不勾=否 / 中间=未声明）。
+                                         它决定生产端要不要叠 O、要不要减 U 旋转项——分错差几毫米且 RMS 抓不到。
+                                         关窗即落库，发布工位时按它写 NeedsOCompensation。 -->
+                                    <CheckBox Content="H 已在吸嘴域（延伸杆偏心已在标定阶段扣掉 → 生产直吸 H(u)）"
+                                              IsChecked="{Binding HandEyeInNozzleDomain}" IsThreeState="True"
+                                              Margin="0,6,0,0" FontSize="11"
+                                              ToolTip="勾=H 已消杆（命令到 H(u) 即吸嘴对准像素）；不勾=H 在杆端域（命令到 H(u) 只把【杆端 mark】送到该像素，固定相机要再补杆端偏移 b=对针t 或旋转标定的 ToolEccW；只有 EIH 才叠旋转中心 O）；中间=未声明（按采集路径保守判定）"/>
+                                    <CheckBox Content="吸嘴与 U 轴同轴（转 U 时吸嘴 XY 原地不动 → 免 U 旋转项）"
+                                              IsChecked="{Binding NozzleAxisCoaxial}" IsThreeState="True"
+                                              Margin="0,3,0,0" FontSize="11"
+                                              ToolTip="勾=同轴（消费不做 R(U−U0)·e，U 只定姿态）；不勾=偏心吸嘴（保留该项）；中间=未声明（保守保留）。判据：绕 U 转 30° 前后各测同一不动特征，吸嘴尖偏差 d0≈d30≈0"/>
+                                </StackPanel>
                             </Border>
 
                             <Border Grid.Row="3" Margin="0,8,0,0" Padding="8" CornerRadius="4"
                                     Background="{DynamicResource SurfaceBrush}">
                                 <StackPanel>
-                                    <DockPanel>
-                                        <Button DockPanel.Dock="Right" Content="🧪 平移差分自检(记点/结算)"
-                                                Style="{StaticResource SecondaryButtonStyle}" Padding="8,4"
-                                                VerticalAlignment="Center"
-                                                Command="{Binding DiffCheckCommand}"
-                                                ToolTip="与工件位置无关的矩阵判据: 麻将不动 → 机位A定格点选(第1击) → JOG 平移已知位移(建议≥15mm) → 机位B定格点选同特征(第2击结算)。断言 Δw=H 差≈Δ机位：通过=矩阵线性/当量/镜像与机械自洽，可放心用差分消费；不符=矩阵或采样有系统错。"/>
-                                        <TextBlock Text="换算与自检" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                    <!-- ★★2026-09-15：口径改为【系统判定】——不再让用户自己拼条件。
+                                         平台按【工位档案 + 标定条件】自动定好标定转换方式（判定入口与发布链、
+                                         生产端是同一个函数），用户只需确认或一键采纳；要反驳也有下面的高级对照区。
+                                         动机：手拼分型心智负担太高，且拼错了没有闸门能发现（分型错只是整体平移，RMS 抓不到）。 -->
+                                    <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                        <TextBlock DockPanel.Dock="Left" Text="标定转换方式（系统判定）:" FontSize="11"
+                                                   VerticalAlignment="Center" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <Button DockPanel.Dock="Right" Content="✔ 采纳并写入档案" FontSize="11"
+                                                Padding="8,2" VerticalAlignment="Center"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Command="{Binding AdoptSystemDecisionCommand}"
+                                                ToolTip="把系统判定的『H 落在哪个域 / 吸嘴是否与 U 轴同轴』写成确定值并落库——此后校验台、发布链、生产端看到的是同一个口径，不再各推一遍"/>
                                     </DockPanel>
+                                    <TextBlock Text="{Binding SystemDecisionText}" FontSize="12" FontWeight="Bold"
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SuccessBrush}"/>
+                                    <TextBlock Text="{Binding SystemDecisionFormula}" FontSize="11.5" Margin="0,2,0,0"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="{Binding SystemDecisionBasis}" FontSize="10.5" Margin="0,2,0,0"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               ToolTip="为什么判成这一档：档案声明 + 标定条件（旋转拟合圆半径 / 特征模板名 / 采集路径）。不认同就反驳这几条。"/>
+                                    <TextBlock Text="{Binding SystemDecisionDecl}" FontSize="10.5" Margin="0,2,0,0"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextDisabledBrush}"/>
+                                    <!-- 阻断/告警：有就直接把处方摆出来，不许静默（空串时自然不占高度） -->
+                                    <TextBlock Text="{Binding SystemDecisionIssues}" FontSize="10.5" Margin="0,4,0,0"
+                                               TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}"/>
+                                    <!-- ★把 b 带进生产：固定相机+杆端域专有。这个开关原先【整个平台没有任何界面】——
+                                         校验台验到吸嘴压中了，也没地方能让生产端走上 H(u)+b，
+                                         于是「H 标好了、b 也测出来了，生产端却永远少一个 |b|」。
+                                         用 DataTrigger 控可见性（不依赖 BoolToVisibilityConverter 的资源作用域）。 -->
+                                    <StackPanel Margin="0,6,0,0">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRodOffsetCase}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <CheckBox Content="把 b 带进生产（生产端 吸点 = H(u) ± b）" FontSize="11"
+                                                  IsChecked="{Binding RodOffsetInProduction}" IsThreeState="True"
+                                                  ToolTip="勾=发布后生产端补 b（与校验台同口径）；不勾=生产端只走 H(u)，会少一个 |b|。符号由工位配置 RodOffsetSign 决定——先用下面高级区的口径④⑤判死再勾。"/>
+                                        <TextBlock Text="{Binding RodOffsetInfoText}" FontSize="10.5" Margin="20,2,0,0"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="换算结果" FontSize="11" FontWeight="SemiBold" Margin="0,6,0,0"
+                                               Foreground="{DynamicResource TextDisabledBrush}"/>
                                     <TextBlock Text="{Binding PickInfoText}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
                                                Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    <TextBlock Text="{Binding DiffCheckInfoText}" FontSize="10.5" TextWrapping="Wrap" Margin="0,4,0,0"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <!-- ★高级·反面对照：只影响本窗口显示，不写配置、不改变生产口径。
+                                         用法：口径④⑤各点同一个像素，只有一个是「吸嘴正好落在点上」，
+                                         另一个会落在 2|b| 之外——符号一次判死，不必靠推演。 -->
+                                    <Expander Header="⚙ 高级·反面对照（只影响本窗口显示，不改变生产口径）"
+                                              FontSize="11" Margin="0,8,0,0" IsExpanded="False">
+                                        <StackPanel Margin="0,6,0,0">
+                                            <DockPanel LastChildFill="False">
+                                                <TextBlock DockPanel.Dock="Left" Text="强制口径:" FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                <ComboBox DockPanel.Dock="Right" Width="200" FontSize="11"
+                                                          ItemsSource="{Binding SolveModeOptions}"
+                                                          SelectedItem="{Binding SelectedSolveMode}"
+                                                          DisplayMemberPath="Text"
+                                                          ToolTip="强行换一个口径算同一个像素，用落差判分型。默认「跟随档案声明」= 系统判定。"/>
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding SolveModeHint}" FontSize="10.5" Margin="0,4,0,0"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       ToolTip="档案自己声明的域与同轴性（口径=跟随档案时按它判）"/>
+                                        </StackPanel>
+                                    </Expander>
                                 </StackPanel>
                             </Border>
 
@@ -171,7 +265,95 @@
                                     Style="{StaticResource SuccessButtonStyle}" Height="34" Margin="0,8,0,0"
                                     Command="{Binding MoveToTargetCommand}"/>
 
-                            <WrapPanel Grid.Row="5" Margin="0,8,0,0">
+                            <!-- 轴操作 + 真空（2026-09-10 从机械臂调试台 RobotDebugView 搬入：遥控器式四轴步进 + 真空吸住） -->
+                            <Expander Grid.Row="5" Margin="0,8,0,0" Header="🎮 轴操作 + 真空" FontSize="12" IsExpanded="False">
+                                <StackPanel Margin="0,6,0,0">
+                                    <!-- 步长选择 -->
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock Text="步长 (mm/°):" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <ComboBox DockPanel.Dock="Right" Width="64" FontSize="11"
+                                                  ItemsSource="{Binding StepSizeOptions}"
+                                                  SelectedItem="{Binding SelectedStepSize}"
+                                                  VerticalAlignment="Center"/>
+                                    </DockPanel>
+
+                                    <!-- 遥控器式键位：左 3×3 十字方向键（X/Y 平面）＋右 Z/U 键组 -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="56"/>
+                                                <ColumnDefinition Width="62"/>
+                                                <ColumnDefinition Width="56"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="36"/>
+                                                <RowDefinition Height="36"/>
+                                                <RowDefinition Height="36"/>
+                                            </Grid.RowDefinitions>
+
+                                            <RepeatButton Grid.Row="0" Grid.Column="1" Content="▲ Y+"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="Y+"
+                                                          Background="#27AE60" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                            <RepeatButton Grid.Row="1" Grid.Column="0" Content="◀ X−"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="X-"
+                                                          Background="#3498DB" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Text="X/Y"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" FontSize="10"/>
+                                            <RepeatButton Grid.Row="1" Grid.Column="2" Content="X+ ▶"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="X+"
+                                                          Background="#3498DB" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                            <RepeatButton Grid.Row="2" Grid.Column="1" Content="▼ Y−"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="Y-"
+                                                          Background="#27AE60" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                        </Grid>
+
+                                        <Border Width="1" Background="{DynamicResource BorderBrush}" Height="70" Margin="12,2"/>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="58"/>
+                                                <ColumnDefinition Width="58"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="36"/>
+                                                <RowDefinition Height="36"/>
+                                            </Grid.RowDefinitions>
+
+                                            <RepeatButton Grid.Row="0" Grid.Column="0" Content="▲ Z+"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="Z+"
+                                                          Background="#E67E22" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                            <RepeatButton Grid.Row="1" Grid.Column="0" Content="▼ Z−"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="Z-"
+                                                          Background="#E67E22" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                            <RepeatButton Grid.Row="0" Grid.Column="1" Content="U+"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="U+"
+                                                          Background="#8E44AD" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                            <RepeatButton Grid.Row="1" Grid.Column="1" Content="U−"
+                                                          Command="{Binding StepMoveCommand}" CommandParameter="U-"
+                                                          Background="#8E44AD" Style="{StaticResource StepRepeatBtnStyleSmall}"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <TextBlock Text="{Binding LastStepText}" FontSize="10.5" Margin="2,4,0,0"
+                                               Foreground="{DynamicResource TextDisabledBrush}" TextTrimming="CharacterEllipsis"/>
+
+                                    <!-- 真空吸住/放开 -->
+                                    <DockPanel Margin="0,8,0,0">
+                                        <TextBlock Text="{Binding VacuumStateText}" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Content="🔽 吸住" Style="{StaticResource SuccessButtonStyle}" Padding="10,4"
+                                                    Command="{Binding VacuumOnCommand}" Margin="0,0,6,0"/>
+                                            <Button Content="🔼 放开" Style="{StaticResource SecondaryButtonStyle}" Padding="10,4"
+                                                    Command="{Binding VacuumOffCommand}"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Expander>
+
+                            <WrapPanel Grid.Row="6" Margin="0,8,0,0">
                                 <Button Content="✅ 通过（对准）" Style="{StaticResource SuccessButtonStyle}" Padding="10,5"
                                         Command="{Binding VerdictPassCommand}" Margin="0,0,6,0"/>
                                 <Button Content="❌ 偏差" Style="{StaticResource SecondaryButtonStyle}" Padding="10,5"
@@ -182,11 +364,11 @@
                                 <TextBlock Text="mm" FontSize="11" VerticalAlignment="Center" Margin="4,0,0,0"
                                            Foreground="{DynamicResource TextDisabledBrush}"/>
                             </WrapPanel>
-                            <TextBox Grid.Row="6" Margin="0,6,0,0" Height="22" FontSize="11"
+                            <TextBox Grid.Row="7" Margin="0,6,0,0" Height="22" FontSize="11"
                                      Text="{Binding VerdictNote, UpdateSourceTrigger=PropertyChanged}"
                                      ToolTip="判定备注(可选)"/>
 
-                            <DataGrid Grid.Row="8" AutoGenerateColumns="False" Style="{StaticResource ModernDataGridStyle}"
+                            <DataGrid Grid.Row="9" AutoGenerateColumns="False" Style="{StaticResource ModernDataGridStyle}"
                                       ItemsSource="{Binding VerificationPoints}" IsReadOnly="True">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="30"/>
@@ -198,7 +380,7 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <Border Grid.Row="9" Margin="0,8,0,0" Padding="10,7" CornerRadius="4" Background="#0A107C41">
+                            <Border Grid.Row="10" Margin="0,8,0,0" Padding="10,7" CornerRadius="4" Background="#0A107C41">
                                 <DockPanel>
                                     <Button DockPanel.Dock="Right" Content="💾 完成并保存校验记录"
                                             Style="{StaticResource SuccessButtonStyle}" Padding="12,6"
@@ -208,235 +390,6 @@
                                 </DockPanel>
                             </Border>
                         </Grid>
-                    </TabItem>
-
-                    <!-- ============ Tab2 离线残差体检（A 块） ============ -->
-                    <TabItem Header="📊 残差体检（离线）">
-                        <Grid Margin="12">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="离线残差体检（不动轴 · 读档案采样快照）" FontSize="14" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                <TextBlock Text="{Binding Profile.Name}" FontSize="11" Margin="0,2,0,0"
-                                           Foreground="{DynamicResource TextDisabledBrush}" TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-
-                            <Border Grid.Row="1" Margin="0,8,0,0" Padding="8" CornerRadius="4"
-                                    Background="{DynamicResource SurfaceBrush}">
-                                <TextBlock Text="{Binding ResidualHintText}" FontSize="11" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            </Border>
-
-                            <DockPanel Grid.Row="2" Margin="0,8,0,0">
-                                <Button DockPanel.Dock="Left" Content="🔍 计算残差体检"
-                                        Style="{StaticResource SecondaryButtonStyle}" Padding="12,5"
-                                        Click="BtnRunResidual_Click"/>
-                                <TextBlock DockPanel.Dock="Right" Text="容差 &gt;0.5mm 记超差" FontSize="11"
-                                           Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"/>
-                            </DockPanel>
-
-                            <Border Grid.Row="3" Margin="0,8,0,0" Padding="8,6" CornerRadius="4" Background="#0A107C41">
-                                <TextBlock Text="{Binding ResidualSummaryText}" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="#FF107C41" TextWrapping="Wrap"/>
-                            </Border>
-
-                            <DataGrid Grid.Row="4" Margin="0,8,0,0" AutoGenerateColumns="False"
-                                      Style="{StaticResource ModernDataGridStyle}"
-                                      ItemsSource="{Binding ResidualRows}" IsReadOnly="True">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="32"/>
-                                    <DataGridTextColumn Header="δx mm" Binding="{Binding DxMm, StringFormat={}{0:F3}}" Width="*"/>
-                                    <DataGridTextColumn Header="δy mm" Binding="{Binding DyMm, StringFormat={}{0:F3}}" Width="*"/>
-                                    <DataGridTextColumn Header="|Δ| mm" Binding="{Binding AbsErrMm, StringFormat={}{0:F3}}" Width="62"/>
-                                    <DataGridTextColumn Header="判定" Binding="{Binding StatusText}" Width="*"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
-
-                            <TextBlock Grid.Row="5" Margin="0,6,0,0" FontSize="10.5" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource TextDisabledBrush}"
-                                       Text="残差 e = 机械真值 − H(像素)，|e|≤0.5mm ✅。计算后会在左图把每个采样点画黄十字(P 序号)标注；若该点机械真值反投影 H⁻¹ 与实际像素差 &gt;2px，再画一个青色十字——两十字的间距即该点残差的方向与大小。十字需与标定同一取景才有实物意义；不可靠点(向导标记)建议重新采样。"/>
-                        </Grid>
-                    </TabItem>
-                    <!-- ============ Tab3 分步几何校验：H 单验（像素↔机械） ============ -->
-                    <TabItem Header="🧮 H 单验">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="10">
-                            <StackPanel>
-
-                                <!-- ⓿ 矩阵体检 -->
-                                <Border Padding="8,6" CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
-                                    <StackPanel>
-                                        <DockPanel>
-                                            <Button DockPanel.Dock="Right" Content="🔬 重新体检" Padding="8,4"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Command="{Binding RunMatrixHealthCommand}"/>
-                                            <TextBlock Text="⓿ 矩阵体检（当量/正交/镜像/轴向）" FontSize="11.5" FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource TextDisabledBrush}"/>
-                                        </DockPanel>
-                                        <TextBlock Text="{Binding MatrixHealthText}" FontSize="11" TextWrapping="Wrap"
-                                                   Margin="0,5,0,0" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- ① 正向：像素→机械 -->
-                                <Border Margin="0,8,0,0" Padding="8,6" CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
-                                    <StackPanel>
-                                        <DockPanel>
-                                            <Button DockPanel.Dock="Right" Content="📌 记入统计" Padding="8,4"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Command="{Binding GeoRecordCommand}"/>
-                                            <TextBlock Text="① H 正向（像素 → 机械）" FontSize="11.5" FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource TextDisabledBrush}"/>
-                                        </DockPanel>
-                                        <TextBlock Text="抓拍后点选【与九点标定同一特征且工件未移动】→ Δ=H(u)−机位 即纯 H 残差（与 e/t 无关）"
-                                                   FontSize="10.5" TextWrapping="Wrap" Margin="0,4,0,0"
-                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
-                                        <TextBlock Text="{Binding FwdInfoText}" FontSize="11.5" TextWrapping="Wrap"
-                                                   Margin="0,4,0,0" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                        <TextBlock Text="{Binding FwdSummaryText}" FontSize="11" Margin="0,4,0,0"
-                                                   FontWeight="SemiBold" Foreground="#FF107C41"/>
-                                        <DataGrid Margin="0,6,0,0" MaxHeight="130" AutoGenerateColumns="False"
-                                                  Style="{StaticResource ModernDataGridStyle}"
-                                                  ItemsSource="{Binding FwdRows}" IsReadOnly="True">
-                                            <DataGrid.Columns>
-                                                <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="26"/>
-                                                <DataGridTextColumn Header="Hx" Binding="{Binding Hx, StringFormat={}{0:F2}}" Width="*"/>
-                                                <DataGridTextColumn Header="Hy" Binding="{Binding Hy, StringFormat={}{0:F2}}" Width="*"/>
-                                                <DataGridTextColumn Header="δx" Binding="{Binding Dx, StringFormat={}{0:+0.00;-0.00}}" Width="*"/>
-                                                <DataGridTextColumn Header="δy" Binding="{Binding Dy, StringFormat={}{0:+0.00;-0.00}}" Width="*"/>
-                                                <DataGridTextColumn Header="|Δ|" Binding="{Binding AbsErr, StringFormat={}{0:F3}}" Width="48"/>
-                                                <DataGridTextColumn Header="判定" Binding="{Binding StatusText}" Width="52"/>
-                                            </DataGrid.Columns>
-                                        </DataGrid>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- ② 反向：机械→像素 -->
-                                <Border Margin="0,8,0,0" Padding="8,6" CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
-                                    <StackPanel>
-                                        <TextBlock Text="② H 反向（机械 → 像素，肉眼比对）" FontSize="11.5" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
-                                        <WrapPanel Margin="0,6,0,0">
-                                            <TextBlock Text="目标 X" FontSize="11" VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                            <TextBox Width="72" Margin="4,0,8,0" FontSize="11" VerticalContentAlignment="Center"
-                                                     Text="{Binding TargetXText, UpdateSourceTrigger=PropertyChanged}"/>
-                                            <TextBlock Text="Y" FontSize="11" VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                            <TextBox Width="72" Margin="4,0,8,0" FontSize="11" VerticalContentAlignment="Center"
-                                                     Text="{Binding TargetYText, UpdateSourceTrigger=PropertyChanged}"/>
-                                            <Button Content="📍 读当前位" Padding="8,4" Style="{StaticResource SecondaryButtonStyle}"
-                                                    Command="{Binding ReadCurrentPoseCommand}" Margin="0,0,6,0"/>
-                                            <Button Content="🚗 走位" Padding="8,4" Style="{StaticResource SecondaryButtonStyle}"
-                                                    Command="{Binding MoveToTargetXYCommand}"/>
-                                        </WrapPanel>
-                                        <WrapPanel Margin="0,6,0,0">
-                                            <Button Content="📷 抓拍并标注预测点" Padding="10,5"
-                                                    Style="{StaticResource SuccessButtonStyle}" Height="30"
-                                                    Command="{Binding CaptureAndPredictCommand}"
-                                                    ToolTip="先抓拍定格当前画面，再按目标机位反投影 u=H⁻¹(P) 画绿色大十字；肉眼看特征是否落在十字上。"/>
-                                            <Button Content="📍 仅重画预测点（不抓拍）" Padding="10,5" Margin="6,0,0,0"
-                                                    Style="{StaticResource SecondaryButtonStyle}" Height="30"
-                                                    Command="{Binding PredictOnlyCommand}"
-                                                    ToolTip="不取流，只按上方目标机位重画绿色十字。改了 X/Y 数字后点它（其实输入变更会自动重画）。"/>
-                                        </WrapPanel>
-                                        <TextBlock Text="绿十字 = 按上方目标机位反投影的「特征应该出现的位置」；输入框填了数字就以手输位为准（改数字十字立即跟动）。"
-                                                   FontSize="10.5" TextWrapping="Wrap" Margin="0,4,0,0"
-                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
-                                        <TextBlock Text="{Binding RevInfoText}" FontSize="11.5" TextWrapping="Wrap"
-                                                   Margin="0,5,0,0" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- ③ 九点回放 -->
-                                <Border Margin="0,8,0,0" Padding="8,6" CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
-                                    <StackPanel>
-                                        <DockPanel>
-                                            <Button DockPanel.Dock="Right" Content="🚗 走到该点" Padding="8,4"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Command="{Binding MoveToSampleCommand}"
-                                                    ToolTip="走到选中采样点的机械真值位；抓拍后特征应回到该行像素位（最狠的复现验证）。"/>
-                                            <Button DockPanel.Dock="Right" Content="📊 回放采样点" Padding="8,4" Margin="0,0,6,0"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Command="{Binding ReplaySamplesCommand}"/>
-                                            <TextBlock Text="③ 九点回放（离线，不动轴）" FontSize="11.5" FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource TextDisabledBrush}"/>
-                                        </DockPanel>
-                                        <TextBlock Text="{Binding ReplaySummaryText}" FontSize="11" TextWrapping="Wrap"
-                                                   Margin="0,5,0,0" FontWeight="SemiBold" Foreground="#FF107C41"/>
-                                        <DataGrid Margin="0,6,0,0" MaxHeight="150" AutoGenerateColumns="False"
-                                                  Style="{StaticResource ModernDataGridStyle}"
-                                                  ItemsSource="{Binding ReplayRows}"
-                                                  SelectedItem="{Binding SelectedReplayRow}"
-                                                  IsReadOnly="True">
-                                            <DataGrid.Columns>
-                                                <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="26"/>
-                                                <DataGridTextColumn Header="真值X" Binding="{Binding TrueX, StringFormat={}{0:F1}}" Width="*"/>
-                                                <DataGridTextColumn Header="真值Y" Binding="{Binding TrueY, StringFormat={}{0:F1}}" Width="*"/>
-                                                <DataGridTextColumn Header="采样px" Binding="{Binding PixelX, StringFormat={}{0:F0}}" Width="*"/>
-                                                <DataGridTextColumn Header="|Δ|mm" Binding="{Binding AbsErrMm, StringFormat={}{0:F3}}" Width="*"/>
-                                                <DataGridTextColumn Header="判定" Binding="{Binding StatusText}" Width="52"/>
-                                            </DataGrid.Columns>
-                                        </DataGrid>
-                                        <TextBlock Margin="0,4,0,0" FontSize="10.5" TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource TextDisabledBrush}"
-                                                   Text="黄十字=标定采样时的特征像素位，青十字=机械真值反投影(差>2px 才画)，两十字间距即该点残差。需与标定同一取景才有实物意义。"/>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </TabItem>
-
-                    <!-- ============ Tab4 H+e+t 全量 ============ -->
-                    <TabItem Header="🎯 H+e+t 全量">
-                        <Grid Margin="12">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="H+e+t 全量链路校验" FontSize="14" FontWeight="Bold"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                <TextBlock Text="抓拍 → 点选特征 → 看中间量 → 走位 → 目视吸嘴尖是否压中"
-                                           FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource TextDisabledBrush}"/>
-                            </StackPanel>
-
-                            <Border Grid.Row="1" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
-                                    Background="{DynamicResource SurfaceBrush}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding FullInfoText}" FontSize="11.5" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    <TextBlock Text="{Binding FullTargetText}" FontSize="15" FontWeight="Bold" Margin="0,6,0,0"
-                                               Foreground="#FF107C41"/>
-                                    <TextBlock Text="↑ 走位目标 R_go（回转中心）" FontSize="10.5"
-                                               Foreground="{DynamicResource TextDisabledBrush}"/>
-                                </StackPanel>
-                            </Border>
-
-                            <Button Grid.Row="2" Margin="0,8,0,0" Height="34"
-                                    Content="🎯 低速到位（目视吸嘴尖是否压中特征）"
-                                    Style="{StaticResource SuccessButtonStyle}"
-                                    Command="{Binding FullMoveCommand}"/>
-
-                            <Border Grid.Row="3" Margin="0,8,0,0" Padding="8,6" CornerRadius="4" Background="#0A107C41">
-                                <TextBlock FontSize="10.5" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
-                                           Text="⚠ 判读要点：工件不动时 H(u)=机位 恒成立（定义使然），所以『走位后再拍一张比对』证伪不了 TCO——TCO 只能靠吸嘴尖物理压中特征来判断。若 ①H 单验残差已 ≤0.5mm 但这里压不中，问题必在 TCO 本身(对针压点/高度)或 Ecc(偏心杆)上，与 H 无关。"/>
-                            </Border>
-                        </Grid>
-                    </TabItem>
-                </TabControl>
             </Border>
         </Grid>
 

@@ -96,10 +96,10 @@
                         </Grid>
                     </Border>
 
-                    <!-- ② 成像 -->
+                    <!-- ② 工具头 -->
                     <Border Style="{StaticResource CardBorderStyle}" Padding="10" Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock Text="② 成像方式" FontWeight="Bold" Margin="0,0,0,8"/>
+                            <TextBlock Text="② 工具头" FontWeight="Bold" Margin="0,0,0,8"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -109,29 +109,72 @@
                                     <ColumnDefinition Width="180"/>
                                     <ColumnDefinition Width="14"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="14"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="150"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="工具头数量:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding ToolHeadOptions}" SelectedItem="{Binding ToolHeadCount}"/>
+                                <TextBlock Grid.Column="3" Text="与旋转轴同心:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding ConcentricOptions}" SelectedItem="{Binding ConcentricText}"
+                                          ToolTip="偏心→需旋转中心标定+偏心补偿（示教按 ToolOffset）"/>
+                                <TextBlock Grid.Column="6" Text="角度需求:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                                <ComboBox Grid.Column="7" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding AngleNeedOptions}" SelectedItem="{Binding AngleNeed}"
+                                          ToolTip="抓取/放置带角度 → 模板角度范围开启 + 匹配输出角度驱动旋转轴"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ③ 判定与节拍 -->
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="10" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="14"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="140"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="③ 判定与节拍" FontWeight="Bold" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                      ItemsSource="{Binding VerdictOutputOptions}" SelectedItem="{Binding VerdictOutput}"
+                                      ToolTip="决定流程末端节点：IO/PLC 输出、测量值上报、MES、引导坐标"/>
+                            <TextBlock Grid.Column="3" Text="节拍(件/min):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
+                            <TextBox Grid.Column="4" Text="{Binding CyclePerMin, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="节拍紧张时考虑飞拍/多相机并行"/>
+                            <TextBlock Grid.Column="5" Margin="10,0,0,0" FontSize="11"
+                                       Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
+                                       Text="节拍 ≥60 件/min 建议评估飞拍方案"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 光学参数（可选，做可行性校验） -->
+                    <Border Style="{StaticResource CardBorderStyle}" Padding="10" Margin="0,0,0,10">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="相机安装:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{Binding CameraMountOptions}" SelectedItem="{Binding CameraMount}"
-                                          ToolTip="眼在手上(随动)→手眼标定；眼在手外(固定)→九点标定"/>
-                                <TextBlock Grid.Column="3" Text="拍照方式:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{Binding ShootModeOptions}" SelectedItem="{Binding ShootMode}"/>
-                                <TextBlock Grid.Column="6" Text="光轴与工面:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="7" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{Binding AxisToSurfaceOptions}" SelectedItem="{Binding AxisToSurface}"/>
+                                <TextBlock Text="光学参数" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="（可选，仅做像素当量可行性校验）"
+                                           FontSize="11" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"/>
                             </Grid>
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="180"/>
+                                    <ColumnDefinition Width="150"/>
                                     <ColumnDefinition Width="14"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="110"/>
                                     <ColumnDefinition Width="14"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="120"/>
+                                    <ColumnDefinition Width="110"/>
                                     <ColumnDefinition Width="14"/>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
@@ -152,61 +195,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- ③ 工具 -->
-                    <Border Style="{StaticResource CardBorderStyle}" Padding="10" Margin="0,0,0,10">
-                        <StackPanel>
-                            <TextBlock Text="③ 工具头" FontWeight="Bold" Margin="0,0,0,8"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="180"/>
-                                    <ColumnDefinition Width="14"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="180"/>
-                                    <ColumnDefinition Width="14"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="工具头数量:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{Binding ToolHeadOptions}" SelectedItem="{Binding ToolHeadCount}"/>
-                                <TextBlock Grid.Column="3" Text="与旋转轴同心:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{Binding ConcentricOptions}" SelectedItem="{Binding ConcentricText}"
-                                          ToolTip="偏心→需旋转中心标定+偏心补偿（示教按 ToolOffset）"/>
-                                <TextBlock Grid.Column="6" Text="角度需求:" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                                <ComboBox Grid.Column="7" Style="{StaticResource ModernComboBoxStyle}"
-                                          ItemsSource="{Binding AngleNeedOptions}" SelectedItem="{Binding AngleNeed}"
-                                          ToolTip="抓取/放置带角度 → 模板角度范围开启 + 匹配输出角度驱动旋转轴"/>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- ④ 判定与节拍 -->
-                    <Border Style="{StaticResource CardBorderStyle}" Padding="10" Margin="0,0,0,10">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="180"/>
-                                <ColumnDefinition Width="14"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="140"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="④ 判定与节拍" FontWeight="Bold" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
-                                      ItemsSource="{Binding VerdictOutputOptions}" SelectedItem="{Binding VerdictOutput}"
-                                      ToolTip="决定流程末端节点：IO/PLC 输出、测量值上报、MES、引导坐标"/>
-                            <TextBlock Grid.Column="3" Text="节拍(件/min):" VerticalAlignment="Center" Style="{StaticResource FormLabelStyle}"/>
-                            <TextBox Grid.Column="4" Text="{Binding CyclePerMin, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource ModernTextBoxStyle}" ToolTip="节拍紧张时考虑飞拍/多相机并行"/>
-                            <TextBlock Grid.Column="5" Margin="10,0,0,0" FontSize="11"
-                                       Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"
-                                       Text="节拍 ≥60 件/min 建议评估飞拍方案"/>
-                        </Grid>
-                    </Border>
-
-                    <!-- ⑤ 执行机构与相机拓扑（多相机/机器人 → 槽级标定建议） -->
+                    <!-- ④ 执行机构与相机拓扑（多相机/机器人 → 槽级标定建议） -->
                     <Border Style="{StaticResource CardBorderStyle}" Padding="10">
                         <StackPanel>
                             <Grid>
@@ -215,12 +204,12 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="⑤ 执行机构与相机拓扑" FontWeight="Bold" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="1" Text="  多相机 / 机器人工位在此描述；每槽推导独立标定建议（右侧预览）"
+                                <TextBlock Text="④ 执行机构与相机拓扑" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="  相机相关信息（安装/用途/拍照/光轴/标定板/轴跟随）全部在相机槽内配置"
                                            FontSize="11" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"/>
                                 <Button Grid.Column="2" Content="＋ 添加相机槽" Style="{StaticResource SecondaryButtonStyle}"
                                         Padding="10,4" Click="BtnAddSlot_Click"
-                                        ToolTip="多相机（上固定/下固定/眼在手上/斜拍）逐个添加；仅单相机可跳过，用上方 ② 成像字段"/>
+                                        ToolTip="每个视觉检测工位至少一个相机槽；多相机（上固定/下固定/眼在手上/斜拍）逐个添加"/>
                             </Grid>
                             <Grid Margin="0,8,0,0">
                                 <Grid.ColumnDefinitions>
@@ -238,67 +227,111 @@
                                            Text="机器人 → 标定向导按 SCARA 轴约定（U 旋转/Z 升降）；板卡 → 现场轴表；PLC → 标定仅建像素关系"/>
                             </Grid>
 
-                            <ItemsControl ItemsSource="{Binding CameraSlotsUi}" Margin="0,8,0,0">
+                            <ItemsControl ItemsSource="{Binding CameraSlotsUi}" Margin="0,10,0,0">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="4" Padding="8,5" Margin="0,0,0,6">
+                                        <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="12,10" Margin="0,0,0,8">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="150"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="104"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="70"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="84"/>
                                                     <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <Border Background="#22378ADD" CornerRadius="9" Padding="7,1" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding SlotKey}" FontSize="11" FontWeight="Bold"
+
+                                                <!-- 左：槽标识 -->
+                                                <Border Grid.Column="0" Background="#22378ADD" CornerRadius="10" Padding="10,3" VerticalAlignment="Top">
+                                                    <TextBlock Text="{Binding SlotKey}" FontSize="12" FontWeight="Bold"
                                                                Foreground="{DynamicResource TextPrimaryBrush}"/>
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text=" 安装:" FontSize="11" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextDisabledBrush}"/>
-                                                <ComboBox Grid.Column="2" Style="{StaticResource ModernComboBoxStyle}" Height="26"
-                                                          ItemsSource="{x:Static svc:StationProposalEngine.CameraInstallOptions}"
-                                                          SelectedItem="{Binding InstallKind}"
-                                                          SelectionChanged="SlotField_Changed"
-                                                          ToolTip="相机安装方式（眼在手上=随执行机构移动 → 手眼标定族）"/>
-                                                <TextBlock Grid.Column="3" Text=" 用途:" FontSize="11" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextDisabledBrush}"/>
-                                                <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}" Height="26"
-                                                          ItemsSource="{x:Static svc:StationProposalEngine.CameraPurposeOptions}"
-                                                          SelectedItem="{Binding Purpose}"
-                                                          SelectionChanged="SlotField_Changed"
-                                                          ToolTip="该相机承担的角色：引导定位 / 飞拍纠偏 / 测量 / 检测…"/>
-                                                <TextBlock Grid.Column="5" Text=" 拍:" FontSize="11" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextDisabledBrush}"/>
-                                                <ComboBox Grid.Column="6" Style="{StaticResource ModernComboBoxStyle}" Height="26"
-                                                          ItemsSource="{x:Static svc:StationProposalEngine.ShootModeOptions}"
-                                                          SelectedItem="{Binding ShootMode}"
-                                                          SelectionChanged="SlotField_Changed"
-                                                          ToolTip="精拍(静止) / 飞拍(运动中)"/>
-                                                <TextBlock Grid.Column="7" Text=" 光轴:" FontSize="11" VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextDisabledBrush}"/>
-                                                <ComboBox Grid.Column="8" Style="{StaticResource ModernComboBoxStyle}" Height="26"
-                                                          ItemsSource="{x:Static svc:StationProposalEngine.CameraAxisSurfaceOptions}"
-                                                          SelectedItem="{Binding AxisToSurface}"
-                                                          SelectionChanged="SlotField_Changed"
-                                                          ToolTip="垂直拍摄 / 斜拍（斜拍建议畸变矫正前置）"/>
-                                                <Button Grid.Column="10" Content="✕" Style="{StaticResource SecondaryButtonStyle}"
-                                                        Width="24" Height="24" Padding="0" FontSize="11" Margin="4,0,0,0"
-                                                        Click="BtnRemoveSlot_Click" Tag="{Binding}" ToolTip="移除该相机槽"/>
+
+                                                <!-- 右：字段区 -->
+                                                <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                                                    <!-- 安装 + 用途 -->
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="16"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="安装方式" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                        <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" Height="26"
+                                                                  ItemsSource="{x:Static svc:StationProposalEngine.CameraInstallOptions}"
+                                                                  SelectedItem="{Binding InstallKind}"
+                                                                  SelectionChanged="SlotField_Changed"
+                                                                  ToolTip="相机安装方式（眼在手上=随执行机构移动 → 手眼标定族）"/>
+                                                        <TextBlock Grid.Column="3" Text="用途" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                        <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}" Height="26"
+                                                                  ItemsSource="{x:Static svc:StationProposalEngine.CameraPurposeOptions}"
+                                                                  SelectedItem="{Binding Purpose}"
+                                                                  SelectionChanged="SlotField_Changed"
+                                                                  ToolTip="该相机承担的角色：引导定位 / 对位纠偏 / 测量 / 检测…"/>
+                                                    </Grid>
+
+                                                    <!-- 拍照 + 光轴 -->
+                                                    <Grid Margin="0,6,0,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="16"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="拍照方式" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                        <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" Height="26"
+                                                                  ItemsSource="{x:Static svc:StationProposalEngine.ShootModeOptions}"
+                                                                  SelectedItem="{Binding ShootMode}"
+                                                                  SelectionChanged="SlotField_Changed"
+                                                                  ToolTip="精拍(静止) / 飞拍(运动中)"/>
+                                                        <TextBlock Grid.Column="3" Text="光轴与工面" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                        <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}" Height="26"
+                                                                  ItemsSource="{x:Static svc:StationProposalEngine.CameraAxisSurfaceOptions}"
+                                                                  SelectedItem="{Binding AxisToSurface}"
+                                                                  SelectionChanged="SlotField_Changed"
+                                                                  ToolTip="垂直拍摄 / 斜拍（斜拍建议畸变矫正前置）"/>
+                                                    </Grid>
+
+                                                    <!-- 标定板 + 轴跟随 -->
+                                                    <Grid Margin="0,6,0,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="16"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="标定板" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                        <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}" Height="26"
+                                                                  ItemsSource="{Binding DataContext.UsesCalibrationBoardOptions, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                  SelectedItem="{Binding UsesCalibrationBoardText}"
+                                                                  SelectionChanged="SlotField_Changed"
+                                                                  ToolTip="该相机视野内可否放标定板：有板=棋盘格内参+畸变；无板=九点走位（可能需延伸杆/吸放件）"/>
+                                                        <TextBlock Grid.Column="3" Text="轴跟随" FontSize="11" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextDisabledBrush}"/>
+                                                        <ComboBox Grid.Column="4" Style="{StaticResource ModernComboBoxStyle}" Height="26"
+                                                                  ItemsSource="{x:Static svc:StationProposalEngine.AxisFollowsOptions}"
+                                                                  SelectedItem="{Binding AxisFollows}"
+                                                                  SelectionChanged="SlotField_Changed"
+                                                                  ToolTip="相机随执行机构哪些轴联动：固定=不随动；跟随XY=随水平面但Z/U独立；跟随XYZU=全随动(真眼在手上)"/>
+                                                        <Button Grid.Column="5" Content="✕" Style="{StaticResource SecondaryButtonStyle}"
+                                                                Width="26" Height="26" Padding="0" FontSize="11" Margin="10,0,0,0"
+                                                                Click="BtnRemoveSlot_Click" Tag="{Binding}" ToolTip="移除该相机槽"/>
+                                                    </Grid>
+                                                </StackPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
-                            <TextBlock Text="未配置相机槽 —— 仅单相机请用上方 ② 成像字段；多相机点【＋ 添加相机槽】逐台描述"
-                                       FontSize="11" Foreground="{DynamicResource TextDisabledBrush}" TextWrapping="Wrap"
+                            <TextBlock Text="尚未添加相机槽 —— 每个视觉检测工位至少配置一个相机槽，点【＋ 添加相机槽】逐台描述相机信息"
+                                       FontSize="11" Foreground="{DynamicResource TextDisabledBrush}" TextWrapping="Wrap" Margin="0,4,0,0"
                                        Visibility="{Binding HasCameraSlots, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
                         </StackPanel>
                     </Border>

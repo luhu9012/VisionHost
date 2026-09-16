@@ -79,12 +79,61 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
                 hImage.GetImageSize(out int w, out int h);
                 LogBus.Info("Halcon", $"HImage 包装成功: 尺寸 [{w} x {h}]");
 
+                // ★ 取流黑屏诊断（2026-09-11）：WrapImage 是所有相机帧的唯一收口点，
+                //   在这里打「通道数 + 灰度 min/max」能一眼切开两类黑屏，省去反复猜：
+                //   · min/max 跨度正常（如 18~240）→ 数据没问题，问题在显示链路（窗口/视口/重绘）；
+                //   · min/max 全挤在 0 附近（如 0~4）→ 相机侧曝光/增益/光源问题，与显示无关。
+                LogPixelStats(hImage);
+
                 return new HalconRenderImage(hImage);
             }
             catch (Exception ex)
             {
                 LogBus.Error("Halcon", $"WrapImage 抛出异常: {ex.Message}", ex);
                 return null;
+            }
+        }
+
+        /// <summary>像素体检节流时间戳：每秒最多打一次，避免高频取流刷屏</summary>
+        private static DateTime _lastPixelStatAt = DateTime.MinValue;
+
+        /// <summary>
+        /// 输出图像的通道数与灰度 min/max（每秒最多一次）。
+        /// 用于区分「相机给的数据本来就是黑的」与「数据正常但显示链路没画出来」——
+        /// 这两类黑屏的日志表现完全一样（都有帧、都包装成功、都触发渲染），
+        /// 只有看像素值才能一刀切开。
+        /// </summary>
+        private static void LogPixelStats(HImage img)
+        {
+            try
+            {
+                if ((DateTime.Now - _lastPixelStatAt).TotalSeconds < 1) return;
+                _lastPixelStatAt = DateTime.Now;
+
+                img.GetImageSize(out int w, out int h);
+                int ch = img.CountChannels();
+
+                double min, max;
+                if (ch == 1)
+                {
+                    // 注意：MinMaxGray 为 6 参重载（Regions, Image, Percent, Min, Max, Range）
+                    HOperatorSet.MinMaxGray(img, img, 0, out HTuple minT, out HTuple maxT, out HTuple rangeT);
+                    min = minT.D; max = maxT.D;
+                }
+                else
+                {
+                    using (var gray = img.Rgb1ToGray())
+                    {
+                        HOperatorSet.MinMaxGray(gray, gray, 0, out HTuple minT, out HTuple maxT, out HTuple rangeT);
+                        min = minT.D; max = maxT.D;
+                    }
+                }
+
+                LogBus.Info("Halcon", $"[像素体检] {w}x{h} 通道数={ch} 灰度 min={min:F0} max={max:F0}");
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("Halcon", "[像素体检] 跳过: " + ex.Message);
             }
         }
 

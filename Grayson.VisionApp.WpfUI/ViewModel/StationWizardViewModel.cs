@@ -194,6 +194,40 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public string[] ConcentricOptions => new[] { string.Empty, "是", "否" };
 
+        private bool? _usesCalibrationBoard;
+        /// <summary>标定板可用性（三态：null=待定/未答，true=有板走棋盘格内参，false=无板走九点走位）</summary>
+        public bool? UsesCalibrationBoard
+        {
+            get
+            {
+                _usesCalibrationBoard = _profile.Requirement?.UsesCalibrationBoard;
+                return _usesCalibrationBoard;
+            }
+            set
+            {
+                _usesCalibrationBoard = value;
+                _profile.Requirement = _profile.Requirement ?? new StationProfileRequirement();
+                _profile.Requirement.UsesCalibrationBoard = value;
+                OnPropertyChanged(nameof(UsesCalibrationBoard));
+                OnPropertyChanged(nameof(UsesCalibrationBoardText));
+                RefreshDerivedView();
+            }
+        }
+
+        /// <summary>标定板可用性三态字符串视图（空串=待确认/未知）</summary>
+        public string UsesCalibrationBoardText
+        {
+            get => UsesCalibrationBoard == true ? "有标定板" : UsesCalibrationBoard == false ? "无标定板" : string.Empty;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) UsesCalibrationBoard = null;
+                else if (value == "有标定板") UsesCalibrationBoard = true;
+                else UsesCalibrationBoard = false;
+            }
+        }
+
+        public string[] UsesCalibrationBoardOptions => new[] { string.Empty, "有标定板", "无标定板" };
+
         public string AngleNeed { get => _profile.Requirement?.AngleNeed; set => SetReq("AngleNeed", value, nameof(AngleNeed)); }
         // ④ 判定与节拍
         public string VerdictOutput { get => _profile.Requirement?.VerdictOutput; set => SetReq("VerdictOutput", value, nameof(VerdictOutput)); }
@@ -219,14 +253,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (_profile.Requirement.CameraSlots == null) _profile.Requirement.CameraSlots = new List<VisionSlotInfo>();
 
             var mount = _profile.Requirement.CameraMount;
+            bool moving = string.Equals(mount, "眼在手上");
             var slot = new VisionSlotInfo
             {
                 SlotKey = NextSlotKey(),
                 InstallKind = MapMountToInstallKind(mount),
                 ShootMode = _profile.Requirement.ShootMode,
                 AxisToSurface = _profile.Requirement.AxisToSurface,
-                MovesWithActuator = string.Equals(mount, "眼在手上"),
-                Purpose = DefaultPurposeFromTask(_profile.Requirement.TaskType)
+                AxisFollows = moving ? "跟随XYZU" : "固定（不随动）",
+                Purpose = DefaultPurposeFromTask(_profile.Requirement.TaskType),
+                UsesCalibrationBoard = _profile.Requirement.UsesCalibrationBoard
             };
             _profile.Requirement.CameraSlots.Add(slot);
             CameraSlotsUi.Add(slot);
@@ -405,6 +441,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(ToolHeadCount));
             OnPropertyChanged(nameof(ConcentricWithRotationAxis));
             OnPropertyChanged(nameof(ConcentricText));
+            OnPropertyChanged(nameof(UsesCalibrationBoard));
+            OnPropertyChanged(nameof(UsesCalibrationBoardText));
             OnPropertyChanged(nameof(AngleNeed));
             OnPropertyChanged(nameof(VerdictOutput));
             OnPropertyChanged(nameof(CyclePerMin));

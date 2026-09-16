@@ -161,21 +161,38 @@
                             <!-- 物理场景配置 (核心优化) -->
                             <TextBlock Text="物理场景设置" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,10" Foreground="{DynamicResource PrimaryBrush}"/>
 
-                            <Grid Margin="0,6" Visibility="{Binding IsLegacyMode, Converter={StaticResource BoolToVis}}">
+                            <!-- 2026-09-11：相机槽可编辑（原无此行——槽只能从 CameraId 猜，绑设备后恒成 Cam_01）。
+                                 复合工位（上相机 Cam_A / 下相机 Cam_C）必须能在此改对槽，否则两条标定产物撞同一身份。 -->
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="相机槽 (Slot):" VerticalAlignment="Center"
+                                           ToolTip="工位档案里定义的相机槽（Cam_A / Cam_C …），决定标定产物身份『站|量|槽|吸嘴』与配方的引用口径。&#x0a;它与下方『相机设备』不同：设备是物理相机，槽是工位里的角色。绑定物理相机不会再覆盖槽。可直接手填。"/>
+                                <ComboBox Grid.Column="1" Style="{StaticResource ModernComboBoxStyle}"
+                                          ItemsSource="{Binding CameraSlotOptions}"
+                                          Text="{Binding SessionSlotKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEditable="True"/>
+                            </Grid>
+
+                            <!-- 2026-09-11：去掉旧的 IsLegacyMode 可见性限制——v2 会话（工位档案推荐的方案）此前整行不显示，
+                                 导致推荐判错布局时现场无法修正（固定下相机被锁成眼在手上）。 -->
+                            <Grid Margin="0,6">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="140"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="相机安装方式:" VerticalAlignment="Center"
-                                           ToolTip="吸放式 Pick&amp;Place 的放料点=基准+网格偏移，与相机装在手上/外无关，故吸放式下此选项置灰"/>
+                                           ToolTip="决定 H 的消费式：眼在手外(固定相机) X_obj=H(u)；眼在手上(随动相机) X_obj=P_photo+O−H(u)。&#x0a;复合工位的固定上/下相机都应选『眼在手外』。"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                                            IsEnabled="{Binding IsEyeModeEditable}"
-                                           ToolTip="普通九点/九点+旋转按相机装法决定走位镜像方向；吸放式放料点由基准+网格偏移直接决定，不受此选项影响">
+                                           ToolTip="普通九点/九点+旋转按相机装法决定走位镜像方向；吸放式放料点由基准+网格偏移直接决定，但布局仍决定任务卡与消费式，改后采集路径会自动重算">
                                     <RadioButton Content="眼在手外 (Eye-to-Hand 相机固定)" 
-                                     IsChecked="{Binding TargetProfile.EyeMode, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=EyeToHand}" 
+                                     IsChecked="{Binding SessionEyeMode, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=EyeToHand}" 
                                      Margin="0,0,16,0" VerticalAlignment="Center"/>
                                     <RadioButton Content="眼在手上 (Eye-in-Hand 相机随动)" 
-                                     IsChecked="{Binding TargetProfile.EyeMode, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=EyeInHand}" 
+                                     IsChecked="{Binding SessionEyeMode, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=EyeInHand}" 
                                      VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Grid>
@@ -361,6 +378,10 @@
                                         <TextBox Width="65" Text="{Binding TargetProfile.BasePosX, StringFormat={}{0:F3}}" Margin="2,0,8,0"/>
                                         <TextBlock Text="Y: " VerticalAlignment="Center"/>
                                         <TextBox Width="65" Text="{Binding TargetProfile.BasePosY, StringFormat={}{0:F3}}" Margin="2,0,8,0"/>
+                                        <TextBlock Text="Z: " VerticalAlignment="Center"/>
+                                        <TextBox Width="58" Text="{Binding TargetProfile.BasePosZ, StringFormat={}{0:F2}}" Margin="2,0,8,0"/>
+                                        <TextBlock Text="U: " VerticalAlignment="Center"/>
+                                        <TextBox Width="58" Text="{Binding TargetProfile.BasePosU, StringFormat={}{0:F2}}" Margin="2,0,8,0"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="🎯 设当前轴位置为基准" 
                 Style="{StaticResource SecondaryButtonStyle}" 
@@ -390,6 +411,35 @@
                                     <TextBox Width="65" Text="{Binding GridStepX}" Margin="4,0,12,0"/>
                                     <TextBlock Text="Y步长: " VerticalAlignment="Center"/>
                                     <TextBox Width="65" Text="{Binding GridStepY}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 走位速度（2026-09-10 新增）：现场反馈九点走位整体偏慢。
+                                 默认 50（与旧行为一致），可调高缩短采集总时长；上限 100。
+                                 ⚠ 提速过高会有减速震荡 → 图像拖尾模糊 → 圆度骤减被几何筛掉，
+                                 故提示"图像模糊请调回 50"。可见性与"走位网格步长"同源。 -->
+                            <Grid Margin="0,6,0,0">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowOriginGridParams}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="走位速度:" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <ComboBox Width="90" ItemsSource="{Binding MoveSpeedOptions}"
+                                              SelectedItem="{Binding MoveSpeed, Mode=TwoWay}"/>
+                                    <TextBlock Text="（默认 50；走位慢可调高至 70~80，图像变模糊请调回）"
+                                               VerticalAlignment="Center" Margin="8,0,0,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
                                 </StackPanel>
                             </Grid>
 
@@ -1127,9 +1177,13 @@
 								   Visibility="{Binding IsSessionV2, Converter={StaticResource BoolToVis}}"/>
 						<Border Background="{DynamicResource CardBackgroundBrush}" Padding="16" CornerRadius="6" Margin="0,12,0,0">
 							<StackPanel>
-								<TextBlock FontWeight="Bold" Margin="0,0,0,8">
+							<StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+								<TextBlock FontWeight="Bold" VerticalAlignment="Center">
 									<Run Text="🧾 发布前体检"/><Run Text="（绿=通过 · 黄=提醒可确认后保存 · 红=阻断保存）" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
 								</TextBlock>
+								<CheckBox Content="放宽门禁(诊断模式)" IsChecked="{Binding RelaxShapeGate, Mode=TwoWay}" Margin="14,0,0,0" VerticalAlignment="Center"
+								          ToolTip="开启后：RMS 严重超差、矩阵形状非法(σ1/σ2≠1)、固定相机负行列式(镜像)、体检未执行 四项红阻降级为黄色提醒（仍弹确认框）——用于相机安装几何/轴方向约定问题尚未现场处理时的临时放行；相机调平或方向确认后应取消勾选恢复严格门禁。注意：『矩阵尚未生成』永远保持红阻，勾选无效。"/>
+							</StackPanel>
 								<ItemsControl ItemsSource="{Binding PublishChecks}">
 									<ItemsControl.ItemTemplate>
 										<DataTemplate>

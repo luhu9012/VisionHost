@@ -124,10 +124,26 @@ namespace Grayson.Vision.WpfUI.Service
         /// <summary>相机槽用途职能（决定标定建议类型与流程中该相机的职责语义）</summary>
         public static readonly string[] CameraPurposeOptions =
         {
-            "引导定位", "飞拍纠偏", "尺寸测量", "缺陷检测", "OCR·字符", "有无检测"
+            "引导定位", "对位纠偏", "尺寸测量", "缺陷检测", "OCR·字符", "有无检测"
         };
 
         public static readonly string[] CameraAxisSurfaceOptions = { "垂直拍摄", "斜拍" };
+
+        /// <summary>
+        /// 相机与轴的跟随关系（★2026-09-12 增补，G5 缺口）：相机随执行机构哪些轴联动。
+        /// 空串=待确认；固定=不随任何轴（眼在手外）；跟随X/XY/XYZ/XYU/XYZU… = 眼在手上但仅随指定轴。
+        /// 轴名取自执行机构轴约定（SCARA: X/Y/Z/U；双滑台: X/Y左/Y右/Z…）。
+        /// </summary>
+        public static readonly string[] AxisFollowsOptions =
+        {
+            string.Empty,
+            "固定（不随动）",
+            "跟随X",
+            "跟随XY",
+            "跟随XYZ",
+            "跟随XYU",
+            "跟随XYZU"
+        };
 
         /// <summary>
         /// 按相机槽推导建议标定（静态纯函数；RebuildProposal 聚合 + 标定中心候选清单共用）。
@@ -139,14 +155,21 @@ namespace Grayson.Vision.WpfUI.Service
             string purpose = slot.Purpose ?? string.Empty;
             string install = slot.InstallKind ?? string.Empty;
             string axis = slot.AxisToSurface ?? string.Empty;
-            bool fly = string.Equals(slot.ShootMode, "飞拍") || purpose.Contains("飞拍") || purpose.Contains("纠偏");
-            bool moving = slot.MovesWithActuator == true || install.Contains("眼在手上");
+            string axisFollows = slot.AxisFollows ?? string.Empty;
+            // 飞拍仅以 ShootMode 为权威判据（purpose"飞拍纠偏"里的"纠偏"是静止对位语义，不触发飞拍）
+            bool fly = string.Equals(slot.ShootMode, "飞拍");
+            bool moving = install.Contains("眼在手上");
             bool slant = axis.Contains("斜") || install.Contains("斜");
+            // ★ 2026-09-12 轴跟随：含 Z → 相机随 Z 升降（拍照须回标定高度）；否则不随 Z
+            bool followsZ = axisFollows.Contains("Z");
 
-            if (fly || purpose.Contains("纠偏"))
+            if (fly)
                 return "飞拍纠偏：像素当量 + 触发/相位补偿标定（运动中成像，出相对偏差即可）";
             if (moving)
-                return "手眼标定（随动相机 ↔ 执行机构坐标换算；带角度需求再补旋转中心/偏心补偿）";
+                return "手眼标定（随动相机 ↔ 执行机构坐标换算；带角度需求再补旋转中心/偏心补偿）"
+                       + (axisFollows.Length > 0
+                           ? $" —— 轴跟随「{axisFollows}」" + (followsZ ? "（随 Z：拍照须回标定高度）" : "（不随 Z：成像与 Z 无关）")
+                           : "（轴跟随未填，建议明确随哪些轴）");
             if (slant)
                 return "九点标定（斜拍视角，建议先做畸变矫正 CameraLensDistortion 前置）";
             return "九点标定（固定相机：像素 ↔ 机械平面映射）";

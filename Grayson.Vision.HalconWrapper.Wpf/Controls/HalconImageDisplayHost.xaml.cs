@@ -36,6 +36,29 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
         public bool IsReady => _hWindow != null;
 
         /// <summary>
+        /// ★ 日志诊断标签：标识"这是哪一个显示窗口"。
+        /// 存在原因（2026-09-15 踩坑）：显示层日志只带节点名，而编辑器主视图 / 节点属性面板 /
+        /// 工位监视页可以同时存在多个 HalconImageDisplayHost —— 同一时刻多条
+        /// 「收到渲染请求，节点: [形状匹配]」「收到清空指令」交织在一起，
+        /// **判不出是谁画了、谁把谁清掉了**（曾据此误判成"渲染没执行"）。
+        /// 由宿主在创建适配器的地方赋值（如「编辑器主视图」「节点属性面板」），
+        /// 只影响日志文本，不参与任何业务判定。
+        /// </summary>
+        public string LogTag
+        {
+            get => _logTag;
+            set
+            {
+                _logTag = string.IsNullOrWhiteSpace(value) ? "显示窗口" : value;
+                if (_boundVm != null) _boundVm.LogTag = _logTag;
+            }
+        }
+        private string _logTag = "显示窗口";
+
+        /// <summary>日志前缀用的标签（永不为空）。⚠ 不可命名 Tag —— 会隐藏 FrameworkElement.Tag</summary>
+        private string LogPrefix => _logTag;
+
+        /// <summary>
         /// 是否允许左键拖动平移（默认 true）。
         /// 模板管理等需要在图像上左键框选 ROI 的场景，可在拖拽期间置 false 临时禁用平移，
         /// 松开鼠标后恢复 true（防止 ROI 框选与拖动平移互相冲突）。
@@ -628,8 +651,17 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                         }
                         catch (Exception ex)
                         {
-                            // 底图可能已被新帧替换释放：单条失败跳过，不影响其余条目
-                            LogBus.Debug("HalconHost", $"场景条目绘制失败（已跳过）: {ex.Message}");
+                            // ★ 2026-09-11：底图绘制失败 = 直接黑屏，绝不能再吞成 Debug。
+                            //   排查"日志全正常但屏幕全黑"时，这条是唯一能指认真凶的线索
+                            //   （典型原因：HImage 已被新帧 Dispose、句柄失效、Obj 已释放）。
+                            if (item is ObjectItem boi && boi.Color == null)
+                            {
+                                LogBus.Warn("HalconHost", $"★底图 DispObj 失败（会黑屏）: {ex.Message}");
+                            }
+                            else
+                            {
+                                LogBus.Debug("HalconHost", $"场景条目绘制失败（已跳过）: {ex.Message}");
+                            }
                         }
                     }
 
@@ -643,13 +675,22 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                             {
                                 _hWindow.DispObj(fallback);
                                 baseImageDrawn = true;
-                                LogBus.Debug("HalconHost", "场景底图失效，已使用 VM 当前激活图像兜底重绘。");
+                                LogBus.Warn("HalconHost", "★场景底图失效，已用 VM 当前激活图像兜底重绘。");
                             }
                             catch (Exception ex)
                             {
                                 LogBus.Warn("HalconHost", $"兜底重绘图像失败: {ex.Message}");
                             }
                         }
+                        else
+                        {
+                            LogBus.Error("HalconHost", "★无可用底图：场景底图与 VM 激活图像均为空/未初始化");
+                        }
+                    }
+
+                    if (!baseImageDrawn)
+                    {
+                        LogBus.Error("HalconHost", "★本次渲染未能画出任何底图，窗口将是黑的");
                     }
                 }
                 finally
@@ -884,6 +925,7 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             if (e.NewValue is ImageDisplayVm newVm)
             {
                 _boundVm = newVm;
+                _boundVm.LogTag = _logTag; // 让 ImageDisplayVm 的日志也带上"哪个窗口"
                 _boundVm.PropertyChanged += OnBoundVmPropertyChanged;
                 _boundVm.OnRequestRender += HandleRequestRender;
                 //🌟 订阅自适应事件
@@ -936,8 +978,8 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
         private void HandleRequestRender(ImageRenderContext context)
         {
             LogBus.Info("HalconHost", context == null
-                ? "[OnRequestRender] 收到清空指令"
-                : $"[OnRequestRender] 收到渲染请求，节点: [{context.NodeName}]");
+                ? $"[{LogPrefix}] [OnRequestRender] 收到清空指令"
+                : $"[{LogPrefix}] [OnRequestRender] 收到渲染请求，节点: [{context.NodeName}]");
             // 统一调用渲染方法
             Display(context);
         }
@@ -952,12 +994,12 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             {
                 if (e.NewValue is ImageRenderContext context)
                 {
-                    LogBus.Info("HalconHost", $"[OnRenderContextChanged] 监听到 RenderContext 改变，节点名称: [{context.NodeName ?? "Unknown"}]，准备触发 Display(...)");
+                    LogBus.Info("HalconHost", $"[{host.LogPrefix}] [OnRenderContextChanged] 监听到 RenderContext 改变，节点名称: [{context.NodeName ?? "Unknown"}]，准备触发 Display(...)");
                     host.Display(context);
                 }
                 else
                 {
-                    LogBus.Warn("HalconHost", "[OnRenderContextChanged] 接收到 null 或非 ImageRenderContext 对象，跳过渲染。");
+                    LogBus.Warn("HalconHost", $"[{host.LogPrefix}] [OnRenderContextChanged] 接收到 null 或非 ImageRenderContext 对象，跳过渲染。");
                 }
             }
         }
@@ -977,7 +1019,7 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             // Halcon窗口未初始化，直接放弃渲染
             if (_hWindow == null)
             {
-                LogBus.Warn("HalconHost", $"[Display] 跳过渲染 - HWindow 已准备: {_hWindow != null}");
+                LogBus.Warn("HalconHost", $"[{LogPrefix}] [Display] 跳过渲染 - HWindow 已准备: {_hWindow != null}");
                 return;
             }
 
@@ -989,6 +1031,24 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                     // 上下文为空 / 无图像：清空窗口与场景，重置尺寸缓存
                     if (context?.Image == null)
                     {
+                        // ★ 场景是「底图 + 节点叠加层 + 上下文叠加层」的整体，ClearScene() 会一并丢弃，
+                        //   而节点叠加层（模板匹配轮廓）**不会被任何后续帧重建** ⇒ 任何非用户复位的清空
+                        //   都是永久性画面损失。这里按"丢了什么"留痕，把「效果闪一下就没」类问题
+                        //   直接指到清空指令上（否则只看到底图，判不出叠加层是被谁抹的）。
+                        int ctxOverlayCount = 0;
+                        for (int i = 0; i < _scene.Count; i++)
+                        {
+                            if (_scene[i].IsContextOverlay) ctxOverlayCount++;
+                        }
+                        int baseCount = _sceneBaseImage != null ? 1 : 0;
+                        int nodeItemCount = _scene.Count - ctxOverlayCount - baseCount;
+                        if (_scene.Count > 0)
+                        {
+                            LogBus.Warn("HalconHost",
+                                $"[{LogPrefix}] [Display] 收到清空 ⇒ 丢弃场景 {_scene.Count} 条（底图 {baseCount} + 节点叠加 {nodeItemCount} + 上下文叠加 {ctxOverlayCount}）。"
+                                + (nodeItemCount > 0 ? "节点叠加层不会自动重建；若本次并非用户复位，说明有链路上层误发了清空指令。" : string.Empty));
+                        }
+
                         _hWindow.ClearWindow();
                         ClearScene();
                         OnDisplayFrameChanged(); // 底图被移除：作废旧 ROI
@@ -1007,6 +1067,13 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                     bool sameFrame = newImage != null && ReferenceEquals(newImage, _sceneBaseImage);
                     if (!sameFrame)
                     {
+                        // ★ 这里会连节点叠加层一起清掉，是"叠加层一闪即没"的唯一现场，
+                        //   必须留下痕迹（否则只看到底图，判不出是被换帧清掉的）。
+                        if (_scene.Count > 0)
+                        {
+                            LogBus.Info("HalconHost",
+                                $"[{LogPrefix}] [Display] 底图换帧 ⇒ 作废旧场景（原有 {_scene.Count} 条场景条目，含节点叠加层）。新节点: [{context.NodeName}]");
+                        }
                         ClearScene();
                         OnDisplayFrameChanged(); // 底图更换：作废基于旧帧绘制的 ROI
                         // 🌟 新帧登记为场景底图（借用，不拥有）：生产链路的节点叠加图形
@@ -1052,6 +1119,20 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                             _lastImageWidth = context.Image.Width;
                             _lastImageHeight = context.Image.Height;
                             LogBus.Info("HalconHost", $"[Display] 视口区域根据新图像尺寸 [{context.Image.Width}x{context.Image.Height}] 完成自适应调整。");
+
+                            // ★ 黑屏诊断（2026-09-11）：窗口自身的像素尺寸。
+                            //   HWindow 若在布局完成前创建/未跟随容器拉伸，extents 会是 0 或 1，
+                            //   DispObj 画进一个没有面积的窗口 —— 现象就是「日志全正常但屏幕全黑」。
+                            //   同时打 SetPart 后的视口，确认没有把视口缩到一角。
+                            try
+                            {
+                                HOperatorSet.GetWindowExtents(_hWindow, out HTuple wr, out HTuple wc, out HTuple ww, out HTuple wh);
+                                LogBus.Info("HalconHost", $"[{LogPrefix}] [Display] 窗口尺寸={ww.I}x{wh.I} @({wr.I},{wc.I}) | 控件 Actual={ActualWidth:F0}x{ActualHeight:F0}");
+                            }
+                            catch (Exception exExt)
+                            {
+                                LogBus.Warn("HalconHost", "[Display] 读取窗口尺寸失败: " + exExt.Message);
+                            }
                         }
                     }
                 }
@@ -1113,6 +1194,24 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                 LogBus.Warn("HalconHost", $"屏幕坐标转图像坐标失败: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 宿主控件坐标（相对本控件左上角，含顶部工具条）→ 图像坐标（HALCON row/col）。
+        /// 2026-09-10 新增：外部窗口（对针/校验/点哪去哪）在宿主之上盖透明点选覆盖层，
+        /// 用 e.GetPosition(ImageHost) 拿到的 Y 坐标含工具条高度，若直接喂 TryGetImagePointAt
+        /// （其基准是"视图区/SmartWindow"，不含工具条）会把 row 多算一个工具条高度，
+        /// 表现为十字标注落在点击点下方约 10mm。本方法先扣掉 TopReservedHeight（工具条实际高度）
+        /// 再走同一套 part 映射，语义 = "宿主坐标 → 图像坐标"，供外部点选覆盖层专用。
+        /// </summary>
+        public bool TryGetImagePointAtHost(Point hostPoint, out double row, out double col)
+        {
+            row = 0;
+            col = 0;
+            // 扣掉顶部工具条占用的高度，把"宿主坐标"归一到"视口坐标"
+            double topOffset = ShowToolbar ? TopReservedHeight : 0.0;
+            var viewPoint = new Point(hostPoint.X, hostPoint.Y - topOffset);
+            return TryGetImagePointAt(viewPoint, out row, out col);
         }
 
         /// <summary>

@@ -22,6 +22,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Grayson.Vision.Contracts.Calibration.Models;
+using Grayson.Vision.Contracts.Calibration.Services;
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Devices.Interfaces;
@@ -100,6 +101,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     {
                         _facade = new CalibrationMotionFacade(value,
                             Profile.BindXAxisIndex, Profile.BindYAxisIndex, Profile.BindZAxisIndex,
+                            Profile.BindRotationAxisIndex,
                             50f, AppendLog);
                     }
                     RaiseCanExecutes();
@@ -142,7 +144,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string MatrixPath { get; private set; }
         public bool IsMatrixReady => !string.IsNullOrEmpty(MatrixPath);
 
-        public double[] StepSizeOptions => new[] { 0.1, 0.5, 1.0, 2.0, 5.0 };
+        public double[] StepSizeOptions => new[] { 0.1, 0.5, 1.0, 2.0, 5.0, 10.0 };
         private double _stepSize = 1.0;
         public double StepSize { get => _stepSize; set => Set(ref _stepSize, value); }
 
@@ -165,7 +167,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     case ToolOffsetStep.PhotoAndMark:
                         return "② 请把工具头移开(特征露出、相机/工件不动)，然后点「📷 抓拍画理论点」——将自动标注理论像点 A。";
                     case ToolOffsetStep.PickReal:
-                        return "③ 请在画面上点选特征 P 的真实像素位置(A')——面板实时显示 δ_px 与 δ_world。";
+                        return "③ 拖动黄色 B 点到特征 P 的真实像素位置松开写入，或直接在 P 上点击——面板实时显示 δ_px 与 δ_world。";
                     default:
                         return "④ 已完成对针。可「重新对针」或关闭窗口(结果已随方案保存)。";
                 }
@@ -174,6 +176,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         private double _mToolX;
         private double _mToolY;
+        private double _mToolZ;   // 锁定时刻 Z（压住高度，2026-09-10 新增）
+        private double _mToolU;   // 锁定时刻 U（姿态角）
         private bool _hasMTool;
         public bool HasMTool { get => _hasMTool; set { if (Set(ref _hasMTool, value)) RaiseCanExecutes(); } }
 
@@ -260,20 +264,36 @@ namespace Grayson.Vision.WpfUI.ViewModel
             string dir = param as string;
             if (_facade == null || string.IsNullOrEmpty(dir)) return;
             double s = StepSize;
-            double dx = 0, dy = 0;
+            double dx = 0, dy = 0, dz = 0, du = 0;
             switch (dir)
             {
                 case "-x": dx = -s; break;
                 case "+x": dx = s; break;
                 case "-y": dy = -s; break;
                 case "+y": dy = s; break;
+                case "-z": dz = -s; break;
+                case "+z": dz = s; break;
+                case "-u": du = -s; break;
+                case "+u": du = s; break;
                 default: return;
             }
             IsBusy = true;
             try
             {
-                bool ok = _facade.MoveBy(dx, dy);
-                AppendLog(ok ? $"步进 {dir}({s:F2}mm) 完成。" : "步进失败: " + (_facade.LastError ?? "未知"));
+                bool ok;
+                if (dx != 0 || dy != 0)
+                {
+                    ok = _facade.MoveBy(dx, dy);
+                }
+                else if (dz != 0)
+                {
+                    ok = _facade.MoveByZ(dz);
+                }
+                else
+                {
+                    ok = _facade.MoveByU(du);
+                }
+                AppendLog(ok ? $"步进 {dir}({s:F2}) 完成。" : "步进失败: " + (_facade.LastError ?? "未知"));
                 RefreshCurrentPos();
             }
             catch (Exception ex)
@@ -314,10 +334,21 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
             _mToolX = fx.Data;
             _mToolY = fy.Data;
+            // 2026-09-10：连同 Z/U 一起锁定（压住高度 + 姿态角），供对针后复核与姿态归位参考
+            var fz = _facade.GetAxisFeedback(Profile.BindZAxisIndex);
+            var fu = _facade.GetAxisFeedback(Profile.BindRotationAxisIndex);
+            _mToolZ = fz.Success ? fz.Data : double.NaN;
+            _mToolU = fu.Success ? fu.Data : double.NaN;
             HasMTool = true;
-            MToolText = $"M_tool = ({_mToolX:F3}, {_mToolY:F3}) mm —— 工具头已对准 P";
+            MToolText = $"M_tool = ({_mToolX:F3}, {_mToolY:F3}) mm"
+                      + (double.IsNaN(_mToolZ) ? "" : $"  Z={_mToolZ:F1}")
+                      + (double.IsNaN(_mToolU) ? "" : $"  U={_mToolU:F1}°")
+                      + " —— 工具头已对准 P";
             Step = ToolOffsetStep.PhotoAndMark;
-            AppendLog($"已锁定 M_tool = ({_mToolX:F3}, {_mToolY:F3}) mm。请移开工具头后抓拍。");
+            AppendLog($"已锁定 M_tool = ({_mToolX:F3}, {_mToolY:F3}) mm"
+                      + (double.IsNaN(_mToolZ) ? "" : $"  Z={_mToolZ:F1}")
+                      + (double.IsNaN(_mToolU) ? "" : $"  U={_mToolU:F1}°")
+                      + "。请移开工具头后抓拍。");
         }
 
         // ==================== ② 抓拍画理论点（自愈取流：自动连接+连续模式+首帧看门狗） ====================
@@ -528,7 +559,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
-        /// <summary>按当前步骤重贴标记：PickReal/Done = A 理论(黄)；已点选 = 追加 A' 实际(绿)+δ 文本。</summary>
+        /// <summary>按当前步骤重贴标记：PickReal/Done = A 理论(黄)；拖拽/已点选 = 追加 A' 实际(绿)+δ 文本。</summary>
         private void RedrawPickMarkers()
         {
             var host = _displayHost;
@@ -536,8 +567,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             host.ClearMarkers();
             if (_step == ToolOffsetStep.PickReal || _step == ToolOffsetStep.Done)
             {
-                host.AddMarkerCross(_aRow, _aCol, 42, "yellow", "A 理论");
-                if (_hasPicked)
+                host.AddMarkerCross(_aRow, _aCol, 42, "yellow", "B 可拖拽");
+                if (_hasPicked || _draggingB)
                 {
                     double dPx = _bCol - _aCol;
                     double dPy = _bRow - _aRow;
@@ -634,21 +665,56 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var host = _displayHost;
             if (host != null)
             {
-                host.AddMarkerCross(_aRow, _aCol, 42, "yellow", "A 理论");
-                host.AddMarkerText($"A = H⁻¹(M_tool) @ ({_aCol:F1},{_aRow:F1})", Math.Max(0, _aRow - 70), Math.Max(0, _aCol - 90), "yellow");
+                host.AddMarkerCross(_aRow, _aCol, 42, "yellow", "B 可拖拽");
+                host.AddMarkerText($"B = H⁻¹(M_tool) @ ({_aCol:F1},{_aRow:F1})", Math.Max(0, _aRow - 70), Math.Max(0, _aCol - 90), "yellow");
             }
             _hasPicked = false;
+            _draggingB = false;
             OnPropertyChanged(nameof(HasPickedText));
             Step = ToolOffsetStep.PickReal;
-            DeltaText = "请在图上点选特征 P 的真实位置(A')…";
-            AppendLog($"理论像点 A = ({_aCol:F1}, {_aRow:F1}) 已标注(黄)。若矩阵精确且无偏移, A 应正落在 P 上。");
+            DeltaText = "拖动黄色 B 点到特征 P 的真实位置后松开写入；也可直接在 P 上点击。";
+            AppendLog($"理论像点 B = H⁻¹(M_tool) = ({_aCol:F1}, {_aRow:F1}) 已标注(黄，可拖拽)。拖到实际对针像素松开即写入 δ；点击 P 亦可。");
         }
 
-        // ==================== ③ 点选 A' ====================
+        // ==================== ③ 点选 A' / 拖拽 B 点 ====================
         private bool _hasPicked;
+        private bool _draggingB;   // B 点拖拽中（预览态：A' 十字实时跟随，尚未提交）
         public string HasPickedText => _hasPicked ? "已点选 A'，可写入" : "尚未点选 A'";
 
-        /// <summary>覆盖层点选(视图调用)：A' = 特征 P 真实像素 → 计算 δ</summary>
+        /// <summary>
+        /// 判断 (row,col) 是否命中理论点 A（即"可拖拽的 B 点"）附近，用于启动拖拽。
+        /// 阈值 40 图像像素（缩放后仍够宽，便于抓取）。
+        /// </summary>
+        public bool IsHitTheoryPoint(double row, double col)
+        {
+            if (_step != ToolOffsetStep.PickReal) return false;
+            double dr = row - _aRow;
+            double dc = col - _aCol;
+            return Math.Sqrt(dr * dr + dc * dc) <= 40.0;
+        }
+
+        /// <summary>开始拖拽 B 点（进入预览态，不清除已有选中）。</summary>
+        public void BeginDragB() => _draggingB = true;
+
+        /// <summary>结束拖拽 B 点（退出预览态，提交 δ）。</summary>
+        public void EndDragB(double row, double col)
+        {
+            _draggingB = false;
+            ApplyPickReal(row, col);
+        }
+
+        /// <summary>
+        /// 拖拽 B 点过程中实时预览（不提交）：重算 δ 并重画标记、更新文本，
+        /// 但不置 _hasPicked 最终态、不提示"可写入"。松开鼠标后由 ApplyPickReal 提交。
+        /// </summary>
+        public void PreviewPickReal(double row, double col)
+        {
+            if (_step != ToolOffsetStep.PickReal) return;
+            if (!IsMatrixReady) return;
+            ComputeAndShowDelta(row, col, commit: false);
+        }
+
+        /// <summary>覆盖层点选/拖拽松开(视图调用)：A' = 特征 P 真实像素 → 计算 δ（提交）。</summary>
         public void ApplyPickReal(double row, double col)
         {
             if (_step != ToolOffsetStep.PickReal)
@@ -661,10 +727,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog("无矩阵, 无法换算。");
                 return;
             }
+            ComputeAndShowDelta(row, col, commit: true);
+        }
+
+        /// <summary>点选/拖拽共用：算 δ（像素/机械域）→ 重画标记 → 更新 DeltaText。commit=true 时置已选态并通知写按钮。</summary>
+        private void ComputeAndShowDelta(double row, double col, bool commit)
+        {
             _bRow = row;
             _bCol = col;
-            _hasPicked = true;
-            OnPropertyChanged(nameof(HasPickedText));
 
             // δ_px = A' − A（像素，机器无关便于核对）
             double dPx = _bCol - _aCol;
@@ -675,7 +745,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (!h.Success)
             {
                 DeltaText = $"A'=({_bCol:F1},{_bRow:F1}) 换算失败: {h.Message}";
-                AppendLog("δ_world 换算失败: " + h.Message);
+                if (commit) AppendLog("δ_world 换算失败: " + h.Message);
                 return;
             }
             double dWx = _mToolX - h.Data.WorldX;
@@ -685,8 +755,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             RedrawPickMarkers();
 
             DeltaText = $"δ_px = ({dPx:F1}, {dPy:F1}) px   →   δ_world = ({dWx:F3}, {dWy:F3}) mm（M_tool − H(A')）";
-            AppendLog($"A'=({_bCol:F1},{_bRow:F1})  δ_px=({dPx:F1},{dPy:F1})px  δ_world=({dWx:F3},{dWy:F3})mm");
-            (WriteToolOffsetCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            if (commit)
+            {
+                _hasPicked = true;
+                OnPropertyChanged(nameof(HasPickedText));
+                AppendLog($"A'=({_bCol:F1},{_bRow:F1})  δ_px=({dPx:F1},{dPy:F1})px  δ_world=({dWx:F3},{dWy:F3})mm");
+                (WriteToolOffsetCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
         }
 
         // ==================== ④ 写入 ====================
@@ -699,9 +774,28 @@ namespace Grayson.Vision.WpfUI.ViewModel
             double dWy = _mToolY - h.Data.WorldY;
 
             Profile.ApplyToolOffset(dWx, dWy);
+
+            // ★2026-09-11：把锁定 M_tool 时刻的 Z（工具尖压住特征 P 的高度）一并回写档案 NozzleAlignZ。
+            //   理由：校验台【低速到位】的 Z 下压目标就是这个"压住高度"——不回写的话档案里恒为 null，
+            //   到校验台点选后只有 XY 动、Z 悬在高位，吸嘴碰不到工件面，开真空也吸不住。
+            bool zSaved = !double.IsNaN(_mToolZ);
+            if (zSaved)
+            {
+                Profile.NozzleAlignZ = _mToolZ;
+            }
+            string zPart = zSaved ? $"，压住高度 Z={_mToolZ:F1}mm 已回写档案" : "";
+
             Step = ToolOffsetStep.Done;
-            SessionNote = $"✅ 对针补偿已写入: ToolOffset=({dWx:F3}, {dWy:F3}) mm。关闭窗口后随方案保存；发布后引导坐标=Map+ToolOffset。";
+            SessionNote = $"✅ 对针补偿已写入: ToolOffset=({dWx:F3}, {dWy:F3}) mm{zPart}。关闭窗口后随方案保存；发布后引导坐标=Map+ToolOffset。";
             AppendLog($"ToolOffset 已写入 profile: ({dWx:F3}, {dWy:F3}) mm, 时间 {Profile.ToolOffsetCalibTime:HH:mm:ss}。");
+            if (zSaved)
+            {
+                AppendLog($"[压住高度] NozzleAlignZ={_mToolZ:F1}mm 已写入档案 —— 校验台【低速到位】将下压到该高度（吸嘴尖触工件面，可开真空吸住）。");
+            }
+            else
+            {
+                AppendLog("⚠ 锁定 M_tool 时读不到 Z 轴反馈，未能回写压住高度 NozzleAlignZ —— 校验台到位时将按标定基准 Z 兜底下压，建议重新锁定一次。");
+            }
             AppendLog("验收建议: 到「标定校验台」打点验收——点图上目标应精确到位(点哪去哪)。");
         }
 
@@ -735,29 +829,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         // ==================== 工具 ====================
+        /// <summary>
+        /// 解析本档案的矩阵文件路径。
+        /// ★2026-09-15 单轨存储：候选取自 CalibrationMatrixStore（工位级
+        /// Recipes\Workstations\{工位}\Calib），不再兜底已废弃的设备级目录 Recipes\Devices。
+        /// </summary>
         private string ResolveMatrixPath()
         {
-            var candidates = new System.Collections.Generic.List<string>();
-            if (!string.IsNullOrWhiteSpace(Profile.HomMatFilePath)) candidates.Add(Profile.HomMatFilePath);
-            string device = string.IsNullOrWhiteSpace(Profile.BoundDeviceId) ? "Default" : Profile.BoundDeviceId;
-            string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Recipes", "Devices", device, "Calib");
-            candidates.Add(Path.Combine(dir, SanitizeFileName(Profile.Name) + "_HandEye.tup"));
-            foreach (var p in candidates)
-            {
-                try
-                {
-                    if (!string.IsNullOrWhiteSpace(p) && File.Exists(p)) return Path.GetFullPath(p);
-                }
-                catch { }
-            }
-            return null;
-        }
-
-        private static string SanitizeFileName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name)) return "Calibration";
-            var invalid = Path.GetInvalidFileNameChars();
-            return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+            return CalibrationMatrixStore.ResolveMatrixPath(Profile);
         }
 
         private static string DisplayName(IDevice d) =>

@@ -1,0 +1,215 @@
+<Window x:Class="Grayson.Vision.WpfUI.View.CalibrationPickPlaceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:halcon="clr-namespace:Grayson.Vision.HalconWrapper.Wpf.Controls;assembly=Grayson.Vision.HalconWrapper.Wpf"
+        Title="点哪去哪校验"
+        Width="1180" Height="720"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部：会话状态条 -->
+        <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="10,8" Margin="0,0,0,8">
+            <DockPanel>
+                <Border DockPanel.Dock="Left" Background="#22FFFFFF" CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Profile.BoundStationCode}" FontWeight="Bold" FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </Border>
+                <TextBlock Text="{Binding SessionNote}" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+            </DockPanel>
+        </Border>
+
+        <!-- 设备行 -->
+        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="10,6" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="相机:" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                <ComboBox Width="200" Margin="4,0,16,0" ItemsSource="{Binding CameraDeviceList}"
+                          SelectedItem="{Binding SelectedCamera}"
+                          IsEnabled="{Binding IsDeviceSwitchEnabled}"
+                          VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DeviceKey}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Text="运动卡:" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                <ComboBox Width="200" ItemsSource="{Binding MotionDeviceList}"
+                          SelectedItem="{Binding SelectedMotion}"
+                          IsEnabled="{Binding IsDeviceSwitchEnabled}"
+                          VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DeviceKey}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Border Background="#22FFFFFF" CornerRadius="10" Padding="10,2" Margin="24,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding CurrentPosText, StringFormat=当前轴位: {0}}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="#FF1E6B3C"/>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- 中部：图像 + 右侧操作面板 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左：图像宿主 + 点选覆盖层 -->
+            <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" CornerRadius="6" Padding="2">
+                <Grid>
+                    <halcon:HalconImageDisplayHost x:Name="ImageHost"
+                                                   DataContext="{Binding ImageDisplay}"
+                                                   ShowToolbar="True"/>
+                    <!-- 点选覆盖层：上边距让出工具栏区（TopReservedHeight），鼠标移到工具栏恢复正常点击/悬停，不再被覆盖层抢走 -->
+                    <Border Background="Transparent"
+                            PreviewMouseLeftButtonDown="Overlay_PreviewMouseLeftButtonDown"
+                            Cursor="Cross"
+                            Margin="{Binding TopReservedHeight, ElementName=ImageHost, Converter={StaticResource TopMarginConverter}}">
+                        <TextBlock Text="抓拍/实时后，在画面上点击要吸的目标点 —— 吸嘴将去吸这个点"
+                                   HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                                   Foreground="#88000000" FontSize="11" Background="#22000000" Padding="10,3"/>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- 右：操作面板 -->
+            <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}" Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="点哪去哪（吸嘴去吸目标点）" FontSize="14" FontWeight="Bold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBlock Text="{Binding Profile.Name}" FontSize="11" Margin="0,2,0,0"
+                                   Foreground="{DynamicResource TextDisabledBrush}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <!-- 取流 -->
+                    <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                        <Button Content="📷 抓拍定格" Style="{StaticResource SecondaryButtonStyle}" Padding="12,5"
+                                Command="{Binding CaptureCommand}" Margin="0,0,6,0"/>
+                        <Button Content="▶ 实时预览" Style="{StaticResource SecondaryButtonStyle}" Padding="12,5"
+                                Command="{Binding StartLiveCommand}"/>
+                    </WrapPanel>
+
+                    <!-- 点选反馈 -->
+                    <Border Grid.Row="2" Margin="0,8,0,0" Padding="8" CornerRadius="4"
+                            Background="{DynamicResource SurfaceBrush}">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="点选结果" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabledBrush}"/>
+                                <Button DockPanel.Dock="Right" Content="↩ 重选" Style="{StaticResource SecondaryButtonStyle}"
+                                        Padding="8,2" Command="{Binding ResetPickCommand}"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding PickInfoText}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 低速到位 -->
+                    <Button Grid.Row="3" Content="🎯 低速到位（吸嘴去吸该点）"
+                            Style="{StaticResource SuccessButtonStyle}" Height="36" Margin="0,8,0,0"
+                            Command="{Binding MoveToTargetCommand}"/>
+
+                    <!-- 真空吸住（到位后验证吸嘴能吸住目标） -->
+                    <Border Grid.Row="4" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
+                            Background="{DynamicResource SurfaceBrush}">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="真空吸住（验证吸嘴对准目标）" FontSize="11" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource TextDisabledBrush}"/>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding VacuumStateText}" FontSize="11"
+                                           VerticalAlignment="Center" Foreground="#FF1E6B3C" FontWeight="SemiBold"/>
+                            </DockPanel>
+                            <WrapPanel Margin="0,6,0,0">
+                                <Button Content="🧲 吸住" Style="{StaticResource SuccessButtonStyle}" Padding="12,5"
+                                        Command="{Binding VacuumOnCommand}" Margin="0,0,6,0"/>
+                                <Button Content="💨 放开" Style="{StaticResource SecondaryButtonStyle}" Padding="12,5"
+                                        Command="{Binding VacuumOffCommand}"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 反向可视化：机械 → 像素 -->
+                    <Border Grid.Row="5" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
+                            Background="{DynamicResource SurfaceBrush}">
+                        <StackPanel>
+                            <TextBlock Text="反向可视化（机械坐标 → 图上像素）" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextDisabledBrush}"/>
+                            <WrapPanel Margin="0,6,0,0">
+                                <TextBlock Text="X" FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBox Width="70" Margin="4,0,8,0" FontSize="11" VerticalContentAlignment="Center"
+                                         Text="{Binding TargetXText, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="Y" FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <TextBox Width="70" Margin="4,0,8,0" FontSize="11" VerticalContentAlignment="Center"
+                                         Text="{Binding TargetYText, UpdateSourceTrigger=PropertyChanged}"/>
+                                <Button Content="📍 读当前位" Padding="8,4" Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding ReadCurrentPoseCommand}" Margin="0,0,6,0"/>
+                                <Button Content="🔍 反投影" Padding="8,4" Style="{StaticResource SecondaryButtonStyle}"
+                                        Command="{Binding PredictReverseCommand}"/>
+                            </WrapPanel>
+                            <TextBlock Text="{Binding ReverseInfoText}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Button Grid.Row="6" Content="🧹 清除图上标记" Style="{StaticResource SecondaryButtonStyle}"
+                            Padding="10,4" Margin="0,8,0,0" HorizontalAlignment="Left"
+                            Command="{Binding ClearMarkersCommand}"/>
+
+                    <!-- 图例 -->
+                    <Border Grid.Row="7" Margin="0,8,0,0" Padding="8,5" CornerRadius="4" Background="#0A378ADD">
+                        <TextBlock FontSize="10.5" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="绿十字 = 你点选的目标像素（吸嘴将去吸）；青十字 = 手输/当前机械坐标反投影的像素位。同心吸嘴 + 固定相机下，吸点 = H(u)，无偏心修正。"/>
+                    </Border>
+
+                    <!-- 日志 -->
+                    <ItemsControl Grid.Row="8" ItemsSource="{Binding LogLines}" Margin="0,10,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="10.5"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 底部 -->
+        <Border Grid.Row="3" Style="{StaticResource CardBorderStyle}" Padding="10,6" Margin="0,8,0,0">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="✔ 完成" Style="{StaticResource SuccessButtonStyle}"
+                        Padding="14,6" Click="DoneAndClose_Click"/>
+                <TextBlock Text="点像素 → 吸嘴去吸该点；支持双向可视化。关闭即结束本次校验会话。"
+                           FontSize="11" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

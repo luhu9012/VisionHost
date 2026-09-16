@@ -97,6 +97,14 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
         public double PosX { get; set; }
         public double PosY { get; set; }
         public object ParameterModel { get; set; }
+
+        /// <summary>
+        /// CompositeFlow（Group 子流程）节点的内部子流程。
+        /// ⚠ 2026-09-11 修复：此前保存配方时未序列化 CompositeFlowNode.SubProcess，
+        ///   拖进画布的子流程保存后变空壳（内部节点/连线丢失）。现在递归持久化，
+        ///   仅 CompositeFlow 节点非空，其余节点为 null（JSON 忽略空值）。
+        /// </summary>
+        public ProcessDto SubProcess { get; set; }
     }
 
     /// <summary>

@@ -30,18 +30,20 @@ namespace Grayson.Vision.WpfUI.Service
         private readonly int _xAxis;
         private readonly int _yAxis;
         private readonly int _zAxis;
+        private readonly int _uAxis;   // 旋转轴槽位（U 轴）；<0 表示未绑定
         private readonly float _speed;
 
         /// <summary>最近一次动作错误描述（调用方 UI 提示用）</summary>
         public string LastError { get; private set; }
 
         public CalibrationMotionFacade(IMotionCard motion, int xAxis, int yAxis, int zAxis,
-            float speed = 50f, Action<string> log = null)
+            int uAxis = -1, float speed = 50f, Action<string> log = null)
         {
             _motion = motion;
             _xAxis = xAxis;
             _yAxis = yAxis;
             _zAxis = zAxis;
+            _uAxis = uAxis;
             _speed = speed > 0 ? speed : 50f; // 速度 0 巨坑（ZMC 铁律）：<=0 时轴不动 IDLE 恒 0
             _log = log ?? (_ => { });
         }
@@ -146,6 +148,79 @@ namespace Grayson.Vision.WpfUI.Service
             return MoveToXY(fx.Data + dx, fy.Data + dy);
         }
 
+        /// <summary>Z 轴相对步进（P4 对针 JOG）：读当前 Z 反馈 + 增量 → 低速绝对到位。</summary>
+        public bool MoveByZ(double dz)
+        {
+            if (_motion == null)
+            {
+                Log($"[步进] 未绑定运动卡（演示模式），跳过 dz={dz:F2}。");
+                return true;
+            }
+            var fz = _motion.GetFeedbackPosition(_zAxis);
+            if (!fz.Success)
+            {
+                LastError = "读取 Z 当前位置失败，无法相对步进";
+                Log("[步进] " + LastError + " Z:" + fz.Message);
+                return false;
+            }
+            return MoveToZ(fz.Data + dz);
+        }
+
+        /// <summary>U（旋转）轴相对步进（P4 对针 JOG）：读当前 U 反馈 + 增量 → 低速绝对到位。</summary>
+        public bool MoveByU(double du)
+        {
+            if (_uAxis < 0)
+            {
+                LastError = "未绑定旋转轴（U 轴槽位未配置）";
+                Log("[步进] " + LastError);
+                return false;
+            }
+            if (_motion == null)
+            {
+                Log($"[步进] 未绑定运动卡（演示模式），跳过 du={du:F2}°。");
+                return true;
+            }
+            var fu = _motion.GetFeedbackPosition(_uAxis);
+            if (!fu.Success)
+            {
+                LastError = "读取 U 当前位置失败，无法相对步进";
+                Log("[步进] " + LastError + " U:" + fu.Message);
+                return false;
+            }
+            return MoveToU(fu.Data + du);
+        }
+
+        /// <summary>U（旋转）轴绝对到位（MoveAbsolute + 等待到位）</summary>
+        public bool MoveToU(double u)
+        {
+            if (_uAxis < 0)
+            {
+                LastError = "未绑定旋转轴（U 轴槽位未配置）";
+                Log("[步进] " + LastError);
+                return false;
+            }
+            if (_motion == null)
+            {
+                Log($"[步进] 未绑定运动卡（演示模式），跳过 U 到位 {u:F1}°。");
+                return true;
+            }
+            var conn = EnsureConnected();
+            if (!conn.Success)
+            {
+                LastError = conn.Message;
+                return false;
+            }
+            var ru = _motion.MoveAbsolute(_uAxis, (float)u, _speed);
+            if (ru != null && !ru.Success)
+            {
+                LastError = "U 轴到位被拒: " + ru.Message;
+                Log($"[步进] U 轴到 {u:F1}° 被拒: {ru.Message}");
+                return false;
+            }
+            WaitAxesIdle(_uAxis);
+            return true;
+        }
+
         /// <summary>读取指定轴当前反馈位置</summary>
         public Result<float> GetAxisFeedback(int axis)
         {
@@ -154,6 +229,33 @@ namespace Grayson.Vision.WpfUI.Service
                 return Result<float>.Ok(0f);
             }
             return _motion.GetFeedbackPosition(axis);
+        }
+
+        /// <summary>
+        /// 设置数字输出（真空阀 / 吹气阀等）。P4 对针/点哪去哪校验的「吸住」动作共用。
+        /// ioNum 由调用方从业务配置/标定档案传入（CalibrationProfile.PickVacuumIoIndex）。
+        /// </summary>
+        public bool SetOutput(int ioNum, bool state)
+        {
+            if (_motion == null)
+            {
+                Log($"[吸嘴] 未绑定运动卡（演示模式），跳过 IO{ioNum} {(state ? "ON" : "OFF")}。");
+                return true;
+            }
+            var conn = EnsureConnected();
+            if (!conn.Success)
+            {
+                LastError = conn.Message;
+                return false;
+            }
+            var r = _motion.SetOutput(ioNum, state);
+            if (r != null && !r.Success)
+            {
+                LastError = "设置输出被拒: " + r.Message;
+                Log($"[吸嘴] IO{ioNum} {(state ? "ON" : "OFF")} 被拒: {r.Message}");
+                return false;
+            }
+            return true;
         }
 
         /// <summary>

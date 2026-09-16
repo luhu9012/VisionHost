@@ -1,0 +1,197 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{E7A1C4F2-3B8D-4C51-9A6E-1D2F8B0C5A93}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>VisualCalibTool</RootNamespace>
+    <AssemblyName>VisualCalibTool.Wpf</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <WarningLevel>4</WarningLevel>
+    <Deterministic>true</Deterministic>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <!-- ★ HALCON 原生库只有 x64；AnyCPU 会在 32 位宿主下 BadImageFormatException -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- ★ 依赖铁律：只允许「硬件抽象层(Contracts)」+ halcondotnet 两条外部依赖 -->
+    <Reference Include="halcondotnet, Version=24.11.1.0, Culture=neutral, PublicKeyToken=4973bed59ddbf2b8, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\DLLLib\halcondotnet.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xaml">
+      <RequiredTargetFramework>4.0</RequiredTargetFramework>
+    </Reference>
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <!-- ── 基础设施（自持 MVVM，不依赖主项目）── -->
+  <ItemGroup>
+    <Compile Include="Infrastructure\Mvvm\ObservableObject.cs" />
+    <Compile Include="Infrastructure\Mvvm\RelayCommand.cs" />
+  </ItemGroup>
+  <!-- ── Domain：纯数据模型，零外部依赖 ── -->
+  <ItemGroup>
+    <Compile Include="Domain\CalibEnums.cs" />
+    <Compile Include="Domain\CalibPrimitives.cs" />
+    <Compile Include="Domain\MotionPose.cs" />
+    <Compile Include="Domain\CalibModels.cs" />
+    <Compile Include="Domain\CalibSession.cs" />
+    <Compile Include="Domain\CalibExport.cs" />
+    <Compile Include="Domain\FeatureModels.cs" />
+    <Compile Include="Domain\SamplePlan.cs" />
+    <Compile Include="Domain\WizardModels.cs" />
+    <Compile Include="Domain\SimulatedWorld.cs" />
+    <Compile Include="Domain\IntrinsicsModels.cs" />
+  </ItemGroup>
+  <!-- ── Algorithm：纯数学，零 WPF / 零 halcondotnet / 零 Contracts，可离线单测 ── -->
+  <ItemGroup>
+    <Compile Include="Algorithm\GeometryUtil.cs" />
+    <Compile Include="Algorithm\HomMatIO.cs" />
+    <Compile Include="Algorithm\NinePointGrid.cs" />
+    <Compile Include="Algorithm\NinePointSolver.cs" />
+    <Compile Include="Algorithm\MatrixQualityEvaluator.cs" />
+    <Compile Include="Algorithm\FeatureQualityScorer.cs" />
+    <Compile Include="Algorithm\SamplePlanBuilder.cs" />
+    <Compile Include="Algorithm\ReprojectionAnalyzer.cs" />
+    <Compile Include="Algorithm\SceneInference.cs" />
+    <Compile Include="Algorithm\SceneAnswers.cs" />
+    <Compile Include="Algorithm\RotationCircleSolver.cs" />
+    <Compile Include="Algorithm\ToolOffsetSolver.cs" />
+    <Compile Include="Algorithm\CalibSelfCheck.cs" />
+    <Compile Include="Algorithm\PgmCodec.cs" />
+    <Compile Include="Algorithm\ProgressivePredictor.cs" />
+    <Compile Include="Algorithm\BoardModels.cs" />
+    <Compile Include="Algorithm\IntrinsicsGeometry.cs" />
+    <Compile Include="Algorithm\IntrinsicsSolveOutcome.cs" />
+    <Compile Include="Algorithm\IntrinsicsPoseScript.cs" />
+    <Compile Include="Algorithm\DistortionImpactAnalyzer.cs" />
+    <Compile Include="Algorithm\ExtractionPolicy.cs" />
+  </ItemGroup>
+  <!-- ── Abstractions：★ 防腐层（ACL），唯一允许出现 Contracts 类型的目录 ── -->
+  <ItemGroup>
+    <Compile Include="Abstractions\ICalibOverlayTarget.cs" />
+    <Compile Include="Abstractions\CalibGateways.cs" />
+    <Compile Include="Abstractions\IFeatureExtractor.cs" />
+    <Compile Include="Abstractions\CalibEnvironmentParts.cs" />
+    <Compile Include="Abstractions\SimulatedEnvironment.cs" />
+  </ItemGroup>
+  <!-- ── Services：采样编排 + H/e/t 三条链 runner（★ 唯一实现，链上不含任何介质细节）── -->
+  <ItemGroup>
+    <Compile Include="Services\ServiceStage.cs" />
+    <Compile Include="Services\SamplingModels.cs" />
+    <Compile Include="Services\ChainRunContext.cs" />
+    <Compile Include="Services\ChainRunOptions.cs" />
+    <Compile Include="Services\ChainRunnerSupport.cs" />
+    <Compile Include="Services\CalibExportJson.cs" />
+    <Compile Include="Services\SamplingOrchestrator.cs" />
+    <Compile Include="Services\NinePointRunner.cs" />
+    <Compile Include="Services\RotationCenterRunner.cs" />
+    <Compile Include="Services\ToolOffsetRunner.cs" />
+    <Compile Include="Services\WizardCoordinator.cs" />
+    <Compile Include="Services\IntrinsicsRunner.cs" />
+  </ItemGroup>
+  <!-- ── Simulation：合成真图 + 三链端到端闭环（纯 C#；提取器由 Imaging 提供）── -->
+  <ItemGroup>
+    <Compile Include="Simulation\SyntheticFrameCamera.cs" />
+    <Compile Include="Simulation\CalibSimulationHarness.cs" />
+    <Compile Include="Simulation\SimulatedRig.cs" />
+    <Compile Include="Simulation\SimulatedCalibrationPublisher.cs" />
+    <Compile Include="Simulation\IntrinsicsSimHarness.cs" />
+  </ItemGroup>
+  <!-- ── Imaging：★ 唯一允许 using HalconDotNet 的目录之一 ── -->
+  <ItemGroup>
+    <Compile Include="Imaging\HalconFrameSource.cs" />
+    <Compile Include="Imaging\HalconMarkExtractor.cs" />
+    <Compile Include="Imaging\HalconTupleIO.cs" />
+    <Compile Include="Imaging\HalconBoardDetector.cs" />
+    <Compile Include="Imaging\SimulatedBoardCamera.cs" />
+    <Compile Include="Imaging\HalconRuntime.cs" />
+  </ItemGroup>
+  <!-- ── Controls / Views / ViewModels ── -->
+  <ItemGroup>
+    <Compile Include="Controls\HalconView.xaml.cs">
+      <DependentUpon>HalconView.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Controls\DistortionImpactView.xaml.cs">
+      <DependentUpon>DistortionImpactView.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ViewModels\BoardOverlayPainter.cs" />
+    <Compile Include="ViewModels\CalibShellViewModel.cs" />
+    <Compile Include="ViewModels\CalibWizardViewModel.cs" />
+    <Compile Include="View\CalibToolHostControl.xaml.cs">
+      <DependentUpon>CalibToolHostControl.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="View\CalibWizardPanel.xaml.cs">
+      <DependentUpon>CalibWizardPanel.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="Controls\HalconView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Controls\DistortionImpactView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="View\CalibToolHostControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="View\CalibWizardPanel.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Themes\Theme.Dark.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ★ 唯一允许依赖的主项目程序集：硬件抽象层（零 ProjectReference，只带一个 Newtonsoft 传递依赖） -->
+    <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
+      <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
+      <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Services\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -90,8 +90,38 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
         {
             context.AppendLog($"开始九点全自动走位标定流程（走位方式: {(context.TraverseMode == NinePointTraverseMode.RowScan ? "传统逐行扫描" : "中心优先螺旋")}）...");
             // ★ 2026-09-03 失败宽容化：已有已采点时【不】清空重来，仅自动补采缺失点
+            // ★ 2026-09-10 需求：9 点已全采满时再点本按钮 = 明确要求「重走位重采」——
+            //   此时若仍走"仅补采缺失点"分支会因无缺点而空转（点了没反应，操作员以为按钮失效）。
+            //   故全采满 → 先确认再清空重来；有缺点 → 保持原有补采语义（不打扰）。
             bool hasAnyCaptured = context.CalibrationPoints.Any(p => p.IsCaptured);
-            if (!hasAnyCaptured)
+            bool allCaptured = context.CalibrationPoints.Count > 0
+                               && context.CalibrationPoints.All(p => p.IsCaptured);
+
+            if (allCaptured)
+            {
+                // 全采满：确认为"重走位重采"（清空现有数据），避免误点丢失已采点
+                bool confirmed = true;
+                context.RunOnUi(() =>
+                {
+                    var r = MessageBox.Show(
+                        "九点已全部采集完成。\n\n" +
+                        "继续将【清空现有 9 点数据并重新走位采集一轮】（用于更换/移动标定件后重标）。\n" +
+                        "如需保留现有数据，请选『否』。\n\n" +
+                        "是否重新采集？",
+                        "重新走位采集确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    confirmed = r == MessageBoxResult.Yes;
+                });
+
+                if (!confirmed)
+                {
+                    context.AppendLog("[九点采集] 操作员取消重采，保留现有 9 点数据。");
+                    return;
+                }
+
+                context.AppendLog("[九点采集] 全采满 → 清空现有数据，重新走位采集一轮。");
+                InitializePoints(context);
+            }
+            else if (!hasAnyCaptured)
             {
                 InitializePoints(context);
             }

@@ -24,7 +24,7 @@ namespace Plugins.Robot.Epson
     /// - 否则按 EpsonSdkFactory 默认链：DLLLib\spelnet64.dll（RC+8）→
     ///   DLLLib\RCAPINet.dll（RC+7.x）→ 离线仿真机械手。
     /// </summary>
-    public class EpsonRobot : IMotionCard, IIoDevice
+    public class EpsonRobot : IMotionCard, IIoDevice, IMotionCardHealthProbe
     {
         #region 轴号常量（业务层与节点参数统一使用）
 
@@ -132,6 +132,14 @@ namespace Plugins.Robot.Epson
                     address = $"{ip}:{port}";
                 }
 
+                // TCP 模式：读点标签可能含中文 → 允许用连接串指定应答编码
+                //   Protocol=TCP;IP=192.168.3.11;Port=8000;TextEncoding=GBK
+                //   未指定 = AUTO（严格 UTF-8 优先、失败退 GBK）
+                if (_sdk is EpsonTcpScriptController tcpCtl)
+                {
+                    tcpCtl.TextEncodingName = ParseConnValue(connStr, "TextEncoding") ?? "AUTO";
+                }
+
                 string err = _sdk.Open(address);
                 if (err != null)
                 {
@@ -158,6 +166,25 @@ namespace Plugins.Robot.Epson
                 State = DeviceState.Error;
                 return Result.Fail($"Epson 控制器连接异常: {ex.Message}", ex: ex);
             }
+        }
+
+        /// <summary>
+        /// ★ 2026-09-16 新增：主动探活（PING→PONG）。
+        ///
+        /// 【为什么单独做】`State == Connected` 只说明"当初连上了"。对端脚本任务崩溃/断网时
+        /// TCP 是**半死**的：本地套接字仍报 Connected，直到第一次 Write 抛 IOException 才现形
+        /// ⇒ 故障被推迟到第一条业务指令（现场：Phase0 关真空即"通道忙/无应答"，真因被淹没）。
+        /// 本方法用一次轻量往返提前判定，供业务过程在每轮开跑前调用。
+        ///
+        /// 抢不到 IO 锁时返回 true（通道正被真命令占用，无法判定 —— 不作误报）。
+        /// 非 TCP 通道（SDK / 离线仿真）没有半死 TCP 问题，直接按存活处理。
+        /// </summary>
+        public bool ProbeAlive(int timeoutMs = 1000)
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态
+            if (sdk == null || !sdk.IsOpen) return false;
+            if (sdk is EpsonTcpScriptController tcp) return tcp.ProbeAlive(timeoutMs);
+            return true;
         }
 
         public Result Disconnect()
@@ -384,6 +411,30 @@ namespace Plugins.Robot.Epson
             return Result.Ok();
         }
 
+        /// <summary>
+        /// 【门型运动】先抬到 limZ → 在 limZ 高度水平走 → 降到目标 Z（2026-09-16 新增）。
+        ///
+        /// 与 <see cref="MoveAbsolute"/> 的关键差别：那个是"读当前位置补全其余三轴再发"，
+        /// 业务层逐轴调两次就变成了 L 形路径（先 X 后 Y，中途在拐角点停一次）。
+        /// 本方法四轴一次性下发，末端不走拐角，且强制先抬到安全高度 limZ。
+        /// </summary>
+        public Result MoveJump(float x, float y, float z, float u, float limZ, float speed)
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
+
+            // ★ 门型有效性闸 —— 判据唯一源 EpsonJumpGuard（适配层、仿真、脚本各有一道同源闸）。
+            //   这里拦是为了在最靠业务的位置就把错误说清楚，不必白跑一趟网络。
+            string guard = EpsonJumpGuard.Check(z, limZ);
+            if (guard != null) return Result.Fail(guard);
+
+            string err = sdk.MoveJump(x, y, z, u, limZ, speed);
+            if (err != null) return Result.Fail($"门型运动失败: {err}");
+
+            _pos[AxisX] = x; _pos[AxisY] = y; _pos[AxisZ] = z; _pos[AxisU] = u;
+            return Result.Ok();
+        }
+
         /// <summary>整轴回零（Epson Home 全轴回原点）</summary>
         public Result Home(int axis, int homeMode)
         {
@@ -482,6 +533,43 @@ namespace Plugins.Robot.Epson
             return Result.Ok();
         }
 
+        /// <summary>
+        /// ★ 直线（CP）定位 —— 2026-09-10 新增，标定专用。
+        ///
+        /// 【为什么标定必须用直线而不是 PTP】
+        /// PTP（MoveToPtp → Go）在【关节空间】插补：SCARA 的 X/Y 由 J1+J2 联动逆解，
+        /// 两个关节各按自身最快速度转动 → 末端实际轨迹是【弧线】，且弧线形状取决于
+        /// 起点/终点在关节空间的相对关系。后果：沿世界 X 走 10mm 与沿世界 Y 走 10mm
+        /// 的"每毫米对应多少像素"必然不同（现场实测当量差 13.78%、两方向夹角 105.3°
+        /// 而应 90°）→ 九点拟合出的 H 矩阵各向异性 σ1/σ2=1.49，被健康检查判为非法。
+        ///
+        /// CP（本方法 → LMOVE → Move）在世界空间做直线插补，末端沿两点间直线运动，
+        /// 因此"世界位移 ↔ 像素位移"恢复为严格的相似关系，标定矩阵才合法。
+        ///
+        /// 【语义差异】LMOVE 是【同步】的（控制器到位后才回 DONE）；而 MOVE(Go) 按
+        /// 【异步】语义对待（DONE 只代表已受理）。所以本方法的返回 = 真正到位。
+        ///
+        /// ★ 2026-09-15 现场：下相机九点走网格边角时本方法被控制器拒 **code 4041
+        ///   「机器人背面禁止区域」**（区域/姿态裁决，不是"够不着"——同批点的零运动 CHECK 判可达）。
+        ///   处置：调用方（CalibrationWizardViewModel.MovePlatformTo）降级到
+        ///   MoveToPtpAndWait 低速重试 —— Go 的【终点是精确的】，只是路径为弧线；
+        ///   九点采的是"终点那一帧"，故 (世界,像素) 配对语义不变。
+        ///   ⚠ 降级【必须】配 MoveToPtpAndWait 的真到位判据，不能直接走 MoveToPtp。
+        /// </summary>
+        public Result MoveToLinear(float x, float y, float z, float u, float speed)
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result.Fail("控制器未连接");
+            string err = sdk.MoveTo(x, y, z, u, speed, linear: true);
+            if (err != null) return Result.Fail($"直线定位失败: {err}");
+
+            _pos[AxisX] = x;
+            _pos[AxisY] = y;
+            _pos[AxisZ] = z;
+            _pos[AxisU] = u;
+            return Result.Ok();
+        }
+
         /// <summary>一次性读取四轴当前位置（X/Y/Z/U，指令位置口径）。</summary>
         public Result<float[]> GetPositionsAll()
         {
@@ -494,6 +582,225 @@ namespace Plugins.Robot.Epson
                 sdk.GetPosition(AxisZ),
                 sdk.GetPosition(AxisU)
             });
+        }
+
+        /// <summary>
+        /// ★ 2026-09-16 新增：【后台状态轮询专用】读四轴位置。
+        ///
+        /// 【与 GetPositionsAll 的区别 —— 只对 TCP 通道生效】
+        /// 走适配器 QueryPositionsYield：① 抢不到 IO 锁就【跳过本轮】（真命令优先）；
+        /// ② 应答超时只 800ms（对端僵死时不占着通道等满 5s）。
+        /// 现场教训：脚本任务崩溃后 TCP 半死，250ms 轮询每轮 POS? 持锁等满 5s，
+        /// 业务命令抢锁预算只有 400ms ⇒ 日志被"通道忙"刷屏、安全收尾的关真空也发不出去。
+        ///
+        /// channelBusy=true 表示本轮被业务命令占用而跳过 —— **不是故障**，调用方不要
+        /// 计入"连续失败→断线"判定（否则工位一跑就误报通信中断）。
+        /// 非 TCP 通道（SDK / 离线仿真）无锁竞争问题，直接回落到 GetPositionsAll。
+        /// </summary>
+        public Result<float[]> PollPositions(out bool channelBusy)
+        {
+            channelBusy = false;
+            var sdk = _sdk; // ★ 局部快照防并发竞态
+            if (sdk == null || !sdk.IsOpen) return Result<float[]>.Fail("控制器未连接");
+
+            if (sdk is EpsonTcpScriptController tcp)
+            {
+                string err = tcp.QueryPositionsYield(out bool skipped);
+                if (skipped)
+                {
+                    channelBusy = true;                                  // 跳过本轮：沿用影子值
+                    return Result<float[]>.Ok(new[] { _pos[AxisX], _pos[AxisY], _pos[AxisZ], _pos[AxisU] });
+                }
+                if (err != null) return Result<float[]>.Fail(err);
+                return Result<float[]>.Ok(new[] { _pos[AxisX], _pos[AxisY], _pos[AxisZ], _pos[AxisU] });
+            }
+            return GetPositionsAll();
+        }
+
+        /// <summary>
+        /// ★ 2026-09-15 新增：读四轴【实时】位置 —— 强制一次 POS? 往返回路，绕过指令位置影子缓存。
+        ///
+        /// 【为什么不直接用 GetPositionsAll 当到位判据】
+        /// GetPositionsAll → sdk.GetPosition(axis) 带 100ms 缓存（PosCacheMs）。
+        /// 而"到位"的常见判据是"连续两次读位置、差值小于阈值"，两次读间隔若 &lt; 100ms
+        /// 就必然拿到同一份缓存 ⇒ 差值恒 0 ⇒ 恒判已停稳（假绿）。
+        /// 本方法走适配器无缓存的 QueryPositions()，供 MoveToPtpAndWait 的到位判据使用。
+        ///
+        /// 【兼容性】非 TCP 通道（SDK / 离线仿真）没有该缓存层，退回 GetPositionsAll 即可。
+        /// </summary>
+        public Result<float[]> GetPositionsFresh()
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<float[]>.Fail("控制器未连接");
+            if (sdk is EpsonTcpScriptController tcp)
+            {
+                string err = tcp.QueryPositions();   // 无缓存，真发一次 POS?
+                if (err != null) return Result<float[]>.Fail(err);
+            }
+            return GetPositionsAll();
+        }
+
+        /// <summary>
+        /// ★ 2026-09-15 新增：PTP（Go）定位 + 【真到位确认】—— 供 CP 直线被控制器拒绝时的降级重试。
+        ///
+        /// 【为什么必须另立此方法：本通道原来的到位闸是空的】
+        /// · MOVE(=Go) 按异步语义对待：脚本侧回 DONE 只代表"指令已受理"；
+        /// · 适配层 IsMotionDone() 在 TCP 通道恒 true；
+        /// · GetPosition 带 100ms 指令位置影子缓存，而 SettleAfterIdle 两次读间隔仅 15ms
+        ///   ⇒ 两次读到同一份影子值，差值恒 0 ⇒ 恒判"已停稳"。
+        /// 三者叠加 ⇒ 走 PTP 后立刻采图会拍到运动中的帧（2026-09-10"拖尾/圆度骤减"即此形态）。
+        ///
+        /// 【本方法判据】
+        /// 用 GetPositionsFresh()（实时 POS?）轮询：
+        ///   ① 连续两次采样各轴差值 &lt; 20µm → 认为停稳；
+        ///   ② 停稳时校验实测位置与目标的偏差：XYZ &lt; 0.5mm、U &lt; 0.1° → 通过。
+        /// 残差经 residualMm 回传（mm），供上层记日志 —— 【降级也必须能证明"真的走到了"】。
+        ///
+        /// 【语义边界】
+        /// · 只保证【终点】正确，不保证 Go 的弧线路径不撞周边（官方明示 TargetOK 亦不考虑轨迹）。
+        ///   故降级只用于相邻小步（九点网格 / 吸放邻位），不要用于长距离转场。
+        /// · U 轴单位是度，单独给容差，不与 mm 混算（避免"毫米+度"这种没法解释的残差）。
+        /// </summary>
+        public Result MoveToPtpAndWait(float x, float y, float z, float u, float speed, out double residualMm)
+        {
+            residualMm = double.NaN;
+
+            var r = MoveToPtp(x, y, z, u, speed);
+            if (!r.Success) return r;
+
+            const double settleTol = 0.02;   // 20µm：远小于像素当量(≈0.07mm/px)，远大于伺服静差
+            const double posTolMm = 0.5;     // 终点校验：超过即视为"没走到位"
+            const double posTolDeg = 0.1;    // U 轴容差（度）
+            const int timeoutMs = 10000;
+            const int pollMs = 120;          // ★ 必须 > 适配层 PosCacheMs(100ms)，保证每次都是新采样
+
+            float[] prev = null;
+            string lastErr = null;
+            var sw = new System.Diagnostics.Stopwatch();
+            sw.Start();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                var cur = GetPositionsFresh();
+                if (cur.Success)
+                {
+                    float[] p = cur.Data;
+                    if (prev != null)
+                    {
+                        bool settled =
+                            Math.Abs(p[AxisX] - prev[AxisX]) < settleTol &&
+                            Math.Abs(p[AxisY] - prev[AxisY]) < settleTol &&
+                            Math.Abs(p[AxisZ] - prev[AxisZ]) < settleTol &&
+                            Math.Abs(p[AxisU] - prev[AxisU]) < settleTol;
+                        if (settled)
+                        {
+                            double dx = p[AxisX] - x, dy = p[AxisY] - y, dz = p[AxisZ] - z;
+                            residualMm = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+
+                            // 影子同步为实测值：后续 GetPositionsAll 才不会回放旧目标值
+                            for (int i = 0; i < AxisCount; i++) _pos[i] = p[i];
+
+                            if (residualMm > posTolMm || Math.Abs(p[AxisU] - u) > posTolDeg)
+                            {
+                                return Result.Fail(string.Format(
+                                    "PTP 到位校验不通过：实测({0:F3},{1:F3},{2:F3},{3:F3}) 与目标({4:F3},{5:F3},{6:F3},{7:F3}) 偏差 {8:F3}mm / {9:F3}°（容差 {10:F1}mm / {11:F1}°）",
+                                    p[AxisX], p[AxisY], p[AxisZ], p[AxisU],
+                                    x, y, z, u,
+                                    residualMm, Math.Abs(p[AxisU] - u), posTolMm, posTolDeg));
+                            }
+                            return Result.Ok();
+                        }
+                    }
+                    prev = p;
+                }
+                else
+                {
+                    lastErr = cur.Message;
+                }
+                System.Threading.Thread.Sleep(pollMs);
+            }
+
+            return Result.Fail("PTP 到位校验超时(" + timeoutMs + "ms)：" + (lastErr ?? "位置始终未收敛"));
+        }
+
+        #endregion
+
+        #region 机械手专属 —— RC+ 示教点读取（只读，2026-09-11 新增）
+
+        /// <summary>
+        /// 读取 RC+ 示教点（对应 SPEL+ 的 P(n)）。
+        ///
+        /// 【为什么不在 IMotionCard 契约里加】
+        /// 这是 Epson 通道专有的能力（读点文件），ZMC 类运动卡没有"示教点文件"概念，
+        /// 塞进 IMotionCard 只会逼其它插件实现空方法。调用方按 EpsonRobot 具体类型取用
+        /// （与 MoveToPtp / MoveToLinear / GetPositionsAll 同一套路）。
+        ///
+        /// 【支持范围】仅 TCP 脚本通道（协议新增 POINT? n）。
+        /// RCAPINet/SpeLNet SDK 通道与离线仿真暂不支持 → 返回可读 Fail，不抛异常。
+        /// </summary>
+        public Result<EpsonTeachPoint> ReadTeachPoint(int index)
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<EpsonTeachPoint>.Fail("控制器未连接");
+            if (index < 0 || index > 999) return Result<EpsonTeachPoint>.Fail($"点号超出范围(0~999): {index}");
+
+            var tcp = sdk as EpsonTcpScriptController;
+            if (tcp == null)
+            {
+                return Result<EpsonTeachPoint>.Fail(
+                    "当前通道不支持读取 RC+ 示教点：仅 TCP 脚本通道（Protocol=TCP）支持。");
+            }
+
+            EpsonPointRead raw;
+            string err = tcp.QueryPoint(index, out raw);
+            if (err != null) return Result<EpsonTeachPoint>.Fail(err);
+            if (raw == null) return Result<EpsonTeachPoint>.Fail("POINT? 未返回数据");
+
+            return Result<EpsonTeachPoint>.Ok(new EpsonTeachPoint
+            {
+                Index = raw.Index,
+                Defined = raw.Defined,
+                X = raw.X,
+                Y = raw.Y,
+                Z = raw.Z,
+                U = raw.U,
+                Label = raw.Label,
+                ErrorCode = raw.ErrorCode
+            });
+        }
+
+        #endregion
+
+        #region 机械手专属 —— 零运动可达性校核（只读，2026-09-11 新增）
+
+        /// <summary>
+        /// 零运动 PTP 可达性判定：能否【从当前位置】PTP 到达目标点。
+        ///
+        /// 【为什么用它而不是上位机自己算逆解】
+        /// 上位机没有臂长 L1/L2 与关节限位数据，且真实可达域 = 圆环 ∩ 关节限位区域
+        /// （不是圆环）。控制器内部的 TargetOK() 已把关节限位 / 脉冲范围 / 姿态标志 /
+        /// 手系全部算进去，是唯一权威，且**不驱动电机** —— 预检不再需要"先走一遍试试"。
+        ///
+        /// ★限制：TargetOK 不考虑轨迹（官方明示）。故语义是
+        ///   "不通过 ⇒ 一定不能走；通过 ≠ 一定走得完"（CP 直线仍可能中途越界）。
+        ///
+        /// 【支持范围】仅 TCP 脚本通道（协议新增 CHECK）。SDK/仿真通道返回可读 Fail。
+        /// </summary>
+        public Result<bool> CheckReach(float x, float y, float z, float u)
+        {
+            var sdk = _sdk; // ★ 局部快照防并发竞态(Disconnect 后台置 null)
+            if (sdk == null || !sdk.IsOpen) return Result<bool>.Fail("控制器未连接");
+
+            var tcp = sdk as EpsonTcpScriptController;
+            if (tcp == null)
+            {
+                return Result<bool>.Fail(
+                    "当前通道不支持零运动可达性校核：仅 TCP 脚本通道（Protocol=TCP）支持。");
+            }
+
+            bool reachable;
+            string err = tcp.QueryCheck(x, y, z, u, out reachable);
+            if (err != null) return Result<bool>.Fail(err);
+            return Result<bool>.Ok(reachable);
         }
 
         #endregion
@@ -618,6 +925,64 @@ namespace Plugins.Robot.Epson
         public EpsonRobot(string deviceId)
         {
             DeviceId = deviceId;
+        }
+    }
+
+    /// <summary>
+    /// RC+ 示教点快照（只读）。
+    /// Defined=false 表示该点号在 RC+ 点文件里没有定义（不是通信错误）。
+    /// </summary>
+    public sealed class EpsonTeachPoint
+    {
+        /// <summary>点号（对应 RC+ 里的 P0 / P1 …）</summary>
+        public int Index { get; set; }
+        /// <summary>该点号是否已在 RC+ 中定义</summary>
+        public bool Defined { get; set; }
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Z { get; set; }
+        public float U { get; set; }
+        /// <summary>RC+ 点标签（PLabel$），可能为空或含中文</summary>
+        public string Label { get; set; }
+
+        /// <summary>
+        /// SPEL+ 错误号（仅 Defined=false 时有意义）。
+        ///
+        /// 脚本 POINT? 应答形如 "POINT n,UNDEF,Err"（2026-09-11 起带错误号）。
+        /// 老版脚本只回 "POINT n,UNDEF" → 此处为 null，ReasonText 会提示"可能未重新编译"。
+        ///
+        /// 【为什么要带它】"点了没反应/全是未定义"光看计数分不清是"点真没示教"还是
+        /// "脚本读取姿势不对"。带错误号才能一眼定性，不必再去 RC+ 控制台翻 Print 输出。
+        /// </summary>
+        public string ErrorCode { get; set; }
+
+        /// <summary>把 SPEL+ 错误号翻成可读原因（"加载示教点没反应"时用来定位）</summary>
+        public string ReasonText
+        {
+            get
+            {
+                if (Defined) return null;
+                if (string.IsNullOrWhiteSpace(ErrorCode))
+                {
+                    // 老实现把坐标与 PLabel$ 写在同一行共用 OnErr，没标签的点会被整行
+                    // 回滚成 UNDEF；升级前的脚本也没有错误号字段。
+                    return "控制器未回错误号（RC+ 里 mainTCP.prg 可能还是旧版，需重新编译）";
+                }
+                switch (ErrorCode.Trim())
+                {
+                    case "2513": return "SPEL+ 2513：该点号未注册标签 / 未定义（查 RC+ 点文件）";
+                    case "2532": return "SPEL+ 2532：点位置含未定义数据";
+                    case "2371": return "SPEL+ 2371：字符串长度越界（脚本参数有误）";
+                    default: return "SPEL+ 错误 " + ErrorCode.Trim();
+                }
+            }
+        }
+
+        public override string ToString()
+        {
+            if (!Defined) return $"P{Index}  (未定义)";
+            string name = string.IsNullOrWhiteSpace(Label) ? "" : Label + "  ";
+            return $"P{Index}  {name}X={X:F3}  Y={Y:F3}  Z={Z:F3}  U={U:F3}";
         }
     }
 }

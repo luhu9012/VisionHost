@@ -70,6 +70,13 @@ namespace Plugins.Camera.Basler
 
         /// <summary>执行一次软触发（需先设置 TriggerMode=On + TriggerSource=Software）</summary>
         string TriggerSoftware();
+
+        /// <summary>
+        /// 相机侧完整配置为软触发取图（TriggerSelector/TriggerMode/TriggerSource/
+        /// 关帧率限制），并在取流后等待「武装就绪」再允许触发。
+        /// 返回 null 表示成功；非 null 为错误消息（可忽略的次要节点失败也一并拼接）。
+        /// </summary>
+        string ConfigureSoftwareTrigger();
     }
 
     /// <summary>巴斯勒 SDK 工厂（设备枚举 + 相机实例创建）</summary>
@@ -250,6 +257,15 @@ namespace Plugins.Camera.Basler
         {
             if (!_grabbing) return "采集流未开启，软触发无效";
             PushFrame();
+            return null;
+        }
+
+        /// <summary>仿真层：配置软触发（仅切换出图时机，无真实节点语义）</summary>
+        public string ConfigureSoftwareTrigger()
+        {
+            _softwareTriggerMode = 1;
+            _nodes["TriggerMode"] = "On";
+            _nodes["TriggerSource"] = "Software";
             return null;
         }
 

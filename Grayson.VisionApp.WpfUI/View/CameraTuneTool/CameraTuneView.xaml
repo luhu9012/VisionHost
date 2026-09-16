@@ -10,22 +10,66 @@
              Unloaded="OnUnloaded">
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+
+        <!-- 深色折叠区(全局没有 Expander 样式,默认模板是浅色文字,在深色底上看不见) -->
+        <Style x:Key="DarkExpander" TargetType="Expander">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <StackPanel>
+                            <ToggleButton x:Name="HeaderButton" Focusable="False" Cursor="Hand"
+                                          Content="{TemplateBinding Header}"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" Padding="0,3">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock x:Name="Arrow" Text="▸" Margin="0,0,6,0"
+                                                           Foreground="{StaticResource TextDisabledBrush}"/>
+                                                <ContentPresenter VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Arrow" Property="Text" Value="▾"/>
+                                                <Setter TargetName="Arrow" Property="Foreground" Value="{StaticResource AccentLightBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Arrow" Property="Foreground" Value="{StaticResource AccentLightBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ExpandSite" Visibility="Collapsed" Margin="14,2,0,4"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="{StaticResource BackgroundBrush}" Margin="12">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="370"/>
+            <ColumnDefinition Width="400"/>
         </Grid.ColumnDefinitions>
 
-        <!-- ═══════════ 左列:实时预览 + 调平处方 ═══════════ -->
+        <!-- ═══════════ 左列:实时画面 + 结论/处方 ═══════════ -->
         <Grid Grid.Column="0" Margin="0,0,12,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- 相机实时画面 -->
             <Border Grid.Row="0" Background="Black" CornerRadius="4"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" ClipToBounds="True">
                 <Grid>
@@ -33,16 +77,15 @@
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Panel.ZIndex="10"
                                 IsHitTestVisible="False"
                                 Visibility="{Binding IsGrabbing, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
-                        <TextBlock Text="连接相机并开预览后显示实时画面(用于摆靶/对焦/看打光)" Foreground="#999" FontSize="12"/>
+                        <TextBlock Text="点右侧『▶ 连接并预览』后这里显示实时画面" Foreground="#999" FontSize="13"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- 处方报告(垂直度调平结果;成像体检报告在右侧成像页内) -->
-            <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Margin="0,10,0,0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="250">
+            <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Margin="0,10,0,0" Padding="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="240">
                     <StackPanel>
-                        <TextBlock Text="调平处方 / 倾角报告(检测 → 处方 → 复测收敛)" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,6"/>
+                        <TextBlock Text="结论 / 处方" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,6"/>
                         <TextBlock Text="{Binding ResultText}" FontSize="12" LineHeight="19" TextWrapping="Wrap"
                                    Foreground="{StaticResource TextSecondaryBrush}"/>
                     </StackPanel>
@@ -50,88 +93,84 @@
             </Border>
         </Grid>
 
-        <!-- ═══════════ 右列:控制面板(公共设备区 + 双体检页签 + 公共历史) ═══════════ -->
+        <!-- ═══════════ 右列:一条主线 ①②③ ═══════════ -->
         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <TextBlock Text="📏 相机装调助手 · 装调与成像体检"
-                           Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
+                <TextBlock Text="📏 相机装调助手" Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,6"/>
+                <TextBlock FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Text="装相机只要两件事:① 光轴垂直于工面(垂直度) ② 画面亮/匀/清楚(成像)。两个页签各管一件,都过绿字再进标定。"/>
 
-                <!-- 总说明:两个页签怎么选 -->
-                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="10">
-                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                               Text="两个体检页签,设备绑定共用:①『📐 垂直度装调』= 相机是否垂直工面——⚡单帧实时引导(A 点阵靶/B 矩形特征/C 正交边,免走位、边调边看读数)为主,原走位快检+三点对焦作定量验收;②『💡 成像与打光』= 画面亮度/曝光/均匀性/对比度体检与打光调参处方。装相机阶段按顺序把两关都过,再进标定最稳。"/>
-                </Border>
-
-                <!-- 1 设备绑定(公共) -->
-                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
+                <!-- 当前动作 + 链路状态:一眼看出"能不能用" -->
+                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12,10">
                     <StackPanel>
-                        <TextBlock Text="① 设备绑定" Style="{StaticResource SectionTitleTextStyle}"/>
-                        <TextBlock Text="目标相机:" Style="{StaticResource FormLabelStyle}"/>
-                        <ComboBox ItemsSource="{Binding CameraDeviceList}" SelectedItem="{Binding SelectedCameraDevice}">
-                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DeviceKey}"/></DataTemplate></ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBlock Text="未发现相机——到『设备管理』登记/扫描相机后,点下方『🔄 刷新设备』。"
-                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"
-                                   Margin="0,3,0,0"
-                                   Visibility="{Binding CameraEmpty, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,10">
-                            <Button Content="连接相机" Command="{Binding CmdConnect}" Padding="10,3" Margin="0,0,8,0"/>
-                            <Button Content="断开" Command="{Binding CmdDisconnect}" Padding="10,3" Margin="0,0,8,0"/>
-                            <Button Content="🔄 刷新设备" Command="{Binding CmdRefreshDevices}" Padding="10,3"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="10" Height="10" VerticalAlignment="Center" Margin="0,0,8,0"
+                                     Fill="{Binding CamStatusBrush}"/>
+                            <TextBlock Text="{Binding CamStatusText}" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextPrimaryBrush}"/>
                         </StackPanel>
-
-                        <TextBlock Text="运动设备(承载走位/扫描):" Style="{StaticResource FormLabelStyle}"/>
-                        <ComboBox ItemsSource="{Binding MotionDeviceList}" SelectedItem="{Binding SelectedMotionDevice}">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding DeviceKey}"/></DataTemplate></ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBlock Text="未发现运动/机器人——到『设备管理』登记后,点上方『🔄 刷新设备』。"
-                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"
-                                   Margin="0,3,0,0"
-                                   Visibility="{Binding MotionEmpty, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                        <WrapPanel Margin="0,6,0,0">
-                            <TextBlock Text="X轴" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <ComboBox Width="46" ItemsSource="{Binding AxisNumbers}" SelectedItem="{Binding BindX}" Margin="0,0,8,0"/>
-                            <TextBlock Text="Y轴" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <ComboBox Width="46" ItemsSource="{Binding AxisNumbers}" SelectedItem="{Binding BindY}" Margin="0,0,8,0"/>
-                            <TextBlock Text="Z轴" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <ComboBox Width="46" ItemsSource="{Binding AxisNumbers}" SelectedItem="{Binding BindZ}"/>
-                        </WrapPanel>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="开始预览" Command="{Binding CmdStartPreview}" Padding="8,3" Margin="0,0,6,0"/>
-                            <Button Content="停止预览" Command="{Binding CmdStopPreview}" Padding="8,3" Margin="0,0,6,0"/>
-                            <Button Content="软触发单拍" Command="{Binding CmdSnap}" Padding="8,3"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding ProgressText}" FontSize="12" Margin="0,8,0,0"
-                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding FrameInfoText}" FontSize="11" Margin="18,3,0,0"
+                                   Foreground="{StaticResource TextDisabledBrush}"/>
+                        <TextBlock Text="{Binding ProgressText}" FontSize="12" Margin="0,6,0,0"
+                                   TextWrapping="Wrap" Foreground="{StaticResource AccentLightBrush}"/>
                     </StackPanel>
                 </Border>
 
-                <!-- ════ 体检模式页签 ════ -->
-                <TabControl Margin="0,0,0,10">
-                    <!-- Tab1:垂直度装调(v2 实时引导 A/B/C + 原走位模式定量验收) -->
-                    <TabItem Header="📐 垂直度装调(单帧引导/走位验收)">
-                        <StackPanel Margin="0,8,0,0">
-                            <!-- 0 v2:单帧实时垂直度引导(免走位) -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource SectionTitleTextStyle}"
-                                               Text="⚡ v2 单帧实时垂直度引导(免走位 · 参照=工面)"
-                                               Margin="0,0,0,2"/>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"
-                                               Text="原理:垂直度是静态几何量——单帧透视里就刻着答案。垂直时参照物投影仍规则(对边平行/格距一致),倾斜时呈梯形且单方向压扁。选方案 → ▶ 开始 → 一边手动调相机角度一边看右侧读数,调到 ≈0° 即垂直;若读数压到最小仍下不去(≠0),即提示疑畸变/基准问题。方案 A 需在工面放圆点阵靶(可打印)且占视野 ≥50%。"/>
-                                    <WrapPanel Margin="0,8,0,0">
-                                        <TextBlock Text="测量方案:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,6,0"/>
-                                        <ComboBox Width="210" ItemsSource="{Binding PerpModeNames}"
-                                                  SelectedIndex="{Binding PerpModeIndex}"
-                                                  IsEnabled="{Binding IsNotGuiding}" Margin="0,0,10,0"/>
-                                        <Button Content="▶ 开始实时引导" Command="{Binding CmdStartGuide}" Padding="12,5" Margin="0,0,8,0"/>
-                                        <Button Content="■ 停止" Command="{Binding CmdStopGuide}" Padding="12,5"/>
-                                    </WrapPanel>
+                <!-- ① 设备绑定 -->
+                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="① 相机" Style="{StaticResource SectionTitleTextStyle}"/>
+                        <ComboBox ItemsSource="{Binding CameraDeviceList}" SelectedItem="{Binding SelectedCameraDevice}"
+                                  Margin="0,4,0,0">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate><TextBlock Text="{Binding DeviceKey}"/></DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="未发现相机——到『设备管理』登记/扫描后点『🔄 刷新设备』。"
+                                   FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"
+                                   Margin="0,3,0,0"
+                                   Visibility="{Binding CameraEmpty, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Content="▶ 连接并预览" Command="{Binding CmdConnect}" Padding="12,4" Margin="0,0,6,6"/>
+                            <Button Content="开预览" Command="{Binding CmdStartPreview}" Padding="10,4" Margin="0,0,6,6"/>
+                            <Button Content="停预览" Command="{Binding CmdStopPreview}" Padding="10,4" Margin="0,0,6,6"/>
+                            <Button Content="📸 抓帧评分" Command="{Binding CmdSnap}" Padding="10,4" Margin="0,0,6,6"/>
+                            <Button Content="断开" Command="{Binding CmdDisconnect}" Padding="10,4" Margin="0,0,6,6"/>
+                            <Button Content="🔄 刷新设备" Command="{Binding CmdRefreshDevices}" Padding="10,4" Margin="0,0,0,6"/>
+                        </WrapPanel>
+                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource TextDisabledBrush}"
+                                   Text="预览走连续取流;抓帧/扫描会自动切软触发,做完自动切回预览。"/>
+                    </StackPanel>
+                </Border>
 
-                                    <Grid Margin="0,10,0,0">
+                <!-- ② 两个体检页签 -->
+                <TabControl Margin="0,0,0,10">
+                    <!-- ══════ Tab1:垂直度调平 ══════ -->
+                    <TabItem Header="📐 垂直度调平">
+                        <StackPanel Margin="0,8,0,0">
+                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12">
+                                <StackPanel>
+                                    <TextBlock Text="选参照 → 开始 → 看读数" Style="{StaticResource SectionTitleTextStyle}"/>
+                                    <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,6"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Text="不用走位:单帧里就刻着垂直度。垂直时参照物投影规整,倾斜时呈梯形/单方向压扁。"/>
+                                    <ComboBox ItemsSource="{Binding PerpModeNames}" SelectedIndex="{Binding PerpModeIndex}"
+                                              IsEnabled="{Binding IsNotGuiding}"/>
+                                    <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                                               Foreground="{StaticResource TextDisabledBrush}"
+                                               Text="A 点阵靶:工面放圆点阵靶(可打印),占画面 ≥50%,最稳;B 矩形边:用工件/治具矩形轮廓;C 正交边:现场两条近正交直线,应急粗调。"/>
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Button Content="▶ 开始实时引导" Command="{Binding CmdStartGuide}" Padding="14,5" Margin="0,0,8,0"/>
+                                        <Button Content="■ 停止" Command="{Binding CmdStopGuide}" Padding="14,5"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12">
+                                <StackPanel>
+                                    <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="*"/>
@@ -151,7 +190,7 @@
                                         </Border>
                                         <Border Grid.Column="2" Background="#1AFFFFFF" CornerRadius="4" Padding="8,6" Margin="4,0,0,0">
                                             <StackPanel>
-                                                <TextBlock Text="正交偏差(仅 B/C)" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text="正交偏差" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
                                                 <TextBlock Text="{Binding GuideOrthoText}" FontSize="24" FontWeight="Bold" Foreground="#FFD98E"/>
                                             </StackPanel>
                                         </Border>
@@ -161,160 +200,174 @@
                                         <TextBlock Text="{Binding GuideVerdictText}" FontSize="13" FontWeight="Bold"
                                                    Foreground="{Binding GuideVerdictBrush}" TextWrapping="Wrap"/>
                                     </Border>
-                                    <TextBlock Text="{Binding GuideDetailText}" FontSize="11" Margin="0,6,0,0"
-                                               Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding GuideStatusText}" FontSize="11" Margin="0,4,0,0"
+                                    <TextBlock Text="{Binding GuideStatusText}" FontSize="11" Margin="0,6,0,0"
                                                Foreground="{StaticResource TextDisabledBrush}"/>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                               Text="A 看俯仰/翻滚;读数为平滑值,手调时看趋势;调到读数不再下降即为最小。读数方向约定:正=画面下/右更近,现场以试调方向为准。检测不稳时请对焦、让参照充满画面、避免强反光把特征连成片。引导完可再用下方 ③ 走位快检 / ④ 三点对焦做定量验收(需 XY/Z 轴)。"/>
-                                </StackPanel>
-                            </Border>
 
-                            <!-- 2 摆靶登记 -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Text="② 摆靶登记(三点拉开,构成三角覆盖视野两侧)" Style="{StaticResource SectionTitleTextStyle}"/>
-                                    <WrapPanel Margin="0,4,0,6">
-                                        <TextBlock Text="点动步长 mm:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Width="60" Text="{Binding MoveStepText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
-                                    </WrapPanel>
-                                    <UniformGrid Columns="4" Margin="0,0,0,6">
-                                        <Button Content="X−" Command="{Binding CmdMoveXm}" Padding="8,4" Margin="2"/>
-                                        <Button Content="X+" Command="{Binding CmdMoveXp}" Padding="8,4" Margin="2"/>
-                                        <Button Content="Y−" Command="{Binding CmdMoveYm}" Padding="8,4" Margin="2"/>
-                                        <Button Content="Y+" Command="{Binding CmdMoveYp}" Padding="8,4" Margin="2"/>
-                                    </UniformGrid>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                        <Button Content="登记当前为一点" Command="{Binding CmdRecordPoint}" Padding="8,3" Margin="0,0,8,0"/>
-                                        <Button Content="清空登记" Command="{Binding CmdClearPoints}" Padding="8,3"/>
-                                    </StackPanel>
-                                    <TextBlock Text="先把靶放视野中心对焦清晰,再点动把靶移向左/右(或前/后)并各登记一次。"
-                                               FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap" Margin="0,0,0,4"/>
-                                    <ListBox ItemsSource="{Binding Points}" MaxHeight="140" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Margin="2,3">
-                                                    <TextBlock FontSize="12" Text="{Binding Name}"/>
-                                                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                                                               Text="{Binding BestZText, StringFormat=最清晰 Z*: {0} mm}"/>
-                                                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                                                               Text="{Binding CurveSummary}"/>
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
-                                </StackPanel>
-                            </Border>
+                                    <Expander Style="{StaticResource DarkExpander}" Header="怎么调?(方向提示与读数约定)">
+                                        <StackPanel>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Text="读数取平滑值,手调时只看趋势:一直往小的方向调,调到不再下降就是最小。正=画面下/右更近,现场以试调方向为准。读数压到最小仍下不去(≠0),才怀疑畸变/基准问题。检测不稳时:对焦、让参照充满画面、避开强反光。"/>
+                                            <TextBlock Text="{Binding GuideDetailText}" FontSize="11" Margin="0,4,0,0"
+                                                       TextWrapping="Wrap" Foreground="{StaticResource TextDisabledBrush}"/>
+                                        </StackPanel>
+                                    </Expander>
 
-                            <!-- 3 走位透视比对·快检 -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Text="③ 走位透视比对 · 快检(无需 Z 轴)" Style="{StaticResource SectionTitleTextStyle}"/>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,6"
-                                               Text="把 Mark(十字/圆点纸)对到视野中心并登记,程序按网格自动走位、拍图、提取 Mark,输出与九点标定同口径的健康检查(两轴当量/剪切/夹角/RMS)。⚠ 项多/残差呈“中心好四角大”= 相机斜视,再用 ④ 三点对焦定量调平。相机固定、靶随 XY 台移动亦可。视野需 ≥2×步长。"/>
-                                    <WrapPanel Margin="0,0,0,6">
-                                        <TextBlock Text="网格:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                                        <ComboBox Width="150" ItemsSource="{Binding GridPatterns}" SelectedIndex="{Binding GridPatternIndex}" Margin="0,0,10,0"/>
-                                        <TextBlock Text="特征:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                                        <ComboBox Width="110" ItemsSource="{Binding FeatureKinds}" SelectedIndex="{Binding FeatureTypeIndex}"/>
-                                    </WrapPanel>
-                                    <WrapPanel Margin="0,0,0,8">
-                                        <TextBlock Text="步长 mm:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,6,0"/>
-                                        <TextBox Width="56" Text="{Binding GridStepText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Margin="0,0,10,0"/>
-                                        <Button Content="▶ 走位比对(快检)" Command="{Binding CmdStartGridCheck}" Padding="12,4"/>
-                                    </WrapPanel>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"
-                                               Text="结果进左侧报告区;中止用 ④ 卡的中止按钮。"/>
-                                </StackPanel>
-                            </Border>
+                                    <Expander Style="{StaticResource DarkExpander}" Header="进阶:定量验收(需运动轴)">
+                                        <StackPanel>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource TextDisabledBrush}"
+                                                       Text="免走位引导是「边调边看」的定性工具;要出与九点标定同口径的数字(两轴当量差/剪切/夹角/RMS),用下面两种。"/>
+                                            <TextBlock Text="运动设备 / 轴绑定" Style="{StaticResource FormLabelStyle}" Margin="0,6,0,2"/>
+                                            <ComboBox ItemsSource="{Binding MotionDeviceList}" SelectedItem="{Binding SelectedMotionDevice}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate><TextBlock Text="{Binding DeviceKey}"/></DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <TextBlock Text="未发现运动/机器人——到『设备管理』登记后点『🔄 刷新设备』。"
+                                                       FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"
+                                                       Margin="0,3,0,0"
+                                                       Visibility="{Binding MotionEmpty, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                            <WrapPanel Margin="0,6,0,0">
+                                                <TextBlock Text="X轴" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <ComboBox Width="46" ItemsSource="{Binding AxisNumbers}" SelectedItem="{Binding BindX}" Margin="0,0,8,0"/>
+                                                <TextBlock Text="Y轴" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <ComboBox Width="46" ItemsSource="{Binding AxisNumbers}" SelectedItem="{Binding BindY}" Margin="0,0,8,0"/>
+                                                <TextBlock Text="Z轴" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <ComboBox Width="46" ItemsSource="{Binding AxisNumbers}" SelectedItem="{Binding BindZ}"/>
+                                            </WrapPanel>
 
-                            <!-- 4 三点扫描 -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
-                                <StackPanel>
-                                    <TextBlock Text="④ 三点对焦扫描(检测 → 复测,定量调平)" Style="{StaticResource SectionTitleTextStyle}"/>
-                                    <WrapPanel Margin="0,4,0,6">
-                                        <TextBlock Text="扫描半程 mm:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Width="56" Text="{Binding ScanRangeText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Margin="0,0,10,0"/>
-                                        <TextBlock Text="步长 mm:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Width="56" Text="{Binding ScanStepText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
-                                    </WrapPanel>
-                                    <WrapPanel Margin="0,0,0,8">
-                                        <TextBlock Text="收敛容差 mm:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Width="56" Text="{Binding TolText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Margin="0,0,10,0"/>
-                                        <TextBlock Text="安装孔距 mm:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource TextSecondaryBrush}"/>
-                                        <TextBox Width="56" Text="{Binding MountText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
-                                    </WrapPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                        <Button Content="▶ 三点扫描" Command="{Binding CmdStartScan}" Padding="12,5" Margin="0,0,8,0"/>
-                                        <Button Content="中止" Command="{Binding CmdStopScan}" Padding="12,5"/>
-                                    </StackPanel>
-                                    <TextBlock Text="扫描中请勿移动设备;每点会从当前 Z 上下扫找最清晰位置(峰在端点=范围不够,加大半程)。"
-                                               FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"/>
+                                            <Separator Margin="0,8,0,4" Background="{StaticResource BorderBrush}"/>
+
+                                            <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Text="A · 走位透视比对(无需 Z 轴)"/>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,2,0,6"
+                                                       Foreground="{StaticResource TextDisabledBrush}"
+                                                       Text="把 Mark 对到视野中心(不登记就以当前位置为网格原点),程序按网格自动走位拍图,输出与九点标定同口径的体检。相机固定、靶随 XY 台移动亦可。视野需 ≥2×步长。"/>
+                                            <WrapPanel Margin="0,0,0,6">
+                                                <TextBlock Text="网格:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                                <ComboBox Width="130" ItemsSource="{Binding GridPatterns}" SelectedIndex="{Binding GridPatternIndex}" Margin="0,0,8,0"/>
+                                                <TextBlock Text="特征:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                                <ComboBox Width="100" ItemsSource="{Binding FeatureKinds}" SelectedIndex="{Binding FeatureTypeIndex}" Margin="0,0,8,0"/>
+                                                <TextBlock Text="步长 mm:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                                <TextBox Width="50" Text="{Binding GridStepText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
+                                            </WrapPanel>
+                                            <Button Content="▶ 走位比对" Command="{Binding CmdStartGridCheck}" Padding="12,4" HorizontalAlignment="Left"/>
+
+                                            <Separator Margin="0,10,0,4" Background="{StaticResource BorderBrush}"/>
+
+                                            <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Text="B · 三点对焦扫描(检测 → 复测,出倾角与垫厚)"/>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,2,0,6"
+                                                       Foreground="{StaticResource TextDisabledBrush}"
+                                                       Text="把靶分别放到视野两侧拉开的位置,每个位置各『登记当前为一点』(≥2 点可算,3 点可同时给左右/前后双向倾角),再扫描:每点自动上下扫 Z 找最清晰位置,三点 Z 一致即垂直。"/>
+                                            <WrapPanel Margin="0,0,0,6">
+                                                <TextBlock Text="点动步长 mm:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBox Width="46" Text="{Binding MoveStepText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+                                                <Button Content="X−" Command="{Binding CmdMoveXm}" Padding="8,3" Margin="0,0,4,0"/>
+                                                <Button Content="X+" Command="{Binding CmdMoveXp}" Padding="8,3" Margin="0,0,4,0"/>
+                                                <Button Content="Y−" Command="{Binding CmdMoveYm}" Padding="8,3" Margin="0,0,4,0"/>
+                                                <Button Content="Y+" Command="{Binding CmdMoveYp}" Padding="8,3" Margin="0,0,4,0"/>
+                                            </WrapPanel>
+                                            <WrapPanel Margin="0,0,0,6">
+                                                <Button Content="登记当前为一点" Command="{Binding CmdRecordPoint}" Padding="10,3" Margin="0,0,6,0"/>
+                                                <Button Content="清空登记" Command="{Binding CmdClearPoints}" Padding="10,3"/>
+                                            </WrapPanel>
+                                            <ListBox ItemsSource="{Binding Points}" MaxHeight="110" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="2,2">
+                                                            <TextBlock FontSize="12" Text="{Binding Name}"/>
+                                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                                                       Text="{Binding BestZText, StringFormat=最清晰 Z*: {0} mm}"/>
+                                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                                                       Text="{Binding CurveSummary}"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <WrapPanel Margin="0,0,0,6">
+                                                <TextBlock Text="扫描半程 mm:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBox Width="46" Text="{Binding ScanRangeText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Text="步长 mm:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBox Width="46" Text="{Binding ScanStepText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Text="容差 mm:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBox Width="46" Text="{Binding TolText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
+                                            </WrapPanel>
+                                            <WrapPanel Margin="0,0,0,6">
+                                                <TextBlock Text="安装孔距 mm:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBox Width="46" Text="{Binding MountText, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
+                                            </WrapPanel>
+                                            <WrapPanel>
+                                                <Button Content="▶ 三点扫描" Command="{Binding CmdStartScan}" Padding="12,5" Margin="0,0,8,0"/>
+                                                <Button Content="中止" Command="{Binding CmdStopScan}" Padding="12,5"/>
+                                            </WrapPanel>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                                       Foreground="{StaticResource TextDisabledBrush}"
+                                                       Text="扫描中请勿移动设备;峰落在扫描端点=范围不够,加大半程。结果进左侧『结论/处方』。"/>
+                                        </StackPanel>
+                                    </Expander>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
                     </TabItem>
 
-                    <!-- Tab2:成像与打光体检 -->
-                    <TabItem Header="💡 成像与打光体检">
+                    <!-- ══════ Tab2:成像与打光 ══════ -->
+                    <TabItem Header="💡 成像与打光">
                         <StackPanel Margin="0,8,0,0">
-                            <!-- 引导 -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="10">
-                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                           Text="体检画面亮不亮/匀不匀/够不够清楚:滑杆调曝光与增益(改动即下发) → 采帧看评分徽章 → 生成体检报告,按逐项判定与处方调光源/参数,再复测。前提:工件与打光已就位,画面覆盖工件有效区域(避开夹爪等遮挡)。"/>
-                            </Border>
-
-                            <!-- 调参 + 采样 -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
+                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12">
                                 <StackPanel>
-                                    <TextBlock Text="① 曝光 / 增益调参 + 采帧评分" Style="{StaticResource SectionTitleTextStyle}"/>
-                                    <WrapPanel Margin="0,4,0,4">
+                                    <TextBlock Text="调光 → 采帧 → 看报告" Style="{StaticResource SectionTitleTextStyle}"/>
+                                    <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,8"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Text="工件与打光先就位,画面覆盖工件有效区域(避开夹爪遮挡)。滑杆改动即时下发。"/>
+                                    <WrapPanel Margin="0,0,0,4">
                                         <TextBlock Text="曝光" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
                                         <Slider Width="150" Minimum="100" Maximum="60000" Value="{Binding ExposureUs}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <TextBox Width="64" Text="{Binding ExposureUs, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
                                         <TextBlock Text="µs" VerticalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"/>
                                     </WrapPanel>
-                                    <WrapPanel Margin="0,0,0,6">
+                                    <WrapPanel Margin="0,0,0,8">
                                         <TextBlock Text="增益" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
                                         <Slider Width="150" Minimum="0" Maximum="24" Value="{Binding GainVal}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <TextBox Width="64" Text="{Binding GainVal, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center"/>
                                         <TextBlock Text="dB" VerticalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"/>
                                     </WrapPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,6">
-                                        <Button Content="📷 采一帧并评分" Command="{Binding CmdSnapGrade}" Padding="10,4" Margin="0,0,8,0"/>
-                                        <Button Content="🧾 生成体检报告" Command="{Binding CmdAnalyzeImaging}" Padding="10,4" Margin="0,0,8,0"/>
+                                    <WrapPanel>
+                                        <Button Content="📷 采一帧并评分" Command="{Binding CmdSnapGrade}" Padding="10,4" Margin="0,0,6,0"/>
+                                        <Button Content="🧾 生成体检报告" Command="{Binding CmdAnalyzeImaging}" Padding="10,4" Margin="0,0,6,0"/>
                                         <Button Content="重置参数" Command="{Binding CmdResetImagingParams}" Padding="10,4"/>
-                                    </StackPanel>
-                                    <Border Background="#1AFFFFFF" CornerRadius="3" Padding="8,5" Margin="0,0,0,4">
-                                        <TextBlock Text="{Binding FrameGradeText}" FontSize="12" TextWrapping="Wrap"
-                                                   Foreground="#FFD98E"/>
+                                    </WrapPanel>
+                                    <Border Background="#1AFFFFFF" CornerRadius="3" Padding="8,5" Margin="0,8,0,0">
+                                        <TextBlock Text="{Binding FrameGradeText}" FontSize="12" TextWrapping="Wrap" Foreground="#FFD98E"/>
                                     </Border>
-                                    <TextBlock Text="调参小抄:亮度均值目标 100~180(≈中灰);均值过暗→加曝光(优先)/增益,过亮→反之;每次改动后点『采一帧并评分』看变化。"
-                                               FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap"/>
+                                    <Expander Style="{StaticResource DarkExpander}" Header="调参小抄 / 判定口径">
+                                        <StackPanel>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"
+                                                       Text="亮度均值目标 100~180(≈中灰):过暗→加曝光(优先)或增益,过亮→反之;每改一次就『采一帧并评分』看变化。"/>
+                                            <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Foreground="{StaticResource TextDisabledBrush}"
+                                                       Text="判定口径:过曝 ≥245 / 欠曝 ≤10 灰阶占比;均匀性 = 3×3 分块亮度 CV(≤8% 佳);左右/前后差标的是画面方位。过曝区无特征必须消除;暗角/遮挡也会让四角偏暗,先排除再调光。"/>
+                                        </StackPanel>
+                                    </Expander>
                                 </StackPanel>
                             </Border>
 
-                            <!-- 体检报告 -->
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
+                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12">
                                 <StackPanel>
-                                    <TextBlock Text="② 体检报告(逐项判定 + 打光处方)" Style="{StaticResource SectionTitleTextStyle}"/>
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="250">
+                                    <TextBlock Text="体检报告(逐项判定 + 打光处方)" Style="{StaticResource SectionTitleTextStyle}"/>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="260" Margin="0,4,0,0">
                                         <TextBlock Text="{Binding ImagingReportText}" FontSize="12" LineHeight="18" TextWrapping="Wrap"
                                                    Foreground="{StaticResource TextSecondaryBrush}"/>
                                     </ScrollViewer>
-                                    <TextBlock Text="判定口径:过曝≥245/欠曝≤10 灰阶占比;均匀性=3×3 分块亮度 CV(≤8% 佳);左右/前后差标的是画面方位。过曝区无特征必须消除;暗角/遮挡也会让四角偏暗,先排除再调光。"
-                                               FontSize="11" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
                     </TabItem>
                 </TabControl>
 
-                <!-- 复测历史 + 日志(公共) -->
-                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10">
+                <!-- ③ 历史与日志(默认收起,不占视线) -->
+                <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,10" Padding="12">
                     <StackPanel>
                         <TextBlock Text="③ 复测历史 / 导出 / 日志" Style="{StaticResource SectionTitleTextStyle}"/>
-                        <ListBox ItemsSource="{Binding Runs}" MaxHeight="120">
+                        <ListBox ItemsSource="{Binding Runs}" MaxHeight="110" Margin="0,4,0,0">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="0,2">
@@ -330,13 +383,16 @@
                             <Button Content="导出报告(.txt)" Command="{Binding CmdSaveReport}" Padding="10,3" Margin="0,0,8,0"/>
                             <Button Content="清日志" Command="{Binding CmdClearLog}" Padding="10,3"/>
                         </WrapPanel>
-                        <ListBox ItemsSource="{Binding Logs}" MaxHeight="150" Margin="0,8,0,0" FontSize="11">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <Expander Style="{StaticResource DarkExpander}" Header="运行日志">
+                            <ListBox ItemsSource="{Binding Logs}" MaxHeight="200" FontSize="11" Background="Transparent"
+                                     BorderThickness="0">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Expander>
                     </StackPanel>
                 </Border>
             </StackPanel>

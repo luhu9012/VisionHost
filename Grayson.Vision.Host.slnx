@@ -17,4 +17,6 @@
   <Project Path="Plugins.Motion.Zmc/Plugins.Motion.Zmc.csproj" Id="cf4d0f77-4a4f-4684-85af-055eefbb28c7" />
   <Project Path="Plugins.Protocol.Universal/Plugins.Protocol.Universal.csproj" Id="245c22ab-7e19-47d1-a44c-2fc052f569e9" />
   <Project Path="Plugins.Inference.OnnxRuntime/Plugins.Inference.OnnxRuntime.csproj" Id="7A3E8C21-6B4D-4E9A-9F2C-D18E55B0A731" />
+  <Project Path="VisualCalibTool.Wpf/VisualCalibTool.Wpf.csproj" Id="e7a1c4f2-3b8d-4c51-9a6e-1d2f8b0c5a93" />
+  <Project Path="VisualCalibTool.App/VisualCalibTool.App.csproj" Id="2c90899a-011f-4e12-9516-3e787365ccc8" />
 </Solution>

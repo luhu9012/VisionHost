@@ -1,13 +1,10 @@
 //===================================================================================
 // Copyright (c) 2026 Grayson.Vision. All rights reserved.
 // 文件名: CalibrationLegacyMapper.cs
-// 说 明: 旧标定体系 → v2 领域模型 迁移映射器（2026-09-05 重设计 P0；纯数据函数，不触持久化）。
-//        旧 CalibrationProfile（泛型容器 + CalibrationType 混合语义）→ 0..N 条 CalibrationArtifact：
-//          · NinePointHandEye / PickPlaceHandEye(无旋转段) → H
-//          · HandEyeWithRotation → H + e（走位九点 + 旋转段拆两条）
-//          · PickPlaceHandEye(探测到旋转段结果) → H + e
-//          · PixelScale → s；Checkerboard2D / CameraLensDistortion → 畸变(预留)
-//          · IsToolOffsetCalibrated（对针结果）→ t；时效按布局+采集方式（2026-09-08）：
+// 说 明: 旧标定体系 → v2 领域模型 迁移映射器（纯数据函数，不触持久化）。
+//        旧 CalibrationProfile（单产物容器 + CalibrationQuantity 语义）→ 0..2 条 CalibrationArtifact：
+//          · 主物理量（Quantity）→ 单产物：HandEye→H、ToolRotation→e、PixelScale→s、LensDistortion→畸变(预留)
+//          · IsToolOffsetCalibrated（对针结果）→ t；时效按布局+采集方式：
 //            EyeInHand 布局仅放行 EyeInHandIndirect（间接对针）结果；LegacyUnknown（旧档案默认）/
 //            EyeToHandImage（图像对针残留）→ State=Expired（相机随动观测不到工具尖，图像对针物理不成立，
 //            旧结果不可信，须按间接对针重标并给原因）
@@ -64,97 +61,69 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 result.Add(t);
             }
 
-            // —— 主类型 → 相机级/工具旋转产物 ——
-            switch (legacy.Type)
-            {
-                case CalibrationType.NinePointHandEye:
-                    // EyeInHand 走位 H；EyeToHand 亦映射 H（路径差异留标定中心按档案重挂）
-                    result.Add(BuildH(station, slot, legacy));
-                    break;
-
-                case CalibrationType.PickPlaceHandEye:
-                    // 吸放式 H；探测旋转段结果 → 追加 e
-                    result.Add(BuildH(station, slot, legacy));
-                    if (HasRotationResult(legacy))
-                    {
-                        result.Add(BuildE(station, slot, nozzle, legacy));
-                    }
-                    break;
-
-                case CalibrationType.HandEyeWithRotation:
-                    result.Add(BuildH(station, slot, legacy));
-                    result.Add(BuildE(station, slot, nozzle, legacy));
-                    break;
-
-                case CalibrationType.PixelScale:
-                    result.Add(BuildS(station, slot, legacy));
-                    break;
-
-                case CalibrationType.Checkerboard2D:
-                case CalibrationType.CameraLensDistortion:
-                    var dist = NewArtifact(station, CalibrationQuantity.LensDistortion, slot, nozzle, legacy);
-                    dist.HomMatFilePath = legacy.HomMatFilePath;
-                    dist.State = CalibrationArtifactState.Draft; // 预留能力未接线，一律草稿
-                    result.Add(dist);
-                    break;
-
-                default:
-                    // 未知/未定义类型：仅当有矩阵文件时按 H 兜底，避免静默丢数据
-                    if (!string.IsNullOrWhiteSpace(legacy.HomMatFilePath))
-                    {
-                        result.Add(BuildH(station, slot, legacy));
-                    }
-                    break;
-            }
-
+            // —— 主物理量 → 相机级/工具旋转产物 ——
+            // ★2026-09-12 单产物语义：profile 唯一承载 Quantity（v2 物理量），按单产物直接映射，
+            //   覆盖下相机专属路径（DownCameraWalk / DownCameraPixelRotCenter），旧 CalibrationType 已删除。
+            var art = BuildFromQuantity(station, slot, nozzle, legacy);
+            if (art != null) result.Add(art);
             return result;
         }
 
         // ==================== 分产构建 ====================
 
-        private static CalibrationArtifact BuildH(string station, string slot, CalibrationProfile legacy)
+        /// <summary>★2026-09-12 按 profile 声明的 v2 物理量构建单产物 artifact（含下相机专属路径）</summary>
+        private static CalibrationArtifact BuildFromQuantity(string station, string slot, string nozzle,
+            CalibrationProfile legacy)
         {
-            var h = NewArtifact(station, CalibrationQuantity.HandEye, slot, "1", legacy);
-            h.HomMatFilePath = legacy.HomMatFilePath;
-            h.PrimaryPath = legacy.EyeMode == EyeMode.EyeInHand
-                ? CalibrationAcquirePath.NozzleTruthWalk
-                : CalibrationAcquirePath.PickPlaceReturn;
-            h.State = InheritState(legacy);
-            return h;
+            var q = legacy.Quantity;
+            var path = legacy.PrimaryPath ?? DefaultPathFor(q, legacy.EyeMode);
+            switch (q)
+            {
+                case CalibrationQuantity.HandEye:
+                    var h = NewArtifact(station, q, slot, "1", legacy);
+                    h.HomMatFilePath = legacy.HomMatFilePath;
+                    h.PrimaryPath = path;
+                    h.State = InheritState(legacy);
+                    return h;
+                case CalibrationQuantity.ToolRotation:
+                    var e = NewArtifact(station, q, slot, nozzle, legacy);
+                    e.PrimaryPath = path;
+                    e.RotCenterX = legacy.ToolCenterWx;
+                    e.RotCenterY = legacy.ToolCenterWy;
+                    e.EccentricEx = 0;
+                    e.EccentricEy = 0;
+                    e.U0AngleDeg = legacy.CalibU0 ?? 0;
+                    e.CalibU0 = legacy.CalibU0;
+                    e.DependentArtifactId = CalibrationArtifact.BuildArtifactId(
+                        station, CalibrationQuantity.HandEye, slot, null);
+                    e.State = InheritState(legacy);
+                    return e;
+                case CalibrationQuantity.PixelScale:
+                    var s = NewArtifact(station, q, slot, "1", legacy);
+                    s.HomMatFilePath = legacy.HomMatFilePath;
+                    s.PrimaryPath = path;
+                    s.State = InheritState(legacy);
+                    return s;
+                default:
+                    return null; // ToolOffset / LensDistortion 不走此分支（t 独立 / 畸变预留）
+            }
         }
 
-        private static CalibrationArtifact BuildE(string station, string slot, string nozzle, CalibrationProfile legacy)
+        private static CalibrationAcquirePath DefaultPathFor(CalibrationQuantity q, EyeMode layout)
         {
-            var e = NewArtifact(station, CalibrationQuantity.ToolRotation, slot, nozzle, legacy);
-            // 2026-09-06 语义对齐（Planner/EngineV2 同口径）：e 卡 PrimaryPath 必须显式——
-            //   真·吸放档案(PickPlaceHandEye) → RotatePickPlace(放落回拍)；
-            //   走位档案(HandEyeWithRotation 含 EyeInHand) → RotateCameraView(延伸杆观测画圆)。
-            //   此前依赖枚举默认值(=NozzleTruthWalk H 走位路径)，与旋转会话语义不符。
-            e.PrimaryPath = legacy.Type == CalibrationType.PickPlaceHandEye
-                ? CalibrationAcquirePath.RotatePickPlace
-                : CalibrationAcquirePath.RotateCameraView;
-            e.RotCenterX = legacy.ToolCenterWx;
-            e.RotCenterY = legacy.ToolCenterWy;
-            // 旧体系 ToolCenterPx/Py 为像素域；偏心矢量见旧向导输出字段（ToolCenterWx/Wy 为机械域中心）。
-            // 旧 PickPlaceHandEye 的 e 结果若存于 ToolCenterWx/Wy 机械坐标则原样搬入，否则保持 0 待重标。
-            e.EccentricEx = 0;
-            e.EccentricEy = 0;
-            e.U0AngleDeg = legacy.CalibU0 ?? 0;
-            e.CalibU0 = legacy.CalibU0;
-            e.DependentArtifactId = CalibrationArtifact.BuildArtifactId(
-                station, CalibrationQuantity.HandEye, slot, null);
-            e.State = InheritState(legacy);
-            e.Note = "迁移自旧 HandEyeWithRotation/PickPlaceHandEye 旋转段；偏心矢量字段旧体系无独立落点，请以校验台残差复验或重新标定确认";
-            return e;
-        }
-
-        private static CalibrationArtifact BuildS(string station, string slot, CalibrationProfile legacy)
-        {
-            var s = NewArtifact(station, CalibrationQuantity.PixelScale, slot, "1", legacy);
-            s.HomMatFilePath = legacy.HomMatFilePath;
-            s.PrimaryPath = CalibrationAcquirePath.FlyPixelScale;
-            s.State = InheritState(legacy);
-            return s;
+            switch (q)
+            {
+                case CalibrationQuantity.HandEye:
+                    return layout == EyeMode.EyeInHand
+                        ? CalibrationAcquirePath.NozzleTruthWalk
+                        : CalibrationAcquirePath.CameraTruthWalk;
+                case CalibrationQuantity.ToolRotation:
+                    return CalibrationAcquirePath.RotateCameraView;
+                case CalibrationQuantity.PixelScale:
+                    return CalibrationAcquirePath.FlyPixelScale;
+                default:
+                    return CalibrationAcquirePath.CameraTruthWalk;
+            }
         }
 
         private static CalibrationArtifact NewArtifact(string station, CalibrationQuantity q,
@@ -170,7 +139,7 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 NozzleKey = nozzle,
                 Layout = legacy.EyeMode,
                 LegacyProfileId = legacy.Id,
-                LegacyTypeName = legacy.Type.ToString(),
+                LegacyTypeName = legacy.Quantity.ToString(),
                 FeatureType = legacy.FeatureType,
                 FeatureTemplateName = legacy.FeatureTemplateName,
                 TemplateMinScore = legacy.TemplateMinScore,
@@ -187,16 +156,7 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             };
         }
 
-        // ==================== 判定与状态 ====================
-
-        /// <summary>旧 Profile 是否带旋转段结果（PickPlaceHandEye 向导旋转段可选：跑了才有输出）</summary>
-        private static bool HasRotationResult(CalibrationProfile legacy)
-        {
-            return legacy.HasToolOffset
-                   || Math.Abs(legacy.ToolCenterWx) > 1e-9
-                   || Math.Abs(legacy.ToolCenterWy) > 1e-9
-                   || (legacy.CalibU0.HasValue && Math.Abs(legacy.CalibU0.Value) > 1e-9);
-        }
+        // ==================== 状态 ====================
 
         /// <summary>状态推断（保守 + 发布硬门禁配合）：见文件头注释</summary>
         private static CalibrationArtifactState InheritState(CalibrationProfile legacy)
@@ -207,11 +167,14 @@ namespace Grayson.Vision.Contracts.Calibration.Services
         }
 
         /// <summary>
-        /// 槽键猜测：旧 Profile 无槽概念。CameraId 形如 "Cam_*" 视为槽键，
-        /// 否则（设备 ID 如 Basler_Camera_xxx）用 "Cam_01" 占位（标定中心按档案槽表重挂）。
+        /// 槽键解析（2026-09-11 修正）：优先取显式槽字段 CameraSlotKey，
+        /// 否则 CameraId 形如 "Cam_*" 视为槽键，否则用 "Cam_01" 占位。
+        /// ⚠ 与 CalibrationProfileSessionPlanner.GuessSlotKey 同口径（复合工位上下相机分槽的前提）。
         /// </summary>
         private static string GuessSlotKey(CalibrationProfile legacy)
         {
+            string slot = Norm.Trim(legacy.CameraSlotKey);
+            if (!string.IsNullOrWhiteSpace(slot)) return slot;
             string cam = Norm.Trim(legacy.CameraId);
             if (cam.StartsWith("Cam_", StringComparison.OrdinalIgnoreCase)) return cam;
             return "Cam_01";

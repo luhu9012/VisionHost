@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
+             xmlns:local="clr-namespace:Grayson.Vision.WpfUI.View.HardwareConsole"
              mc:Ignorable="d" d:DesignHeight="700" d:DesignWidth="1000">
     <UserControl.Resources>
         <conv:IntToBoolConverter x:Key="IntToBoolConverter"/>
@@ -129,6 +130,68 @@
                                 Style="{StaticResource SuccessButtonStyle}" Margin="0,0,6,0"/>
                         <Button Content="🗑️ 删除" Command="{Binding DeleteTeachPointCommand}"
                                 Style="{StaticResource DangerButtonStyle}"/>
+                    </UniformGrid>
+
+                    <Separator Background="{StaticResource BorderBrush}" Margin="0,0,0,10"/>
+
+                    <!-- RC+ 示教点同步（只读，2026-09-11） -->
+                    <TextBlock Text="RC+ 示教点同步 (只读, 直接读控制器点文件)"
+                               Style="{StaticResource SectionTitleTextStyle}" Margin="0,0,0,8"/>
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="前 N 个点号:" Style="{StaticResource FormLabelStyle}"
+                                   VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Margin="8,0"
+                                 Text="{Binding RcPointCountText, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="从 P0 起算，1~100。读取只访问控制器点文件，不驱动机械手"/>
+                        <Button Grid.Column="2" Content="⬇️ 读取" Command="{Binding LoadRcPointsCommand}"
+                                Style="{StaticResource SuccessButtonStyle}"/>
+                    </Grid>
+
+                    <ListBox ItemsSource="{Binding RcPoints}" SelectedItem="{Binding SelectedRcPoint}"
+                             MaxHeight="200" Margin="0,0,0,8"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource BackgroundLightBrush}" CornerRadius="4"
+                                        Padding="10,7" Margin="0,0,0,6"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                    <!-- 占位行（未定义/读取失败）标红加斜体：一眼看出"哪个点没读到"，
+                                         而不是整张表少几行让人以为同步成功 -->
+                                    <TextBlock Text="{Binding}" FontSize="12">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsUnreadable}" Value="True">
+                                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                                        <Setter Property="FontStyle" Value="Italic"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Text="{Binding RcPointsStatusText}" Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                    <UniformGrid Columns="2">
+                        <Button Content="▶️ 回放走位" Command="{Binding PlayRcPointCommand}"
+                                Style="{StaticResource SuccessButtonStyle}" Margin="0,0,6,0"
+                                ToolTip="把选中的 RC+ 点位写入目标框并走位（与手动走位同链路）"/>
+                        <Button Content="📥 并入示教点" Command="{Binding ImportRcPointsCommand}"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                ToolTip="批量并入上方示教点列表（同名覆盖，落盘供业务流消费）"/>
                     </UniformGrid>
                 </StackPanel>
             </ScrollViewer>
@@ -297,8 +360,17 @@
                 </StackPanel>
             </Border>
 
-            <!-- 底部：走位控制 + 真空阀测试 -->
-            <Grid Grid.Row="1">
+            <!-- ==================== 底部：可滚动工作区（可达域画布 + 走位 + 真空阀） ==================== -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+            <StackPanel>
+
+                <!-- ★ 可达域与九点预演（2026-09-11 新增）
+                     画的是【实测】可达域（不是理想圆环），绿色区域 = 九点全部安全的基准位集合。
+                     把基准位拖进绿区，标定走位就不会再撞机 / 被控制器拒绝。 -->
+                <local:RobotReachMapView Margin="0,0,0,12"/>
+
+                <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="320"/>
@@ -385,7 +457,9 @@
                         </Button>
                     </StackPanel>
                 </Border>
-            </Grid>
+                </Grid>
+            </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </UserControl>

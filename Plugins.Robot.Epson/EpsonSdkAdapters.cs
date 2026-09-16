@@ -23,6 +23,30 @@ namespace Plugins.Robot.Epson
     /// Epson 控制器 SDK 适配器接口。
     /// 约定：返回 null 表示成功，非 null 为错误消息（对接 Result.Fail）。
     /// </summary>
+    /// <summary>
+    /// 门型运动(Jump)参数闸 —— **判据唯一源**。
+    ///
+    /// 规则：水平段高度 limZ 必须**严格高于**目标 Z。否则"门型"退化成
+    /// "贴着目标高度横穿"，等于根本没抬 —— 正是本次要防的撞机形态。
+    ///
+    /// ★为什么单独抽出来：这道闸要装在三处（适配层 / EpsonRobot / 仿真），
+    ///   写三份必然分叉（本项目吃过"同一条判据写两遍 ⇒ 靠巧合正确"的亏）。
+    ///   脚本侧 SafeJump 有一份**等价**判据（SPEL+ 与 C# 无法共享代码）—— 改动时两边一起改。
+    /// </summary>
+    internal static class EpsonJumpGuard
+    {
+        /// <returns>null=通过；非 null=拒绝原因（可直接回给调用方）</returns>
+        public static string Check(float z, float limZ)
+        {
+            if (limZ <= z)
+            {
+                return $"门型运动参数无效：水平段高度 limZ={limZ:F3} 必须【高于】目标 Z={z:F3}，"
+                     + "否则门型失效（退化成贴着目标高度横穿，等于没抬）";
+            }
+            return null;
+        }
+    }
+
     internal interface IEpsonSdkController : IDisposable
     {
         /// <summary>是否仿真适配层</summary>
@@ -46,6 +70,15 @@ namespace Plugins.Robot.Epson
         /// linear = true 走 CP 直线插补（Move），false 走 PTP（Go）。
         /// </summary>
         string MoveTo(float x, float y, float z, float u, float speed, bool linear);
+
+        /// <summary>
+        /// 【门型运动 Jump】先抬到 limZ → 在 limZ 高度水平走 → 降到目标 Z。
+        ///
+        /// 用于**吸持工件时的平移**：不走"逐轴拆两步"的 L 形，且固定带一步"先抬到安全高度"。
+        /// ★ limZ 必须**高于目标 z**，否则两个实现都必须返回错误（门型失效 = 贴着目标高度横穿）。
+        /// 属 PTP 类运动（速度档 = 百分比）。
+        /// </summary>
+        string MoveJump(float x, float y, float z, float u, float limZ, float speed);
 
         /// <summary>回机械原点（Home）</summary>
         string Home();
@@ -192,6 +225,19 @@ namespace Plugins.Robot.Epson
             if (!_open) return "控制器未连接";
             if (!_motorsOn) return "伺服未上电，无法运动";
             // 仿真：瞬时到位
+            _pos[0] = x; _pos[1] = y; _pos[2] = z; _pos[3] = u;
+            return null;
+        }
+
+        public string MoveJump(float x, float y, float z, float u, float limZ, float speed)
+        {
+            if (!_open) return "控制器未连接";
+            if (!_motorsOn) return "伺服未上电，无法运动";
+            // ★仿真也要拦"门型失效"，且必须调同一个判据源：否则仿真会放行真机会拒的用例，
+            //   离线验证就变成假绿（本项目反复踩的坑）。真机侧另有脚本 SafeJump 的等价判据。
+            string guard = EpsonJumpGuard.Check(z, limZ);
+            if (guard != null) return guard;
+            // 仿真：门型三段瞬时完成，只记最终位
             _pos[0] = x; _pos[1] = y; _pos[2] = z; _pos[3] = u;
             return null;
         }

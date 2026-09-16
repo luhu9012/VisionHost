@@ -84,7 +84,23 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         AlignTool = 6,
 
         /// <summary>s：精拍像素当量（已知标距走位测像素）</summary>
-        ScaleWalk = 7
+        ScaleWalk = 7,
+
+        /// <summary>
+        /// ★下相机（仰视二次对位）九点：吸嘴吸住带 Mark 的延伸杆/工件 → 移到下相机视野内
+        /// 小范围 9 宫格平移走位 → 逐点记「机械位 + 下相机像素」→ 拟合 H_down（pixel→robot）。
+        /// 与上相机 CameraTruthWalk 的区别：真值=吸嘴吸附工件在下相机视野内的落点（悬空仰视），
+        /// 且消费端只取「相对偏差」而非绝对坐标。
+        /// </summary>
+        DownCameraWalk = 8,
+
+        /// <summary>
+        /// ★下相机像素平面旋转中心：机械手在下相机中心附近不动 → U 轴转 3 个角度拍照 →
+        /// 3 个 Mark 像素点【在像素平面直接拟合圆】→ 圆心 = 吸嘴旋转中心在下相机图像里的
+        /// 像素位置 P_rot_down(R_down, C_down)。与上相机 RotateCameraView（机械域拟合求 C_rot）
+        /// 的区别：本路径在像素域拟合，产出像素圆心供消费端算 ΔR=R_img−R_cdown。
+        /// </summary>
+        DownCameraPixelRotCenter = 9
     }
 
     /// <summary>
@@ -206,6 +222,12 @@ namespace Grayson.Vision.Contracts.Calibration.Models
 
         /// <summary>旋转段 U 基准读数（°）</summary>
         public double? CalibU0 { get; set; }
+
+        /// <summary>★下相机像素旋转中心 Row（像素；DownCameraPixelRotCenter 路径产出）</summary>
+        public double? DownRotCenterRow { get; set; }
+
+        /// <summary>★下相机像素旋转中心 Col（像素；DownCameraPixelRotCenter 路径产出）</summary>
+        public double? DownRotCenterCol { get; set; }
 
         // ===== 采集配置 =====
         public CalibrationFeatureType FeatureType { get; set; } = CalibrationFeatureType.CircleMark;

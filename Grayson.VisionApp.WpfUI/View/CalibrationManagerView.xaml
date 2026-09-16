@@ -9,7 +9,7 @@
     <UserControl.Resources>
         <!-- 注册转换器 -->
         <conv:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
-        <conv:CalibrationTypeToTextConverter x:Key="CalibTypeToTextConverter"/>
+        <conv:CalibrationQuantityToTextConverter x:Key="CalibTypeToTextConverter"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
 
@@ -198,6 +198,24 @@
                                             <TextBlock Text="{Binding NozzleKey, StringFormat=吸嘴{0}}" Foreground="White" FontSize="10"/>
                                         </Border>
 
+                                        <!-- 2.2 相机槽 Tag（复合工位用来区分上/下固定相机） -->
+                                        <Border Background="#5A2D82" CornerRadius="3" Padding="4,2" Margin="0,0,4,0">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CameraSlotKey}" Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding CameraSlotKey}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding CameraSlotKey}" Foreground="White" FontSize="10"/>
+                                        </Border>
+
                                         <!-- 3. 是否带 TCP 工具旋转中心 Tag -->
                                         <Border Background="#D13438" CornerRadius="3" Padding="4,2" 
                 Visibility="{Binding HasToolOffset, Converter={StaticResource BoolToVis}}">
@@ -365,9 +383,109 @@
 						</StackPanel>
 						<StackPanel>
 							<TextBlock Text="绑定工位/设备" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<TextBlock Text="{Binding SelectedCalibrationProfile.BindingInfo, FallbackValue='未绑定'}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,4,0,0"/>
+							<TextBlock Text="{Binding SelectedCalibrationProfile.BindingInfo, FallbackValue='未绑定'}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,4,0,0"
+									   TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedCalibrationProfile.BindingInfo, FallbackValue='未绑定'}"/>
 						</StackPanel>
 					</UniformGrid>
+
+					<!-- 相机槽 + 相机安装方式（2026-09-11：复合工位的推荐方案判错槽/布局时，直接在标定中心改，不必进向导） -->
+					<Grid Margin="0,10,0,0">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="14"/>
+							<ColumnDefinition Width="*"/>
+						</Grid.ColumnDefinitions>
+
+						<StackPanel Grid.Column="0">
+							<TextBlock Text="相机槽（可编辑 / 可手填）" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<ComboBox ItemsSource="{Binding CameraSlotOptions}"
+                                      Text="{Binding ProfileSlotKey, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                      IsEditable="True"
+                                      Style="{StaticResource ModernComboBoxStyle}"
+                                      Height="26" Margin="0,4,0,0"
+                                      ToolTip="标定产物身份=站|量|槽|吸嘴。复合工位上/下相机必须分槽（如 Cam_A / Cam_C），否则两条标定产物撞同一身份。&#x0a;这里改槽即刻生效并落盘；已标定方案会先弹确认（矩阵属于原槽，改后需重标）。"/>
+						</StackPanel>
+
+						<StackPanel Grid.Column="2">
+							<TextBlock Text="相机安装方式（可编辑）" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<ComboBox ItemsSource="{Binding EyeModeOptions}"
+                                      SelectedItem="{Binding ProfileEyeModeOption, Mode=TwoWay}"
+                                      DisplayMemberPath="DisplayName"
+                                      Style="{StaticResource ModernComboBoxStyle}"
+                                      Height="26" Margin="0,4,0,0"
+                                      ToolTip="固定相机（上下固定、俯视/仰视）= 眼在手外 EyeToHand；相机随机械手运动 = 眼在手上 EyeInHand。&#x0a;改布局会重算采集路径与 H 推导口径，已标定方案需重跑标定。">
+								<ComboBox.ItemContainerStyle>
+									<Style TargetType="ComboBoxItem">
+										<Setter Property="ToolTip" Value="{Binding Description}"/>
+									</Style>
+								</ComboBox.ItemContainerStyle>
+							</ComboBox>
+						</StackPanel>
+					</Grid>
+
+					<!-- 相机 / 运动卡绑定（2026-09-15：此前是只读展示 ⇒ 「按计划创建」出来的方案绑到占位值也改不掉。
+					     复合工位 Cam_C 两条档案即如此：CameraId=「Cam_C」（槽名被当设备名）/ AxisId=「Axis_X」（占位）
+					     且 BoundDeviceId 为空。★注：自 2026-09-15 单轨存储起，矩阵产物目录只由【工位】决定
+					     （Recipes\Workstations\<工位>\Calib），这里选的是「标定时打开哪台相机」，不再影响落盘目录。） -->
+					<Grid Margin="0,10,0,0">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="14"/>
+							<ColumnDefinition Width="*"/>
+						</Grid.ColumnDefinitions>
+
+						<StackPanel Grid.Column="0">
+							<TextBlock Text="相机设备（可编辑 / 可重绑）" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<ComboBox ItemsSource="{Binding BindingCameraOptions}"
+									  SelectedItem="{Binding SelectedBindingCamera, Mode=TwoWay}"
+									  Style="{StaticResource ModernComboBoxStyle}"
+									  Height="26" Margin="0,4,0,0"
+									  ToolTip="本方案绑定的物理相机 —— 决定【标定时打开/采图的是哪台相机】。&#x0a;★2026-09-15 起矩阵产物单轨落在工位级目录 Recipes\Workstations\&lt;工位&gt;\Calib\，不再按相机设备落盘：选错相机不会写错目录，但会采错图导致标定结果作废。&#x0a;复合工位上/下相机是两台设备，务必选对。&#x0a;改完若本方案已有标定结果，需对该相机重新执行 H 标定并发布。">
+								<ComboBox.ItemTemplate>
+									<DataTemplate>
+										<StackPanel Orientation="Horizontal">
+											<TextBlock Text="{Binding DeviceName}"/>
+											<TextBlock Text="{Binding DeviceKey}" FontSize="10.5" Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0,0,0"/>
+										</StackPanel>
+									</DataTemplate>
+								</ComboBox.ItemTemplate>
+							</ComboBox>
+						</StackPanel>
+
+						<StackPanel Grid.Column="2">
+							<TextBlock Text="运动卡 / 机械手（可编辑 / 可重绑）" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<ComboBox ItemsSource="{Binding BindingMotionOptions}"
+									  SelectedItem="{Binding SelectedBindingMotion, Mode=TwoWay}"
+									  Style="{StaticResource ModernComboBoxStyle}"
+									  Height="26" Margin="0,4,0,0"
+									  ToolTip="走位用的运动卡 / 机械手。标定向导第一步写的就是这两个字段（与本处同一实现）。">
+								<ComboBox.ItemTemplate>
+									<DataTemplate>
+										<StackPanel Orientation="Horizontal">
+											<TextBlock Text="{Binding DeviceName}"/>
+											<TextBlock Text="{Binding DeviceKey}" FontSize="10.5" Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0,0,0"/>
+										</StackPanel>
+									</DataTemplate>
+								</ComboBox.ItemTemplate>
+							</ComboBox>
+						</StackPanel>
+					</Grid>
+
+					<Grid Margin="0,6,0,0">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="Auto"/>
+						</Grid.ColumnDefinitions>
+						<TextBlock Grid.Column="0" Text="{Binding BindingDeviceHintText}" FontSize="10.5"
+								   Foreground="{DynamicResource TextDisabledBrush}" TextWrapping="Wrap"
+								   VerticalAlignment="Center" Margin="0,0,10,0"/>
+						<Button Grid.Column="1" Content="应用绑定" Command="{Binding RebindDevicesCommand}"
+								Style="{StaticResource SecondaryButtonStyle}" Padding="12,3" MinWidth="88"
+								ToolTip="把上面选中的相机 / 运动卡写回本方案档案（与标定向导第一步同一实现）。&#x0a;会先弹确认：相机变了 ⇒ 矩阵目录也变，已标定方案需重标。"/>
+					</Grid>
+
+					<TextBlock Text="{Binding SlotHintText}" FontSize="10.5" Foreground="{DynamicResource TextDisabledBrush}"
+                               TextWrapping="Wrap" Margin="0,4,0,0"/>
 					<!-- 当前生效的标定矩阵路径（应用后立即可见保存位置） -->
 					<StackPanel Margin="0,10,0,0">
 						<TextBlock Text="当前矩阵文件路径" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -429,15 +547,15 @@
 							<TextBlock Text="{Binding ScopeTargetHint}" Foreground="{StaticResource TextSecondaryBrush}"
                                        FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
-							<!-- 旋转标定结果 → 业务落点补偿（MahjongDualNozzle 偏心公式，替代旧 NozzleToolOffset 手工示教） -->
+							<!-- 旋转标定结果 → 业务落点补偿（VisionPickPlace / MahjongDualNozzle 偏心公式，替代旧 NozzleToolOffset 手工示教） -->
 							<StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-								<TextBlock Text="吸放式偏心 → 工位业务落点补偿:" Foreground="{DynamicResource TextPrimaryBrush}"
+								<TextBlock Text="旋转标定几何 → 工位业务落点补偿:" Foreground="{DynamicResource TextPrimaryBrush}"
                                            VerticalAlignment="Center" Margin="0,0,8,0"/>
 								<Button Content="📤 发布偏心到业务配置"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         Command="{Binding PublishEccCommand}"
                                         Padding="12,0" Height="28"/>
-								<TextBlock Text="（选中吸放式方案且已算偏心后可用；写入工位 Ecc/CalibPlaceU 并热更新）"
+								<TextBlock Text="（方案已绑工位、吸嘴号 1/2，且已完成旋转中心标定(e) 或物理对针后可用；写入 Ecc / U0(ToolAlignU) / O / 相机安装方式并热更新）"
                                            Foreground="{DynamicResource TextDisabledBrush}" FontSize="10"
                                            VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" MaxWidth="300"/>
 							</StackPanel>
@@ -446,31 +564,44 @@
 						</StackPanel>
 					</GroupBox>
 
-					<!-- 在线坐标映射校验 -->
-					<GroupBox Grid.Row="2" Header="在线坐标映射校验 (Pixel ➔ World)" Foreground="{DynamicResource TextPrimaryBrush}">
+					<!-- 在线坐标映射校验（2026-09-10 双向：Pixel ➔ World / World ➔ Pixel） -->
+					<GroupBox Grid.Row="2" Header="在线坐标映射校验（双向）" Foreground="{DynamicResource TextPrimaryBrush}">
 						<Grid Margin="8">
+							<Grid.RowDefinitions>
+								<RowDefinition Height="Auto"/>
+								<RowDefinition Height="6"/>
+								<RowDefinition Height="Auto"/>
+							</Grid.RowDefinitions>
 							<Grid.ColumnDefinitions>
 								<ColumnDefinition Width="*"/>
 								<ColumnDefinition Width="*"/>
 								<ColumnDefinition Width="Auto"/>
 							</Grid.ColumnDefinitions>
 
-							<StackPanel Grid.Column="0" Margin="0,0,8,0">
-								<TextBlock Text="输入像素坐标 (Px, Py):" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+							<!-- 正向：Pixel → World -->
+							<StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,0">
+								<TextBlock Text="① 像素 → 机械 (Px, Py):" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4"/>
 								<StackPanel Orientation="Horizontal">
 									<TextBox Width="70" Text="{Binding TestPixelX, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,4,0"/>
 									<TextBox Width="70" Text="{Binding TestPixelY, UpdateSourceTrigger=PropertyChanged}"/>
 								</StackPanel>
-							</StackPanel>
-
-							<StackPanel Grid.Column="1">
-								<TextBlock Text="转换物理坐标 (Wx, Wy mm):" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4"/>
 								<TextBlock Text="{Binding TestWorldResult, FallbackValue='X: 0.000, Y: 0.000'}"
-                                           FontWeight="Bold" Foreground="#FF107C41" VerticalAlignment="Center" Margin="0,4,0,0"/>
+										   FontWeight="Bold" Foreground="#FF107C41" Margin="0,5,0,0"/>
 							</StackPanel>
 
-							<Button Grid.Column="2" Content="测试转换" Style="{StaticResource SecondaryButtonStyle}"
-                                    Command="{Binding TestMapCommand}" VerticalAlignment="Bottom" Height="28" Padding="12,0"/>
+							<!-- 反向：World → Pixel -->
+							<StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,8,0">
+								<TextBlock Text="② 机械 → 像素 (Wx, Wy mm):" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+								<StackPanel Orientation="Horizontal">
+									<TextBox Width="70" Text="{Binding TestWorldX, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,4,0"/>
+									<TextBox Width="70" Text="{Binding TestWorldY, UpdateSourceTrigger=PropertyChanged}"/>
+								</StackPanel>
+								<TextBlock Text="{Binding TestPixelResult, FallbackValue='Px: 0.0, Py: 0.0'}"
+										   FontWeight="Bold" Foreground="#FF107C41" Margin="0,5,0,0"/>
+							</StackPanel>
+
+							<Button Grid.Row="0" Grid.Column="2" Content="测试转换" Style="{StaticResource SecondaryButtonStyle}"
+									Command="{Binding TestMapCommand}" VerticalAlignment="Bottom" Height="28" Padding="12,0"/>
 						</Grid>
 					</GroupBox>
 				</Grid>

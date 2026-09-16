@@ -37,11 +37,19 @@ namespace Grayson.Vision.Contracts.Station.Models
         /// </summary>
         public double ExecutionTimeMs { get; }
 
-        public ChainCompletedEventArgs(ChainExecutionResult result, Exception exception = null, double executionTimeMs = 0)
+        /// <summary>
+        /// 是否"分段执行"完成（复合工位业务过程把一条链拆成多段分别跑）。
+        /// 分段完成只更新 LastChainResult 供失败分流，不触发状态机回退/工单最终落库
+        /// （那应由整条业务周期 RunProcessOnceAsync 统一负责）。
+        /// </summary>
+        public bool IsSegment { get; }
+
+        public ChainCompletedEventArgs(ChainExecutionResult result, Exception exception = null, double executionTimeMs = 0, bool isSegment = false)
         {
             Result = result;
             Exception = exception;
             ExecutionTimeMs = executionTimeMs;
+            IsSegment = isSegment;
         }
     }
 

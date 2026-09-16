@@ -251,6 +251,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public void AttachDisplayHost(HalconImageDisplayHost host)
         {
             if (host == null) return;
+            host.LogTag = "工位监视页"; // 显示层日志带窗口身份（与编辑器主视图/属性面板并存时才分得清谁画了、谁清了）
             _previewAdapter = new HalconDisplayContextAdapter(host);
             EnsurePreviewAttached();
             AddLog("INFO", "视觉预览已绑定：模板匹配轮廓等节点叠加图形将实时显示在监视窗口。");

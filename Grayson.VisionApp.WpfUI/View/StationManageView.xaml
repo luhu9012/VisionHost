@@ -346,7 +346,18 @@
                                           ItemsSource="{Binding SelectedStation.RecipeDeviceMappings}"
                                           Visibility="{Binding IsMappingAreaEmpty, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="配方逻辑设备" Binding="{Binding LogicalDeviceName}" Width="160" IsReadOnly="True"/>
+                                        <DataGridTemplateColumn Header="配方逻辑设备" Width="200">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0,4">
+                                                        <TextBlock Text="{Binding LogicalDeviceId}" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                        <TextBlock Text="{Binding LogicalDeviceName}" FontSize="11"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                         <DataGridTextColumn Header="要求设备类型" Binding="{Binding LogicalDeviceType}" Width="130" IsReadOnly="True"/>
                                         <DataGridTextColumn Header="能力/规格需求" Binding="{Binding RequiredSpec}" Width="*" IsReadOnly="True"/>
                                         <DataGridTemplateColumn Header="⚡ 绑定到物理硬件实体" Width="*">

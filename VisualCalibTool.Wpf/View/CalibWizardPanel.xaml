@@ -1,0 +1,470 @@
+<UserControl x:Class="VisualCalibTool.Views.CalibWizardPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+      ★ 强引导向导（第 1~4 步）。它的 DataContext 是 CalibWizardViewModel ——
+        由宿主在 CalibToolHostControl.xaml 里用 DataContext="{Binding Wizard}" 注入。
+
+      ★ 界面文案里<b>不出现 H / e / t / O / σ1 / k1</b>。这不是"美化措辞"，
+        而是这个工具存在的理由之一：上一版标定模块就是因为名词太多而没人敢用。
+    -->
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!--
+                  ★ 必须**自己**合并主题，不能指望宿主的 UserControl.Resources。
+                    WPF 在构造内层 UserControl 时它还没有父级，StaticResource 只能查到
+                    "本控件自己的资源 + Application.Resources" —— 宿主那份字典此时还没接上，
+                    于是 {StaticResource VctCardStyle} 直接抛
+                    "找不到资源 VctCardStyle"（表现为整窗启动即崩）。
+                    这份主题本来就是"不跟随主项目、可独立搬运"的，自己带一份才是对的。
+                -->
+                <ResourceDictionary Source="/VisualCalibTool.Wpf;component/Themes/Theme.Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+            <!--
+              ── 第 2 步专用的两个样式（只在这一屏用，所以不往主题里放）──────
+
+              ★ VctOptionButtonStyle：一个候选答案。
+                高亮那一项 = **当前生效**的那一项（数据来自推导器读工作副本算出的 Recommended，
+                不是另存的一份"选中项"状态 —— 两份状态一定会分叉）。
+              ★ 除了变色还加一个「✔ 当前」字样：只靠颜色区分，对色觉不同的人等于没标。
+            -->
+            <!-- ★ 用专门的"选中"底色（中等深蓝 + 浅字），而**不用** VctAccentBrush：
+                   后者是主操作按钮的颜色，候选按钮用同一色会被读成"这个该点"，
+                   而它其实只是"系统现在认定的是这个"。 -->
+            <SolidColorBrush x:Key="VctOptionCurrentBrush" Color="#FF2C5A85" />
+
+            <Style x:Key="VctOptionButtonStyle" TargetType="Button" BasedOn="{StaticResource VctButtonStyle}">
+                <Setter Property="ContentTemplate">
+                    <Setter.Value>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                <TextBlock Text="✔ 当前" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           FontSize="10"
+                                           Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                        <Setter Property="Background" Value="{StaticResource VctOptionCurrentBrush}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource VctAccentBrush}" />
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
+            <!-- ★ 方案卡：视觉上要明显区别于普通卡片 —— 它是"确认之后就按这个跑"的凭据。 -->
+            <Style x:Key="VctPlanCardStyle" TargetType="Border" BasedOn="{StaticResource VctCardStyle}">
+                <Setter Property="BorderBrush" Value="{StaticResource VctAccentBrush}" />
+                <Setter Property="BorderThickness" Value="1.5" />
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- x:Name：方案卡上的「有一项要改」要把滚动带回上面的问题区（见代码后置）。 -->
+    <ScrollViewer x:Name="WizardScroll" VerticalScrollBarVisibility="Auto" Padding="10">
+        <StackPanel>
+
+            <!-- ── 步骤头：我在第几步、这次要跑几步、已经有什么 ───────── -->
+            <Border Style="{StaticResource VctCardStyle}">
+                <StackPanel>
+                    <DockPanel LastChildFill="False">
+                        <TextBlock DockPanel.Dock="Left"
+                                   Text="{Binding StepTitleText}"
+                                   Style="{StaticResource VctHeaderStyle}"
+                                   Margin="0" />
+                        <TextBlock DockPanel.Dock="Right"
+                                   Text="{Binding StepProgressText}"
+                                   Style="{StaticResource VctCaptionStyle}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <TextBlock Text="{Binding VaultText}"
+                               Style="{StaticResource VctMonoTextStyle}"
+                               Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding ChainPlanText}"
+                               Style="{StaticResource VctAccentTextStyle}"
+                               Margin="0,4,0,0" />
+
+                    <TextBlock Text="{Binding BlockedReasonText}"
+                               Style="{StaticResource VctWarnTextStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding HasBlockedReason, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
+            </Border>
+
+            <!-- ── 第 1 步：告诉我在标定什么 ─────────────────────── -->
+            <StackPanel Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}">
+                <!--
+                  ★ 这里是用户进入向导后读到的第一段话。
+                    修前这一屏直接就是 5 张卡片，没有任何一句"这工具在干什么、我该按什么顺序走" ——
+                    第一次打开的人只能靠猜（"相机看得准不准"和"相机看到的=机械手在哪"到底选哪个？）。
+                  ★ 只回答三个问题：这是什么、先做哪个、顺序是什么。不写参数，不写符号。
+                -->
+                <TextBlock Text="这是标定工具：让相机算出来的位置和机械手真正走到的位置对上。"
+                           Style="{StaticResource VctHeaderStyle}" />
+                <TextBlock Text="用法就一句：选目标 → 确认场景 → 让它跑 → 看叠加图验收。下面的目标建议从上往下做，做完一项顶上的徽章会变 ✔。"
+                           Style="{StaticResource VctCaptionStyle}"
+                           TextWrapping="Wrap" Margin="0,2,0,8" />
+
+                <ListBox ItemsSource="{Binding Goals}"
+                         SelectedItem="{Binding SelectedGoal}"
+                         Style="{StaticResource VctChoiceListStyle}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding PlainTitle}" FontWeight="SemiBold" FontSize="12" />
+                                <TextBlock Text="{Binding PlainCaption}" FontSize="11"
+                                           Foreground="{StaticResource VctSubTextBrush}"
+                                           TextWrapping="Wrap" Margin="0,2,0,0" />
+                                <TextBlock Text="{Binding DisabledReason}" FontSize="11"
+                                           Foreground="{StaticResource VctWarnBrush}"
+                                           TextWrapping="Wrap" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Text="{Binding GoalHintText}" Style="{StaticResource VctCaptionStyle}" />
+            </StackPanel>
+
+            <!-- ── 第 2 步：确认我理解的场景 ───────────────────────
+                 ★★ 这一屏在 2026-09-14 被整个重写过。修前它是"10 行结论一次性铺开 +
+                    整个面板零个可交互控件"，而标题写着「我承诺：不对就说」——
+                    用户唯一能做的动作是"按下一步"，那就是自问自答。
+                 现在的分工是三段，从上往下正好是"要你拍板的 → 念给你听的 → 请你按确认的"：
+                   ① Questions：会影响方案的项 —— 一项一问 + 一组候选按钮（当前项高亮）
+                   ② SceneItems：推导/读出来的事实 —— 只读，写明来源与"该由谁定"
+                   ③ 方案卡：把当前生效的全套设定压成一句话 + 「确认，就这样跑」
+            -->
+            <StackPanel Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="确认我理解的场景" Style="{StaticResource VctHeaderStyle}" />
+                <TextBlock Text="下面每一条给一组候选 —— 带高亮的那一项就是系统现在认定的值。不对就点另一个。"
+                           Style="{StaticResource VctCaptionStyle}" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                <!-- ① 要用户拍板的问题 -->
+                <ItemsControl ItemsSource="{Binding Questions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource VctCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Prompt}" FontWeight="SemiBold" FontSize="12"
+                                               Foreground="{StaticResource VctTextBrush}"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Source}" FontSize="10"
+                                               Foreground="{StaticResource VctSubTextBrush}"
+                                               TextWrapping="Wrap" Margin="0,1,0,6" />
+
+                                    <!--
+                                      ★ 用 WrapPanel：右栏只有 420 像素宽，两个长标签横排会被裁掉。
+                                      ★ IsEnabled 绑在整块候选区上（CanEdit）：如果推导器把一行标成
+                                        "不该问用户"，按钮必须真的点不动 —— 画成能点却点不动是更坏的欺骗。
+                                    -->
+                                    <ItemsControl ItemsSource="{Binding Options}"
+                                                  IsEnabled="{Binding CanEdit}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Style="{StaticResource VctOptionButtonStyle}"
+                                                        Content="{Binding}"
+                                                        ToolTip="{Binding Note}"
+                                                        Command="{Binding ChooseCommand}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- 当前那一项的说明：只显示这一条，不把全部候选的说明铺成一堵墙 -->
+                                    <TextBlock Text="{Binding CurrentNote}"
+                                               Style="{StaticResource VctCaptionStyle}"
+                                               TextWrapping="Wrap" Margin="0,6,0,0" />
+
+                                    <TextBlock Text="{Binding Caution}"
+                                               Style="{StaticResource VctWarnTextStyle}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- ② 只读：推导出来的事实 -->
+                <Border Style="{StaticResource VctCardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="这些是我读出来的，不用你一项项确认"
+                                   Style="{StaticResource VctCaptionStyle}" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding SceneItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,6">
+                                        <TextBlock Text="{Binding Display}" FontSize="12" TextWrapping="Wrap">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource VctTextBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Known}" Value="False">
+                                                            <Setter Property="Foreground" Value="{StaticResource VctWarnBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Source}" FontSize="10"
+                                                   Foreground="{StaticResource VctSubTextBrush}" />
+                                        <!-- ★ "这一项该由谁定"（Editable 唯一的消费点） -->
+                                        <TextBlock Text="{Binding Hint}" FontSize="10"
+                                                   Foreground="{StaticResource VctSubTextBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="「我凭什么这么认为」写在每行的来源里 —— 不知道根据的结论是没法确认的。"
+                                   Style="{StaticResource VctCaptionStyle}" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ③ 方案卡：确认之后才允许开跑 -->
+                <Border Style="{StaticResource VctPlanCardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="这次会这样跑" Style="{StaticResource VctHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding PlanCardText}"
+                                   Style="{StaticResource VctTextStyle}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding SceneConfirmText}"
+                                   Style="{StaticResource VctAccentTextStyle}"
+                                   TextWrapping="Wrap" Margin="0,8,0,0" />
+
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Content="确认，就这样跑" Style="{StaticResource VctPrimaryButtonStyle}"
+                                    IsEnabled="{Binding CanGoNext}"
+                                    Command="{Binding NextStepCommand}" />
+                            <Button x:Name="ReviseSceneButton" Content="有一项要改"
+                                    Style="{StaticResource VctButtonStyle}"
+                                    Click="ReviseSceneButton_Click" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ── 第 2.5 步：确认盯的特征 ───────────────────────── -->
+            <StackPanel Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="我盯的是哪个特征" Style="{StaticResource VctHeaderStyle}" />
+                <ListBox ItemsSource="{Binding Features}"
+                         SelectedItem="{Binding SelectedFeature}"
+                         Style="{StaticResource VctChoiceListStyle}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding PlainTitle}" FontWeight="SemiBold" FontSize="12" />
+                                <TextBlock Text="{Binding PlainCaption}" FontSize="11"
+                                           Foreground="{StaticResource VctSubTextBrush}"
+                                           TextWrapping="Wrap" Margin="0,2,0,0" />
+                                <TextBlock Text="{Binding DisabledReason}" FontSize="11"
+                                           Foreground="{StaticResource VctWarnBrush}"
+                                           TextWrapping="Wrap" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Text="{Binding FeatureHintText}" Style="{StaticResource VctCaptionStyle}" />
+
+                <!--
+                  ★ 特征极性卡：圆点主路径出厂只认「暗底上的亮标记」。亮底暗点的现场要么找不到、
+                    要么掉进动态阈值降级 —— 与其让用户事后对着报告猜，不如一开始就让他选对世界。
+                    实现是整图反色（几何不变），详见 MarkPolarity / HalconMarkExtractor 的注释。
+                    （原来这里只有一句"极性切换还没做"的注意 —— 挂着"还没做"而不给入口，
+                    等于让用户自己想办法绕过去；现在入口就在下面。）
+                -->
+                <Border Style="{StaticResource VctCardStyle}" Margin="0,8,0,0">
+                    <StackPanel>
+                        <!-- ★ 标题必须挂主题样式：裸 TextBlock 前景落系统黑，压深色卡底 = 看不见（对比度探针抓过） -->
+                        <TextBlock Text="特征极性（Mark 比底亮还是比底暗）"
+                                   Style="{StaticResource VctHeaderStyle}" FontSize="12" />
+                        <WrapPanel Margin="0,6,0,0">
+                            <Button Content="亮标记（暗底亮点）" Command="{Binding UseBrightMarkCommand}"
+                                    IsEnabled="{Binding CanUseBrightMarkButton}"
+                                    Style="{StaticResource VctButtonStyle}" MinWidth="132" Margin="0,0,8,0" />
+                            <Button Content="暗标记（亮底暗点）" Command="{Binding UseDarkMarkCommand}"
+                                    IsEnabled="{Binding CanUseDarkMarkButton}"
+                                    Style="{StaticResource VctButtonStyle}" MinWidth="132" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding PolarityText}"
+                                   Style="{StaticResource VctCaptionStyle}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!--
+                  ★ 候选预览卡（圆点 / 十字 / 模板共用一个入口）：
+                    按当前选中的特征 + 当前极性在最新一帧上真跑一次提取 ——
+                    预览与正式跑共用同一个 MarkSpec 构造点与同一个提取器实例，口径分叉在结构上不可能。
+                -->
+                <Border Style="{StaticResource VctCardStyle}" Margin="0,8,0,0">
+                    <StackPanel>
+                        <TextBlock Text="候选预览（在最新一帧上试找一次）"
+                                   Style="{StaticResource VctHeaderStyle}" FontSize="12" />
+                        <WrapPanel Margin="0,6,0,0">
+                            <Button Content="候选预览" Command="{Binding FeaturePreviewCommand}"
+                                    Style="{StaticResource VctButtonStyle}" MinWidth="96" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding PreviewStatusText}"
+                                   Style="{StaticResource VctCaptionStyle}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!--
+                  ── 模板示教（框选 → 训练）──
+                  ★ 两步必须可见可用：「用模板」选项承诺"教完自动可用"，
+                    那示教入口就必须摆在这个页面上 —— 引导用户去找一个不存在的入口，是大忌。
+                  ★ 框选发生在左边图像上（宿主把显示面切到框选模式）；训练用的一定是
+                    画框那一帧（视图模型抓帧后一路带着，不重新抓）。
+                  ★ 原来的「③ 预览」并进了上面的「候选预览」：预览是所有特征通用的能力，
+                    不该只有模板有 —— 那张卡按模板口径长出来的第三个按钮没有存在理由。
+                -->
+                <Border Style="{StaticResource VctCardStyle}" Margin="0,8,0,0">
+                    <StackPanel>
+                        <!-- ★ 标题必须挂主题样式：裸 TextBlock 的前景落到系统黑，压深色卡底 = 看不见（对比度探针抓过） -->
+                        <TextBlock Text="模板示教（想用「用模板」就先教一个）"
+                                   Style="{StaticResource VctHeaderStyle}" FontSize="12" />
+                        <WrapPanel Margin="0,6,0,0">
+                            <Button Content="① 框选" Command="{Binding TemplatePickCommand}"
+                                    Style="{StaticResource VctButtonStyle}" MinWidth="72" Margin="0,0,8,0" />
+                            <Button Content="② 训练" Command="{Binding TemplateTrainCommand}"
+                                    Style="{StaticResource VctButtonStyle}" MinWidth="72" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding TemplateStatusText}"
+                                   Style="{StaticResource VctCaptionStyle}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ── 第 3 步：自动跑 ───────────────────────────────── -->
+            <StackPanel Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="自动跑（边跑边看）" Style="{StaticResource VctHeaderStyle}" />
+                <Border Style="{StaticResource VctCardStyle}">
+                    <StackPanel>
+                        <ProgressBar Style="{StaticResource VctProgressStyle}"
+                                     Minimum="0" Maximum="100"
+                                     Value="{Binding ProgressPercent, Mode=OneWay}" />
+                        <TextBlock Text="{Binding ProgressStep}"
+                                   Style="{StaticResource VctAccentTextStyle}"
+                                   Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding ProgressText}"
+                                   Style="{StaticResource VctTextStyle}"
+                                   Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding LastPointText}"
+                                   Style="{StaticResource VctMonoTextStyle}"
+                                   Margin="0,4,0,0" />
+                        <TextBlock Text="采样帧会留档（复盘时的唯一物证）；左边图像会跟着最新一帧走。"
+                                   Style="{StaticResource VctCaptionStyle}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ── 第 4 步：验收 ─────────────────────────────────── -->
+            <StackPanel Visibility="{Binding IsStep5, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="验收（看见才算通过）" Style="{StaticResource VctHeaderStyle}" />
+                <Border Style="{StaticResource VctCardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding AcceptanceText}"
+                                   Style="{StaticResource VctTextStyle}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding OutcomeText}"
+                                   Style="{StaticResource VctMonoTextStyle}"
+                                   TextWrapping="Wrap" Margin="0,8,0,0" />
+                        <TextBlock Text="告警清单" Style="{StaticResource VctCaptionStyle}" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding IssueText}"
+                                   Style="{StaticResource VctCaptionStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!--
+              ── 动作区 ─────────────────────────────────────────
+              ★★ 三层结构（保持不变）：
+                 第一行 = 现在该做什么（永远有内容，不用猜）；
+                 第二行 = 刚才那一下为什么没生效（出问题才出现）；
+                 第三行 = 按钮本身（现在不该点的会置灰）。
+              ★★ 2026-09-14 加了第四层：**分步可见性**（Show*Button，与 IsStepN 同源）。
+                 修前 7 个按钮全部常驻、只是置灰 —— 用户每一屏都要在一排按钮里找那一个
+                 能点的，「焦点」被这一排按钮分掉了（与图像占满全屏是同一个病）。
+                 现在每一屏只出现该步骤用得上的 2~4 个：
+                   第 1 步：上一步 / 下一步 / 清空重来
+                   第 2 步：上一步（往下走 = 方案卡上的「确认，就这样跑」）
+                   第 3 步：上一步 / 下一步
+                   第 4 步：上一步 / 下一步 / 开始标定 / 取消
+                   第 5 步：上一步 / 重看叠加 / 采用结果 / 清空重来
+                 置灰仍然保留：可见性回答"要不要出现"，IsEnabled 回答"能不能点"，两层不冲突。
+            -->
+            <Border Style="{StaticResource VctCardStyle}">
+                <StackPanel>
+                    <TextBlock Text="{Binding NextActionText}"
+                               Style="{StaticResource VctAccentTextStyle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding NoticeText}"
+                               Style="{StaticResource VctWarnTextStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,5,0,0"
+                               Visibility="{Binding HasNotice, Converter={StaticResource BoolToVis}}" />
+
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Content="上一步" Style="{StaticResource VctButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanGoPrev}"
+                                Command="{Binding PrevStepCommand}" />
+                        <!--
+                          ★ 第 2 步把通用的「下一步」藏起来：那一步的"往下走"由方案卡上的
+                            「确认，就这样跑」承担 —— 同屏两个都能往下走、名字却不同的按钮，
+                            用户一定会问"这俩有啥区别"，然后心里没底地挑一个点。
+                        -->
+                        <Button Content="下一步" Style="{StaticResource VctButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanGoNext}"
+                                Visibility="{Binding ShowNextButton, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding NextStepCommand}" />
+                        <Button Content="开始标定" Style="{StaticResource VctPrimaryButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanRun}"
+                                Visibility="{Binding ShowRunButton, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding RunCommand}" />
+                        <Button Content="取消" Style="{StaticResource VctButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanCancel}"
+                                Visibility="{Binding ShowCancelButton, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding CancelCommand}" />
+                        <Button Content="重看叠加" Style="{StaticResource VctButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanVisualize}"
+                                Visibility="{Binding ShowVisualizeButton, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding VisualizeCommand}" />
+                        <Button Content="采用结果" Style="{StaticResource VctButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanAdopt}"
+                                Visibility="{Binding ShowAdoptButton, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding AdoptCommand}" />
+                        <Button Content="清空重来" Style="{StaticResource VctButtonStyle}"
+                                Margin="0,0,6,6"
+                                IsEnabled="{Binding CanReset}"
+                                Visibility="{Binding ShowResetButton, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding ResetCommand}" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -12,10 +12,30 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
 {
     public class ImageDisplayVm : ViewModelBase
     {
+        /// <summary>
+        /// ★ 日志诊断标签：由绑定的显示宿主（HalconImageDisplayHost.LogTag）注入，
+        /// 标识"这是哪一个窗口的图像通道"。
+        /// 存在原因（2026-09-15 踩坑）：主视图 / 属性面板预览 / 工位监视页可同时存在多个
+        /// ImageDisplayVm，日志里只有节点名 ⇒ 多条「选择图像: [形状匹配]」「ActiveImageContext
+        /// 已更新」交织在一起，**判不出哪条属于哪个窗口**（曾据此误判为"主视图没收到帧"）。
+        /// </summary>
+        public string LogTag { get; set; } = "图像显示";
+
+        /// <summary>日志前缀用的标签（永不为空）</summary>
+        private string Tag => string.IsNullOrWhiteSpace(LogTag) ? "图像显示" : LogTag;
+
         // 缩略图列表，按时间顺序存储最近的图像渲染上下文
         public ObservableCollection<WpfImageRenderContext> ImageHistoryList { get; set; } = new ObservableCollection<WpfImageRenderContext>();
         // 当前激活的图像渲染上下文
         private WpfImageRenderContext _activeImageContext;
+
+        /// <summary>
+        /// 标记「本次把 ActiveImageContext 置 null 属于显式清窗动作」。
+        /// 仅用于日志归类：清窗指令一律由 Clear() / RequestClearWindow() 显式下发，
+        /// setter 本身**永不**因 null 而下发（见 setter 内注释）。
+        /// </summary>
+        private bool _explicitClearRequested;
+
         public WpfImageRenderContext ActiveImageContext
         {
             get => _activeImageContext;
@@ -23,8 +43,33 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
             {
                 if (Set(ref _activeImageContext, value))
                 {
-                    LogBus.Info("ImageDisplay", $"ActiveImageContext 已更新 -> [{value?.NodeName ?? "Null"}]");
-                    OnRequestRender?.Invoke(value);
+                    LogBus.Info("ImageDisplay", $"[{Tag}] ActiveImageContext 已更新 -> [{value?.NodeName ?? "Null"}]");
+
+                    // ★★ 有图才下发渲染；null **绝不**在这里下发清窗指令。
+                    //
+                    // 为什么（2026-09-15 踩坑，现象 =「模板匹配效果闪一下就没」）：
+                    //   缩略图 ListBox 的 SelectedItem 与本属性双向绑定。AddOrUpdateImageContext
+                    //   里的 ImageHistoryList[index] = newContext（集合 Replace）会让 ListBox 认为
+                    //   "原选中实例已离开集合" ⇒ 它立即把 SelectedItem 置 null 并**回写本属性**。
+                    //   旧实现对此无条件 OnRequestRender(null) ⇒ HalconImageDisplayHost.Display(null)
+                    //   ⇒ ClearWindow() + ClearScene()，把节点经 Preview 提交的叠加层（模板匹配轮廓）
+                    //   连同底图一起清掉；而叠加层只存在于显示场景里、**不会被任何后续帧重建**
+                    //   ⇒ 画面回到"没有效果的底图"，且再也回不来（看着就像被帧冲刷掉了）。
+                    //   清窗是**显式动作**，不是"某个属性被写成 null"的副作用。
+                    if (value != null)
+                    {
+                        OnRequestRender?.Invoke(value);
+                    }
+                    else if (_explicitClearRequested)
+                    {
+                        LogBus.Debug("ImageDisplay", $"[{Tag}] 激活图像已置空（清窗指令由调用方显式下发）。");
+                    }
+                    else if (ImageHistoryList.Count > 0)
+                    {
+                        LogBus.Warn("ImageDisplay",
+                            $"[{Tag}] 已忽略非预期的 null 写入（图像历史仍有 {ImageHistoryList.Count} 帧）：缩略图选中态回写不等于清窗指令，照发会连节点叠加层一起清掉。");
+                    }
+
                     UpdateImageInfo();
                 }
             }
@@ -97,7 +142,7 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
             foreach (var img in ImageHistoryList) img.IsSelected = false;
             item.IsSelected = true;
 
-            LogBus.Info("ImageDisplay", $"选择图像: [{item.NodeName}] (Width:{item.Image?.Width}, Height:{item.Image?.Height})");
+            LogBus.Info("ImageDisplay", $"[{Tag}] 选择图像: [{item.NodeName}] (Width:{item.Image?.Width}, Height:{item.Image?.Height})");
             ActiveImageContext = item;
         }
 
@@ -156,25 +201,65 @@ namespace Grayson.Vision.HalconWrapper.Wpf.ViewModels
             }
         }
         /// <summary>
-        /// 清空所有图像历史与当前画面
+        /// 清空所有图像历史与当前画面。
+        /// 这是「清窗指令」的两个显式出口之一（另一个是 <see cref="RequestClearWindow"/>）：
+        /// 只有走这里，渲染端才会收到 null 并把窗口与场景一起擦掉。
         /// </summary>
         public void Clear()
         {
-            // 遍历 Dispose 掉历史列表中的所有资源
-            foreach (var item in ImageHistoryList)
+            WpfImageRenderContext previous;
+            _explicitClearRequested = true;
+            try
             {
-                item?.Dispose();
+                // 先留住"当前帧"引用：ImageHistoryList.Clear() 会触发缩略图 ListBox 回写
+                // ActiveImageContext=null，字段当场被清空，之后再取就取不到要释放的对象了。
+                previous = ActiveImageContext;
+
+                // 遍历 Dispose 掉历史列表中的所有资源（Dispose 幂等，重复释放安全）
+                foreach (var item in ImageHistoryList)
+                {
+                    item?.Dispose();
+                }
+                ImageHistoryList.Clear();
+
+                ActiveImageContext = null;
+                SelectedImageInfo = "无图像";
+
+                // 当前激活项可能不在历史列表里（外部直接赋值的独立上下文）⇒ 单独释放
+                previous?.Dispose();
             }
-            ImageHistoryList.Clear();
+            finally
+            {
+                _explicitClearRequested = false;
+            }
 
-            ActiveImageContext?.Dispose();
-            ActiveImageContext = null;
-            SelectedImageInfo = "无图像";
-
-            // 通知 View 擦除画布
+            // ★ 唯一的画面擦除出口（setter 已不再因 null 下发）
             OnRequestRender?.Invoke(null);
 
-            LogBus.Info("ImageDisplay", "图像历史与内存句柄已完全清空与释放。");
+            LogBus.Info("ImageDisplay", $"[{Tag}] 图像历史与内存句柄已完全清空与释放。");
+        }
+
+        /// <summary>
+        /// 显式清空主视图画面，**保留**图像历史列表及其中的句柄。
+        /// 用途：只要求"主视图别再显示这一帧"，但缩略图历史要留着（如模板向导开始新建）。
+        /// 与 <see cref="Clear"/> 的区别：不 Dispose 任何图像、不动 ImageHistoryList。
+        /// </summary>
+        public void RequestClearWindow()
+        {
+            _explicitClearRequested = true;
+            try
+            {
+                ActiveImageContext = null;
+            }
+            finally
+            {
+                _explicitClearRequested = false;
+            }
+
+            // ★ 同样的唯一出口：显式下发清窗，而不是靠属性被写成 null 的副作用
+            OnRequestRender?.Invoke(null);
+
+            LogBus.Info("ImageDisplay", $"[{Tag}] 已显式请求清空主视图（图像历史保留）。");
         }
 
         /// <summary>

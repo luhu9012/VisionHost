@@ -42,6 +42,57 @@ namespace Grayson.Vison.FlowEdit.Views
 
             // ?? 全局鼠标按下监听：点击抽屉外部时自动收起
             this.PreviewMouseDown += FlowEditView_PreviewMouseDown;
+
+            // ★★ 首次装配必须在构造末尾补一次（2026-09-15 定案：本轮"改了但没生效"的真根因）。
+            //   FlowEditView.xaml 用 <UserControl.DataContext><vm:FlowVm/></UserControl.DataContext>
+            //   **内联声明** VM ⇒ DataContext 在 InitializeComponent() 内部就被赋值，
+            //   而 DataContextChanged 的订阅在它之后 ⇒ **该事件永远不会为这个初值触发**。
+            //   于是原来只写在事件处理里的"注册默认预览目标"从来没被执行过一次：
+            //   节点 Executor 的 Preview 一直是 null ⇒ 叠加层（形状匹配的十字/分数/贴合轮廓）
+            //   在编辑器主视图无处可画；只有属性面板能看到——因为那扇窗口自己在
+            //   AttachPreview 里显式注入，不依赖本注册。
+            AttachDefaultPreview(DataContext as FlowVm);
+        }
+
+        /// <summary>
+        /// 把本视图的主显示窗口注册为该 FlowVm 的「默认预览目标」（扇出的一路）。
+        /// 幂等：重复调用只是重设同一个适配器（适配器本视图内单例复用）。
+        /// </summary>
+        private void AttachDefaultPreview(FlowVm vm)
+        {
+            if (vm == null) return;
+
+            if (_mainPreviewAdapter == null)
+            {
+                if (MainPreviewHost == null)
+                {
+                    LogBus.Error("FlowEditView", "主视图显示控件 MainPreviewHost 未初始化，默认预览目标注册失败（节点叠加层将无处可画）。");
+                    return;
+                }
+                MainPreviewHost.LogTag = "编辑器主视图";
+                _mainPreviewAdapter = new HalconDisplayContextAdapter(MainPreviewHost);
+            }
+
+            // owner 传本视图：卸载时只解除"自己注册的那一个"，不会误伤别的视图后来注册的目标
+            vm.SetDefaultPreview(_mainPreviewAdapter, this);
+        }
+
+        private void FlowEditView_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.OldValue is FlowVm oldVm)
+            {
+                oldVm.OnNodeExecuting -= ScrollToNode;
+                oldVm.ClearDefaultPreview(this);
+            }
+            if (e.NewValue is FlowVm newVm)
+            {
+                newVm.OnNodeExecuting += ScrollToNode;
+
+                // 主编辑器视图窗口注册为「默认预览目标」：节点 Executor 里的 Preview?.Add(...)
+                // 需要一个注入引擎的 IFlowPreviewContext。属性面板打开时与其扇出（两者同收），
+                // 面板关闭后主视图仍是唯一目标——不再出现"工具栏单步无处可画"的空档。
+                AttachDefaultPreview(newVm);
+            }
         }
         /// <summary>
         /// 自动将 ScrollViewer 平移，使当前正在执行的节点平滑居中
@@ -68,28 +119,6 @@ namespace Grayson.Vison.FlowEdit.Views
             FlowScrollViewer.ScrollToVerticalOffset(Math.Max(0, offsetY));
         }
 
-        private void FlowEditView_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (e.OldValue is FlowVm oldVm)
-            {
-                oldVm.OnNodeExecuting -= ScrollToNode;
-                oldVm.SetDefaultPreview(null);
-            }
-            if (e.NewValue is FlowVm newVm)
-            {
-                newVm.OnNodeExecuting += ScrollToNode;
-
-                // 主编辑器视图窗口注册为「默认预览目标」：节点 Executor 里的 Preview?.Add(...)
-                // 需要一个注入引擎的 IFlowPreviewContext。此前只有节点属性窗口注入，且关闭时
-                // SetPreviewContext(null)，导致工具栏「单步」执行时节点画的东西无处可去。
-                // 现在主视图常驻一个适配器：属性面板打开时临时切到面板，关闭后自动回切主视图。
-                if (_mainPreviewAdapter == null)
-                {
-                    _mainPreviewAdapter = new HalconDisplayContextAdapter(MainPreviewHost);
-                }
-                newVm.SetDefaultPreview(_mainPreviewAdapter);
-            }
-        }
         #region 解决工具箱拖拽与双击不生效
         // 1. 记录按下鼠标的起始位置
         private void ToolItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

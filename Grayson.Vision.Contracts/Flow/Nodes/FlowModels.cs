@@ -106,7 +106,15 @@ namespace Grayson.Vision.Contracts.Flow.Nodes
             get => _processId;
             set => _processId = value;
         }
-        public string ProcessName { get; set; } = "主流程";
+        // 🌟 2026-09-10：改为带通知属性。流程名此前是裸自动属性，编辑器面包屑/顶部信息
+        //    绑定它却收不到变更通知 —— 改名后界面不刷新（配方页改名同理）。
+        private string _processName = "主流程";
+        /// <summary>流程名称（编辑器面包屑与配方页「主流程名称」共享同一个值）。</summary>
+        public string ProcessName
+        {
+            get => _processName;
+            set => Set(ref _processName, value);
+        }
 
         public ObservableCollection<FlowNodeBase> Nodes { get; set; } = new ObservableCollection<FlowNodeBase>();
         public ObservableCollection<ConnectionModel> Connections { get; set; } = new ObservableCollection<ConnectionModel>();

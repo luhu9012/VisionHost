@@ -232,6 +232,30 @@ namespace Plugins.Camera.Basler
         public Result SoftwareTrigger() => SoftTrigger();
 
         /// <summary>
+        /// 相机侧完整配置为软触发取图（2026-09-10）。
+        /// 标定采样必须走「走位 → 软触发 → 本点新帧」，不能依赖连续自由流。
+        /// </summary>
+        public Result ConfigureSoftwareTrigger()
+        {
+            if (!IsSdkOpen)
+            {
+                ConfigParams["TriggerModeSelect"] = 1;
+                return Result.Ok();
+            }
+            string err = _sdk.ConfigureSoftwareTrigger();
+            ConfigParams["TriggerModeSelect"] = 1;
+            ConfigParams["TriggerMode"] = true;
+            ConfigParams["TriggerSource"] = "Software";
+
+            // ★ 2026-09-10 三轮修复：之前这里写死 `err == null ? Ok() : Ok()`，
+            //   把底层软触发配置失败【无条件吞掉】，导致上层永远以为配置成功。
+            //   这正是一条链上「盲配置假装成功」的最后一环——相机实际停在自由流，
+            //   上层却照常跑九点 → 卡顿 + 采到旧帧 + 结果全错。
+            //   现在把真实失败透传上去，让上层能明确中止而不是带病硬跑。
+            return err == null ? Result.Ok() : Result.Fail(err);
+        }
+
+        /// <summary>
         /// 设置触发模式。
         /// mode: 0=连续采集, 1=软触发, 2=硬件外触发(Line1)
         /// </summary>

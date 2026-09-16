@@ -2983,7 +2983,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             var old = _currentContext;
             _currentContext = null;
-            DisplayVm.ActiveImageContext = null;
+            // ★ 显式清窗：不能再用 "ActiveImageContext = null" —— 图像通道里"属性被写成 null"
+            //   已不再等于清窗指令（缩略图选中态回写会误触发，进而清掉节点叠加层）。
+            DisplayVm.RequestClearWindow();
             old?.Dispose();
             _rawFrame?.Dispose();
             _rawFrame = null;

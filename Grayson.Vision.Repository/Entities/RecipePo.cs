@@ -23,7 +23,7 @@ namespace Grayson.Vision.Repository.Entities
     public class CalibrationProfilePo : BaseEntity
     {
         public string ProfileName { get; set; }
-        public CalibrationType CalibrationType { get; set; }
+        public CalibrationQuantity CalibrationQuantity { get; set; }
         public string BoundStationCode { get; set; }
         public string BoundDeviceId { get; set; }
         public bool IsCalibrated { get; set; }

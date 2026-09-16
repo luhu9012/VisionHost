@@ -72,6 +72,7 @@
     <Compile Include="Processes\StationProcessBase.cs" />
     <Compile Include="Processes\StationProcessFactory.cs" />
     <Compile Include="Processes\ProcessConfigOverlay.cs" />
+    <Compile Include="Processes\ConsumptionPublishAudit.cs" />
     <Compile Include="Processes\MahjongPickConfig.cs" />
     <Compile Include="Processes\MahjongPickProcess.cs" />
     <Compile Include="Processes\MahjongDualNozzleConfig.cs" />

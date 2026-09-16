@@ -63,14 +63,17 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             bool eyeInHand = spec.Layout == EyeMode.EyeInHand
                              || spec.PrimaryPath == CalibrationAcquirePath.NozzleTruthWalk;
             bool pickPlace = spec.PrimaryPath == CalibrationAcquirePath.PickPlaceReturn;
+            bool downCamera = spec.PrimaryPath == CalibrationAcquirePath.DownCameraWalk;
 
             var steps = new List<CalibrationStepDef>
             {
                 new CalibrationStepDef(WizardStepRole.BindDevices,
                     "绑定相机与运动轴",
-                    eyeInHand
-                        ? "确认随动相机槽 " + SlotText(spec.SlotKey) + " 与走位轴（X/Y）绑定；Epson 设备轴号已按机械手档案自动预填"
-                        : "确认固定相机槽 " + SlotText(spec.SlotKey) + " 与机构走位轴（X/Y）绑定；Epson 设备轴号已按档案预填",
+                    downCamera
+                        ? "确认下固定（仰视）相机槽 " + SlotText(spec.SlotKey) + " 与走位轴（X/Y）绑定；下相机仰视拍悬空工件，标定高度须与作业拍照高度一致"
+                        : (eyeInHand
+                            ? "确认随动相机槽 " + SlotText(spec.SlotKey) + " 与走位轴（X/Y）绑定；Epson 设备轴号已按机械手档案自动预填"
+                            : "确认固定相机槽 " + SlotText(spec.SlotKey) + " 与机构走位轴（X/Y）绑定；Epson 设备轴号已按档案预填"),
                     "bind", false, null)
             };
 
@@ -81,6 +84,12 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 originTitle = "定义吸取位与固定拍照位";
                 originGuide = "示教初始吸取位（吸嘴在此吸住工件，真空检知确认）；再示教固定拍照位（每次放料后机构回此位成像）——两者是本任务走位的机械基准";
                 originPanel = "origin_pickplace";
+            }
+            else if (downCamera)
+            {
+                originTitle = "示教下相机拍照机位";
+                originGuide = "示教下相机拍照机位（下相机视场中心对应的机械位 DownCameraX/Y/Z）：吸嘴吸住带 Mark 的延伸杆/工件 → 移到下相机正上方，使 Mark 落在下相机视野中心。这是九点走位网格的中心基准";
+                originPanel = "origin_downcamera";
             }
             else
             {
@@ -101,13 +110,15 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 "feature", false, null));
 
             steps.Add(new CalibrationStepDef(WizardStepRole.SampleGrid,
-                pickPlace ? "吸放式网格采集" : "走位网格采集",
+                pickPlace ? "吸放式网格采集" : (downCamera ? "下相机吸件走位网格采集" : "走位网格采集"),
                 pickPlace
                     ? "逐格：吸住工件 → 移到命令位放落 → 回拍照位成像 → 提取特征。命令坐标即真值（已含工具偏距，勿再叠加 t）"
-                    : eyeInHand
-                        ? "逐格走位使特征对准相机视野中心（吸嘴对格点语义）→ 成像 → 记录机械位与像素。共 3×3=9 点（可自动全采）"
-                        : "逐格走位平台使特征落在相机视野中心 → 成像 → 记录机械位与像素。共 3×3=9 点（可自动全采）",
-                eyeInHand ? "grid_walk" : (pickPlace ? "grid_pickplace" : "grid_cameratruth"),
+                    : downCamera
+                        ? "吸嘴吸住带 Mark 的工件保持悬空 → 在下相机视野内小范围平移走位 3×3 网格 → 逐点记「机械位 + 下相机像素」→ 拟合 H_down（pixel→robot）。消费端只取相对偏差"
+                        : eyeInHand
+                            ? "逐格走位使特征对准相机视野中心（吸嘴对格点语义）→ 成像 → 记录机械位与像素。共 3×3=9 点（可自动全采）"
+                            : "逐格走位平台使特征落在相机视野中心 → 成像 → 记录机械位与像素。共 3×3=9 点（可自动全采）",
+                downCamera ? "grid_downcamera" : (eyeInHand ? "grid_walk" : (pickPlace ? "grid_pickplace" : "grid_cameratruth")),
                 true, null));
 
             steps.Add(BuildCompute());
@@ -123,15 +134,25 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 ? "前置相机 H"
                 : "相机 H(" + spec.DependentArtifactRef + ")";
             bool pickPlaceRotate = spec.PrimaryPath == CalibrationAcquirePath.RotatePickPlace;
+            bool downCameraRot = spec.PrimaryPath == CalibrationAcquirePath.DownCameraPixelRotCenter;
 
             var steps = new List<CalibrationStepDef>
             {
                 new CalibrationStepDef(WizardStepRole.BindDevices,
                     "绑定旋转轴与吸嘴",
-                    "确认旋转轴 U（Epson=3号轴）与吸嘴通道 n" + spec.NozzleKey + " 绑定；旋转采样与坐标换算使用主相机槽 " + SlotText(spec.SlotKey),
+                    downCameraRot
+                        ? "确认旋转轴 U（Epson=3号轴）与吸嘴通道 n" + spec.NozzleKey + " 绑定；像素旋转中心采样使用下相机槽 " + SlotText(spec.SlotKey)
+                        : "确认旋转轴 U（Epson=3号轴）与吸嘴通道 n" + spec.NozzleKey + " 绑定；旋转采样与坐标换算使用主相机槽 " + SlotText(spec.SlotKey),
                     "bind", false, "依赖：" + depText + " 已发布（提供机械坐标系）")
             };
-            if (pickPlaceRotate)
+            if (downCameraRot)
+            {
+                steps.Add(new CalibrationStepDef(WizardStepRole.DefineOrigin,
+                    "确认下相机旋转采样就绪",
+                    "机械手保持在下相机中心附近不动（吸嘴吸住带 Mark 的工件悬空）→ 依次转 U 拍照。注意：本路径在【像素平面】拟合圆，产出的是吸嘴旋转中心在下相机图像里的像素位置，与机械域旋转中心 e 不同",
+                    "origin_downcamera_rot", false, null));
+            }
+            else if (pickPlaceRotate)
             {
                 steps.Add(new CalibrationStepDef(WizardStepRole.DefineOrigin,
                     "设放料回拍照位",
@@ -151,9 +172,11 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 "feature", false, null));
             steps.Add(new CalibrationStepDef(WizardStepRole.SampleRotate,
                 "旋转角度采样",
-                pickPlaceRotate
-                    ? "吸住工件 → 依次转 U = {-45°, 0°, +45°}（默认 3 点、跨度 90°，过覆盖门控）→ 每角度放落回拍 → 提取工件中心。偏心大时转大角度特征会出视野/模板失配，默认收窄；现场特征清晰且跨度可拉大时应尽量拉开分散（越均匀圆心拟合越稳，可在表内改）"
-                    : "保持延伸杆/治具特征在视野内，依次转 U = {-45°, 0°, +45°}（默认 3 点）成像 → 提取特征轨迹点（特征须全程在视野且模板角度范围够；≥3 点不共线即可拟合，越分散圆心越稳）",
+                downCameraRot
+                    ? "机械手不动，依次转 U = {-30°, 0°, +30°}（默认 3 点）→ 下相机拍照 → 提取 Mark 像素 → 【像素平面】拟合圆求像素圆心 P_rot_down(R,C)。≥3 点不共线即可拟合，越分散圆心越稳"
+                    : (pickPlaceRotate
+                        ? "吸住工件 → 依次转 U = {-45°, 0°, +45°}（默认 3 点、跨度 90°，过覆盖门控）→ 每角度放落回拍 → 提取工件中心。偏心大时转大角度特征会出视野/模板失配，默认收窄；现场特征清晰且跨度可拉大时应尽量拉开分散（越均匀圆心拟合越稳，可在表内改）"
+                        : "保持延伸杆/治具特征在视野内，依次转 U = {-45°, 0°, +45°}（默认 3 点）成像 → 提取特征轨迹点（特征须全程在视野且模板角度范围够；≥3 点不共线即可拟合，越分散圆心越稳）"),
                 "rotate", true, null));
             steps.Add(BuildCompute());
             steps.Add(BuildVerify());

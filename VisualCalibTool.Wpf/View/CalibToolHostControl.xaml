@@ -1,0 +1,436 @@
+<UserControl x:Class="VisualCalibTool.Views.CalibToolHostControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctrl="clr-namespace:VisualCalibTool.Controls"
+             xmlns:vw="clr-namespace:VisualCalibTool.Views"
+             Background="{DynamicResource VctBackgroundBrush}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/VisualCalibTool.Wpf;component/Themes/Theme.Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!--
+      ★★ 布局（2026-09-14 按「工业视觉标定向导桌面端.png」原型重构）。
+
+      修前的布局是「左边图像占满（*）+ 右边 420px 塞向导」：用户打开工具，
+      第一视觉重量全在图像上，而真正要做的"读一句提示 → 做一个选择 → 按一个按钮"
+      被挤在窄条里 —— 这就是「向导没有焦点」的直接来源。
+
+      原型图给的三条原则，落到这份 XAML 里：
+        ① 位置感常驻：左侧竖排步骤导轨（Wizard.StepRail），当前项高亮、走过项打 ✔，
+          「我在哪、还剩几步」不随滚动丢失。导轨只放行「往回点」，
+          往前必须经「下一步 / 确认」—— 中间的确认不能被导航绕过。
+        ② 主交互居中：向导面板拿到全部剩余宽度（修前只有 420px），
+          每一步的问题、方案卡、验收结论都在视野正中，动作区紧随其后。
+        ③ 证据靠边但常在：图像收进右栏（固定宽 + 可拖分隔条），边跑边看、
+          叠加验收时它就在手边，但不再占满全屏抢走注意力。
+          「诊断 / 畸变」两个排障页签收在右栏下方 —— 排障内容不该与主流程平级。
+
+      ★ 绑定走 Wizard.Xxx（中间路径）而不是给子树换 DataContext：
+        门禁按「一个 XAML ↔ 一个视图模型」对账，宿主的 DataContext 是外壳，
+        所有裸 {Binding} 的首段都必须是外壳成员；Wizard 是外壳成员，
+        Wizard 为 null 时中间路径静默为空 —— 与「向导未就绪」提示卡配合，不会白屏。
+    -->
+    <Grid Background="{StaticResource VctBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ── 顶栏：标题 + 环境 + 动作 ───────────────────────────── -->
+        <Border Grid.Row="0"
+                Background="{StaticResource VctPanelBrush}"
+                BorderBrush="{StaticResource VctBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="10,8">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{StaticResource VctTextBrush}"
+                               FontFamily="Microsoft YaHei UI"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding VersionText}"
+                               Style="{StaticResource VctCaptionStyle}"
+                               Margin="8,0,0,0" VerticalAlignment="Center" />
+                    <Border Background="{StaticResource VctPanelAltBrush}"
+                            BorderBrush="{StaticResource VctBorderBrush}"
+                            BorderThickness="1" CornerRadius="3"
+                            Padding="6,2" Margin="12,0,0,0">
+                        <TextBlock Text="{Binding EnvironmentKind}"
+                                   Foreground="{StaticResource VctAccentBrush}"
+                                   FontFamily="Consolas" FontSize="11" />
+                    </Border>
+                </StackPanel>
+
+                <!--
+                  ★ 这一排不是标定的正门（正门是中间的向导），它们的作用是"把环境弄起来 / 排障 / 一键演示"。
+                  ★ 修前 6 个同尺寸按钮平铺在顶栏，第一视觉重量被排障按钮分走一半；
+                    现在「初始化仿真环境」保持正常样式（没环境时它是唯一该点的），
+                    其余三个降为 VctGhostButtonStyle —— 弱化的是"平时"，不是"能用"。
+                -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="初始化仿真环境" Style="{StaticResource VctButtonStyle}"
+                            Command="{Binding InitCommand}"
+                            ToolTip="没有真机时先点这个：起一个带相机与机械手的仿真环境。向导要等它成功才有可选项。" />
+                    <Button Content="三链闭环" Style="{StaticResource VctGhostButtonStyle}"
+                            Command="{Binding RunEndToEndCommand}"
+                            ToolTip="［一键演示/排障］把 H / O / e 三条链连着跑一遍：合成真图 → 真提取 → 真解算 → 真导出。等价于向导里选「相机看到的 = 机械手在哪」。" />
+                    <Button Content="算法自检" Style="{StaticResource VctGhostButtonStyle}"
+                            Command="{Binding RunSelfCheckCommand}"
+                            ToolTip="［排障用］在内存里跑一遍算法层自检（不动机器人），结论写进右下「诊断」页。" />
+                    <Button Content="镜像注入" Style="{StaticResource VctGhostButtonStyle}"
+                            Command="{Binding SimulateMirrorCommand}"
+                            ToolTip="［实验用］往仿真图里注入左右翻转，检验算法能不能识别出这种异常工况。真机上不要用。" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ── 主体：左步骤导轨 / 中向导主交互 / 右证据栏 ────────────── -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="430" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="440" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ── 左：步骤导轨 ────────────────────────────────────
+                 ★ 数据来自 Wizard.StepRail（当前项 / 已完成 / 能不能点都是状态，
+                   XAML 写死必然分叉）。Wizard 未就绪时这里静默为空，
+                   由下面的占位文案解释"为什么是空的"。
+            -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource VctPanelBrush}"
+                    BorderBrush="{StaticResource VctBorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    Width="168">
+                <DockPanel Margin="0,8,0,8">
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="标定步骤"
+                               Style="{StaticResource VctHeaderStyle}"
+                               Margin="12,0,0,8" />
+
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="向导还没就绪 —— 初始化成功后，这里会列出全部 5 个步骤。"
+                               Style="{StaticResource VctCaptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="12,0,10,0"
+                               Visibility="{Binding HasWizardNotice, Converter={StaticResource BoolToVis}}" />
+
+                    <ScrollViewer VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Wizard.StepRail}" Margin="10,0,10,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!--
+                                      ★ 只放行「往回点」由命令的 canExecute 决定（向导 VM 是唯一口径），
+                                        点不动的项按 IsEnabled 触发器整体变淡 ——
+                                        画成能点却没反应，比灰着更坏。
+                                      ★ Background="Transparent" 必须显式写：Button 的默认底是亮灰 #DDDDDD，
+                                        模板里 Bd 虽然透明，但对比度探针从文字往上找第一个【不透明】底色
+                                        会命中它 ⇒ "深色主题里按钮文字对比 2.0" 的假红（2026-09-14 实测）。
+                                    -->
+                                    <Button Command="{Binding GoCommand}"
+                                            Cursor="Hand"
+                                            Background="Transparent"
+                                            HorizontalContentAlignment="Stretch"
+                                            Margin="0,0,0,4"
+                                            ToolTip="回到这一步。已经走过的步骤随时可以回去看；没走过的要从「下一步」按顺序走。">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Bd"
+                                                        Background="Transparent"
+                                                        BorderBrush="Transparent"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="7,5">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border x:Name="Badge"
+                                                                Width="20"
+                                                                Height="20"
+                                                                CornerRadius="10"
+                                                                Background="{StaticResource VctPanelAltBrush}">
+                                                            <TextBlock x:Name="BadgeNum"
+                                                                       Text="{Binding Index}"
+                                                                       FontSize="10"
+                                                                       FontFamily="Consolas"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"
+                                                                       Foreground="{StaticResource VctSubTextBrush}" />
+                                                        </Border>
+                                                        <TextBlock x:Name="TitleTb"
+                                                                   Text="{Binding ShortTitle}"
+                                                                   Margin="7,0,0,0"
+                                                                   VerticalAlignment="Center"
+                                                                   FontFamily="Microsoft YaHei UI"
+                                                                   FontSize="12"
+                                                                   Foreground="{StaticResource VctSubTextBrush}" />
+                                                        <TextBlock Text="✔"
+                                                                   Margin="5,0,0,0"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="11"
+                                                                   Foreground="{StaticResource VctOkBrush}"
+                                                                   Visibility="{Binding IsDone, Converter={StaticResource BoolToVis}}" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <!-- ★ 悬停效果放前面：当前项的强调边框要压过它（后触发的胜出） -->
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource VctBorderBrush}" />
+                                                    </Trigger>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding IsDone}" Value="True" />
+                                                            <Condition Binding="{Binding IsCurrent}" Value="False" />
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter TargetName="TitleTb" Property="Foreground" Value="{StaticResource VctTextBrush}" />
+                                                    </MultiDataTrigger>
+                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource VctAccentSoftBrush}" />
+                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource VctAccentBrush}" />
+                                                        <Setter TargetName="Badge" Property="Background" Value="{StaticResource VctAccentBrush}" />
+                                                        <Setter TargetName="BadgeNum" Property="Foreground" Value="#FF101010" />
+                                                        <Setter TargetName="TitleTb" Property="Foreground" Value="{StaticResource VctTextBrush}" />
+                                                        <Setter TargetName="TitleTb" Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                    <Trigger Property="IsEnabled" Value="False">
+                                                        <Setter Property="Opacity" Value="0.4" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- ── 中：向导主交互区（拿到全部剩余宽度）────────────────── -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!--
+                  ★ "空白"必须带一句话 + 就地能修：向导视图模型要等环境装配成功才存在，
+                    装配失败时中间只剩字面量文字，真正的原因在右下「诊断」页的日志里。
+                    这张卡把"为什么空白"和"现在点哪"都摆在正中。
+                -->
+                <Border Grid.Row="0"
+                        Background="{StaticResource VctPanelAltBrush}"
+                        BorderBrush="{StaticResource VctWarnBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="8,6"
+                        Margin="10,8,4,0"
+                        Visibility="{Binding HasWizardNotice, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding WizardNoticeText}"
+                                   Foreground="{StaticResource VctWarnBrush}"
+                                   FontFamily="Microsoft YaHei UI" FontSize="11"
+                                   TextWrapping="Wrap" />
+                        <Button Content="点这里初始化仿真环境"
+                                Style="{StaticResource VctButtonStyle}"
+                                HorizontalAlignment="Left" Margin="0,6,0,0"
+                                Command="{Binding InitCommand}"
+                                ToolTip="起一个带相机与机械手的仿真环境。没有真机时先点这个，向导才有可选项。" />
+                    </StackPanel>
+                </Border>
+
+                <vw:CalibWizardPanel Grid.Row="1" DataContext="{Binding Wizard}" Margin="10,8,4,8" />
+            </Grid>
+
+            <!-- 可拖分隔条：验收看叠加图时可以把图像栏拖宽 -->
+            <GridSplitter Grid.Column="2"
+                          Width="4"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="Transparent"
+                          ShowsPreview="False" />
+
+            <!-- ── 右：证据栏（图像常在，但不再占满全屏）──────────────── -->
+            <Border Grid.Column="3"
+                    Background="{StaticResource VctPanelBrush}"
+                    BorderBrush="{StaticResource VctBorderBrush}"
+                    BorderThickness="1,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" MinHeight="240" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!--
+                      ★ 图像永远可见（边跑边看 / 叠加验收都靠它），且不放进可切换的页签 ——
+                        WPF 的 TabControl 会让未选中页整个脱离视觉树，
+                        图像藏在页签里就意味着"跑着跑着叠加画没了"。
+                    -->
+                    <ctrl:HalconView x:Name="ImageView" Grid.Row="0" Margin="8,8,8,4" />
+
+                    <DockPanel Grid.Row="1" Margin="8,0,8,6">
+                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                            <Button Content="抓一帧" Style="{StaticResource VctButtonStyle}"
+                                    Command="{Binding GrabOnceCommand}"
+                                    ToolTip="从当前相机（或仿真）取一帧显示在上方，用来确认视野对不对。" />
+                            <Button Content="适配整图" Style="{StaticResource VctButtonStyle}"
+                                    Command="{Binding FitImageCommand}"
+                                    ToolTip="把上方图像缩放成正好铺满窗口（不改任何标定数据）。" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding CursorText}"
+                                   Style="{StaticResource VctMonoTextStyle}"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Right"
+                                   TextTrimming="CharacterEllipsis" />
+                    </DockPanel>
+
+                    <!--
+                      ★ 排障内容（诊断 / 畸变）收进右下角页签：它们是"出问题才看"的，
+                        不该与向导平级铺开。修前这两个页签与向导同栏争位，
+                        向导被挤在 420px 里 —— 焦点就是被这样分掉的。
+                    -->
+                    <TabControl Grid.Row="2"
+                                Height="264"
+                                Background="{StaticResource VctPanelBrush}"
+                                BorderThickness="0"
+                                Padding="0"
+                                ItemContainerStyle="{StaticResource VctTabItemStyle}">
+                        <TabItem Header="诊断">
+                            <ScrollViewer Background="{StaticResource VctPanelBrush}"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Padding="8">
+                                <StackPanel>
+
+                                    <TextBlock Text="运行状态" Style="{StaticResource VctHeaderStyle}" Margin="0,0,0,2" />
+                                    <Border Style="{StaticResource VctCardStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Status}" Style="{StaticResource VctTextStyle}" />
+                                            <TextBlock Text="{Binding Disclaimer}" Style="{StaticResource VctCaptionStyle}"
+                                                       Margin="0,6,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="三链闭环结论（H / O / e）" Style="{StaticResource VctHeaderStyle}" Margin="0,0,0,2" />
+                                    <Border Style="{StaticResource VctCardStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding ChainSummaryText}"
+                                                       Foreground="{StaticResource VctAccentBrush}"
+                                                       FontFamily="Consolas" FontSize="11"
+                                                       TextWrapping="Wrap" />
+                                            <Button Content="跑一遍三链闭环" Style="{StaticResource VctButtonStyle}"
+                                                    HorizontalAlignment="Left" Margin="0,8,0,0"
+                                                    Command="{Binding RunEndToEndCommand}" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="叠加图例（AR 反投影）" Style="{StaticResource VctHeaderStyle}" Margin="0,0,0,2" />
+                                    <Border Style="{StaticResource VctCardStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding OverlayNote}"
+                                                       Foreground="{StaticResource VctAccentBrush}"
+                                                       FontFamily="Consolas" FontSize="11"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="绿十字 = 实测像素（真的）；红圈 = 把机器人走到的位用当前标定反投回去的像素；黄箭头 = 残差矢量。两者重合才算准。"
+                                                       Style="{StaticResource VctCaptionStyle}"
+                                                       TextWrapping="Wrap" Margin="0,6,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="H 矩阵 / 诊断" Style="{StaticResource VctHeaderStyle}" Margin="0,0,0,2" />
+                                    <Border Style="{StaticResource VctCardStyle}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding MatrixText}"
+                                                       FontFamily="Consolas" FontSize="11"
+                                                       Foreground="{StaticResource VctTextBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding DiagnosticsText}"
+                                                       FontFamily="Consolas" FontSize="11"
+                                                       Foreground="{StaticResource VctSubTextBrush}"
+                                                       TextWrapping="Wrap" Margin="0,6,0,0" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <Button Content="导出示例 .tup" Style="{StaticResource VctButtonStyle}"
+                                                        Command="{Binding ExportSampleTupCommand}" />
+                                                <Button Content="打开存储目录" Style="{StaticResource VctButtonStyle}"
+                                                        Command="{Binding OpenStoreFolderCommand}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding StoreRoot}" Style="{StaticResource VctCaptionStyle}" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="运行日志" Style="{StaticResource VctHeaderStyle}" Margin="0,0,0,2" />
+                                    <ListBox x:Name="LogListBox"
+                                             Style="{StaticResource VctListBoxStyle}"
+                                             Height="150"
+                                             ItemsSource="{Binding LogLines}"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11"
+                                                           Foreground="{StaticResource VctTextBrush}" />
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+
+                        <!--
+                          「去畸变后会好多少」—— 决策 3 的界面出口。
+                          ★ 数据由内参链跑完后从向导推过来（见 CalibToolHostControl.xaml.cs 的订阅），
+                            没跑过就是空态，不编数。
+                        -->
+                        <TabItem Header="畸变">
+                            <ctrl:DistortionImpactView x:Name="DistortionView" />
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ── 底部状态栏：环境状态 + 已经标好了什么 ────────────────────
+             ★ 状态点：绿 = 向导可用；红 = 环境没就绪（向导还是 null）。
+               原型图把"仿真已连接 / 相机 / 机械臂"做成常驻徽章 ——
+               这里先用"一个点 + Status 文本"承载同一件事：环境好不好，抬眼可见。
+        -->
+        <Border Grid.Row="2"
+                Background="{StaticResource VctPanelBrush}"
+                BorderBrush="{StaticResource VctBorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="10,5">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Center" Margin="0,0,7,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{StaticResource VctOkBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasWizardNotice}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource VctErrorBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+                    <TextBlock Text="{Binding Status}"
+                               Style="{StaticResource VctCaptionStyle}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="640" />
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding Wizard.VaultText}"
+                           Style="{StaticResource VctCaptionStyle}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="480" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

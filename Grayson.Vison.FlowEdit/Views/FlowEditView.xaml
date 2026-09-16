@@ -326,6 +326,9 @@
                         <Button Command="{Binding SaveCurrentPipelineAsRecipeCommand}" ToolTip="将当前流程另存为可复用模板" Style="{StaticResource IconToolBarBtnStyle}">
                             <TextBlock Text="📦" Style="{StaticResource EmojiIconTextStyle}"/>
                         </Button>
+                        <Button Command="{Binding RenameProcessCmd}" ToolTip="重命名当前流程层级（面包屑上显示的名称，保存后生效）" Style="{StaticResource IconToolBarBtnStyle}">
+                            <TextBlock Text="🏷️" Style="{StaticResource EmojiIconTextStyle}"/>
+                        </Button>
                         <Button Command="{Binding ClearCanvasCommand}" ToolTip="清空画布上所有节点与连线" Style="{StaticResource IconToolBarBtnStyle}" Foreground="#E74C3C">
                             <TextBlock Text="🗑️" Style="{StaticResource EmojiIconTextStyle}"/>
                         </Button>
@@ -656,9 +659,16 @@
                 </Grid.RowDefinitions>
 
                 <!-- 1. 图像展示区 -->
+                <!-- RenderContext 必须显式 OneWay：
+                     ① 该依赖属性注册为 BindsTwoWayByDefault，而 VM 属性类型是 WpfImageRenderContext
+                        （派生类），DP 类型是基类 ImageRenderContext ⇒ 目标→源方向是窄化转换，
+                        WPF 建不出默认转换器，会刷 "Data Error: 1 : Cannot create default converter
+                        to perform 'two-way' conversions"；
+                     ② 显示控件只是图像通道的下游消费者，把它的 DP 值回写进 ImageDisplayVm
+                        没有意义，却会把"缩略图选中态被集合变更拉空"这类噪声写回图像通道。 -->
                 <halconHost:HalconImageDisplayHost x:Name="MainPreviewHost"
                     DataContext="{Binding ImageDisplayVm}"
-                    RenderContext="{Binding ActiveImageContext}" />
+                    RenderContext="{Binding ActiveImageContext, Mode=OneWay}" />
 
                 <!-- 2. 缩略图列表 -->
                 <Border Grid.Row="1" Background="#181818" BorderBrush="#3F3F46" BorderThickness="0 1 0 0">

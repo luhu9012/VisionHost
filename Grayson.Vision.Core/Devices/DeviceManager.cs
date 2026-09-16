@@ -56,7 +56,12 @@ namespace Grayson.Vision.Core.Devices
             };
 
             device.StateChanged += (s, state) => OnDeviceStateChanged(logicalDeviceKey, state);
-            LogBus.Info("DeviceManager", $"[{StationId}] 注册逻辑设备 [{logicalDeviceKey}] -> {device.GetType().Name}");
+
+            // ★ 物理身份对账：只打类型名（如 "HikCamera"）时，日志里判不出"这条链到底用了哪台相机"。
+            //   设备键 = 品牌_类别_SN_用户自定义名；DeviceId 通常就是 SN。
+            LogBus.Info("DeviceManager",
+                $"[{StationId}] 注册逻辑设备 [{logicalDeviceKey}] -> {device.GetType().Name}" +
+                $" (设备键: {device.DeviceKey ?? "-"} | SN/物理ID: {device.DeviceId ?? "-"})");
         }
 
         public bool UnregisterDevice(string logicalDeviceKey)

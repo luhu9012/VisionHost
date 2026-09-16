@@ -15,6 +15,7 @@ using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.Contracts.Station.Services;
 using Grayson.Vision.Contracts.Station.Triggers;
 using Grayson.Vision.Core.Client;
+using Grayson.Vision.Core.Processes;
 using Grayson.Vision.Core.Station;
 using Grayson.Vision.Repository;
 using Grayson.Vision.Repository.Interfaces;
@@ -1051,7 +1052,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             IsMappingAreaEmpty = false;
             int logicalCount = s.BoundRecipe.LogicalDevices?.Count ?? 0;
-            if (logicalCount == 0)
+            // ★ 2026-09-16：配方无逻辑设备但业务过程有设备需求（如运动卡 CardAlias）时，仍需映射
+            if (logicalCount == 0 && GetProcessDeclaredDeviceRequirements(s).Count == 0)
             {
                 RecipePickerHintText = $"✅ 配方【{s.BoundRecipe.RecipeName}】不含逻辑设备需求 —— 无需映射，可直接进入「③ 触发与运行」。";
                 return;
@@ -1059,9 +1061,53 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             var mappings = s.RecipeDeviceMappings;
             int mapped = mappings == null ? 0 : mappings.Count(m => !string.IsNullOrWhiteSpace(m.MappedDeviceId));
-            RecipePickerHintText = mapped >= logicalCount
-                ? $"✅ 配方【{s.BoundRecipe.RecipeName}】共 {logicalCount} 个逻辑设备，已全部映射到物理硬件。"
-                : $"⚡ 配方【{s.BoundRecipe.RecipeName}】共 {logicalCount} 个逻辑设备，已映射 {mapped}/{logicalCount} —— 全部映射完成后即可保存同步。";
+            // ★ 2026-09-16：含过程声明设备需求（如业务过程的运动卡 CardAlias）
+            int reqTotal = logicalCount + GetProcessDeclaredDeviceRequirements(s).Count;
+            RecipePickerHintText = mapped >= reqTotal
+                ? $"✅ 配方【{s.BoundRecipe.RecipeName}】共 {reqTotal} 个逻辑设备（含过程需求），已全部映射到物理硬件。"
+                : $"⚡ 配方【{s.BoundRecipe.RecipeName}】共 {reqTotal} 个逻辑设备（含过程需求），已映射 {mapped}/{reqTotal} —— 全部映射完成后即可保存同步。";
+
+            // ★★ 同一台物理设备被两条逻辑设备同时映射 = 运行时静默张冠李戴（链条照跑，但影像/动作来自另一台设备）。
+            //    必须出声：只显示"✅ 已全部映射"会把这种配错渲染成"配置完成"，等于替错误背书。
+            var dupConflicts = DescribeDuplicateDeviceMappings(s);
+            if (dupConflicts.Count > 0)
+            {
+                RecipePickerHintText += " ｜ ⛔ " + string.Join("；", dupConflicts)
+                    + " —— 请到下方映射表把每条逻辑设备改绑到它自己的物理设备后再保存。";
+            }
+        }
+
+        /// <summary>
+        /// 列出"同一台物理设备被多个逻辑设备同时映射"的冲突（纯展示判定，不改数据）。
+        /// 两条逻辑设备共用一个物理实例时，运行链只会操作其中一台，另一条静默用错硬件：
+        /// 表现是"配置写的是下相机，画面却是上相机"这类张冠李戴，且日志里看不出来。
+        /// </summary>
+        private static List<string> DescribeDuplicateDeviceMappings(StationModel s)
+        {
+            var result = new List<string>();
+            var mappings = s?.RecipeDeviceMappings;
+            if (mappings == null || mappings.Count == 0) return result;
+
+            foreach (var g in mappings
+                .Where(m => m != null && !string.IsNullOrWhiteSpace(m.MappedDeviceId))
+                .GroupBy(m => m.MappedDeviceId, StringComparer.OrdinalIgnoreCase))
+            {
+                if (g.Count() <= 1) continue;
+
+                // ★ 用 LogicalDeviceId 定位：它才是运行时注册键（节点按 CameraAlias=Id 取硬件），也是唯一稳定标识。
+                //   工位档案里的 LogicalDeviceName 常是建站时从模板带过来的陈旧值
+                //   （本仓 ST_001/ST_002 的它都是 "Top Camera"）⇒ 只打显示名会出现"两个一模一样的名字"，
+                //   反而指不出该改哪两行。
+                var names = g.Select(m =>
+                {
+                    string id = string.IsNullOrWhiteSpace(m.LogicalDeviceId) ? "<无Id>" : m.LogicalDeviceId;
+                    return string.IsNullOrWhiteSpace(m.LogicalDeviceName) || m.LogicalDeviceName == id
+                        ? $"[{id}]"
+                        : $"[{id}（显示名 {m.LogicalDeviceName}）]";
+                });
+                result.Add($"逻辑设备 {string.Join(" / ", names)} 同时映射到同一台物理设备 [{g.Key}]");
+            }
+            return result;
         }
 
         /// <summary>重算空态引导文案（未选中工位时右侧区域给方向，避免空白）</summary>
@@ -1125,8 +1171,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
 
             int logicalCount = st.BoundRecipe?.LogicalDevices?.Count ?? 0;
-            bool mappingOk = logicalCount == 0
-                || (st.RecipeDeviceMappings != null && st.RecipeDeviceMappings.Count == logicalCount
+            // ★ 2026-09-16：映射完成度按【配方逻辑设备 + 过程声明设备】合并计数（过程需求如运动卡 CardAlias）
+            int requiredCount = logicalCount + GetProcessDeclaredDeviceRequirements(st).Count;
+            bool mappingOk = requiredCount == 0
+                || (st.RecipeDeviceMappings != null && st.RecipeDeviceMappings.Count == requiredCount
                     && st.RecipeDeviceMappings.All(m => !string.IsNullOrWhiteSpace(m.MappedDeviceId)));
 
             bool triggerOk;
@@ -1180,8 +1228,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             bool hasRecipe = s.BoundRecipe != null;
             bool hasHardware = s.HardwareDevices != null && s.HardwareDevices.Count > 0;
             int logicalCount = s.BoundRecipe?.LogicalDevices?.Count ?? 0;
-            bool mappingOk = logicalCount == 0
-                || (s.RecipeDeviceMappings != null && s.RecipeDeviceMappings.Count == logicalCount
+            // ★ 2026-09-16：同上，映射完成度含过程声明设备（如运动卡 CardAlias）
+            int requiredCount = logicalCount + GetProcessDeclaredDeviceRequirements(s).Count;
+            bool mappingOk = requiredCount == 0
+                || (s.RecipeDeviceMappings != null && s.RecipeDeviceMappings.Count == requiredCount
                     && s.RecipeDeviceMappings.All(m => !string.IsNullOrWhiteSpace(m.MappedDeviceId)));
             bool triggerOk;
             if (s.TriggerSourceType == TriggerSourceType.Timer) triggerOk = s.TimerIntervalMs > 0;
@@ -1387,7 +1437,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // 订阅工位的配方切换回调
             SelectedStation.OnBoundRecipeChangedAction = SyncRecipeMappings;
 
-            if (SelectedStation.BoundRecipe != null && SelectedStation.RecipeDeviceMappings.Count == 0)
+            // 🌟 核心修复（2026-09-10）：只要绑定了配方就重建映射表（以 BoundRecipe.LogicalDevices 为准），
+            //   而非仅 RecipeDeviceMappings.Count==0 时。否则改名后持久化的旧映射残留旧 ID，
+            //   逻辑映射 Tab 显示旧逻辑设备 ID，导致无法正确映射 / 运行时找不到相机。
+            if (SelectedStation.BoundRecipe != null)
             {
                 SyncRecipeMappings();
             }
@@ -1457,19 +1510,136 @@ namespace Grayson.Vision.WpfUI.ViewModel
             DetachEngineTeachPanel();
         }
 
+        /// <summary>
+        /// 业务过程声明的设备需求（取过程配置的设备别名，如 CardAlias）。
+        /// 背景（2026-09-16 实测 ST_002）：配方逻辑设备清单来自【视觉流程节点】的 [LogicalDeviceBinding]，
+        /// 而运动卡是【业务过程层】按 CardAlias 消费的 —— 流程里没有机器人节点 ⇒ 映射清单永远缺席
+        /// ⇒ 工位上下文无 IMotionCard ⇒ 运行报「未解析到运动控制卡 [EpsonRobot]」。
+        /// ★★ 取值必须按【过程真实反序列化】（与生产端同源），不能裸读 JSON 键：
+        ///    库里 JSON 常常键缺席（ST_002 实测整库无 "CardAlias" 字节），运行时靠
+        ///    VisionPickPlaceConfig.CardAlias 的 C# 默认值 "EpsonRobot" 工作 —— 裸读 JSON 恒为空。
+        /// 处置：过程需求与配方逻辑设备【同级】进入映射 Tab，同样从硬件池按类型绑定领用。
+        /// </summary>
+        private static List<RecipeDeviceMappingModel> GetProcessDeclaredDeviceRequirements(StationModel s)
+        {
+            var list = new List<RecipeDeviceMappingModel>();
+            if (s == null || string.IsNullOrWhiteSpace(s.ProcessKey))
+                return list;
+            try
+            {
+                string cardAlias = null;
+                switch (s.ProcessKey.Trim())
+                {
+                    case "VisionPickPlace":
+                        var vp = string.IsNullOrWhiteSpace(s.ProcessConfigJson)
+                            ? new VisionPickPlaceConfig()
+                            : JsonConvert.DeserializeObject<VisionPickPlaceConfig>(s.ProcessConfigJson);
+                        cardAlias = vp?.CardAlias;
+                        break;
+                    case "MahjongDualNozzle":
+                        var md = string.IsNullOrWhiteSpace(s.ProcessConfigJson)
+                            ? new MahjongDualNozzleConfig()
+                            : JsonConvert.DeserializeObject<MahjongDualNozzleConfig>(s.ProcessConfigJson);
+                        cardAlias = md?.CardAlias;
+                        break;
+                    default:
+                        // 未注册类型：退回裸键读取（大小写敏感，拿不到就当无需求）
+                        if (!string.IsNullOrWhiteSpace(s.ProcessConfigJson))
+                        {
+                            var jo = Newtonsoft.Json.Linq.JObject.Parse(s.ProcessConfigJson);
+                            cardAlias = jo.Value<string>("CardAlias");
+                        }
+                        break;
+                }
+
+                if (!string.IsNullOrWhiteSpace(cardAlias))
+                {
+                    list.Add(new RecipeDeviceMappingModel
+                    {
+                        LogicalDeviceId = cardAlias.Trim(),
+                        LogicalDeviceName = "过程需求·运动卡",
+                        LogicalDeviceType = "MotionCard",
+                        RequiredSpec = "业务过程 [" + s.ProcessKey.Trim() + "] 声明的运动控制卡（CardAlias）",
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                // 解析失败不阻塞映射页；该行缺席会令就绪清单保持"未完成"，不会静默放行
+                System.Diagnostics.Debug.WriteLine("[StationManage] 过程设备需求解析失败: " + ex.Message);
+            }
+            return list;
+        }
+
         private void SyncRecipeMappings()
         {
             if (SelectedStation?.BoundRecipe == null) return;
 
+            // 🌟 核心修复（2026-09-10）：改名场景下映射表可能残留旧 LogicalDeviceId。
+            //   记录旧映射（含用户手动绑定的 MappedDeviceId），重建时按 ID/类型继承，
+            //   避免"改个相机逻辑名字 → 逻辑映射 Tab 显示旧 ID / 丢失物理绑定"。
+            var oldMappings = SelectedStation.RecipeDeviceMappings?
+                .Where(m => m != null && !string.IsNullOrEmpty(m.LogicalDeviceId))
+                .ToList()
+                ?? new List<RecipeDeviceMappingModel>();
+
             SelectedStation.RecipeDeviceMappings.Clear();
+
+            // ★★ 2026-09-15 修复（静默张冠李戴）：同一工位内【两个逻辑设备不得落到同一台物理设备】。
+            //   旧代码的类型继承兜底 `FirstOrDefault(同类设备)` 不排除"已被别的逻辑设备占走的那台"，
+            //   于是第二条 Camera 逻辑设备静默捡到第一台（上相机）。运行时 RegisterDevice 两次注册同一实例，
+            //   无异常、无日志，链条照跑 —— 表现为"配的是下固定相机，出来的却是上相机画面"。
+            //   现在：已被占用的物理设备不再被自动推断捡走；推断不出来就【留空】（运行时会响亮拦下），绝不猜。
+            var claimedDevices = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // 物理设备键 -> 占用它的逻辑设备名
+
             if (SelectedStation.BoundRecipe.LogicalDevices != null)
             {
                 foreach (var logical in SelectedStation.BoundRecipe.LogicalDevices)
                 {
-                    var preferredHardware = SelectedStation.HardwareDevices
-                        .FirstOrDefault(h => h.DeviceType?.Equals(logical.LogicalDeviceType, StringComparison.OrdinalIgnoreCase) == true)
-                        ?? SelectedStation.HardwareDevices.FirstOrDefault()
-                        ?? GlobalHardwarePool.FirstOrDefault();
+                    // 1. 优先继承旧映射里同 ID 的物理绑定（未改名）
+                    var exact = oldMappings.FirstOrDefault(m =>
+                        string.Equals(m.LogicalDeviceId, logical.LogicalDeviceId, StringComparison.OrdinalIgnoreCase));
+                    string mappedId = exact?.MappedDeviceId;
+
+                    // 1b. ★ 该物理设备已被同工位另一条逻辑设备占用 ⇒ 视为无效（原先会被静默沿用，病灶永久固化）
+                    if (!string.IsNullOrEmpty(mappedId) && claimedDevices.ContainsKey(mappedId))
+                    {
+                        mappedId = null;
+                    }
+
+                    // 2. 改名兜底：同 ID 没找到 → 按类型继承（同类设备），★排除已被占用
+                    if (string.IsNullOrEmpty(mappedId))
+                    {
+                        var sameType = oldMappings.FirstOrDefault(m =>
+                            !string.IsNullOrEmpty(m.MappedDeviceId)
+                            && !claimedDevices.ContainsKey(m.MappedDeviceId)
+                            && string.Equals(m.LogicalDeviceType, logical.LogicalDeviceType, StringComparison.OrdinalIgnoreCase));
+                        mappedId = sameType?.MappedDeviceId;
+                    }
+
+                    // 3. 默认首选硬件（★同样排除已被占用；★先在本工位找同类型，再扩大到全局池找同类型，
+                    //    最后才退到"任意类型"——保证"相机逻辑设备被绑到机械手上"这种明显不同类的兜底排到最后）
+                    if (string.IsNullOrEmpty(mappedId))
+                    {
+                        var preferredHardware = SelectedStation.HardwareDevices
+                            .FirstOrDefault(h => h.DeviceType?.Equals(logical.LogicalDeviceType, StringComparison.OrdinalIgnoreCase) == true
+                                                 && !claimedDevices.ContainsKey(h.DeviceId))
+                            ?? GlobalHardwarePool.FirstOrDefault(h => h.DeviceType?.Equals(logical.LogicalDeviceType, StringComparison.OrdinalIgnoreCase) == true
+                                                 && !claimedDevices.ContainsKey(h.DeviceId))
+                            ?? SelectedStation.HardwareDevices.FirstOrDefault(h => !claimedDevices.ContainsKey(h.DeviceId))
+                            ?? GlobalHardwarePool.FirstOrDefault(h => !claimedDevices.ContainsKey(h.DeviceId));
+                        mappedId = preferredHardware?.DeviceId;
+                    }
+
+                    // 4. ★ 推断不出来 ⇒ 留空（不猜）。空映射会在 RefreshRecipePickerState 里显示为"未映射"，
+                    //    运行时也会因"物理设备不在设备池/未映射"而响亮失败，而不是静默用错硬件。
+                    if (!string.IsNullOrEmpty(mappedId))
+                    {
+                        var ownerName = string.IsNullOrWhiteSpace(logical.LogicalDeviceName)
+                            ? logical.LogicalDeviceId
+                            : logical.LogicalDeviceName;
+                        claimedDevices[mappedId] = ownerName;
+                    }
 
                     SelectedStation.RecipeDeviceMappings.Add(new RecipeDeviceMappingModel
                     {
@@ -1477,9 +1647,50 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         LogicalDeviceName = logical.LogicalDeviceName,
                         LogicalDeviceType = logical.LogicalDeviceType,
                         RequiredSpec = logical.RequiredSpec,
-                        MappedDeviceId = preferredHardware?.DeviceId
+                        MappedDeviceId = mappedId
                     });
                 }
+            }
+
+            // ★★ 2026-09-16：业务过程声明的设备需求（如 VisionPickPlace 的 CardAlias=运动卡）
+            //   与配方逻辑设备【同级】参与映射。旧链只从流程节点提取，运动卡永远缺席 ⇒
+            //   工位上下文无 IMotionCard ⇒ 运行报"未解析到运动控制卡"。
+            //   同样遵守"不猜"纪律：只按声明类型（MotionCard）从池里挑、排除已占用；
+            //   推断不出就留空，映射 Tab 显示"未映射"，运行时响亮拦下 —— 绝不做"任意类型"兜底。
+            foreach (var req in GetProcessDeclaredDeviceRequirements(SelectedStation))
+            {
+                if (SelectedStation.RecipeDeviceMappings.Any(m =>
+                        string.Equals(m.LogicalDeviceId, req.LogicalDeviceId, StringComparison.OrdinalIgnoreCase)))
+                    continue;   // 配方侧已声明同名逻辑设备（罕见），以配方为准
+
+                var exactReq = oldMappings.FirstOrDefault(m =>
+                    string.Equals(m.LogicalDeviceId, req.LogicalDeviceId, StringComparison.OrdinalIgnoreCase));
+                string mappedReq = exactReq?.MappedDeviceId;
+                if (!string.IsNullOrEmpty(mappedReq) && claimedDevices.ContainsKey(mappedReq))
+                    mappedReq = null;   // 已被别的逻辑设备占用 ⇒ 视为无效，重新推断
+
+                if (string.IsNullOrEmpty(mappedReq))
+                {
+                    var hw = SelectedStation.HardwareDevices
+                        .FirstOrDefault(h => h.DeviceType?.Equals(req.LogicalDeviceType, StringComparison.OrdinalIgnoreCase) == true
+                                             && !claimedDevices.ContainsKey(h.DeviceId))
+                        ?? GlobalHardwarePool.FirstOrDefault(h => h.DeviceType?.Equals(req.LogicalDeviceType, StringComparison.OrdinalIgnoreCase) == true
+                                             && !claimedDevices.ContainsKey(h.DeviceId));
+                    mappedReq = hw?.DeviceId;   // 仍可能为 null ⇒ 留空
+                }
+
+                if (!string.IsNullOrEmpty(mappedReq))
+                    claimedDevices[mappedReq] = string.IsNullOrWhiteSpace(req.LogicalDeviceName)
+                        ? req.LogicalDeviceId : req.LogicalDeviceName;
+
+                SelectedStation.RecipeDeviceMappings.Add(new RecipeDeviceMappingModel
+                {
+                    LogicalDeviceId = req.LogicalDeviceId,
+                    LogicalDeviceName = req.LogicalDeviceName,
+                    LogicalDeviceType = req.LogicalDeviceType,
+                    RequiredSpec = req.RequiredSpec,
+                    MappedDeviceId = mappedReq
+                });
             }
             RefreshReadiness();
         }

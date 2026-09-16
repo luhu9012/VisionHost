@@ -341,6 +341,23 @@ namespace Plugins.Robot.Epson
         }
 
         /// <summary>
+        /// 【门型运动 Jump】本适配器（RCAPINet7 直连）暂未实现 —— 返回错误而不是"退化成 Go 顶替"。
+        ///
+        /// ★为什么不顶替：`Go(pt)` 会把"先抬到安全高度"和"不走逐轴 L 形"这两件事**同时丢掉**，
+        ///   而调用方会以为拿到了门型 —— 正是本次要修的病灶形态（吸持工件低位横穿）。
+        ///   返回错误后，上层 <see cref="StationProcessBase.TryMoveJumpAsync"/> 会**显式降级**
+        ///   为"抬 Z → XY → 降 Z"并打 WARN 留痕。
+        /// 【若要在此落地】RCAPINet.Spel 若提供 Jump 点运动，按
+        ///   `_spel.Jump(pt)` + 预先设定的全局 LimZ（SPEL+ 的 LimZ 语句）实现；
+        ///   判据必须与脚本 SafeJump 同源（limZ 必须高于目标 Z，否则拒绝）。
+        /// </summary>
+        public string MoveJump(float x, float y, float z, float u, float limZ, float speed)
+        {
+            return "本适配器(RCAPINet7 直连)暂未实现门型运动(JUMP)：请改用 TCP 脚本通道，"
+                 + "或在此按 RCAPINet.Spel 的 Jump 语义落地（LimZ 判据须与脚本 SafeJump 同源）";
+        }
+
+        /// <summary>
         /// 回机械原点。RC+7.5.1 Home() 无参重载（整轴回零）。
         /// TODO(现场)：如工程里定义了分组回零/安全回零顺序，建议在 SPEL+ 工程
         /// 写一个 HomeAll 函数后用 _spel.Execute 调用，避免 Z 带料直接横移。

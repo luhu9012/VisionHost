@@ -61,6 +61,31 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private int _guideStuckFrames;
         private double _guideStuckMin;
 
+        // ================= 取流/触发模式与预览状态(2026-09-10 重做) =================
+        /// <summary>
+        /// 相机当前触发模式:-1 未知 / 0 连续 / 1 软触发。
+        /// 这是本页原先"完全没法用"的根因:软触发模式下 StartGrabbing() 只起流、不出图,
+        /// 必须先发触发才有帧。旧版一连上就 SetTriggerMode(1),而"开始预览""实时引导"
+        /// 都只调 StartGrabbing() → 预览永久黑屏、引导永久"等待相机帧"。
+        /// 现在的约定:预览/实时引导走连续(0);采帧/扫描前才切软触发(1),采完自动切回。
+        /// </summary>
+        private int _triggerMode = -1;
+
+        /// <summary>有采帧正在等新帧:帧回调只在此时整幅克隆 Buffer(GigE 大帧整幅克隆很贵,不该白烧)</summary>
+        private volatile bool _captureWaitActive;
+
+        /// <summary>引导线程尚未消费上一帧:限制克隆/分析速率,避免追不上帧率</summary>
+        private volatile bool _guideFramePending;
+
+        /// <summary>用户是否要求开着预览(采帧临时切软触发后据此自动恢复连续预览)</summary>
+        private bool _previewRequested;
+
+        /// <summary>预览渲染总开关(扫描/走位期间关掉,把 UI 线程让给流程)</summary>
+        private volatile bool _renderEnabled = true;
+
+        private int _fpsFrames;
+        private DateTime _fpsWindowStart = DateTime.Now;
+
         public CameraTuneViewModel()
         {
             _devicePool = App.StationHostRuntime?.DevicePool
@@ -117,7 +142,24 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public bool IsCameraConnected { get => _isCameraConnected; private set => Set(ref _isCameraConnected, value); }
 
         private bool _isGrabbing;
-        public bool IsGrabbing { get => _isGrabbing; set => Set(ref _isGrabbing, value); }
+        public bool IsGrabbing
+        {
+            get => _isGrabbing;
+            set { if (Set(ref _isGrabbing, value)) { UpdateCamStatus(); RefreshCommands(); } }
+        }
+
+        // ================= 顶部状态条(一眼看出"能不能用") =================
+        private string _camStatusText = "相机:未连接";
+        /// <summary>相机链路状态一句话:未连接 / 已连接·未取流 / 取流中(连续) / 取流中(软触发)</summary>
+        public string CamStatusText { get => _camStatusText; private set => Set(ref _camStatusText, value); }
+
+        private Brush _camStatusBrush = Brushes.Gray;
+        /// <summary>状态灯颜色:灰=未连接 绿=取流中 金=已连接未取流 橙=异常</summary>
+        public Brush CamStatusBrush { get => _camStatusBrush; private set => Set(ref _camStatusBrush, value); }
+
+        private string _frameInfoText = "—";
+        /// <summary>帧信息:分辨率 / 像素格式 / 实测帧率(取流中才有意义)</summary>
+        public string FrameInfoText { get => _frameInfoText; private set => Set(ref _frameInfoText, value); }
 
         private bool _isBusyScanning;
         public bool IsBusyScanning
@@ -292,30 +334,24 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             CmdConnect = new RelayCommand(_ => ConnectCamera(), _ => SelectedCameraDevice != null && !IsCameraConnected);
             CmdDisconnect = new RelayCommand(_ => DisconnectCamera(), _ => IsCameraConnected);
-            CmdStartPreview = new RelayCommand(_ =>
-            {
-                if (SelectedCameraDevice == null) return;
-                var r = SelectedCameraDevice.StartGrabbing();
-                IsGrabbing = r?.Success == true;
-            }, _ => IsCameraConnected && !IsGrabbing);
-            CmdStopPreview = new RelayCommand(_ =>
-            {
-                SelectedCameraDevice?.StopGrabbing();
-                IsGrabbing = false;
-            }, _ => IsCameraConnected && IsGrabbing);
+            // 预览 = 连续模式取流(软触发模式下 StartGrabbing 不出图,绝不能在这里直接起流)
+            CmdStartPreview = new RelayCommand(_ => StartPreview(),
+                _ => SelectedCameraDevice != null && !IsBusyScanning && !IsGuiding && !IsPreviewing);
+            CmdStopPreview = new RelayCommand(_ => StopPreview(), _ => IsPreviewing);
 
-            CmdSnap = new RelayCommand(_ => RunUi(() =>
+            CmdSnap = new RelayCommand(_ => RunBackground(() =>
             {
-                AppendLog("手动软触发单拍(点动对焦观察用)…");
+                AppendLog("抓一帧并评清晰度(会临时切软触发,完成后自动恢复预览)…");
                 var f = CaptureOnce();
                 if (f != null)
                 {
                     var s = FocusScore.Evaluate(f);
-                    AppendLog($"单拍 {f.Width}x{f.Height} {f.PixelFormat} · 清晰度 {s:F1}");
-                    ProgressText = $"当前帧清晰度 {s:F1}(越大越清晰;扫描/对焦时观察此数)";
+                    AppendLog($"单帧 {f.Width}x{f.Height} {f.PixelFormat} · 清晰度 {s:F1}");
+                    RunUi(() => ProgressText = $"当前帧清晰度 {s:F1}(越大越清晰;对焦时盯这个数)");
                 }
-                else AppendLog("⚠ 单拍未取到新帧");
-            }), _ => IsCameraConnected);
+                else AppendLog("⚠ 未取到新帧(见日志:触发/取流问题)");
+                ResumePreviewIfRequested();
+            }), _ => SelectedCameraDevice != null && !IsBusyScanning && !IsGuiding);
 
             CmdMoveXp = MakeJog(() => BindX, 1); CmdMoveXm = MakeJog(() => BindX, -1);
             CmdMoveYp = MakeJog(() => BindY, 1); CmdMoveYm = MakeJog(() => BindY, -1);
@@ -334,10 +370,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             CmdSaveReport = new RelayCommand(_ => SaveReport(), _ => Runs.Count > 0 || Points.Count > 0);
             CmdClearLog = new RelayCommand(_ => RunUi(() => Logs.Clear()), _ => Logs.Count > 0);
             CmdStartGridCheck = new RelayCommand(_ => StartGridAsync(), _ =>
-                !IsBusyScanning && !IsGuiding && Points.Count > 0 && IsCameraConnected && SelectedMotionDevice != null);
+                !IsBusyScanning && !IsGuiding && IsCameraConnected && SelectedMotionDevice != null);
             CmdRefreshDevices = new RelayCommand(_ => ReloadDevices(), _ => !IsBusyScanning);
-            CmdSnapGrade = new RelayCommand(_ => RunUi(SnapAndGrade), _ => !IsBusyScanning && !IsGuiding && SelectedCameraDevice != null);
-            CmdAnalyzeImaging = new RelayCommand(_ => RunUi(AnalyzeImaging), _ => !IsBusyScanning && !IsGuiding && SelectedCameraDevice != null);
+            CmdSnapGrade = new RelayCommand(_ => RunBackground(SnapAndGrade), _ => !IsBusyScanning && !IsGuiding && SelectedCameraDevice != null);
+            CmdAnalyzeImaging = new RelayCommand(_ => RunBackground(AnalyzeImaging), _ => !IsBusyScanning && !IsGuiding && SelectedCameraDevice != null);
             CmdResetImagingParams = new RelayCommand(_ => RunUi(() =>
             {
                 _paramSyncFlag = true;
@@ -352,7 +388,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog("成像参数已重置:曝光 8000us / 增益 2.0,并已下发硬件。");
             }), _ => !IsBusyScanning && !IsGuiding && SelectedCameraDevice != null);
             CmdStartGuide = new RelayCommand(_ => StartGuideAsync(), _ =>
-                !IsBusyScanning && !IsGuiding && IsCameraConnected && SelectedCameraDevice != null);
+                !IsBusyScanning && !IsGuiding && SelectedCameraDevice != null);
             CmdStopGuide = new RelayCommand(_ =>
             {
                 _guideAbortRequested = true;
@@ -383,10 +419,24 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             var origin = Points.FirstOrDefault(p => !double.IsNaN(p.Px) && !double.IsNaN(p.Py));
             var motion = SelectedMotionDevice;
-            if (origin == null || motion == null)
+            if (motion == null)
             {
-                AppendLog("请先把 Mark 对到视野中心并『登记当前为一点』作为网格中心。");
+                AppendLog("请先绑定运动设备(承载走位)。");
                 return;
+            }
+            // 免登记:没登记点就直接以"当前位置"为网格原点(把 Mark 放到视野中心即可),
+            // 少一步操作;登记过点则用登记点,便于复现同一网格。
+            if (origin == null)
+            {
+                var fx = motion.GetFeedbackPosition(BindX);
+                var fy = motion.GetFeedbackPosition(BindY);
+                if (fx?.Success != true || fy?.Success != true)
+                {
+                    AppendLog("⚠ 读不到当前 X/Y 位置,无法确定网格原点。请先把 Mark 对到视野中心并『登记当前为一点』。");
+                    return;
+                }
+                origin = new TunePoint { Name = "当前位置", Px = fx.Data, Py = fy.Data };
+                AppendLog($"网格原点取当前位置 X={fx.Data:F2} Y={fy.Data:F2}(请确认 Mark 就在视野中心)。");
             }
             double step = ParseD(GridStepText, 10.0);
             if (step <= 0.01) { AppendLog("步长须 > 0 mm。"); return; }
@@ -406,6 +456,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             IsBusyScanning = true;
             _scanAbortRequested = false;
+            _renderEnabled = false;   // 走位期间关预览渲染:把 UI 线程让给流程,也避免和采帧抢帧
             ResultText = "网格走位比对进行中…";
             var pxList = new List<double>(); var pyList = new List<double>();
             var wxList = new List<double>(); var wyList = new List<double>();
@@ -482,6 +533,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             finally
             {
                 IsBusyScanning = false;
+                ResumePreviewIfRequested();
             }
         }
 
@@ -521,6 +573,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             SelectedCameraDevice = CameraDeviceList.FirstOrDefault();
             SelectedMotionDevice = MotionDeviceList.FirstOrDefault();
+            UpdateCamStatus();
         }
 
         /// <summary>手动刷新:重新从设备池拉取一次并输出诊断(供『🔄 刷新设备』按钮)。</summary>
@@ -573,17 +626,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             if (oldCam != null)
             {
+                oldCam.StopGrabbing();
                 oldCam.FrameReceived -= OnCameraFrameReceived;
                 oldCam.StateChanged -= OnCameraStateChanged;
             }
+            _triggerMode = -1;
+            _previewRequested = false;
             if (newCam == null)
             {
                 IsCameraConnected = false; IsGrabbing = false;
+                UpdateCamStatus();
                 RefreshCommands();
                 return;
             }
             newCam.FrameReceived += OnCameraFrameReceived;
             newCam.StateChanged += OnCameraStateChanged;
+            // ★ 关键修复:相机可能已被别处(工站/硬件调试台)连上,此时不会再发 StateChanged。
+            //   旧版不主动同步状态 → IsCameraConnected 恒为 false → "开始预览"永久置灰,
+            //   现场观感就是"这页完全没法用"。这里按设备实际状态直接对齐。
+            IsCameraConnected = newCam.State == DeviceState.Connected;
+            IsGrabbing = false;
+            UpdateCamStatus();
             RefreshCommands();
         }
 
@@ -599,39 +662,166 @@ namespace Grayson.Vision.WpfUI.ViewModel
             RunUi(() =>
             {
                 IsCameraConnected = state == DeviceState.Connected;
-                if (!IsCameraConnected) { IsGrabbing = false; RefreshCommands(); }
+                if (!IsCameraConnected) { IsGrabbing = false; _triggerMode = -1; }
+                UpdateCamStatus();
+                RefreshCommands();
             });
         }
 
         private void OnMotionStateChanged(object sender, DeviceState state) { }
 
+        /// <summary>是否正在连续预览(取流中且处于连续模式)</summary>
+        public bool IsPreviewing => IsGrabbing && _triggerMode == 0;
+
+        /// <summary>确保相机已连接(已连则直接成功;连接动作只在未连时执行)。</summary>
+        private bool EnsureCameraConnected(out string message)
+        {
+            message = null;
+            var cam = SelectedCameraDevice;
+            if (cam == null) { message = "未选择相机"; return false; }
+            if (IsCameraConnected && cam.State == DeviceState.Connected) return true;
+            var r = cam.Connect();
+            if (r == null || !r.Success) { message = r?.Message ?? "无应答"; return false; }
+            IsCameraConnected = true;
+            AppendLog($"相机已连接: {cam.DeviceName}");
+            return true;
+        }
+
         private void ConnectCamera()
         {
             if (SelectedCameraDevice == null) return;
-            var r = SelectedCameraDevice.Connect();
-            if (r.Success)
+            if (!EnsureCameraConnected(out var msg))
             {
-                SelectedCameraDevice.SetTriggerMode(1); // 软触发模式
-                IsCameraConnected = true;
-                AppendLog($"相机已连接: {SelectedCameraDevice.DeviceName}");
-            }
-            else
-            {
-                AppendLog($"相机连接失败: {r.Message}");
-                MessageBox.Show("相机连接失败: " + r.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppendLog($"相机连接失败: {msg}");
+                MessageBox.Show("相机连接失败: " + msg, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                RefreshCommands();
+                return;
             }
             RefreshCommands();
+            // 连上直接开预览:少一步点击,也顺带证明"链路是通的"
+            StartPreview();
         }
 
         private void DisconnectCamera()
         {
+            _previewRequested = false;
             SelectedCameraDevice?.StopGrabbing();
             SelectedCameraDevice?.Disconnect();
             IsGrabbing = false;
             IsCameraConnected = false;
+            _triggerMode = -1;
             RunUi(() => CameraDisplayVm.Clear());
+            UpdateCamStatus();
             AppendLog("相机已断开。");
             RefreshCommands();
+        }
+
+        // ================= 取流:连续预览 / 软触发采集 的切换中枢 =================
+        /// <summary>
+        /// 切到连续模式并起流(预览 + 实时引导用)。
+        /// 必须显式 SetTriggerMode(0):若相机停在软触发,StartGrabbing 只会"武装"不会出图。
+        /// </summary>
+        private void StartPreview()
+        {
+            var cam = SelectedCameraDevice;
+            if (cam == null) return;
+            if (!EnsureCameraConnected(out var msg))
+            {
+                AppendLog("⚠ 无法开预览:" + msg);
+                UpdateCamStatus();
+                RefreshCommands();
+                return;
+            }
+
+            _previewRequested = true;
+            if (_triggerMode != 0)
+            {
+                var mr = cam.SetTriggerMode(0);
+                if (mr == null || !mr.Success)
+                {
+                    AppendLog("⚠ 切连续模式失败:" + (mr?.Message ?? "无应答") + " —— 预览可能不出图,请检查相机是否被占用。");
+                }
+                _triggerMode = 0;
+            }
+            if (!IsGrabbing)
+            {
+                var sr = cam.StartGrabbing();
+                IsGrabbing = sr?.Success == true;
+                if (!IsGrabbing) AppendLog("⚠ 启动取流失败:" + (sr?.Message ?? "无应答"));
+            }
+            RunUi(() => _renderEnabled = true);
+            UpdateCamStatus();
+            if (IsPreviewing) AppendLog("预览已开启(连续取流)。");
+            RefreshCommands();
+        }
+
+        /// <summary>停预览:只停流,保持连接(随时可再点开预览)。</summary>
+        private void StopPreview()
+        {
+            _previewRequested = false;
+            SelectedCameraDevice?.StopGrabbing();
+            IsGrabbing = false;
+            UpdateCamStatus();
+            AppendLog("预览已停止(相机仍保持连接)。");
+            RefreshCommands();
+        }
+
+        /// <summary>
+        /// 切到软触发模式(采帧/扫描用),仅在必要时下发。
+        /// 标定向导的教训:SetTriggerMode(1) 只写 TriggerMode/TriggerSource,若相机固件停在
+        /// 连续自由流,触发要么被吞、要么等一个随机出帧时刻 —— 必须走 ConfigureSoftwareTrigger()。
+        /// </summary>
+        private void EnsureTriggered(ICamera cam)
+        {
+            if (_triggerMode == 1) return;
+            var r = cam.ConfigureSoftwareTrigger();
+            if (r == null || !r.Success)
+            {
+                AppendLog("⚠ 软触发配置未完全生效(" + (r?.Message ?? "无应答") + "),退化为基础软触发模式。");
+                cam.SetTriggerMode(1);
+            }
+            _triggerMode = 1;
+            UpdateCamStatus();
+        }
+
+        /// <summary>采帧结束后:若用户要预览,把流切回连续,避免预览停在黑屏。</summary>
+        private void ResumePreviewIfRequested()
+        {
+            if (!_previewRequested || _cleaned) return;
+            if (_triggerMode != 0 || !IsGrabbing)
+            {
+                var cam = SelectedCameraDevice;
+                if (cam == null) return;
+                cam.SetTriggerMode(0);
+                _triggerMode = 0;
+                if (!IsGrabbing)
+                {
+                    var sr = cam.StartGrabbing();
+                    IsGrabbing = sr?.Success == true;
+                }
+            }
+            RunUi(() => _renderEnabled = true);
+            UpdateCamStatus();
+        }
+
+        /// <summary>把"相机/取流/模式/帧率"汇总成一行状态,界面顶部常显(旧版这些信息全藏在日志里)。</summary>
+        private void UpdateCamStatus()
+        {
+            string link;
+            Brush brush;
+            if (!IsCameraConnected) { link = "未连接"; brush = Brushes.Gray; }
+            else if (!IsGrabbing) { link = "已连接 · 未取流"; brush = Brushes.Gold; }
+            else if (_triggerMode == 1) { link = "取流中 · 软触发(采帧)"; brush = Brushes.DeepSkyBlue; }
+            else { link = "取流中 · 连续预览"; brush = Brushes.LimeGreen; }
+
+            string text = "相机:" + (SelectedCameraDevice?.DeviceName ?? "—") + " · " + link;
+            // 本方法可能被后台线程(采帧/扫描)调用,属性写入一律回 UI 线程,避免跨线程绑定异常
+            RunUi(() =>
+            {
+                CamStatusText = text;
+                CamStatusBrush = brush;
+                OnPropertyChanged(nameof(IsPreviewing));
+            });
         }
 
         // ================= 帧回调:登记最新帧 + 限帧上屏 =================
@@ -639,22 +829,42 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             if (e?.Buffer == null || e.Width <= 0 || e.Height <= 0) return;
 
-            // 评分用副本(回调线程与扫描线程并发,防 Buffer 被 SDK 复用)
-            _latestFrame = new FrameEventArgs
+            // ---- 帧率统计:约 2 秒刷一次状态条(旧版连"有没有在出图"都看不出来) ----
+            var now = DateTime.Now;
+            _fpsFrames++;
+            if ((now - _fpsWindowStart).TotalSeconds >= 2.0)
             {
-                Buffer = (byte[])e.Buffer.Clone(),
-                Width = e.Width,
-                Height = e.Height,
-                PixelFormat = e.PixelFormat,
-                Timestamp = e.Timestamp,
-                FrameNum = e.FrameNum,
-                NativePointer = e.NativePointer
-            };
-            _frameArrivedEvent.Set();
+                double fps = _fpsFrames / (now - _fpsWindowStart).TotalSeconds;
+                _fpsFrames = 0; _fpsWindowStart = now;
+                string info = $"{e.Width}×{e.Height} {e.PixelFormat} · 约 {fps:F1} fps";
+                RunUi(() => FrameInfoText = info);
+            }
 
-            // 上屏(约 20 FPS 限帧)
-            if ((DateTime.Now - _lastRenderTime).TotalMilliseconds < 50) return;
-            _lastRenderTime = DateTime.Now;
+            // ---- 只在"确实有人在等这一帧"时克隆。
+            //      整幅克隆很贵(5MP Mono8 ≈ 5MB/帧),预览时每帧克隆纯属白烧 CPU;
+            //      但采帧/引导必须拿副本 —— 回调线程与扫描线程并发,SDK 会复用 Buffer。
+            bool needForCapture = _captureWaitActive;
+            bool needForGuide = IsGuiding && !_guideFramePending;
+            if (needForCapture || needForGuide)
+            {
+                _latestFrame = new FrameEventArgs
+                {
+                    Buffer = (byte[])e.Buffer.Clone(),
+                    Width = e.Width,
+                    Height = e.Height,
+                    PixelFormat = e.PixelFormat,
+                    Timestamp = e.Timestamp,
+                    FrameNum = e.FrameNum,
+                    NativePointer = e.NativePointer
+                };
+                if (needForGuide) _guideFramePending = true;
+                _frameArrivedEvent.Set();
+            }
+
+            // ---- 上屏(约 20 FPS 限帧);扫描/走位期间关渲染,把 UI 线程让给流程 ----
+            if (!_renderEnabled) return;
+            if ((now - _lastRenderTime).TotalMilliseconds < 50) return;
+            _lastRenderTime = now;
 
             var frame = e;
             Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
@@ -677,38 +887,70 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }), System.Windows.Threading.DispatcherPriority.Render);
         }
 
-        // ================= 单帧采集(不吃旧帧:重置后软触发等新帧 ×3) =================
+        // ================= 单帧采集(不吃旧帧:切软触发 → 触发 → 等新帧) =================
+        /// <summary>
+        /// 取一帧"刚刚触发出来的"新图。语义与标定向导一致:
+        ///   ① 相机侧先 ConfigureSoftwareTrigger(),确保真在软触发且关掉帧率限制;
+        ///   ② 起流(软触发模式下 StartGrabbing 只是"武装",不出图);
+        ///   ③ Reset 事件 → 软触发 → 等帧;首帧给 2500ms 容忍 GigE 冷启动,重试 800ms 快速重触发
+        ///      (丢帧的那一帧不会再来,干等无意义);
+        ///   ④ 失败宁可返回 null,绝不沿用上一张旧图 —— 走位后旧图 = 上一位置的坐标。
+        /// </summary>
         private FrameEventArgs CaptureOnce()
         {
             var cam = SelectedCameraDevice;
             if (cam == null) return null;
-            if (!IsCameraConnected)
+            if (!EnsureCameraConnected(out var connMsg))
             {
-                var cr = cam.Connect();
-                if (!cr.Success) { AppendLog("相机连接失败:" + cr.Message); return null; }
-                cam.SetTriggerMode(1);
-                IsCameraConnected = true;
+                AppendLog("相机连接失败:" + connMsg);
+                return null;
             }
+
+            EnsureTriggered(cam);
+
             if (!IsGrabbing)
             {
                 var sr = cam.StartGrabbing();
                 IsGrabbing = sr?.Success == true;
+                if (!IsGrabbing)
+                {
+                    AppendLog("⚠ 启动采集流失败:" + (sr?.Message ?? "无应答") + "(相机可能被其它页面占用)");
+                    return null;
+                }
             }
 
-            for (int attempt = 0; attempt < 3; attempt++)
+            const int maxAttempts = 5;
+            const int firstWaitMs = 2500;
+            const int retryWaitMs = 800;
+            _captureWaitActive = true;
+            try
             {
-                _frameArrivedEvent.Reset();
-                _latestFrame = null;
-                var trig = cam.SoftTrigger();
-                if (trig == null || !trig.Success) trig = cam.SoftwareTrigger();
-                if (trig == null || !trig.Success)
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
                 {
-                    Thread.Sleep(150);
-                    continue;
+                    int waitMs = attempt == 1 ? firstWaitMs : retryWaitMs;
+                    _frameArrivedEvent.Reset();
+                    _latestFrame = null;
+
+                    var trig = cam.SoftTrigger();
+                    if (trig == null || !trig.Success) trig = cam.SoftwareTrigger();
+                    if (trig == null || !trig.Success)
+                    {
+                        if (attempt == maxAttempts)
+                            AppendLog($"⚠ 软触发指令失败({trig?.Message ?? "无应答"}):相机未武装或未起流。");
+                        Thread.Sleep(150);
+                        continue;
+                    }
+
+                    if (_frameArrivedEvent.WaitOne(waitMs) && _latestFrame != null) return _latestFrame;
+                    if (attempt < maxAttempts) Thread.Sleep(80);
                 }
-                if (_frameArrivedEvent.WaitOne(2000) && _latestFrame != null) return _latestFrame;
             }
-            AppendLog("⚠ 软触发 3 次均未等到新帧(不吃旧图),该步跳过。");
+            finally
+            {
+                _captureWaitActive = false;
+            }
+
+            AppendLog($"⚠ 软触发 {maxAttempts} 次均未等到新帧 —— 本次采图放弃(不沿用旧图,避免坐标错乱)。");
             return null;
         }
 
@@ -719,14 +961,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var f = CaptureOnce();
             if (f == null)
             {
-                FrameGradeText = "⚠ 未取到新帧(见日志):检查相机连接/触发模式/光源频闪。";
+                RunUi(() => FrameGradeText = "⚠ 未取到新帧(见日志):检查相机连接/触发/光源频闪。");
+                ResumePreviewIfRequested();
                 return;
             }
             var fs = FocusScore.Evaluate(f);
             var m = ImagingMetrics.Analyze(f);
-            FrameGradeText = $"清晰度 {fs:F0} · 亮度均值 {m.Mean:F1} · 过曝 {m.OverPct:F1}% · 欠曝 {m.UnderPct:F1}% · 对比σ {m.Std:F1} · 均匀CV {m.BlockCv:F1}%";
-            ProgressText = $"成像采样完成:清晰度 {fs:F0}(对焦参照) · 亮度均值 {m.Mean:F1}(目标≈中灰 100~180)";
+            string grade = $"清晰度 {fs:F0} · 亮度均值 {m.Mean:F1} · 过曝 {m.OverPct:F1}% · 欠曝 {m.UnderPct:F1}% · 对比σ {m.Std:F1} · 均匀CV {m.BlockCv:F1}%";
+            RunUi(() =>
+            {
+                FrameGradeText = grade;
+                ProgressText = $"成像采样完成:清晰度 {fs:F0}(对焦参照) · 亮度均值 {m.Mean:F1}(目标≈中灰 100~180)";
+            });
             AppendLog($"采样 {f.Width}x{f.Height}:清晰度 {fs:F0} / 均值 {m.Mean:F1} / 过曝 {m.OverPct:F1}% / 欠曝 {m.UnderPct:F1}% / 分块CV {m.BlockCv:F1}%");
+            ResumePreviewIfRequested();
         }
 
         private void AnalyzeImaging()
@@ -735,13 +983,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var f = CaptureOnce();
             if (f == null)
             {
-                ImagingReportText = "⚠ 未取到新帧,无法分析。请先确认相机可正常采图。";
+                RunUi(() => ImagingReportText = "⚠ 未取到新帧,无法分析。请先确认相机可正常采图。");
+                ResumePreviewIfRequested();
                 return;
             }
             var fs = FocusScore.Evaluate(f);
             var m = ImagingMetrics.Analyze(f);
-            ImagingReportText = BuildImagingReport(f, fs, m);
+            var report = BuildImagingReport(f, fs, m);
+            RunUi(() => ImagingReportText = report);
             AppendLog("成像体检完成:逐项判定与打光处方已生成(见体检报告)。");
+            ResumePreviewIfRequested();
         }
 
         /// <summary>把当前帧指标转成逐项 ✅/⚠ 判定 + 可操作处方(面向打光/曝光调试,不给模糊结论)。</summary>
@@ -811,6 +1062,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             IsBusyScanning = true;
             _scanAbortRequested = false;
+            _renderEnabled = false;   // 扫描期间关预览渲染(每步都在采图,渲染只会拖慢并抢帧)
             var motion = SelectedMotionDevice;
             int zAxis = BindZ;
             double half = Math.Max(ScanRange, ScanStep);
@@ -914,6 +1166,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             finally
             {
                 IsBusyScanning = false;
+                ResumePreviewIfRequested();
             }
         }
 
@@ -1088,10 +1341,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
             _lastGuideFrame = -1;
             IsGuiding = true;
             GuideStatusText = "启动中…";
-            if (SelectedCameraDevice != null && !IsGrabbing)
+            _guideFramePending = false;
+            // ★ 实时引导靠"连续流"(免走位、边调边看)。软触发模式下裸 StartGrabbing 不会出图,
+            //   所以这里必须走连续模式的 StartPreview —— 旧版就是在这里永久"等待相机帧…"。
+            StartPreview();
+            if (!IsPreviewing)
             {
-                var sr = SelectedCameraDevice.StartGrabbing();
-                IsGrabbing = sr?.Success == true;
+                RunUi(() =>
+                {
+                    IsGuiding = false;
+                    GuideStatusText = "启动失败";
+                    GuideVerdictText = "⚠ 无法启动取流:请先确认相机已连接(看顶部状态条与日志)。";
+                    GuideVerdictBrush = Brushes.Orange;
+                });
+                return;
             }
             var mode = (PerpMeasureMode)PerpModeIndex;
             AppendLog("▶ 实时垂直度引导启动 · 方案 " + PerpModeNames[PerpModeIndex]
@@ -1113,9 +1376,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         }
                         idle = 0;
                         var f = _latestFrame;
-                        if (f == null || f.FrameNum == _lastGuideFrame) continue;
-                        _lastGuideFrame = f.FrameNum;
-                        ProcessGuideFrame(f, mode);
+                        // FrameNum 单调递增用于去重;个别相机恒为 0 时退化为"每帧都算"(EMA 平滑,无副作用)
+                        bool isNew = f != null && (f.FrameNum == 0 || f.FrameNum != _lastGuideFrame);
+                        if (isNew)
+                        {
+                            _lastGuideFrame = f.FrameNum;
+                            ProcessGuideFrame(f, mode);
+                        }
+                        _guideFramePending = false;
                     }
                 });
             }
@@ -1255,6 +1523,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public void Cleanup()
         {
             _cleaned = true;
+            _previewRequested = false;
+            _renderEnabled = false;
+            _captureWaitActive = false;
             _scanAbortRequested = true;
             _guideAbortRequested = true;
             if (SelectedCameraDevice != null)
@@ -1316,6 +1587,26 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var d = Application.Current?.Dispatcher;
             if (d == null || d.CheckAccess()) action();
             else d.BeginInvoke(action);
+        }
+
+        /// <summary>
+        /// 把"会阻塞的采图/扫描"丢到后台线程执行 —— 旧版把这些直接跑在 UI 线程上,
+        /// 一次采图最长要等 5×800ms,界面会整段假死(用户观感同样是"没法用")。
+        /// </summary>
+        private void RunBackground(Action work)
+        {
+            if (IsBusyScanning) return;
+            IsBusyScanning = true;
+            Task.Run(() =>
+            {
+                try { work(); }
+                catch (Exception ex)
+                {
+                    AppendLog("操作异常: " + ex.Message);
+                    Debug.WriteLine($"[CameraTune] background exception: {ex}");
+                }
+                finally { RunUi(() => IsBusyScanning = false); }
+            });
         }
     }
 

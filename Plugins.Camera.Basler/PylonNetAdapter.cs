@@ -82,6 +82,20 @@ namespace Plugins.Camera.Basler
         private System.Threading.Thread _grabThread;
         private volatile bool _grabbing;
 
+        /// <summary>
+        /// ★ 2026-09-10 软触发「武装」就绪标志。
+        ///
+        /// 根因：pylon 的 ExecuteSoftwareTrigger() 在 StreamGrabber.Start() 返回后并不立即可用——
+        /// 相机固件把 AcquisitionActive 置位是异步的（GigE 上往返 + 固件状态机，实测可达数百 ms）。
+        /// 之前的做法是「Start 后立刻触发，失败就 Sleep(200) 重试 3 次」，于是有两种失败形态：
+        ///   ① 触发指令本身报 "Grabbing has not been started" → 空等 200ms×2 后才成功；
+        ///   ② 触发被固件静默吞掉（不抛异常但不出帧）→ 上层只能靠 1200ms 超时发现，
+        ///      三点连续吞掉就中止采样（正是日志里的「3 次触发均未收到新帧」）。
+        /// 修复：Start 后主动轮询 AcquisitionStatusSelector=AcquisitionTriggerWait（相机已武装、
+        /// 正等触发信号）作为「可触发」判据，就绪后再发触发；未就绪则继续等，不浪费触发机会。
+        /// </summary>
+        private volatile bool _triggerArmed;
+
         /// <summary>当前帧回调（支持采集运行中刷新，避免重复订阅同一事件）</summary>
         private Action<FrameEventArgs> _frameSink;
 
@@ -203,20 +217,33 @@ namespace Plugins.Camera.Basler
                     System.Diagnostics.Debug.WriteLine($"[Basler] GigE 包大小处理异常(不致命): {ex.Message}");
                 }
 
-                // ★ 连接默认强制复位为连续采集（TriggerMode=Off）—— 关键根因修复。
-                //   相机硬件不会自动复位上一次软触发遗留的 TriggerMode=On；若此处不显式
-                //   复位，上层（ConfigParams 缺 TriggerModeSelect 时）既不下发 Off、UI 又
-                //   停在默认连续模式，导致连上后连续采集相机一直在等软触发 → 零帧、无画面。
-                //   后续若 UI 选择软触发，SetTriggerMode(1) 会再把 TriggerMode 设回 On。
-                string tmErr = SetNode("TriggerMode", "Off");
-                if (tmErr != null)
+                // ★ GigE 帧缓冲扩容（2026-09-10 三轮修复，buffer underrun 丢帧）：
+                //   日志实测 Code=-520093676 "The buffer was incompletely grabbed"。
+                //   ★ 上一轮错点：写相机侧节点 [MaxNumBuffer] —— acA2500-14gc 根本没这节点
+                //     （日志实锤 "@CameraDevice/MaxNumBuffer does not exist"），写了白写。
+                //   ★ pylon 8 的 IStreamGrabber 接口也无 MaxNumBuffer 属性（主机侧缓冲由 pylon
+                //     按 GrabStrategy/GrabLoop 自动分配）。
+                //   真正的根因不是缓冲数量，而是【相机停在自由流持续推 10MB 大图】——
+                //   一旦相机真正进入软触发（每触发只出一帧），缓冲需求骤降，underrun 自然消失。
+                //   因此这里不再强行设缓冲，只记录相机是否支持该参数（诊断用）。
+                try
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Basler] 复位触发模式为连续失败(不致命): {tmErr}");
+                    object mnb = GetNode("GevSCPD");
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[Basler] GigE 流控制参数 GevSCPD={mnb}（缓冲由 pylon 自动管理）");
                 }
-                else
+                catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine("[Basler] 已复位触发模式为连续采集(TriggerMode=Off)");
+                    System.Diagnostics.Debug.WriteLine($"[Basler] GigE 流控制参数读取异常(不致命): {ex.Message}");
                 }
+
+                // ★ 2026-09-10 三轮修复：不再在 Open 末尾强制 TriggerMode=Off。
+                //   上一轮此处强制复位为连续采集，与标定链路「先 ConfigureSoftwareTrigger 切 On」
+                //   的时序打架：Open 关、StartGrabbing 前开，中间相机固件状态机来回切换，
+                //   配合 TriggerMode 切换是异步的，最终相机停在「半自由流半软触发」的中间态——
+                //   既在自由流持续推大图（buffer underrun 疯狂报错 + 卡顿），又没真正等触发。
+                //   现在 Open 阶段【不碰 TriggerMode】，触发模式完全交给上层显式配置，
+                //   ConfigureSoftwareTrigger / SetTriggerMode 负责把相机切到确定状态。
 
                 System.Diagnostics.Debug.WriteLine(
                     $"[Basler] Open 总耗时 {sw.ElapsedMilliseconds} ms | 相机IP={CameraIp()} | 主机IPv4=[{HostIpv4s()}]");
@@ -304,16 +331,15 @@ namespace Plugins.Camera.Basler
         {
             try
             {
-                // ① 相机是否在采集
-                string setErr = SetNode("AcquisitionStatusSelector", "AcquisitionActive");
-                if (setErr == null)
+                // ① 相机是否在采集。
+                // ★ 2026-09-10：AcquisitionStatusSelector 在 acA 系列 GigE 上是【只读】节点，
+                //   旧代码写它 → 必然抛 "Enum entry is not writable" → 被 catch 成
+                //   "读 AcquisitionActive 失败"，日志刷屏且掩盖真实状态。
+                //   改为只读 AcquisitionStatus（不做选择器写入），拿不到就静默跳过。
+                object acqActive = GetNode("AcquisitionStatus");
+                if (acqActive != null)
                 {
-                    object acqActive = GetNode("AcquisitionStatus");
-                    System.Diagnostics.Debug.WriteLine($"[Basler] 相机采集状态 AcquisitionActive={acqActive}");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Basler] 读 AcquisitionActive 失败(不致命): {setErr}");
+                    System.Diagnostics.Debug.WriteLine($"[Basler] 相机采集状态 AcquisitionStatus={acqActive}");
                 }
 
                 // ② 流通道 0 的目的 IP（GevSCDA 是 32 位整数，按大端还原成点分十进制）
@@ -330,10 +356,9 @@ namespace Plugins.Camera.Basler
                     System.Diagnostics.Debug.WriteLine("[Basler] 流目的IP GevSCDA 读取失败(不致命)");
                 }
 
-                // ③ 是否有帧在传输
-                SetNode("AcquisitionStatusSelector", "FrameTransfer");
+                // ③ 是否有帧在传输（同上：不写选择器，读不到就跳过）
                 object ft = GetNode("AcquisitionStatus");
-                System.Diagnostics.Debug.WriteLine($"[Basler] 帧传输中 FrameTransfer={ft}");
+                System.Diagnostics.Debug.WriteLine($"[Basler] 采集状态 AcquisitionStatus={ft}");
             }
             catch (Exception ex)
             {
@@ -501,6 +526,7 @@ namespace Plugins.Camera.Basler
             }
 
             _frameSink = frameSink;
+            _triggerArmed = false;   // ★ 新会话：触发武装态未知，首次触发前重新轮询
 
             try
             {
@@ -693,6 +719,27 @@ namespace Plugins.Camera.Basler
                                 System.Diagnostics.Debug.WriteLine(
                                     $"[Basler] 取流失败 #{_grabFailureCount}: Code={grabResult.ErrorCode} {grabResult.ErrorDescription}");
                             }
+
+                            // ★ 2026-09-10 二轮修复：buffer underrun 会「吃掉本次软触发」——
+                            //   触发已下发、相机也曝光了，但数据没完整传到主机，这一帧永久丢失。
+                            //   上层此时在等帧窗口里干等（最坏 2.5s），纯属浪费。
+                            //   这里立即补发一次软触发，让上层能更快拿到新帧。
+                            //   仅对 underrun 类错误补触发；其它错误（如相机已停采）补触发无意义。
+                            //   补触发失败不抛出——取流线程绝不能因补触发而退出。
+                            if (_grabFailureCount <= 10)
+                            {
+                                try
+                                {
+                                    _camera.ExecuteSoftwareTrigger();
+                                    System.Diagnostics.Debug.WriteLine(
+                                        "[Basler] 检测到丢帧，已立即补发软触发（缩短上层等帧时间）");
+                                }
+                                catch (Exception tex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine(
+                                        $"[Basler] 丢帧后补触发失败(不致命): {tex.Message}");
+                                }
+                            }
                             continue;
                         }
 
@@ -792,6 +839,7 @@ namespace Plugins.Camera.Basler
             try
             {
                 _grabbing = false;
+                _triggerArmed = false;   // ★ 停流后武装态失效，下次起流重新轮询
                 if (_camera != null && _camera.StreamGrabber != null && _camera.StreamGrabber.IsGrabbing)
                 {
                     _camera.StreamGrabber.Stop();
@@ -830,16 +878,159 @@ namespace Plugins.Camera.Basler
         }
 
         /// <summary>
+        /// 相机侧配置为软触发取图（2026-09-10）。
+        ///
+        /// 九点/旋转标定的每个采样点都必须是「走位到位 → 软触发 → 拿本点新帧」，
+        /// 连续自由流（TriggerMode=Off）下相机按自己的节奏出图，上层「等新帧」本质是
+        /// 在等一个随机时刻——出帧慢时必然超时，走位后还可能拿到上一位置的帧。
+        /// 因此标定链路上相机必须真正处于软触发模式。
+        ///
+        /// 关键点（缺一个都会导致「触发了但不出帧」）：
+        ///   ① TriggerSelector=FrameStart —— 否则 TriggerMode 可能作用在别的选择器上；
+        ///   ② TriggerMode=On + TriggerSource=Software；
+        ///   ③ AcquisitionFrameRateEnable=false —— 帧率限制开启时相机会丢弃超速触发，
+        ///      表现为「触发成功但无帧」；
+        ///   ④ 帧缓冲数量拉高 —— GigE 突发丢包时靠缓冲吸收，避免 buffer underrun。
+        /// </summary>
+        public string ConfigureSoftwareTrigger()
+        {
+            if (!IsOpen) return "相机未打开，无法配置软触发";
+            var errs = new System.Text.StringBuilder();
+
+            void Try(string node, object val)
+            {
+                string e = SetNode(node, val);
+                if (e != null) errs.Append($"{node}: {e}; ");
+            }
+
+            Try("TriggerSelector", "FrameStart");
+            Try("TriggerMode", "On");
+            Try("TriggerSource", "Software");
+            // 帧率限制会丢触发，必须关掉；部分型号节点名不同，失败不致命
+            Try("AcquisitionFrameRateEnable", false);
+            Try("TriggerActivation", "RisingEdge");
+
+            // ★ 2026-09-10 三轮修复：配置后【验证回读】，绝不「盲配置假装成功」。
+            //   上一轮病灶：ConfigureSoftwareTrigger 拼错就返回，上层拿到失败也只是一行警告
+            //   继续走，没人验证 TriggerMode 到底切没切过去。实测日志「TriggerMode=On」只是
+            //   DumpCameraState 在写命令发出瞬间读的缓存值，相机固件实际可能仍停在自由流。
+            //   这里配置完立即回读关键节点，若 TriggerMode 没真正变成 On，直接报错，
+            //   让上层知道软触发未生效，而不是带着自由流继续走标定。
+            string tmReadback = Convert.ToString(GetNode("TriggerMode"));
+            string tsReadback = Convert.ToString(GetNode("TriggerSource"));
+            System.Diagnostics.Debug.WriteLine(
+                $"[Basler] 软触发配置回读: TriggerMode={tmReadback} TriggerSource={tsReadback}");
+
+            if (errs.Length > 0)
+            {
+                return "软触发配置失败: " + errs.ToString();
+            }
+
+            // TriggerMode 回读不是 On → 相机固件没切过去（只读锁/异步未生效），必须暴露，
+            // 让上层决定是否退化或重试，而不是继续「自由流 + 假软触发」跑完整轮标定。
+            if (!string.Equals(tmReadback, "On", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"软触发配置未生效：TriggerMode 回读={tmReadback ?? "null"}（期望 On）";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 等待相机「武装完成」——即 AcquisitionTriggerWait 置位（已进入等触发状态）。
+        /// 这是软触发可用的真实判据，比固定 Sleep 可靠：GigE 往返 + 固件状态机切换
+        /// 实测可达数百 ms，固定短延时要么白等要么漏触发。
+        /// </summary>
+        private bool WaitTriggerArmed(int timeoutMs)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                try
+                {
+                    // AcquisitionStatusSelector 在部分型号上只读，写失败则退化为读 AcquisitionStatus
+                    string setErr = SetNode("AcquisitionStatusSelector", "AcquisitionTriggerWait");
+                    object st = GetNode("AcquisitionStatus");
+                    if (setErr == null && st is bool && (bool)st)
+                    {
+                        return true;
+                    }
+                    if (setErr != null)
+                    {
+                        // 选择器写不进去 → 无法用状态位判定，直接按"已武装"处理，
+                        // 由上层触发+等帧兜底（不因诊断能力缺失而卡死标定）。
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[Basler] AcquisitionStatusSelector 不可写({setErr})，跳过武装轮询");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Basler] 武装轮询异常: {ex.Message}");
+                    return true;
+                }
+                System.Threading.Thread.Sleep(10);
+            }
+            System.Diagnostics.Debug.WriteLine($"[Basler] 武装轮询 {timeoutMs}ms 未就绪（继续按已武装处理）");
+            return false;
+        }
+
+        /// <summary>
         /// 软触发（pylon 8 原生方法，比走 TriggerSoftware 命令节点更稳）。
         ///
         /// ⚠ 竞态修复（2026-09-02）：StreamGrabber.Start() 返回后，相机固件"武装"
         /// （AcquisitionActive 置位）是异步的——紧跟在 Start 之后的 ExecuteSoftwareTrigger
         /// 会报 "Grabbing has not been started"。节点执行路径（Start 后毫秒级发软触发）
         /// 100% 踩中；调试界面人工点击有几百 ms 间隔所以正常。修复：失败重试（200ms×2）。
+        ///
+        /// ★ 2026-09-10 强化：改为「先轮询武装就绪再触发」，并把触发指令失败与
+        ///   「触发成功但固件吞掉」两种形态都纳入重试，避免上层 1200ms 超时中止采样。
         /// </summary>
         public string TriggerSoftware()
         {
             if (!IsOpen) return "相机未打开，无法软触发";
+
+            // 首次触发前等武装就绪；后续触发相机已在等触发态，直接发即可
+            // ★ 2000ms → 500ms：首点武装轮询是「第一个点慢」的元凶。软触发模式下
+            //   StreamGrabber.Start 后相机在几百 ms 内即进入等触发态；500ms 足够覆盖，
+            //   等不到也不再硬拖（由上层等帧兜底），避免每轮首点白等 2 秒。
+            if (!_triggerArmed)
+            {
+                _triggerArmed = WaitTriggerArmed(500);
+            }
+
+            // ★ 2026-09-10 三轮修复：触发前【清空残留缓冲】。
+            //   上一轮病灶：若相机实际仍处于自由流（TriggerMode 没真正切到 On），
+            //   取流队列里已经躺着若干帧陈旧大图，上层 ExecuteSoftwareTrigger 后
+            //   等到的「新帧」其实是队列里上一位置（甚至更早）的旧帧 → 走位↔像素错配，
+            //   正是「结果还不对」的直接来源。
+            //   这里在发触发前把已积压的 grab result 全部领走丢弃，保证下一次
+            //   _frameSink 收到的一定是触发后的新帧。
+            try
+            {
+                if (_camera.StreamGrabber != null && _camera.StreamGrabber.IsGrabbing)
+                {
+                    Bsl.IGrabResult stale;
+                    int drained = 0;
+                    while (drained < 16 &&
+                           (stale = _camera.StreamGrabber.RetrieveResult(1, Bsl.TimeoutHandling.Return)) != null)
+                    {
+                        stale.Dispose();
+                        drained++;
+                    }
+                    if (drained > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[Basler] 触发前清空残留缓冲 {drained} 帧（避免拿到上一位置旧图）");
+                    }
+                }
+            }
+            catch (Exception dex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Basler] 触发前清缓冲异常(不致命): {dex.Message}");
+            }
+
+            Exception last = null;
             for (int attempt = 1; attempt <= 3; attempt++)
             {
                 try
@@ -849,17 +1040,18 @@ namespace Plugins.Camera.Basler
                 }
                 catch (Exception ex)
                 {
+                    last = ex;
                     if (attempt < 3)
                     {
                         System.Diagnostics.Debug.WriteLine(
                             $"[Basler] 软触发第 {attempt} 次失败（{ex.Message}），等待 200ms 重试…");
                         System.Threading.Thread.Sleep(200);
-                        continue;
                     }
-                    return $"软触发执行失败: {ex.Message}";
                 }
             }
-            return null; // 不可达
+            // 触发连续失败：相机可能已被复位/掉出武装态，下次调用重新轮询
+            _triggerArmed = false;
+            return $"软触发执行失败: {last?.Message}";
         }
 
         public void Dispose()

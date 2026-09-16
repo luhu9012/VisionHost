@@ -1,4 +1,5 @@
 using Grayson.Vision.Contracts.Calibration.Models;
+using Grayson.Vision.Contracts.Calibration.Services;
 using Grayson.Vision.Contracts.Flow.Enums;
 using System;
 using System.Threading;
@@ -56,6 +57,91 @@ namespace Grayson.Vision.Core.Processes
             _cfg = config ?? new MahjongDualNozzleConfig();
         }
 
+        // ============================================================================
+        // ★★2026-09-15：消费口径收敛到唯一真源 CalibrationConsumptionContract
+        //   动机：本类的 PickAnchor / U 项判断原先与 VisionPickPlaceProcess **各写一份**
+        //   （"判据写两遍=靠巧合正确"）。两份一旦分叉，校验台"压中"的那个口径在生产端就不成立，
+        //   而分型错只是整体平移（差一个 |b| 量级），RMS 根本抓不到 ⇒ 没有闸门能发现。
+        //   现状：判定 + 物位换算 + 走位换算全部转发契约，本类只把结果落到运动指令上。
+        //   与 VisionPickPlaceProcess 的唯一差异：本类有**双吸嘴**，ecc 逐次调用传入。
+        // ============================================================================
+        private ConsumptionDecision _consumption;
+        private ConsumptionInputs _consumptionInputs;
+
+        /// <summary>本工位生效的消费口径（首次访问时判定 + 与发布标签对账 + 打横幅）</summary>
+        private ConsumptionDecision Consumption
+        {
+            get
+            {
+                if (_consumption == null) BuildConsumptionDecision();
+                return _consumption;
+            }
+        }
+
+        /// <summary>口径判定所需的数值（从工位配置摊开）</summary>
+        private ConsumptionInputs ConsumptionInputs
+        {
+            get
+            {
+                if (_consumptionInputs == null) BuildConsumptionDecision();
+                return _consumptionInputs;
+            }
+        }
+
+        /// <summary>
+        /// 从工位配置反读口径 + 与发布标签对账 + 打启动横幅。
+        /// 约定：这里**不推断、不猜**——配置里没写的，就是"没写"，一律显式告警。
+        /// </summary>
+        private void BuildConsumptionDecision()
+        {
+            _consumptionInputs = new ConsumptionInputs
+            {
+                IsDownCamera = false,                  // 本业务线无下相机
+                HandEyeInNozzleDomain = _cfg.HandEyeInNozzleDomain,
+                NozzleAxisCoaxial = _cfg.NozzleAxisCoaxial,
+                IsEyeInHand = _cfg.NeedsOCompensation || _cfg.CameraMountEih,
+                HasTruthWalkPath = false,              // 生产端不持档案路径；分型已由配置字段承载
+                HasRotationCenter = Math.Abs(_cfg.RotCenterWx) > 1e-9 || Math.Abs(_cfg.RotCenterWy) > 1e-9,
+                HasEcc = Math.Abs(_cfg.Nozzle1EccX) > 1e-9 || Math.Abs(_cfg.Nozzle1EccY) > 1e-9,
+                HasToolOffsetDirect = false,
+                HasRodOffsetCandidate = _cfg.HasRodOffset,
+                RodOffsetWx = _cfg.RodOffsetWx,
+                RodOffsetWy = _cfg.RodOffsetWy,
+                RodOffsetSource = "工位配置 RodOffsetWx/Wy（发布链写入）",
+                RodOffsetSign = _cfg.RodOffsetSign,
+                // ★2026-09-16：符号"值是 +1"≠"判定过 +1"（键缺席取默认 1f，看着像已确认）。
+                //   选错偏 2|b|，比不补更危险 ⇒ 把"是否判定过"单独带进闸。
+                RodOffsetSignDeclared = _cfg.RodOffsetSignDeclared,
+                PhotoBaseX = _cfg.PhotoBaseX,
+                PhotoBaseY = _cfg.PhotoBaseY,
+                RotCenterWx = _cfg.RotCenterWx,
+                RotCenterWy = _cfg.RotCenterWy,
+                EccX = _cfg.Nozzle1EccX,
+                EccY = _cfg.Nozzle1EccY,
+                U0Deg = _cfg.ToolAlignU,
+            };
+
+            _consumption = CalibrationConsumptionContract.FromPublishedConfig(
+                isDownCamera: false,
+                handEyeInNozzleDomain: _cfg.HandEyeInNozzleDomain,
+                needsOCompensation: _cfg.NeedsOCompensation,
+                cameraMountEih: _cfg.CameraMountEih,
+                hasRodOffset: _cfg.HasRodOffset,
+                nozzleAxisCoaxial: _cfg.NozzleAxisCoaxial,
+                rodOffsetSign: _cfg.RodOffsetSign);
+
+            // —— 出厂横幅：现场排障第一眼要看的行 ——
+            Log($"口径：{_consumption.KindText}  算式：{_consumption.Formula}");
+
+            // —— 与发布标签对账 + 跨源核对 + 不通过就拦：全部收敛到 StationProcessBase.EnforceConsumptionGate
+            //    （★2026-09-16 迁出本处）。为什么搬走：原先"DiffAgainstTag != null 才报错"把
+            //    「从未发布过（无标签）」当成「一致」放行了 —— 那正是最危险的状态。
+
+            // —— 阻断项：明确说清"这次会偏多少、去哪补"，不静默降级 ——
+            foreach (var blk in _consumption.Blockers) Log($"⛔ {blk}");
+            foreach (var wn in _consumption.Warnings) Log($"⚠ {wn}");
+        }
+
         /// <summary>
         /// 执行一次「吸取摆盘」循环（单吸嘴搬 1 块 / 双吸嘴搬 2 块）。
         /// 返回 true = 成功；false = 视觉 NG 或中途异常（Z 轴已抬至安全高度）。
@@ -66,7 +152,17 @@ namespace Grayson.Vision.Core.Processes
             Log($"========== 工件吸嘴分拣 开始 [{nozzleMode}] ==========");
             try
             {
+                // ---- Phase -1: 口径解析 + 跨源核对（★2026-09-16）----
+                // 口径真源 = 该工位相机槽的标定档案（= 校验台校验成功时用的那一份裁定）；
+                //   工位过程配置只是"发布那一刻的快照"，过期了不会再安静生效。
+                _consumption = ResolveConsumptionGate(Consumption, ConsumptionInputs,
+                                                     _cfg.ConsumptionTag, "MahjongDualNozzle");
+
                 // ---- Phase 0: 安全检查 ----
+                // 运动卡通道探活（★2026-09-16）：半死 TCP 时 State 仍报 Connected，故障会被推迟到
+                // 下面第一条 IO 指令；先探活，失败即断开重连，仍不通则抛出带处置指引的异常。
+                EnsureMotionCardAlive();
+
                 // Z 抬至安全高度（低于安全高度说明上次异常残留，先抬升）
                 await EnsureSafeZAsync(token).ConfigureAwait(false);
 
@@ -101,6 +197,17 @@ namespace Grayson.Vision.Core.Processes
                 double worldY1 = GetOutValue<double>(calibNode, "OutputY");
                 double matchAngle = GetOutValue<double>(matchNode, "MatchAngle");
 
+                // ★ 角度读数兜底（2026-09-12）：同上，防匹配分支异常时 DataValue 为 null 导致角度被误当 0°。
+                if (double.IsNaN(matchAngle))
+                {
+                    Log("⚠ [Phase1] MatchAngle 为 NaN（匹配端口异常），角度归正将按 0° 处理，请检查模板匹配是否正常输出角度。");
+                    matchAngle = 0;
+                }
+                if (_cfg.EnableVisionAngleCorrection && Math.Abs(matchAngle) < 1e-9)
+                {
+                    Log("⚠ [Phase1] 视觉角归正已开启但 MatchAngle=0°：若来料带角度，请确认 ShapeMatch.MatchAngle 端口已正确输出。");
+                }
+
                 Log($"[Phase1] 牌1视觉结果: Score={score:F3}, World=({worldX1:F3}, {worldY1:F3}), Angle={matchAngle:F2}°");
 
                 if (score < _cfg.MinScore)
@@ -119,12 +226,16 @@ namespace Grayson.Vision.Core.Processes
                 if (_cfg.TeachMode)
                 {
                     var (ax, ay) = PickAnchor(worldX1, worldY1);
-                    var (wx, wy) = RotEcc(_cfg.WorkU - _cfg.ToolAlignU, _cfg.Nozzle1EccX, _cfg.Nozzle1EccY);
-                    double expectX = ax - wx;
-                    double expectY = ay - wy;
+                    // ★★2026-09-15：理论回转中心同样走契约（同轴⇒免 R(ΔU)·Ecc / 偏心⇒带 / 未声明⇒保守带），
+                    //   不再在本类手判一次 _cfg.NozzleAxisCoaxial。
+                    //   为什么这条要紧：示教模式是**零运动**验收入口，这里打出的 C* 就是"吸嘴正对工件中心时
+                    //   机械手该停哪"的基准值；口径若与生产走位不同源，拿它去对现场读数只会越对越偏。
+                    var teachInp = ConsumptionInputs.Clone();
+                    teachInp.EccX = _cfg.Nozzle1EccX; teachInp.EccY = _cfg.Nozzle1EccY;
+                    var (expectX, expectY) = CalibrationConsumptionContract.ResolveCommand(
+                        teachInp, Consumption, ax, ay, _cfg.WorkU, Log);
                     Log("[Phase2] 👉【示教模式】视觉定位完成，不执行走位/吸取。请手动移动机械手让吸嘴1 正对麻将中心，");
-                    Log($"[Phase2] 👉【示教模式】  工件真位 X_obj = P_photo + O − H(u) = ({ax:F3},{ay:F3})" +
-                        (_cfg.CameraMountEih ? "（EIH 眼在手）" : "（ETH 固定相机：X_obj = H(u)）"));
+                    Log($"[Phase2] 👉【示教模式】  工件真位 X_obj = ({ax:F3},{ay:F3})（{Consumption.KindText}：{Consumption.Formula}）");
                     Log($"[Phase2] 👉【示教模式】  理论回转中心 C* = X_obj − R({_cfg.WorkU:F0}° − U0 {_cfg.ToolAlignU:F0}°)·Ecc1 = ({expectX:F3},{expectY:F3})（吸嘴对准麻将中心时机械手应停在此处）");
                     Log($"[示教记录] H(u)=({worldX1:F3},{worldY1:F3}), P_photo=({_cfg.PhotoBaseX:F3},{_cfg.PhotoBaseY:F3}), O=({_cfg.RotCenterWx:F3},{_cfg.RotCenterWy:F3}), " +
                         $"EIH={_cfg.CameraMountEih}, ToolAlignU={_cfg.ToolAlignU:F1}, WorkU={_cfg.WorkU:F1}, " +
@@ -292,17 +403,24 @@ namespace Grayson.Vision.Core.Processes
 
         /// <summary>
         /// 像素 → 工件中心真位 X_obj（2026-09-08 定案式，唯一真源 CalibrationGeometry）。
-        /// 视觉输出 w = H(像素)，口径是「机械手该停哪」，不是工件真位：
-        ///   - 眼在手 EIH：X_obj = 拍照机位 P_photo + 旋转中心 O − H(u)
-        ///   - 固定相机 ETH：X_obj = H(u)
+        /// 视觉输出 w = H(像素)，口径是「机械手该停哪」，不是工件真位。三条互斥路径：
+        ///   - H 已在吸嘴域：X_obj = H(u)
+        ///   - 固定相机 + 杆端域：X_obj = H(u) + b（b=杆端 mark→吸嘴尖，同心吸嘴下与 U 无关）
+        ///   - 需 O 补偿（EIH）：X_obj = 拍照机位 P_photo + 旋转中心 O − H(u)
         /// 调用方（吸取/示教/放料）再按 C = X_obj − R(姿态U − U0)·Ecc 求回转中心目标。
         /// </summary>
         private (double X, double Y) PickAnchor(double wX, double wY)
         {
-            // 定案式（与校验台共用一个真源，杜绝公式分叉）：
-            //   EIH：X_obj = P_photo + O − H(u) ；ETH：X_obj = H(u)
-            return CalibrationGeometry.ObjectBase(wX, wY,
-                _cfg.PhotoBaseX, _cfg.PhotoBaseY, _cfg.RotCenterWx, _cfg.RotCenterWy, _cfg.CameraMountEih);
+            // ★★2026-09-15：算式收敛到 CalibrationConsumptionContract —— 与 VisionPickPlaceProcess、
+            //   校验台、发布链**同一个函数**。原先这里自己写了一份"吸嘴域 / 杆端域补 b / EIH 补 O"
+            //   的三分支 if/else，与 VisionPickPlaceProcess 的那份是**两份独立实现**；
+            //   这正是"判据写两遍=靠巧合正确"：两份一旦分叉，校验台压中的口径在生产端就不成立。
+            //   分支语义（由契约兜住，不再在本类复述）：
+            //     吸嘴域直吸 → X_obj = H(u)；
+            //     固定相机 + 杆端域 → X_obj = H(u) + Sign·b（b≈0 时显式告警并退化）；
+            //     EIH → X_obj = P_photo + O − H(u)。
+            return CalibrationConsumptionContract.ResolveObjectBase(
+                ConsumptionInputs, Consumption, wX, wY, Log);
         }
 
         /// <summary>
@@ -313,21 +431,49 @@ namespace Grayson.Vision.Core.Processes
         private async Task MoveToWorkAsync(double workX, double workY, double armU,
             float eccX, float eccY, CancellationToken token)
         {
-            // e 以 U0(ToolAlignU) 为参考 → 旋转量取 (armU − U0)；旧档 U0=0 时与原来完全一致
-            var (ex, ey) = RotEcc(armU - _cfg.ToolAlignU, eccX, eccY);
-            Log($"  偏心补偿：工件中心({workX:F3},{workY:F3}) − R({armU:F1}°−U0 {_cfg.ToolAlignU:F1}°)·Ecc({eccX:F3},{eccY:F3})" +
-                $" → 回转中心({workX - ex:F3},{workY - ey:F3})");
-            await MoveXyAsync(workX - ex, workY - ey, token).ConfigureAwait(false);
+            // ★★2026-09-15：U 项是否保留，交给口径契约统一决定（同轴⇒免项、偏心⇒带项、未声明⇒保守带项），
+            //   不再在本类里再判一次 _cfg.NozzleAxisCoaxial —— 那同样是"同一判据写两遍"。
+            //   双吸嘴：用 Clone() 覆盖偏心量。直接 `var local = inp` 是**改共享实例**，
+            //   会把吸嘴1 的偏心漏给吸嘴2 的下一次调用。
+            var local = ConsumptionInputs.Clone();
+            local.EccX = eccX; local.EccY = eccY;
+            local.HasEcc = Math.Abs(eccX) > 1e-9 || Math.Abs(eccY) > 1e-9;
+            var cmd = CalibrationConsumptionContract.ResolveCommand(local, Consumption, workX, workY, armU, Log);
+            await MoveXyAsync(cmd.X, cmd.Y, token).ConfigureAwait(false);
         }
 
         /// <summary>
-        /// XY 平移（Z 已在安全高度，可直接平面移动）。
+        /// 平面平移。★2026-09-16 起**默认走门型**（先抬到 JumpLimZ → 水平走 → 降回 SafeZ），
+        /// 不再逐轴拆成"先 X 后 Y"。
+        ///
+        /// 为什么改：逐轴拆两步末端走 L 形（先在拐角点停一次），实测该 L 形路径第二段
+        /// 离内圈边界只剩 1.5mm（贴边飞过）；门型走同一对点的直线余量 31.3mm。
         /// </summary>
         private async Task MoveXyAsync(double x, double y, CancellationToken token)
         {
-            await MoveAbsAsync(_cfg.AxisX, (float)x, _cfg.XySpeed, _cfg.SettleMs, token: token).ConfigureAwait(false);
-            await MoveAbsAsync(_cfg.AxisY, (float)y, _cfg.XySpeed, _cfg.SettleMs, token: token).ConfigureAwait(false);
+            await MoveGantryAsync(x, y, _cfg.SafeZ, token).ConfigureAwait(false);
         }
+
+        // ============================================================
+        // 门型走位参数（转发工位配置）
+        //
+        // ★门型算法本体只有一份：StationProcessBase.MoveGantryAsync / ResolveGantryLimZ。
+        //   这里只供货轴号与高度 —— 刻意不各写一份，避免"同一条判据写两遍 ⇒ 两边分叉"。
+        // ============================================================
+
+        /// <summary>X 轴号</summary>
+        protected override int AxisX => _cfg.AxisX;
+        /// <summary>Y 轴号</summary>
+        protected override int AxisY => _cfg.AxisY;
+        /// <summary>Z 轴号</summary>
+        protected override int AxisZ => _cfg.AxisZ;
+        /// <summary>U 轴号</summary>
+        protected override int AxisU => _cfg.AxisU;
+        /// <summary>门型水平段高度（安全通过高度，不是速度）</summary>
+        protected override float JumpLimZ => _cfg.JumpLimZ;
+        protected override float XySpeed => _cfg.XySpeed;
+        protected override float ZSpeed => _cfg.ZSpeed;
+        protected override int SettleMs => _cfg.SettleMs;
 
         // ============================================================
         // 安全与待机

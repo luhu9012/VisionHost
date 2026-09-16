@@ -5,7 +5,7 @@ using System.Windows;
 namespace Grayson.Vision.WpfUI.ViewModel.Steps
 {
     /// <summary>
-    /// 吸放式标定策略（CalibrationType.PickPlaceHandEye，行业标准 Pick&Place 标定）：
+    /// 吸放式标定策略（采集路径 PickPlaceReturn/RotatePickPlace，行业标准 Pick&Place 标定）：
     /// · 九点：机械臂用吸嘴吸住工件 → 平移到规划网格点放料 → 回【固定拍照位】拍照提取特征
     ///   （工件放哪、机械坐标就精确已知；相机每次同姿态成像=等效固定相机，精度/光照稳定）；
     /// · 旋转：吸住工件 → U 转到采样角 → 放回网格中心 → 回拍照位拍照，圆拟合求旋转中心 + 工具偏心矢量。
@@ -23,7 +23,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
                 case 2:
                     return "回拍照位抓图确认特征：放一个工件在网格中心附近，用 十字/圆/模板匹配 任一种确认特征稳定可识别（模板匹配需先选模板，无模板先在模板管理创建）。旋转段默认采样角 -45°/0°/+45°（跨度 90°，可在表格改）。";
                 case 3:
-                    return "点【单步吸放采样】= 吸住工件→放下一个网格点→回拍照位→自动提取；点【步进旋转采样】= 吸住→转 U→放中心→回拍（默认 -45°/0°/+45° 3 点）。全自动会连续完成 9 点+3 角（失败自动跳过并第二轮补采，已采≥6+≥3 可拟合）。";
+                    return "点【单步吸放采样】= 吸住工件→放下一个网格点→回拍照位→自动提取；点【步进旋转采样】= 吸住→转 U→放中心→回拍（默认 -45°/0°/+45° 3 点）。★ 旋转角为【相对吸持姿态 U_pick 的增量】：放料 U = U_pick + 表内角度，0°=不额外旋转。全自动会连续完成 9 点+3 角（失败自动跳过并第二轮补采，已采≥6+≥3 可拟合）。";
                 case 4:
                     return "拟合：九点解 HomMat（像素↔世界），旋转点圆拟合旋转中心并自动导出 工具偏心 ToolEcc（写回 Profile，供业务旋转补偿）。";
                 default:
@@ -52,6 +52,8 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
             }
 
             vm.RotationPoints.Clear();
+            // ★ 2026-09-10 相对角：点表重建 = 新一轮旋转采样，清掉旧基准角缓存（下次采样重读当前 U）
+            vm.ResetRotationBaseU();
             if (hOnly)
             {
                 // H 段会话：旋转归 e 段，不种旋转表（体检/UI/进度全部随 HasRotationStage=false 收敛）

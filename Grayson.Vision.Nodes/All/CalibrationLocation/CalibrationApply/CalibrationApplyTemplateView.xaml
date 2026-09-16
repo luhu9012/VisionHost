@@ -16,6 +16,12 @@
                     <TextBlock Text="标定方案标识/名称:" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding CalibrationProfileName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
+                    <TextBlock Text="相机槽键 (Cam_A / Cam_C, 可留空):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding CameraSlotKey, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 2"
+                             ToolTip="按『一个相机一个方案』口径自动定位该槽已发布的九点矩阵 H；留空则手选矩阵路径（旧行为）。"/>
+                    <TextBlock Text="填槽键后自动选中该槽的 H 矩阵（匹配文件名里 Cam_ 标识）；本节点只消费 H，e/t 补偿由流程编排层叠加"
+                               Foreground="#9E9E9E" FontSize="11" Margin="0 2 0 10" TextWrapping="Wrap"/>
+
                     <TextBlock Text="标定矩阵路径 (.tup):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <Grid Margin="0 0 0 2">
                         <Grid.ColumnDefinitions>

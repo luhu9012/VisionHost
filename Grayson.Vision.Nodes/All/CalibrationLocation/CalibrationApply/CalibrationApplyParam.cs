@@ -1,4 +1,5 @@
 ﻿using Grayson.Vision.Contracts.Calibration.Models;
+using Grayson.Vision.Contracts.Calibration.Services;
 using Grayson.Vision.Nodes.Common;
 using Newtonsoft.Json;
 using System;
@@ -19,6 +20,28 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.CalibrationApply
         {
             get => _calibrationProfileName;
             set => Set(ref _calibrationProfileName, value);
+        }
+
+        private string _cameraSlotKey = "";
+        /// <summary>
+        /// ★相机槽键（2026-09-12，Cam_A / Cam_C …）：视觉链节点按"一个相机一个方案"的口径
+        /// 定位到该槽已发布的九点矩阵 H。非空时，RefreshMatrixFiles 会优先把该槽对应的
+        /// .tup 自动选中（匹配文件名里的 Cam_ 槽标识 / 工位级发布目录）。
+        /// 留空 = 不按槽过滤，沿用"手选矩阵文件路径"的旧行为（向后兼容）。
+        /// 注意：本节点只消费 H（输出命令位域 H(u)），e/t 补偿不在此叠加——
+        /// 那是流程编排层/生产引擎的职责（它们才知道拍照机位与作业 U 角）。
+        /// </summary>
+        public string CameraSlotKey
+        {
+            get => _cameraSlotKey;
+            set
+            {
+                if (Set(ref _cameraSlotKey, value))
+                {
+                    // 换槽即重扫并按槽自动选中（若本槽有已发布矩阵）
+                    RefreshMatrixFiles();
+                }
+            }
         }
 
         private string _homMatFilePath = "";
@@ -59,7 +82,8 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.CalibrationApply
         /// <summary>
         /// 重新扫描标定文件的存储目录，刷新候选列表。来源：
         ///   1) Config\Calibrations\*.json —— 标定方案配置里记录的矩阵路径（标定管理界面产物）
-        ///   2) Recipes\**\Calib\*.tup —— 标定矩阵发布目录（设备级/工位级/配方级三个作用域）
+        ///   2) Recipes\**\Calib\*.tup —— 标定矩阵发布目录（工位级 / 配方级两个作用域；
+        ///      ★2026-09-15 已废弃的"设备级"作用域 Recipes\Devices 被显式排除）
         ///   3) 当前已选路径（兜底，保证下拉框不丢当前值）
         /// 扫描结果按文件名排序，重复项按全路径去重（Windows 路径大小写不敏感）。
         /// ⚠ 防坑：ComboBox 的 SelectedValue 双向绑定在候选列表"清空→重建"的瞬间会把
@@ -94,7 +118,9 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.CalibrationApply
             }
             catch { }
 
-            // 2. Recipes 发布目录下所有 .tup（设备级 / 工位级 / 配方级作用域）
+            // 2. Recipes 发布目录下所有 .tup（工位级 / 配方级两个作用域）
+            //    ★2026-09-15 单轨存储：显式排除已废弃的"设备级"作用域（Recipes\Devices）——
+            //      历史残留文件不应再出现在候选里（否则有人会手选到即将被清理的路径）。
             try
             {
                 string recipesDir = Path.Combine(baseDir, "Recipes");
@@ -102,6 +128,10 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.CalibrationApply
                 {
                     foreach (var tup in Directory.GetFiles(recipesDir, "*.tup", SearchOption.AllDirectories))
                     {
+                        if (CalibrationMatrixStore.IsLegacyDeviceScopePath(tup))
+                        {
+                            continue;
+                        }
                         files.Add(tup);
                     }
                 }
@@ -131,6 +161,32 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.CalibrationApply
                 {
                     HomMatFilePath = keep;
                 }
+            }
+
+            // 5. ★按相机槽自动选中（2026-09-12）：槽键非空且当前未选中时，
+            //    匹配文件名里带该槽标识（Cam_A/Cam_C…）的九点矩阵 H（排除旋转/偏心产物），
+            //    让"一个相机一个方案"在选文件时落到该槽的 H，不必手翻。
+            TryAutoSelectBySlot();
+        }
+
+        /// <summary>按相机槽键自动选中已发布的 H 矩阵（找不到则保持现状，不报错）。</summary>
+        private void TryAutoSelectBySlot()
+        {
+            if (string.IsNullOrWhiteSpace(_cameraSlotKey)) return;
+            if (!string.IsNullOrEmpty(_homMatFilePath)) return; // 已有选中值，尊重用户手选
+
+            string slot = _cameraSlotKey.Trim();
+            string matched = AvailableMatrixFiles.FirstOrDefault(f =>
+            {
+                string name = Path.GetFileNameWithoutExtension(f);
+                if (name.IndexOf(slot, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                // 排除旋转/偏心/像素当量产物，只认九点矩阵 H
+                return name.IndexOf("九点", StringComparison.Ordinal) >= 0
+                       || name.IndexOf("HandEye", StringComparison.OrdinalIgnoreCase) >= 0;
+            });
+            if (matched != null)
+            {
+                HomMatFilePath = matched;
             }
         }
 

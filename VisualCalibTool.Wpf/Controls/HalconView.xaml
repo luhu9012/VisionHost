@@ -1,0 +1,27 @@
+<UserControl x:Class="VisualCalibTool.Controls.HalconView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:halcon="clr-namespace:HalconDotNet;assembly=halcondotnet"
+             ClipToBounds="True"
+             Background="#FF1B1B1B">
+    <Grid x:Name="RootGrid" Background="#FF1B1B1B">
+        <!--
+          直接使用 halcondotnet 自带的 HSmartWindowControlWPF（HALCON 原生 WPF 控件），
+          不引入 HalconWrapper / HalconImageDisplayHost 那一套适配层。
+
+          ★ 三个必须记住的坑：
+            ① 内置缩放（HZoomContent）与自写 SetPart 不能混用 → 本控件把内置交互全部关掉，
+               缩放/平移由自己按 part 实现（见 code-behind）。
+            ② 该控件上方叠的 WPF 元素【不参与合成】，看不见 → 所有叠加一律画进 HALCON 窗口层。
+            ③ 它只转发部分鼠标事件 → 光标像素读数由 HMouseMove + 自算 part 映射得到，不依赖
+               未文档化的坐标转换重载。
+        -->
+        <halcon:HSmartWindowControlWPF x:Name="SmartWindow"
+                                       HInitWindow="SmartWindow_HInitWindow"
+                                       HMouseWheel="SmartWindow_HMouseWheel"
+                                       HMouseDown="SmartWindow_HMouseDown"
+                                       HMouseMove="SmartWindow_HMouseMove"
+                                       HMouseUp="SmartWindow_HMouseUp"
+                                       SizeChanged="SmartWindow_SizeChanged" />
+    </Grid>
+</UserControl>

@@ -196,6 +196,13 @@
                                     <StackPanel Grid.Row="0" Grid.Column="0">
                                         <TextBlock Text="配方名称" Style="{StaticResource FormLabelStyle}"/>
                                         <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32" Text="{Binding SelectedRecipe.RecipeName, UpdateSourceTrigger=PropertyChanged}"/>
+
+                                        <!-- 2026-09-10：编排流程（主流程）名称 —— 与配方名称相互独立、均可编辑。
+                                             该值即视觉流程编辑器面包屑 / 顶部「主流程:」显示的名称，两处改的是同一个 ProcessName。 -->
+                                        <TextBlock Text="主流程名称（编排流程）" Style="{StaticResource FormLabelStyle}" Margin="0,8,0,0"/>
+                                        <TextBox Style="{StaticResource ModernTextBoxStyle}" Height="32"
+                                                 Text="{Binding MainProcessName, UpdateSourceTrigger=PropertyChanged}"
+                                                 ToolTip="视觉流程编辑器面包屑上显示的名称，与配方名称相互独立；编辑器内也可用工具栏「重命名流程」修改"/>
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="0" Grid.Column="2">

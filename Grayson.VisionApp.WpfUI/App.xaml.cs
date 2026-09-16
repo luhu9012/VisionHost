@@ -119,9 +119,9 @@ namespace Grayson.Vision.WpfUI
 #if DEBUG
                 // 【VS 开发环境】：
                 // 日志默认输出到 VS「输出(Output)」窗口（由 LogRouter.Publish 的 #if DEBUG 输出）；
-                // 如需开发时也本地落盘，取消下面两行注释即可（LogPath 默认 运行目录\Logs）：
-                // _fileLogSink = new FileLogSink(LogConfig.Instance.LogPath);
-                // LogRouter.AddSink(_fileLogSink);
+                // 2026-09-15 起本地落盘常开（工位 002 上机排障需要完整日志文件；LogPath 默认 运行目录\Logs）：
+                _fileLogSink = new FileLogSink(LogConfig.Instance.LogPath);
+                LogRouter.AddSink(_fileLogSink);
 #else
                 // 【生产打包环境】：装配文件 Sink（+ 可选结构化 JSON Sink）。
                 // AddSink 内部自动 Configure + Enable（启动写盘线程），注册即生效。

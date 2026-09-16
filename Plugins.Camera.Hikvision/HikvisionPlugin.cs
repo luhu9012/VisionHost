@@ -9,7 +9,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
+using Grayson.Vision.Contracts.Infrastructure.Logging;
 // 解决 IDevice 命名空间冲突
 using IContractDevice = Grayson.Vision.Contracts.Devices.IDevice;
 
@@ -98,6 +100,209 @@ namespace Plugins.Camera.Hikvision
         //      StopGrabbing()  → SDK 解绑 → m_ImageCallback = null → 允许下次重建
         private cbOutputExdelegate m_ImageCallback;
 
+        #region ★ 成像参数快照诊断（定位黑白相机黑屏：只读采样，不改变任何采集行为）
+
+        private DateTime _lastBlackDumpAt = DateTime.MinValue;
+        private int _blackDumpCount = 0;
+        private bool _firstFrameDumped = false;
+
+        /// <summary>采样式扫描缓冲，取采样点最大灰度。用于判断是否全黑，开销可忽略。</summary>
+        private static int SampleMaxGray(byte[] buf)
+        {
+            if (buf == null || buf.Length == 0) return -1;
+            int step = buf.Length / 4096;
+            if (step < 1) step = 1;
+            int max = 0;
+            for (int i = 0; i < buf.Length; i += step)
+            {
+                if (buf[i] > max) max = buf[i];
+                if (max >= 255) break;
+            }
+            return max;
+        }
+
+        /// <summary>容错读取任意 GenICam 节点；读不到返回 N/A，绝不抛异常打断采集。</summary>
+        private string ReadNode(string key)
+        {
+            if (m_MyCamera == null) return "N/A(无句柄)";
+            try
+            {
+                CFloatValue fv = new CFloatValue();
+                if (m_MyCamera.GetFloatValue(key, ref fv) == CErrorDefine.MV_OK)
+                    return fv.CurValue.ToString("0.###");
+
+                CIntValue iv = new CIntValue();
+                if (m_MyCamera.GetIntValue(key, ref iv) == CErrorDefine.MV_OK)
+                    return iv.CurValue.ToString();
+
+                CEnumValue ev = new CEnumValue();
+                if (m_MyCamera.GetEnumValue(key, ref ev) == CErrorDefine.MV_OK)
+                {
+                    long v = ev.CurValue;
+                    if (key == "PixelFormat")
+                    {
+                        try { return v + "(" + ((MvGvspPixelType)v).ToString() + ")"; }
+                        catch { return v.ToString(); }
+                    }
+                    return v.ToString();
+                }
+
+                bool bv = false;
+                if (m_MyCamera.GetBoolValue(key, ref bv) == CErrorDefine.MV_OK)
+                    return bv ? "True" : "False";
+
+                CStringValue sv = new CStringValue();
+                if (m_MyCamera.GetStringValue(key, ref sv) == CErrorDefine.MV_OK)
+                    return sv.CurValue;
+            }
+            catch (Exception ex)
+            {
+                return "EX:" + ex.Message;
+            }
+            return "N/A";
+        }
+
+        /// <summary>
+        /// 把全部成像相关节点打成【一整行】日志。
+        /// 目的是让「黑屏」和「正常」两次运行的日志可以直接逐字段 diff，病因会自己跳出来。
+        /// </summary>
+        public void DumpImagingParams(string tag)
+        {
+            if (m_MyCamera == null) return;
+            try
+            {
+                string[] keys =
+                {
+                    "ExposureTime", "ExposureAuto", "Gain", "GainAuto",
+                    "BlackLevel", "Gamma", "GammaEnable", "Brightness",
+                    "AcquisitionMode", "AcquisitionFrameRate", "AcquisitionFrameRateEnable", "ResultingFrameRate",
+                    "TriggerMode", "TriggerSource", "PixelFormat",
+                    "Width", "Height", "OffsetX", "OffsetY",
+                    "GevSCPSPacketSize", "DeviceLinkThroughputLimit", "DeviceTemperature"
+                };
+
+                var sb = new StringBuilder();
+                sb.Append("[").Append(tag).Append("] ");
+                foreach (var k in keys)
+                {
+                    sb.Append(k).Append('=').Append(ReadNode(k)).Append("; ");
+                }
+
+                // 顺带给出最优包大小，判断是否"该设而没设"
+                try
+                {
+                    int opt = m_MyCamera.GIGE_GetOptimalPacketSize();
+                    sb.Append("OptimalPacketSize=").Append(opt);
+                }
+                catch { /* 非 GigE 机型无此接口，忽略 */ }
+
+                LogBus.Info("HikCam", sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("HikCam", $"[{tag}] 参数快照失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>打印本地待下发字典，用来看"我们准备往相机写什么"。</summary>
+        private void DumpConfigParams(string tag)
+        {
+            var sb = new StringBuilder();
+            sb.Append("[").Append(tag).Append("] ");
+            foreach (var kvp in ConfigParams)
+            {
+                sb.Append(kvp.Key).Append('=').Append(kvp.Value).Append("; ");
+            }
+            LogBus.Info("HikCam", sb.ToString());
+        }
+
+        /// <summary>
+        /// ★ 把 GigE 相机的 GevSCPSPacketSize 对齐到当前链路的最优值。
+        ///
+        /// 这是官方 demo 的必备步骤，而我们的 Connect() 此前完全缺失（只在注释里承诺了
+        /// "后续包大小调整"，代码从未实现）。
+        ///
+        /// 后果：若相机里残留着巨帧包大小（如 8164）而主机网卡 MTU 只有 1500，
+        /// 流通道的数据包会被丢弃 —— 表现为帧照常回调、宽高与字节数全对，
+        /// 但图像内容整帧为 0（黑屏），且不报任何错误。
+        /// MVS 每次打开相机都会做这一步，这正是"用 MV 打开过一次再回来就正常"的真正原因。
+        ///
+        /// 注意：必须在 StartGrabbing 之前设置，采集中该节点不可写。
+        /// </summary>
+        private void EnsureOptimalPacketSize()
+        {
+            if (m_MyCamera == null) return;
+            if (cCameraInfo == null || cCameraInfo.nTLayerType != CSystem.MV_GIGE_DEVICE) return;
+
+            try
+            {
+                int optimal = m_MyCamera.GIGE_GetOptimalPacketSize();
+                if (optimal <= 0)
+                {
+                    LogBus.Warn("HikCam", $"[包大小] 获取最优包大小失败(code={optimal})，跳过对齐");
+                    return;
+                }
+
+                int curVal = -1;
+                CIntValue cur = new CIntValue();
+                if (m_MyCamera.GetIntValue("GevSCPSPacketSize", ref cur) == CErrorDefine.MV_OK)
+                {
+                    curVal = (int)cur.CurValue;
+                }
+
+                if (curVal == optimal)
+                {
+                    LogBus.Info("HikCam", $"[包大小] 已对齐，无需调整: {curVal}");
+                    return;
+                }
+
+                int nRet = m_MyCamera.SetIntValue("GevSCPSPacketSize", (uint)optimal);
+                if (nRet == CErrorDefine.MV_OK)
+                {
+                    LogBus.Warn("HikCam",
+                        $"[包大小] 已修正 {curVal} -> {optimal}（原值超过主机 MTU，流数据被丢弃会导致黑屏）");
+                }
+                else
+                {
+                    LogBus.Warn("HikCam",
+                        $"[包大小] 设置失败 {curVal} -> {optimal}: {Helper.ShowErrorMsg("", nRet)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("HikCam", $"[包大小] 对齐异常（忽略，不影响连接）: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 黑帧自动告警：帧数据几乎全 0 就把相机成像参数快照打出来（限频，不刷屏）。
+        /// 这是"画面全黑"问题的收口——一旦黑屏，日志里必然留下病因线索。
+        /// </summary>
+        private void CheckBlankFrame(byte[] frameBuffer, string outFormat, int width, int height)
+        {
+            if (!_firstFrameDumped)
+            {
+                _firstFrameDumped = true;
+                DumpImagingParams("首帧·成像参数");
+            }
+
+            int maxGray = SampleMaxGray(frameBuffer);
+            if (maxGray > 2) return;            // 画面有内容，正常
+            if (_blackDumpCount >= 3) return;   // 一次连接最多报 3 次
+
+            var now = DateTime.Now;
+            if (_blackDumpCount > 0 && (now - _lastBlackDumpAt).TotalSeconds < 5) return;
+
+            _blackDumpCount++;
+            _lastBlackDumpAt = now;
+            LogBus.Warn("HikCam",
+                $"[黑帧告警] {width}x{height} {outFormat} 采样最大灰度={maxGray}（画面基本全黑），自动 dump 相机参数");
+            DumpImagingParams("黑帧·成像参数");
+            DumpConfigParams("黑帧·本地字典");
+        }
+
+        #endregion
+
         #region 开启/停止采集流
 
         public Result StartGrabbing()
@@ -120,6 +325,9 @@ namespace Plugins.Camera.Hikvision
                     return Result.Fail(Helper.ShowErrorMsg("注册图像回调失败", regRet));
                 }
             }
+
+            // ★ 启动采集前留一份参数快照（诊断用，只读）
+            DumpImagingParams("启动采集前");
 
             // 开启 SDK 采集流
             int nRet = m_MyCamera.StartGrabbing();
@@ -148,61 +356,67 @@ namespace Plugins.Camera.Hikvision
                 string typeStr = pixelType.ToString().ToUpperInvariant();
                 bool isBayer = typeStr.Contains("BAYER");
                 bool isMono = typeStr.Contains("MONO");
+                bool isYuv = typeStr.Contains("YUV") || typeStr.Contains("YCBCR");
 
                 byte[] frameBuffer;
                 string outFormat;
 
-                if (isBayer)
+                // ★ 8bit 直通：按精确枚举判断，不能用名字 Contains ——
+                //   "MONO8_SIGNED" 同样 Contains "MONO8"，会被误判成无符号直通。
+                if (pixelType == MvGvspPixelType.PixelType_Gvsp_Mono8 ||
+                    pixelType == MvGvspPixelType.PixelType_Gvsp_BGR8_Packed ||
+                    pixelType == MvGvspPixelType.PixelType_Gvsp_RGB8_Packed)
                 {
-                    int rgbLen = width * height * 3; // BGR24 内存大小
-                    frameBuffer = new byte[rgbLen];
+                    frameBuffer = new byte[pFrameInfo.nFrameLen];
+                    Marshal.Copy(pData, frameBuffer, 0, (int)pFrameInfo.nFrameLen);
+                    outFormat =
+                        pixelType == MvGvspPixelType.PixelType_Gvsp_Mono8 ? "MONO8" :
+                        pixelType == MvGvspPixelType.PixelType_Gvsp_RGB8_Packed ? "RGB24" : "BGR24";
+                }
+                else if (isMono || isBayer || isYuv)
+                {
+                    // ★ 需要转码的格式（黑白高位深 / Bayer / YUV）。
+                    //   旧写法把所有 MONO 一律标 "MONO8"：Mono10/12 的缓冲是 W*H*2，
+                    //   而显示层按 1 字节/像素只取前 W*H 个字节 → 画面变成上半幅乱纹，
+                    //   且不抛任何异常（静默出错）。这里统一先降到 8bit 再标 MONO8。
+                    bool wantMono = isMono;
+                    var dstType = wantMono
+                        ? MvGvspPixelType.PixelType_Gvsp_Mono8
+                        : MvGvspPixelType.PixelType_Gvsp_BGR8_Packed;
+                    int dstLen = width * height * (wantMono ? 1 : 3);
 
-                    // 锁定托管数组指针，避免分配非托管内存开销
-                    GCHandle handle = GCHandle.Alloc(frameBuffer, GCHandleType.Pinned);
-                    try
+                    if (TryConvertPixelType(pData, ref pFrameInfo, dstType, dstLen, out frameBuffer))
                     {
-                        IntPtr pDstBuffer = handle.AddrOfPinnedObject();
+                        outFormat = wantMono ? "MONO8" : "BGR24";
+                    }
+                    else
+                    {
+                        var raw = new byte[pFrameInfo.nFrameLen];
+                        Marshal.Copy(pData, raw, 0, (int)pFrameInfo.nFrameLen);
 
-                        // 1. 实例化海康 SDK 高级封装类 CPixelConvertParam
-                        CPixelConvertParam convertParam = new CPixelConvertParam();
-
-                        // 2. 配置输入图像参数[cite: 11]
-                        convertParam.InImage.Width = (ushort)width;
-                        convertParam.InImage.Height = (ushort)height;
-                        convertParam.InImage.PixelType = pixelType;
-                        convertParam.InImage.ImageAddr = pData;
-                        convertParam.InImage.FrameLen = pFrameInfo.nFrameLen;
-
-                        // 3. 配置输出图像参数（直接绑定托管数组指针 pDstBuffer，防止 SDK 重复 AllocateUnmanagedMemory）
-                        convertParam.OutImage.PixelType = MvGvspPixelType.PixelType_Gvsp_BGR8_Packed;
-                        convertParam.OutImage.ImageAddr = pDstBuffer;
-                        convertParam.OutImage.ImageSize = (uint)rgbLen;
-
-                        // 4. 调用转码[cite: 11]
-                        int nRet = m_MyCamera.ConvertPixelType(ref convertParam); 
-        if (nRet == CErrorDefine.MV_OK)
+                        // SDK 转码不可用时的软件兜底（仅 2 字节/像素的非 packed 黑白格式）
+                        var manual = wantMono ? DownshiftU16ToMono8(raw, width, height, typeStr) : null;
+                        if (manual != null)
                         {
-                            outFormat = "BGR24";
+                            frameBuffer = manual;
+                            outFormat = "MONO8";
                         }
                         else
                         {
-                            // 转码失败时降级按原尺寸 Copy
-                            frameBuffer = new byte[pFrameInfo.nFrameLen];
-                            Marshal.Copy(pData, frameBuffer, 0, (int)pFrameInfo.nFrameLen);
+                            // 转不了也绝不谎报 MONO8：如实给真实格式名，上层至少能按真实位深处理
+                            frameBuffer = raw;
                             outFormat = typeStr;
+                            System.Diagnostics.Debug.WriteLine(
+                                $"[HikCamera] 无法转码的像素格式: {typeStr}（{width}x{height}，{pFrameInfo.nFrameLen} 字节）");
                         }
-                    }
-                    finally
-                    {
-                        handle.Free();
                     }
                 }
                 else
                 {
-                    // Mono 或已是标准 RGB/BGR 格式
+                    // 其它未知格式：原样拷贝并按名字归类
                     frameBuffer = new byte[pFrameInfo.nFrameLen];
                     Marshal.Copy(pData, frameBuffer, 0, (int)pFrameInfo.nFrameLen);
-                    outFormat = isMono ? "MONO8" : (typeStr.Contains("RGB") ? "RGB24" : "BGR24");
+                    outFormat = typeStr.Contains("RGB") ? "RGB24" : "BGR24";
                 }
 
                 var frameArgs = new FrameEventArgs
@@ -220,12 +434,77 @@ namespace Plugins.Camera.Hikvision
                     _latestFrame = frameArgs;
                 }
 
+                // ★ 黑帧自动体检（见 CheckBlankFrame 注释）
+                CheckBlankFrame(frameBuffer, outFormat, width, height);
+
                 OnFrameReceived(frameArgs);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[HikCamera] 图像回调处理异常: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 调用 SDK 把当前帧转码到目标像素格式（输出到调用方给定的托管数组）。
+        /// 输出缓冲用 GCHandle 固定，避免 SDK 内部再分配非托管内存。
+        /// 转码失败（机型不支持该转换 / 参数不支持）返回 false，由调用方走软件兜底。
+        /// </summary>
+        private bool TryConvertPixelType(IntPtr pData, ref MV_FRAME_OUT_INFO_EX pFrameInfo,
+                                         MvGvspPixelType dstType, int dstLen, out byte[] buffer)
+        {
+            buffer = null;
+            if (m_MyCamera == null || dstLen <= 0) return false;
+
+            byte[] dst = new byte[dstLen];
+            GCHandle handle = GCHandle.Alloc(dst, GCHandleType.Pinned);
+            try
+            {
+                CPixelConvertParam convertParam = new CPixelConvertParam();
+
+                convertParam.InImage.Width = (ushort)pFrameInfo.nWidth;
+                convertParam.InImage.Height = (ushort)pFrameInfo.nHeight;
+                convertParam.InImage.PixelType = pFrameInfo.enPixelType;
+                convertParam.InImage.ImageAddr = pData;
+                convertParam.InImage.FrameLen = pFrameInfo.nFrameLen;
+
+                convertParam.OutImage.Width = (ushort)pFrameInfo.nWidth;
+                convertParam.OutImage.Height = (ushort)pFrameInfo.nHeight;
+                convertParam.OutImage.PixelType = dstType;
+                convertParam.OutImage.ImageAddr = handle.AddrOfPinnedObject();
+                convertParam.OutImage.ImageSize = (uint)dstLen;
+
+                if (m_MyCamera.ConvertPixelType(ref convertParam) != CErrorDefine.MV_OK) return false;
+
+                buffer = dst;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
+
+        /// <summary>
+        /// 软件兜底：把每像素 2 字节的黑白高位深（Mono10/12/14/16，小端）降到 8 位——取高字节。
+        /// Packed 格式（Mono10Packed / Mono12Packed）不是 2 字节对齐，无法这样处理，返回 null。
+        /// </summary>
+        private static byte[] DownshiftU16ToMono8(byte[] raw, int width, int height, string typeStr)
+        {
+            if (raw == null || width <= 0 || height <= 0) return null;
+            if (typeStr != null && typeStr.Contains("PACKED")) return null;
+
+            long need = (long)width * height * 2;
+            if (raw.LongLength < need) return null;
+
+            byte[] out8 = new byte[width * height];
+            for (int i = 0; i < out8.Length; i++)
+                out8[i] = raw[i * 2 + 1]; // 小端：高字节在后一位
+            return out8;
         }
 
         #endregion
@@ -269,6 +548,41 @@ namespace Plugins.Camera.Hikvision
         }
 
         public Result SoftwareTrigger() => SoftTrigger();
+
+        /// <summary>
+        /// 相机侧完整配置为软触发取图（实现 ICamera 契约）。
+        /// 标定采样必须「走位 → 软触发 → 本点新帧」，不能依赖连续自由流：
+        /// 连续流下"等新帧"等于等一个随机时刻，慢帧必超时，走位后还可能拿到上一位置的帧。
+        /// 海康 MVS 三件套：TriggerSelector=FrameStart + TriggerMode=On + TriggerSource=Software，
+        /// 并关闭 AcquisitionFrameRateEnable（帧率限制会丢弃超速触发）。
+        /// </summary>
+        public Result ConfigureSoftwareTrigger()
+        {
+            if (State != DeviceState.Connected || m_MyCamera == null)
+            {
+                // 未连接时只记录意图，等 Connect() 后由 SyncParamsToDevice 下发
+                ConfigParams["TriggerModeSelect"] = 1;
+                return Result.Ok();
+            }
+
+            try
+            {
+                // 1. 关掉帧率限制：软触发频率由上位机决定，限帧会把触发请求丢掉
+                try { m_MyCamera.SetBoolValue("AcquisitionFrameRateEnable", false); }
+                catch { /* 个别机型无此节点，忽略 */ }
+
+                // 2. 触发选择器固定帧起始（曝光开始），部分机型无此节点
+                try { m_MyCamera.SetEnumValueByString("TriggerSelector", "FrameStart"); }
+                catch { /* 同上 */ }
+
+                // 3. 复用既有三态设置完成 TriggerMode=On / TriggerSource=Software
+                return SetTriggerMode(1);
+            }
+            catch (Exception ex)
+            {
+                return Result.Fail("配置软触发失败: " + ex.Message);
+            }
+        }
 
         /// <summary>
         /// 设置触发模式（重载 1：三态模式切换）
@@ -406,11 +720,31 @@ namespace Plugins.Camera.Hikvision
                 return Result.Fail(Helper.ShowErrorMsg("Device open fail!", nRet));
             }
 
-            // ... 后续包大小调整及参数同步保持不变
+            // ★ 包大小对齐：必须在 StartGrabbing 之前、且在任何参数同步之前做。
+            //   这一步缺失正是黑白相机"出帧但全黑、需 MV 打开一次才正常"的根因。
+            EnsureOptimalPacketSize();
+
             State = DeviceState.Connected;
+
+            // ★ 黑屏诊断连线：先看相机"本来是什么参数"，再看"我们下发后变成什么参数"。
+            //   两份快照一 diff，就能判断是我们写坏了，还是相机自己的默认状态就有问题。
+            _blackDumpCount = 0;
+            _firstFrameDumped = false;
+            _lastBlackDumpAt = DateTime.MinValue;
+
+            DumpImagingParams("连接后·相机原始");
             SyncTriggerModeFromDevice();
             SyncParamsFromDevice();
-            SyncParamsToDevice();
+            DumpConfigParams("下发前·本地字典");
+
+            // 参数下发失败此前被静默忽略（返回值直接丢弃），硬件到底改没改成完全不可见。
+            var syncRes = SyncParamsToDevice();
+            if (!syncRes.Success)
+            {
+                LogBus.Warn("HikCam", $"[参数下发] {syncRes.Message}");
+            }
+
+            DumpImagingParams("下发后·实际生效");
 
             return Result.Ok();
         }
@@ -454,6 +788,19 @@ namespace Plugins.Camera.Hikvision
         {
             if (m_MyCamera != null)
             {
+                // ★ 必须先停采集流并注销回调，再关设备。
+                //   原实现直接 CloseDevice/DestroyHandle：相机侧残留 Acquisition 状态、
+                //   本进程的图像回调也未解绑 —— 重连时容易带着脏状态进来，
+                //   且 GigE 相机可能仍处于被占用状态，导致其它程序（包括我们自己）打不开。
+                try
+                {
+                    StopGrabbing();
+                }
+                catch (Exception ex)
+                {
+                    LogBus.Warn("HikCam", $"断开前停止采集异常（继续关闭设备）: {ex.Message}");
+                }
+
                 m_MyCamera.CloseDevice();
                 m_MyCamera.DestroyHandle();
             }
@@ -513,6 +860,33 @@ namespace Plugins.Camera.Hikvision
             }
 
             ConfigParams[key] = value;
+
+            // ★★ 在线即下发（2026-09-15 修复）：这里原先只写本地字典就返回 Ok，而真正写硬件的
+            //   SyncParamsToDevice() **只被 Connect() 调用** ⇒ 运行期（链条节点）设的曝光/增益
+            //   **从来没到过相机**，dump 出来的是相机自己的旧值（实测节点要 5000、硬件是 8000）。
+            //   现在：在线时立即写硬件；离线时保持"只登记"，由 Connect() → SyncParamsToDevice() 补发。
+            if (State == DeviceState.Connected && m_MyCamera != null && !IsNonHardwareKey(key))
+            {
+                // 与 SyncParamsToDevice 同规则：字典里已有相机回读的真实 ExposureTime 时，
+                // 历史别名 "Exposure" 不得覆盖它（谁最后生效取决于调用顺序 —— 不可依赖）。
+                if (string.Equals(key, "Exposure", StringComparison.OrdinalIgnoreCase) &&
+                    ConfigParams.ContainsKey("ExposureTime"))
+                {
+                    return Result.Ok();
+                }
+
+                var applyRes = WriteNodeToHardware(ToSdkNodeKey(key), value);
+                if (!applyRes.Success)
+                {
+                    // 不回滚本地字典（登记仍然有效），但必须让调用方看见 —— 静默返回 Ok 正是本次缺陷的成因。
+                    return Result.Fail($"参数[{key}]已登记，但下发硬件失败：{applyRes.Message}");
+                }
+
+                // 每次下发留一条可检索的证据（Debug 级，不淹没正常日志）：
+                // 有这一行才能回答"节点要的 5000 到底有没有到相机"，而不是靠人肉比对 dump。
+                LogBus.Debug("HikCam", $"[参数下发] {ToSdkNodeKey(key)}={value} 已写入硬件（SN {DeviceId ?? "-"}）");
+            }
+
             return Result.Ok();
         }
 
@@ -563,23 +937,24 @@ namespace Plugins.Camera.Hikvision
                 string key = kvp.Key;
                 object value = kvp.Value;
 
-                // 排除非海康 GenICam 节点的内部逻辑字段
-                if (string.Equals(key, "IP", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "Port", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "TriggerModeSelect", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "TriggerSource", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "TriggerMode", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "SaveImageFile", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(key, "PixelFormat", StringComparison.OrdinalIgnoreCase))
+                // 排除非海康 GenICam 节点的内部逻辑字段 / 只读回读节点 / 连接信息
+                // ★ 清单与 SetParam 在线直写共用（IsNonHardwareKey）
+                if (IsNonHardwareKey(key))
                 {
                     continue;
                 }
 
-                string sdkKey = key;
-                if (key == "Exposure")
+                // ★ "Exposure" 只是 "ExposureTime" 的历史别名，二者映射到同一个硬件节点。
+                //   当字典里已有相机回读的真实 ExposureTime 时必须跳过别名，
+                //   否则 CreateDevice() 写死的默认曝光（3600µs）会把相机上已调好的值冲掉，
+                //   而谁最后生效取决于字典遍历顺序 —— 不可依赖。
+                if (string.Equals(key, "Exposure", StringComparison.OrdinalIgnoreCase) &&
+                    ConfigParams.ContainsKey("ExposureTime"))
                 {
-                    sdkKey = "ExposureTime";
+                    continue;
                 }
+
+                string sdkKey = ToSdkNodeKey(key);
 
                 Result setRes = WriteNodeToHardware(sdkKey, value);
                 if (!setRes.Success)
@@ -708,6 +1083,32 @@ namespace Plugins.Camera.Hikvision
             }
 
             return Result.Ok();
+        }
+
+        /// <summary>
+        /// 不能/不必下发到硬件的键：内部逻辑字段（不是 GenICam 节点）、只读回读节点、连接信息。
+        /// ★ SyncParamsToDevice（批量下发）与 SetParam（在线直写）**共用这一份清单** ——
+        ///   同样的排除规则写两遍，早晚会在某一侧漏掉一项。
+        /// </summary>
+        private static bool IsNonHardwareKey(string key)
+        {
+            return string.Equals(key, "IP", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "Port", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "TriggerModeSelect", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "TriggerSource", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "TriggerMode", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "SaveImageFile", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "PixelFormat", StringComparison.OrdinalIgnoreCase)
+                // 只读回读节点：由 SyncParamsFromDevice 读进字典，写回相机必然失败
+                || string.Equals(key, "ResultingFrameRate", StringComparison.OrdinalIgnoreCase)
+                // 设备池的连接信息：不是相机节点
+                || string.Equals(key, "ConnectionString", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>本地键名 → 海康 GenICam 节点名（"Exposure" 是 "ExposureTime" 的历史别名）</summary>
+        private static string ToSdkNodeKey(string key)
+        {
+            return string.Equals(key, "Exposure", StringComparison.OrdinalIgnoreCase) ? "ExposureTime" : key;
         }
 
         /// <summary>

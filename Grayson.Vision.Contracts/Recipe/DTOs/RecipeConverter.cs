@@ -89,15 +89,27 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
             {
                 ProcessId = process.ProcessId,
                 ProcessName = process.ProcessName,
-                Nodes = process.Nodes?.Select(node => new RecipeNodeDto
+                Nodes = process.Nodes?.Select(node =>
                 {
-                    NodeId = node.NodeId,
-                    Type = node.Type,
-                    DisplayName = ResolveNodeDisplayName(node.Type, node.DisplayName),
-                    Enable = node.Enable,
-                    PosX = node.PosX,
-                    PosY = node.PosY,
-                    ParameterModel = node.ParameterModel
+                    var dto = new RecipeNodeDto
+                    {
+                        NodeId = node.NodeId,
+                        Type = node.Type,
+                        DisplayName = ResolveNodeDisplayName(node.Type, node.DisplayName),
+                        Enable = node.Enable,
+                        PosX = node.PosX,
+                        PosY = node.PosY,
+                        ParameterModel = node.ParameterModel
+                    };
+
+                    // 🌟 2026-09-11 修复：递归持久化 CompositeFlow（Group 子流程）的内部子流程，
+                    //    否则保存配方时子流程内部节点/连线丢失，画布上只剩空壳 Group。
+                    if (node is CompositeFlowNode compositeNode && compositeNode.SubProcess != null)
+                    {
+                        dto.SubProcess = ProcessToDto(compositeNode.SubProcess);
+                    }
+
+                    return dto;
                 }).ToList() ?? new List<RecipeNodeDto>(),
 
                 Connections = process.Connections?.Select(conn =>
@@ -207,6 +219,17 @@ namespace Grayson.Vision.Contracts.Recipe.DTOs
 
                     node.NodeId = nodeDto.NodeId;
                     node.Enable = nodeDto.Enable;
+
+                    // 🌟 2026-09-11 修复：还原 CompositeFlow（Group 子流程）的内部子流程。
+                    //    此前加载配方时未恢复 SubProcess，导致子流程节点空壳、双击进入是空白画布。
+                    if (node is CompositeFlowNode compositeNode && nodeDto.SubProcess != null)
+                    {
+                        var restoredSub = ProcessToModel(nodeDto.SubProcess);
+                        if (restoredSub != null)
+                        {
+                            compositeNode.SubProcess = restoredSub;
+                        }
+                    }
 
                     // 🌟 从 NodeFactory 注册表拿到该节点对应的真实 ParamType
                     Type targetParamType = NodeFactory.GetParameterType(nodeDto.Type);

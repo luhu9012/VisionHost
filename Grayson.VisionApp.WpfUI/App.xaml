@@ -21,6 +21,7 @@
             <converters:NullToBoolConverter x:Key="NullToBoolConverter"/>
             <converters:RecipeApprovalStatusToTextConverter x:Key="RecipeApprovalStatusToTextConverter"/>
             <converters:RoleSatisfiesConverter x:Key="RoleSatisfiesConverter"/>
+            <converters:TopMarginConverter x:Key="TopMarginConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

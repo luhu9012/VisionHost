@@ -30,6 +30,50 @@ namespace Grayson.Vision.HalconWrapper.Core
         private static int s_dispTextLevel = 3;
 
         /// <summary>
+        /// 设置显示字体的安全封装（2026-09-10）。
+        ///
+        /// 背景：HALCON 的 set_font 只接受【系统已安装】的字体名（X11 风格描述串）。
+        /// 旧代码用的 "-Adobe-Helvetica-Bold-*-*-*-*-28-*-*-*-*-*-*" 在 Windows 上并不存在
+        /// → 每次叠加文字都抛 "HALCON error #5137: Wrong font name in operator set_font"，
+        /// 日志被刷屏（标定过程中每次绘制都出现），且掩盖真正的绘制问题。
+        ///
+        /// 策略：按「Windows 常见字体 → 通用 Arial → 不设字体」逐级降级，
+        /// 任一级成功即记住（s_fontLevel），后续不再试错。
+        /// </summary>
+        private static int s_fontLevel = 3;
+
+        public static void SetFontSafe(HWindow window, int size)
+        {
+            if (window == null) return;
+            for (int level = s_fontLevel; level >= 0; level--)
+            {
+                try
+                {
+                    switch (level)
+                    {
+                        case 3:
+                            window.SetFont($"-Microsoft YaHei-Bold-*-*-*-*-{size}-*-*-*-*-*-*");
+                            break;
+                        case 2:
+                            window.SetFont($"-Arial-Bold-*-*-*-*-{size}-*-*-*-*-*-*");
+                            break;
+                        case 1:
+                            window.SetFont($"-Courier New-Bold-*-*-*-*-{size}-*-*-*-*-*-*");
+                            break;
+                        default:
+                            return; // 不设字体：用 HALCON 默认，绝不抛异常
+                    }
+                    if (level != s_fontLevel) s_fontLevel = level;
+                    return;
+                }
+                catch
+                {
+                    // 降到下一级重试
+                }
+            }
+        }
+
+        /// <summary>
         /// 兼容各 HALCON 版本的 disp_text 封装。
         /// disp_text 的通用参数名随版本增删（例如 'shadow_offset' 并非所有版本都支持），
         /// 传入不被识别的名字会抛 #3286，导致**整段文本画不出来**——节点预览的分数、

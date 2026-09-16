@@ -187,6 +187,20 @@ namespace Grayson.Vision.Core
             return _scheduler?.RunContinuousAsync(batchId) ?? Task.CompletedTask;
         }
 
+        /// <summary>
+        /// 分段执行视觉链 [startIndex, endIndexExclusive)。供复合工位业务过程
+        /// （如 VisionPickPlace 吸取前后分别跑上/下相机段）直连调度器使用。
+        /// </summary>
+        internal Task RunVisionChainRangeAsync(int startIndex, int endIndexExclusive, string batchId = null)
+        {
+            if (_scheduler is SimpleTriggerScheduler sts)
+            {
+                return sts.RunRangeAsync(startIndex, endIndexExclusive, batchId);
+            }
+            // 非 SimpleTriggerScheduler 回退整链（理论上不会走到，防御性兜底）
+            return _scheduler?.RunContinuousAsync(batchId) ?? Task.CompletedTask;
+        }
+
         #endregion
 
         #region 事件定义
@@ -304,6 +318,13 @@ namespace Grayson.Vision.Core
             //    前者是设备故障（红灯+蜂鸣持续等待复位），后者是业务 NG（提示后自动回待机）。
             LastChainResult = e.Result;
             LastChainError = e.Exception?.Message;
+
+            // 🌟 分段执行（复合工位业务过程拆段跑视觉）只更新 LastChainResult 供失败分流，
+            //    不做状态机回退/工单落库/指标定案——那些应由整条业务周期 RunProcessOnceAsync 统一负责。
+            if (e.IsSegment)
+            {
+                return;
+            }
 
             bool isOk = e.Result == ChainExecutionResult.Success || e.Result == ChainExecutionResult.StepEndReached;
             Metrics.RecordWorkOrderCompleted(isOk);

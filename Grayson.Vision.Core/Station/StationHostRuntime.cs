@@ -296,6 +296,12 @@ namespace Grayson.Vision.Core.Station
             var recipeMappings = (deviceMappings ?? recipe?.LogicalDevices)?.ToList();
             if (recipeMappings != null)
             {
+                // ★ 逻辑设备 → 物理设备 对账表。
+                //   目的：抓出「两个逻辑设备指向同一台物理设备」——这种配置下其中至少一条
+                //   链会抓到错误的设备，而运行期日志只会回显逻辑名（"开始采集，逻辑相机: X"），
+                //   看不出任何异常 ⇒ 必须在这里出声，不能静默注册。
+                var logicalOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
                 foreach (var mapping in recipeMappings)
                 {
                     if (mapping == null) continue;
@@ -310,7 +316,10 @@ namespace Grayson.Vision.Core.Station
 
                     if (!DevicePool.ContainsDevice(mappedDeviceKey))
                     {
-                        Debug.WriteLine($"[StationHost] 工位 [{stationId}] 绑定失败：设备池不存在 [{mappedDeviceKey}]");
+                        // 不静默：绑定失败此前只写 Debug（Release 下完全不可见），运行期表现为
+                        // 节点侧"未找到逻辑相机/设备"，此处补一条可检索的警告。
+                        LogBus.Warn("StationHostRuntime",
+                            $"[{stationId}] 绑定失败：逻辑设备 [{logicalDeviceKey}] 指向的物理设备 [{mappedDeviceKey}] 不在设备池中（请检查设备是否已被移除）。");
                         continue;
                     }
 
@@ -319,7 +328,8 @@ namespace Grayson.Vision.Core.Station
                     {
                         if (!DevicePool.LeaseDeviceToStation(mappedDeviceKey, stationId))
                         {
-                            Debug.WriteLine($"[StationHost] 工位 [{stationId}] 领用设备 [{mappedDeviceKey}] 失败：已被其他工位占用");
+                            LogBus.Warn("StationHostRuntime",
+                                $"[{stationId}] 领用设备 [{mappedDeviceKey}] 失败：已被其他工位占用（逻辑设备 [{logicalDeviceKey}] 本次未绑定）。");
                             continue;
                         }
                     }
@@ -327,8 +337,37 @@ namespace Grayson.Vision.Core.Station
                     var device = DevicePool.GetDevice(mappedDeviceKey);
                     if (device != null)
                     {
+                        // ★★ 硬拦：同一台物理设备已被本工位另一条逻辑设备占用时【拒绝注册】。
+                        //   两个逻辑名共用一个物理实例 ⇒ 两条链操作的是同一台硬件，其中一条必然
+                        //   "看起来完全正常、但用的是别人的设备"（本例：配"下固定相机"却出上相机画面）。
+                        //   拒绝注册会让该逻辑设备在节点侧报"未注册"，错误立刻可见、可修；静默注册则相反。
+                        if (logicalOwners.TryGetValue(mappedDeviceKey, out var priorOwners) && priorOwners.Count > 0)
+                        {
+                            priorOwners.Add(logicalDeviceKey);
+                            LogBus.Error("StationHostRuntime",
+                                $"[{stationId}] ⛔ 拒绝注册逻辑设备 [{logicalDeviceKey}]：物理设备 [{mappedDeviceKey}] 已被本工位逻辑设备 [{priorOwners[0]}] 占用。" +
+                                $"请到【工位管理 → 逻辑设备映射】把两条逻辑设备改绑到各自的物理设备后重新装配本工位。");
+                            continue;
+                        }
+
                         worker.Context.RegisterDevice(logicalDeviceKey, device);
+
+                        // ★ 物理身份对账：逻辑名只是"别名"，真正决定抓哪个硬件的是这一行。
+                        LogBus.Info("StationHostRuntime",
+                            $"[{stationId}] 逻辑设备 [{logicalDeviceKey}] → 物理 [{mappedDeviceKey}] (设备键: {device.DeviceKey ?? "-"} | SN/物理ID: {device.DeviceId ?? "-"})");
+
+                        logicalOwners[mappedDeviceKey] = new List<string> { logicalDeviceKey };
                     }
+                }
+
+                foreach (var kv in logicalOwners)
+                {
+                    if (kv.Value.Count <= 1) continue;
+
+                    LogBus.Error("StationHostRuntime",
+                        $"[{stationId}] ⛔ 设备映射冲突：逻辑设备 [{string.Join(" / ", kv.Value)}] 同时指向同一台物理设备 [{kv.Key}]。" +
+                        $"这会让其中至少一条链静默操作错误的硬件（日志里的『逻辑相机/逻辑设备』只是回显，看不出异常）。" +
+                        $"请到【工位管理 → 逻辑设备映射】把每个逻辑设备改绑到各自的物理设备后保存。");
                 }
             }
 

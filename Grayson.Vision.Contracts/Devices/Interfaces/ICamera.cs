@@ -33,6 +33,14 @@ namespace Grayson.Vision.Contracts.Devices
         Result SetTriggerMode(int mode);
         Result SoftwareTrigger();
 
+        /// <summary>
+        /// 相机侧完整配置为软触发取图（TriggerSelector=FrameStart / TriggerMode=On /
+        /// TriggerSource=Software / 关闭帧率限制）。
+        /// 标定采样必须「走位 → 软触发 → 本点新帧」，不能依赖连续自由流：
+        /// 连续流下"等新帧"等于等一个随机时刻，慢帧必超时，走位后还可能拿到上一位置的帧。
+        /// </summary>
+        Result ConfigureSoftwareTrigger();
+
         /// <summary>软触发单次拍照</summary>
         Result SoftTrigger();
 

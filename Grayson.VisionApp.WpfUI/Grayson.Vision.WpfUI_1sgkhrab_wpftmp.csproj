@@ -1,0 +1,458 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{A161AF53-5187-4451-9F5D-CB3327F68D67}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Grayson.Vision.WpfUI</RootNamespace>
+    <AssemblyName>Grayson.Vision.WpfUI</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <WarningLevel>4</WarningLevel>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Common\TriggerOptionCatalog.cs" />
+    <Compile Include="Selectors\Step3DataTemplateSelector.cs" />
+    <Compile Include="Service\IAuthenticationService.cs" />
+    <Compile Include="Service\INavigationAware.cs" />
+    <Compile Include="Service\CalibrationMotionFacade.cs" />
+    <Compile Include="Service\INavigationService.cs" />
+    <Compile Include="Service\LiteDbAuthenticationService.cs" />
+    <Compile Include="Service\MockMesBridgeService.cs" />
+    <Compile Include="Service\NavigationService.cs" />
+    <Compile Include="Service\StationConfigService.cs" />
+    <Compile Include="Service\StationProfileRepository.cs" />
+    <Compile Include="Service\StationRuntimeBootstrap.cs" />
+    <Compile Include="Service\StationProfileSanityCheck.cs" />
+    <Compile Include="Service\StationProposalEngine.cs" />
+    <Compile Include="Service\StationMonitorExtensionRegistry.cs" />
+    <Compile Include="Service\StationProcessCatalog.cs" />
+    <Compile Include="Service\TaskTemplateLibraryService.cs" />
+    <Compile Include="Service\ModelRegistryService.cs" />
+    <Compile Include="Service\TaskTemplateTranslatorService.cs" />
+    <Compile Include="Service\TaskTypeIndustryCatalog.cs" />
+    <Compile Include="Service\DlDemoTaskFactory.cs" />
+    <Compile Include="Service\MeasurementDemoTaskFactory.cs" />
+    <Compile Include="Service\StationStatisticsService.cs" />
+    <Compile Include="Service\WpfDialogService.cs" />
+    <!-- 内嵌 DL 演示资产（HTH 翻译成品：模型+精选图，随构建输出，运行时自动落地 Config） -->
+    <Content Include="Assets\DLDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 测量演示资产（stage9-3 外观测量族闭环：课堂素材+FitCircle 配方/模板/判据） -->
+    <Content Include="Assets\MeasureDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />
+    <Compile Include="ViewModel\AlarmViewModel.cs" />
+    <Compile Include="Model\CommonModel.cs" />
+    <Compile Include="Model\ReachMapData.cs" />
+    <Compile Include="ViewModel\CalibrationManagerViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\CalibrationToolOffsetViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\CalibrationVerifierViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\CalibrationWizardViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\CheckerboardCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\HandEyeWithRotationCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\ICalibrationStepStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\NinePointCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\PixelScaleCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\Calibration\Steps\PickPlaceCalibrationStrategy.cs" />
+    <Compile Include="ViewModel\DataTraceViewModel.cs" />
+    <Compile Include="ViewModel\DevicePoolViewModel.cs" />
+    <Compile Include="ViewModel\HardwareAllocationViewModel.cs" />
+    <Compile Include="ViewModel\CameraTuneTool\CameraTuneViewModel.cs" />
+    <Compile Include="ViewModel\HardwareConsoleViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\AxisControlViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\CameraDebugViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\CameraLiveWindowViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\CommDebugViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\HardwareModels.cs" />
+    <Compile Include="ViewModel\HardWareConsole\IoMonitorViewModel.cs" />
+    <Compile Include="ViewModel\HardWareConsole\RobotDebugViewModel.cs" />
+    <Compile Include="ViewModel\HardwareSelectViewModel.cs" />
+    <Compile Include="ViewModel\LineOverviewViewModel.cs" />
+    <Compile Include="ViewModel\LoginViewModel.cs" />
+    <Compile Include="Model\MockDataFactory.cs" />
+    <Compile Include="ViewModel\MesBridgeViewModel.cs" />
+    <Compile Include="ViewModel\PluginManageViewModel.cs" />
+    <Compile Include="ViewModel\RecipeManageViewModel.cs" />
+    <Compile Include="ViewModel\ModelAssetEditViewModel.cs" />
+    <Compile Include="ViewModel\ModelRegistryViewModel.cs" />
+    <Compile Include="ViewModel\TaskTemplateCenterViewModel.cs" />
+    <Compile Include="ViewModel\TaskTemplateEditViewModel.cs" />
+    <Compile Include="ViewModel\ScanDeviceDialogViewModel.cs" />
+    <Compile Include="ViewModel\ShellViewModel.cs" />
+    <Compile Include="ViewModel\StationManageViewModel.cs" />
+    <Compile Include="ViewModel\StationMonitorViewModel.cs" />
+    <Compile Include="ViewModel\StationWizardViewModel.cs" />
+    <Compile Include="ViewModel\StationMonitorExtensions\MahjongPickTeachViewModel.cs" />
+    <Compile Include="ViewModel\StationMonitorExtensions\VisionPickPlaceTeachViewModel.cs" />
+    <Compile Include="ViewModel\SystemSettingViewModel.cs" />
+    <Compile Include="ViewModel\TemplateManagerViewModel.cs" />
+    <Compile Include="ViewModel\UserManageViewModel.cs" />
+    <Compile Include="ViewModel\WorkOrderDetailDialogViewModel.cs" />
+    <Compile Include="View\AddDeviceDialog.xaml.cs">
+      <DependentUpon>AddDeviceDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\AlarmView.xaml.cs">
+      <DependentUpon>AlarmView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\CalibrationManagerView.xaml.cs">
+      <DependentUpon>CalibrationManagerView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\Calibration\CalibrationToolOffsetWindow.xaml.cs">
+      <DependentUpon>CalibrationToolOffsetWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\Calibration\CalibrationVerifierWindow.xaml.cs">
+      <DependentUpon>CalibrationVerifierWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\Calibration\CalibrationWizardWindow.xaml.cs">
+      <DependentUpon>CalibrationWizardWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\DataTraceView.xaml.cs">
+      <DependentUpon>DataTraceView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\TemplateManagerView.xaml.cs">
+      <DependentUpon>TemplateManagerView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\TaskTemplateCenterView.xaml.cs">
+      <DependentUpon>TaskTemplateCenterView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\TaskTemplateEditWindow.xaml.cs">
+      <DependentUpon>TaskTemplateEditWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\NewTaskTemplateWindow.xaml.cs">
+      <DependentUpon>NewTaskTemplateWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\ModelRegistryView.xaml.cs">
+      <DependentUpon>ModelRegistryView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\ModelAssetEditWindow.xaml.cs">
+      <DependentUpon>ModelAssetEditWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\DevicePoolView.xaml.cs">
+      <DependentUpon>DevicePoolView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\FlowEditViewWrapper.xaml.cs">
+      <DependentUpon>FlowEditViewWrapper.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareAllocationView.xaml.cs">
+      <DependentUpon>HardwareAllocationView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\CameraTuneTool\CameraTuneView.xaml.cs">
+      <DependentUpon>CameraTuneView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsoleView.xaml.cs">
+      <DependentUpon>HardwareConsoleView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\AxisControlView.xaml.cs">
+      <DependentUpon>AxisControlView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\CameraDebugView.xaml.cs">
+      <DependentUpon>CameraDebugView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\CameraLiveWindow.xaml.cs">
+      <DependentUpon>CameraLiveWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\CommDebugView.xaml.cs">
+      <DependentUpon>CommDebugView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\IoMonitorView.xaml.cs">
+      <DependentUpon>IoMonitorView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\RobotDebugView.xaml.cs">
+      <DependentUpon>RobotDebugView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareConsole\RobotReachMapView.xaml.cs">
+      <DependentUpon>RobotReachMapView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\HardwareSelectWindow.xaml.cs">
+      <DependentUpon>HardwareSelectWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\LineOverviewView.xaml.cs">
+      <DependentUpon>LineOverviewView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\LoginView.xaml.cs">
+      <DependentUpon>LoginView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\MesBridgeView.xaml.cs">
+      <DependentUpon>MesBridgeView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\PluginManageView.xaml.cs">
+      <DependentUpon>PluginManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\RecipeManageView.xaml.cs">
+      <DependentUpon>RecipeManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\ScanDeviceDialog.xaml.cs">
+      <DependentUpon>ScanDeviceDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\ShellView.xaml.cs">
+      <DependentUpon>ShellView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\SplashView.xaml.cs">
+      <DependentUpon>SplashView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\StationManageView.xaml.cs">
+      <DependentUpon>StationManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\StationWizardWindow.xaml.cs">
+      <DependentUpon>StationWizardWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\StationMonitorView.xaml.cs">
+      <DependentUpon>StationMonitorView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\StationMonitorExtensions\MahjongPickTeachPanel.xaml.cs">
+      <DependentUpon>MahjongPickTeachPanel.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\StationMonitorExtensions\VisionPickPlaceTeachPanel.xaml.cs">
+      <DependentUpon>VisionPickPlaceTeachPanel.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\SystemSettingView.xaml.cs">
+      <DependentUpon>SystemSettingView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\UserManageView.xaml.cs">
+      <DependentUpon>UserManageView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\WorkOrderDetailDialog.xaml.cs">
+      <DependentUpon>WorkOrderDetailDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Common\ReachMapGeometry.cs" />
+    <Compile Include="Common\Converters.cs" />
+    <Compile Include="Common\Enums.cs" />
+    <Compile Include="Common\GlobalData.cs" />
+    <Compile Include="Common\StationStateTexts.cs" />
+    <Compile Include="MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <!-- ===== 任务模板中心 + 模型仓库（2026-09-09，T 层任务模板库 UI 入口） ===== -->
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Properties\AssemblyInfo.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>PublicResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <None Include="packages.config" />
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <None Include="README_wpfui.md" />
+    <None Include="View\Calibration\使用文档.md" />
+    <None Include="View\Calibration\双工位滑台标定.md" />
+    <None Include="模板创建与测量_TODO.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include=".NETFramework,Version=v4.7.2">
+      <Visible>False</Visible>
+      <ProductName>Microsoft .NET Framework 4.7.2 %28x86 鍜?x64%29</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Grayson.Vision.Contracts\Grayson.Vision.Contracts.csproj">
+      <Project>{b0a7e029-998c-44a3-96f5-3f04214eee32}</Project>
+      <Name>Grayson.Vision.Contracts</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Core\Grayson.Vision.Core.csproj">
+      <Project>{6a092dc6-536f-433f-94e0-31bf27777d95}</Project>
+      <Name>Grayson.Vision.Core</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper.Wpf\Grayson.Vision.HalconWrapper.Wpf.csproj">
+      <Project>{7a6b5c44-8d7e-4f2a-9b1c-3d8e4f5a6b7c}</Project>
+      <Name>Grayson.Vision.HalconWrapper.Wpf</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.HalconWrapper\Grayson.Vision.HalconWrapper.csproj">
+      <Project>{ecc73133-c99e-43f3-9206-1edc2cbda74a}</Project>
+      <Name>Grayson.Vision.HalconWrapper</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Nodes\Grayson.Vision.Nodes.csproj">
+      <Project>{5a281c6b-1822-4435-aa21-e42f1a0d02f7}</Project>
+      <Name>Grayson.Vision.Nodes</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vision.Repository\Grayson.Vision.Repository.csproj">
+      <Project>{a909af73-e5d5-4cbc-8a86-7a7ed579fb49}</Project>
+      <Name>Grayson.Vision.Repository</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Grayson.Vison.FlowEdit\Grayson.Vision.FlowEdit.csproj">
+      <Project>{4fbca5f2-5fb8-4701-ac89-5c68a7b3fdd5}</Project>
+      <Name>Grayson.Vision.FlowEdit</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Plugins.Camera.Hikvision\Plugins.Camera.Hikvision.csproj">
+      <Project>{612ed44d-86b9-4888-9afe-6ee833befdd8}</Project>
+      <Name>Plugins.Camera.Hikvision</Name>
+    </ProjectReference>
+    <!-- 巴斯勒相机插件（新工位：麻将双吸嘴分拣） -->
+    <ProjectReference Include="..\Plugins.Camera.Basler\Plugins.Camera.Basler.csproj">
+      <Project>{8f3a1c27-5d64-4b9e-a1f0-3c7e9a2b6d01}</Project>
+      <Name>Plugins.Camera.Basler</Name>
+    </ProjectReference>
+    <!-- Epson 4轴 SCARA 机械手插件（新工位：麻将双吸嘴分拣） -->
+    <ProjectReference Include="..\Plugins.Robot.Epson\Plugins.Robot.Epson.csproj">
+      <Project>{770e0ea4-ff78-4305-9bf6-72e41acac08f}</Project>
+      <Name>Plugins.Robot.Epson</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Plugins.Motion.Zmc\Plugins.Motion.Zmc.csproj">
+      <Project>{cf4d0f77-4a4f-4684-85af-055eefbb28c7}</Project>
+      <Name>Plugins.Motion.Zmc</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Plugins.Protocol.Universal\Plugins.Protocol.Universal.csproj">
+      <Project>{245c22ab-7e19-47d1-a44c-2fc052f569e9}</Project>
+      <Name>Plugins.Protocol.Universal</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Plugins.Inference.OnnxRuntime\Plugins.Inference.OnnxRuntime.csproj">
+      <Project>{7a3e8c21-6b4d-4e9a-9f2c-d18e55b0a731}</Project>
+      <Name>Plugins.Inference.OnnxRuntime</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <ItemGroup>
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vision.Contracts.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vision.Core.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vision.HalconWrapper.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vision.HalconWrapper.Wpf.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vision.Nodes.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vision.Repository.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Grayson.Vison.FlowEdit.exe" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\DLLLib\halcondotnet.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Microsoft.CSharp.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\mscorlib.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Plugins.Camera.Basler.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Plugins.Camera.Hikvision.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Plugins.Inference.OnnxRuntime.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Plugins.Motion.Zmc.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Plugins.Protocol.Universal.dll" />
+    <ReferencePath Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\.workbuddy\_verify_out\Plugins.Robot.Epson.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\PresentationCore.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\PresentationFramework.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Core.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Data.DataSetExtensions.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Data.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Net.Http.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Windows.Forms.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xaml.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Xml.Linq.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\WindowsBase.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\Facades\netstandard.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\MainWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\AddDeviceDialog.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\AlarmView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\CameraTuneTool\CameraTuneView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\CalibrationManagerView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\Calibration\CalibrationToolOffsetWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\Calibration\CalibrationVerifierWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\Calibration\CalibrationWizardWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\DataTraceView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\TemplateManagerView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\DevicePoolView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\FlowEditViewWrapper.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareAllocationView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsoleView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\AxisControlView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\CameraDebugView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\CameraLiveWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\CommDebugView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\IoMonitorView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\RobotDebugView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareConsole\RobotReachMapView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\HardwareSelectWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\LineOverviewView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\LoginView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\MesBridgeView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\PluginManageView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\RecipeManageView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\ScanDeviceDialog.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\ShellView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\SplashView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\StationManageView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\StationWizardWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\StationMonitorView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\StationMonitorExtensions\MahjongPickTeachPanel.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\StationMonitorExtensions\VisionPickPlaceTeachPanel.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\SystemSettingView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\UserManageView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\WorkOrderDetailDialog.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\TaskTemplateCenterView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\TaskTemplateEditWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\NewTaskTemplateWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\ModelRegistryView.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\View\ModelAssetEditWindow.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\App.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\Grayson.Vision.WpfUI_Content.g.cs" />
+    <Compile Include="C:\Users\grayson\Desktop\Grayson.Vision.Host\Grayson.VisionApp.WpfUI\obj\Debug\GeneratedInternalTypeHelper.g.cs" />
+  </ItemGroup>
+</Project>

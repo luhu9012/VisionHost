@@ -61,7 +61,13 @@ namespace Grayson.Vision.Repository
             }
         }
 
-        public static ICalibrationProfileRepository CreateCalibrationProfileRepository() => new LiteDbCalibrationProfileRepository();
+        /// <summary>
+        /// ★2026-09-15 存储统一：标定档案改走 JSON（&lt;AppBase&gt;\Config\Calibrations\*.json）。
+        /// 原因：该目录早已是【校验台产物聚合】与【节点矩阵候选】的唯一读取源，而写入方却走 LiteDB；
+        /// 两套存储导致"库里明明有「吸嘴1_旋转中心 e」，校验台却报 e/O 未标"（空目录→聚合退化为单档案）。
+        /// 统一后写读同源。LiteDbCalibrationProfileRepository 类保留以备回退，但不再由工厂产出。
+        /// </summary>
+        public static ICalibrationProfileRepository CreateCalibrationProfileRepository() => new JsonCalibrationProfileRepository();
         public static IRecipeRepository CreateRecipeRepository() => new LiteDbRecipeRepository();
         public static IDeviceConfigRepository CreateDeviceConfigRepository() => new LiteDbDeviceConfigRepository();
         public static IUserRepository CreateUserRepository() => new LiteDbUserRepository();

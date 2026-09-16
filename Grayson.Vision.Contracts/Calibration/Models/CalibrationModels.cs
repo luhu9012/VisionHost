@@ -11,18 +11,6 @@ using System.Collections.ObjectModel;
 namespace Grayson.Vision.Contracts.Calibration.Models
 {
     /// <summary>
-    /// 标定类型枚举
-    /// </summary>
-    public enum CalibrationType
-    {
-        NinePointHandEye,      // 1. 标准九点手眼标定 (仅 X/Y 平移矩阵)
-        Checkerboard2D,        // 3. 2D 棋盘格/畸变矫正标定
-        HandEyeWithRotation,   // 多点手眼 + 旋转中心拟合
-        CameraLensDistortion,  // 畸变/内参标定 (棋盘格/圆点阵列)
-        PixelScale,            // 像素当量标定
-        PickPlaceHandEye       // 吸放式标定（行业标准：机械臂吸住工件 → 放到网格点 → 回固定拍照位拍照；
-                               // 旋转段吸住转 U → 放料 → 回拍照位 → 圆拟合求旋转中心+工具偏心矢量）
-    }
     /// <summary>
     /// 相机安装物理模式
     /// </summary>
@@ -73,7 +61,29 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         public string NozzleKey { get; set; } = "1";
 
         public string BindingInfo { get; set; }
+
+        /// <summary>
+        /// 物理相机设备标识（绑定设备后的 DeviceKey/DeviceId）。
+        /// ⚠ 它代表"这台物理相机"，【不等于】工位档案里的相机槽——绑设备会覆盖本字段。
+        /// 槽语义请用 <see cref="CameraSlotKey"/>（2026-09-11 解耦）。
+        /// </summary>
         public string CameraId { get; set; } = "Cam_01";
+
+        private string _cameraSlotKey;
+        /// <summary>
+        /// ★ 工位档案相机槽键（Cam_A / Cam_C …）——与物理设备 <see cref="CameraId"/> 解耦。
+        /// 用途：标定产物 ArtifactId = {站}|{量}|{槽}|{吸嘴}，槽决定任务卡身份、依赖匹配与
+        /// 配方 CalibrationApply 的引用口径。复合工位（上相机 Cam_A + 下相机 Cam_C）必须靠它区分。
+        /// 背景：旧逻辑只能从 CameraId 猜槽（GuessSlotKey）——而向导第一步绑物理相机时 CameraId 会被
+        /// 写成设备名（如 Hikvision_…_DownCamera），不以 "Cam_" 开头 → 恒猜成 "Cam_01"，
+        /// 导致上下相机两条标定产物撞在同一个槽上。为空时回退旧猜测逻辑。
+        /// </summary>
+        public string CameraSlotKey
+        {
+            get => _cameraSlotKey;
+            set => Set(ref _cameraSlotKey, value);
+        }
+
         public string AxisId { get; set; } = "Axis_X";
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
@@ -89,7 +99,18 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         }
 
         private bool _hasToolOffset;
-        /// <summary>轴末端是否有吸嘴/夹具旋转偏移 (TCP)</summary>
+        /// <summary>
+        /// 轴末端是否有吸嘴/夹具旋转偏移 (TCP)。
+        ///
+        /// ★★2026-09-15 重要澄清——**本字段是「声明」不是「证据」，禁止用作"旋转段跑过"的判据**：
+        ///   向导在"会话规格含旋转段"时会**一进会话就自动置 true**（早于任何采样）⇒
+        ///   `HasToolOffset==true` 只表示"本次打算转"，旋转段**失败/根本没跑**时它同样为 true。
+        ///   曾有三处判据把它写进 OR 链（CalibrationCardDeriver 两处 + CalibrationProfileSessionPlanner
+        ///   一处）⇒ "勾了旋转类型但没转出结果"被当"有旋转证据"，e 卡从 Draft 被提升为已完成（假绿）。
+        ///   已全部删除该 OR 项；要判"旋转是否真跑过"，只认**数值**：CalibU0 / ToolCenterW(x,y) /
+        ///   ToolCenterP(x,y) / ToolEccW(x,y) / ToolOffsetPureW(x,y) 非零。
+        ///   要判"t 对针是否真做了"，用 <c>IsToolOffsetCalibrated</c> + 非零（见 CameraCalibrationBundle.HasToolOffset）。
+        /// </summary>
         public bool HasToolOffset
         {
             get => _hasToolOffset;
@@ -154,6 +175,43 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         private double _rotationBaseY;
         /// <summary>旋转采样时的机械手命令位 Y（mm）= P_f。</summary>
         public double RotationBaseY { get => _rotationBaseY; set => Set(ref _rotationBaseY, value); }
+
+        // ==================== 标定过程证据（2026-09-15 新增）====================
+        // 为什么要有这一组：出问题时（本工位 2026-09-15 就踩到）最需要的三个量当时【都拿不到】——
+        //   ① 旋转采样点从落盘（Samples 只装九点，RotationPoints 全丢）⇒ 弧覆盖度/逐点残差无法离线复核；
+        //   ② 定圆半径被丢弃，而半径 = |杆端 mark ↔ 回转轴| = |b|，正是最需要的量的独立估计；
+        //   ③ 各采样点的机位（BaseX/BaseY）无人填 ⇒ 无法判断"采样期间机器人是否动过 XY"。
+        // 有了这一组，"重标一次"就能离线判定 b 的量级/方向/参考姿态是否可信，不必再上机试。
+
+        /// <summary>各旋转采样点原始证据（角度→像素→机位→匹配分）。空=旧档案（重标后即有）。</summary>
+        public List<RotationSampleEvidence> RotationSamples { get; set; } = new List<RotationSampleEvidence>();
+
+        /// <summary>★ 定圆半径（像素）= 杆端 mark 到回转轴的距离在图像里的半径。旧档案为空（当年被丢弃）。</summary>
+        public double? RotationFitRadiusPx { get; set; }
+
+        /// <summary>★ 定圆半径映射到 H 域（mm）—— 与 |ToolEccW| 是同一物理量的两种量法，可互为交叉校核。</summary>
+        public double? RotationFitRadiusMm { get; set; }
+
+        /// <summary>采样角的环向覆盖弧长（度）。&lt;90° 时圆心沿缺弧方向误差被放大数倍。</summary>
+        public double? RotationArcCoverageDeg { get; set; }
+
+        /// <summary>定圆拟合 RMS（px，像素域）。</summary>
+        public double? RotationFitRmsPx { get; set; }
+
+        /// <summary>各采样点机位的最大分散度（mm）：&gt;1mm 说明采样期间机器人被移动过，b/O 不可信。</summary>
+        public double? RotationMotionSpreadMm { get; set; }
+
+        /// <summary>★ 旋转采样基准角 U_ref（度）= b 的参考姿态。缺它无法离线复原偏心方向。</summary>
+        public double? RotationBaseU { get; set; }
+
+        /// <summary>旋转拟合摘要（人可读：圆心/半径/覆盖/RMS/剔脏/方法）。</summary>
+        public string RotationFitSummary { get; set; }
+
+        /// <summary>保存时自动跑出的交叉校核结论（多行文本，PASS/FAIL 逐条）。</summary>
+        public string CalibrationEvidence { get; set; }
+
+        /// <summary>过程证据 JSON 的落盘路径（每次标定新写一份，不覆盖，便于两次标定 diff）。</summary>
+        public string EvidenceFilePath { get; set; }
 
         private double _rotCenterOffsetWx;
         /// <summary>【已废弃 2026-09-08】旧推导的 K=r−c 不成立（正确不变量就是 ToolCenterW 本身 = F0−r）。保留仅为兼容旧档案，勿再使用。</summary>
@@ -239,8 +297,103 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         /// </summary>
         public double? CalibU0 { get; set; }
 
-        private CalibrationType _type = CalibrationType.NinePointHandEye;
-        public CalibrationType Type { get => _type; set => Set(ref _type, value); }
+        /// <summary>
+        /// ★v2 标定物理量（2026-09-12 起为唯一权威语义源，取代旧 CalibrationType）：
+        /// HandEye(H)/ToolRotation(e)/ToolOffset(t)/PixelScale(s)/LensDistortion。
+        /// 采集方法由 PrimaryPath（CalibrationAcquirePath）承载，与物理量正交。
+        /// </summary>
+        public CalibrationQuantity Quantity { get; set; } = CalibrationQuantity.HandEye;
+
+        /// <summary>
+        /// ★v2 采集路径：决定向导步骤装配与真值语义。含下相机专属路径
+        /// DownCameraWalk / DownCameraPixelRotCenter（仰视二次对位）。
+        /// </summary>
+        public CalibrationAcquirePath? PrimaryPath { get; set; }
+
+        // ===== ★2026-09-15：消费口径的两个显式声明（决定同轴吸嘴的 X_obj / 吸点怎么算）=====
+        // 背景（复合工位 Cam_A：固定上相机 + 延伸杆辅助标定 + 吸嘴与 Z 同轴）：
+        //   现场把"旋转拟合圆心的偏差"手工融合进九点矩阵后发布，H 其实已经处于【吸嘴域】
+        //   （命令到 H(u) 就让吸嘴对准 u）。但平台按 PrimaryPath==CameraTruthWalk 一刀切判
+        //   "H 是杆端域、需叠 O/e"，于是对一份【已经消过杆】的 H 又补一遍 O 和 R(U−U0)·e
+        //   —— 双重补偿，还把 P_photo 混进物位 ⇒ 校验必然不对。
+        //   所以"H 落在哪个域"和"吸嘴是否与 U 同轴"必须能声明出来，不能靠猜。
+
+        private bool? _handEyeInNozzleDomain;
+        /// <summary>
+        /// ★ 九点矩阵 H 是否已在【吸嘴域】（2026-09-15，消费口径声明）。
+        ///   true  = H 已消杆：命令到 H(u) 即让【吸嘴】对准像素 u（延伸杆的偏心 b 已在标定阶段
+        ///           从矩阵平移列里扣掉）⇒ 消费直接 X_obj = H(u)，**不叠 O、不用 P_photo**。
+        ///   false = 明确声明 H 在"杆端 / 相机中心域"（等价旧行为）。
+        ///   null  = 未声明（旧档案）⇒ 按 PrimaryPath 旧口径保守判定，行为与本次改动前完全一致。
+        /// ⚠ 与 PrimaryPath 的分工：PrimaryPath 描述【怎么采】，本字段描述【采完落在哪个域】。
+        ///   同一条采集路径（如 CameraTruthWalk）既可能发布未消杆的 H（需 O/e），也可能发布
+        ///   已消杆的 H（直吸）—— 单看 PrimaryPath 分辨不出来，这正是 09-14/15 现场踩的坑。
+        /// </summary>
+        public bool? HandEyeInNozzleDomain
+        {
+            get => _handEyeInNozzleDomain;
+            set => Set(ref _handEyeInNozzleDomain, value);
+        }
+
+        private bool? _nozzleAxisCoaxial;
+        /// <summary>
+        /// ★ 吸嘴是否与 U 回转轴同轴（2026-09-15，消费口径声明）。
+        ///   true  = 同轴：转 U 时吸嘴尖在 XY 上【原地不动】⇒ 消费**不做** R(U−U0)·e 补偿，
+        ///           U 只决定姿态（targetU = 当前U + ΔU）。本工位（复合工位 Cam_A）属此。
+        ///   false = 吸嘴偏在轴外（经典偏心吸嘴）：转 U 时吸嘴尖画圆，必须减 R(U−U0)·e。
+        ///   null  = 未声明（旧档案）⇒ 保守按"偏心"处理（保留 R 项），行为与改动前一致。
+        /// ⚠ 判据：绕 U 转 30° 前后各测一次同一不动特征，吸嘴尖偏差 d0、d30 都 ≈0 且 d30−d0 ≈0
+        ///   ⇒ 同轴成立。见《复合工位Cam_A_上机验证单》。
+        /// </summary>
+        public bool? NozzleAxisCoaxial
+        {
+            get => _nozzleAxisCoaxial;
+            set => Set(ref _nozzleAxisCoaxial, value);
+        }
+
+        private bool? _rodOffsetInProduction;
+        /// <summary>
+        /// ★ 是否把『杆端→吸嘴偏移 b』带进生产（2026-09-15，消费口径声明）。
+        ///
+        /// 背景：固定相机 + 延伸杆辅助标定时，九点 H 的域是【杆端 mark】——命令到 H(u) 时落在特征上
+        ///   的是杆端，不是吸嘴尖。同心吸嘴坐在 U 回转轴上 ⇒ 送吸嘴尖要补一个**与 U 无关**的常量位移 b：
+        ///       **吸点 = H(u) + b**
+        ///   ★ 校验台一直按这个口径算 ⇒ **校验台"压中了"不等于生产"压中了"**（两者口径不同，差一个 |b|）。
+        ///   true  = 生产端 X_obj = H(u) + b（生产 PickAnchor 第②条路径，b 取档案 ToolEccWx/Wy
+        ///           或对针 t，符号默认 +1）。
+        ///   false/null = 不补（默认）。生产端走 X_obj = H(u)，比正确落点**少一个 |b|**
+        ///           （本工位实测 |b| = 106.39mm）⇒ 用现成配置直接生产必然偏这么多。
+        ///
+        /// ⚠ 为什么不默认 true：b 的**符号**要靠现场 A/B 判定（选错会偏 2|b| ≈ 213mm，比不补更糟）。
+        ///   流程：① 校验台反复验到吸嘴压中（⇒ b 的量级与方向都对）→ ② 把本字段置 true 并重新发布。
+        /// ⚠ 与 HandEyeInNozzleDomain 互斥：H 已消杆（true）时本字段必须 false，否则双重补偿。
+        /// </summary>
+        public bool? RodOffsetInProduction
+        {
+            get => _rodOffsetInProduction;
+            set => Set(ref _rodOffsetInProduction, value);
+        }
+
+        private double? _downRotCenterRow;
+        /// <summary>
+        /// ★下相机像素旋转中心 Row（像素；DownCameraPixelRotCenter 路径产出，2026-09-12）。
+        /// 吸嘴旋转轴在下相机图像里的投影行坐标 R_cdown。消费端相对纠偏
+        /// δ = H_down(R_img) − H_down(R_cdown)（见 CalibrationGeometry.DownCameraOffset），
+        /// 与上相机绝对定位语义正交；null=未标定（下相机无法做二次纠偏）。
+        /// </summary>
+        public double? DownRotCenterRow
+        {
+            get => _downRotCenterRow;
+            set => Set(ref _downRotCenterRow, value);
+        }
+
+        private double? _downRotCenterCol;
+        /// <summary>★下相机像素旋转中心 Col（像素；DownCameraPixelRotCenter 路径产出），语义见 DownRotCenterRow</summary>
+        public double? DownRotCenterCol
+        {
+            get => _downRotCenterCol;
+            set => Set(ref _downRotCenterCol, value);
+        }
 
         // --- 新增：标定所绑定的轴索引和基准位置 ---
         private int _bindXAxisIndex = 1;
@@ -302,6 +455,30 @@ namespace Grayson.Vision.Contracts.Calibration.Models
                     IsBasePosSet = true;
                 }
             }
+        }
+
+        private double? _basePosU;
+        /// <summary>
+        /// 标定起始基准 U（回转）角（°，2026-09-10）。设基准点时锁定：把执行机构对准基准特征时读的当前 U。
+        /// 九点平移走位据此保持固定 U 姿态（不再强制归零），旋转采样以此作 U_ref（相对角 0 参考）。
+        /// 基准 U 可能恰为 0（机台原点）或 180°，不能用 ==0 判断是否设置，用 HasValue 判。
+        /// </summary>
+        public double? BasePosU
+        {
+            get => _basePosU;
+            set => Set(ref _basePosU, value);
+        }
+
+        private double? _basePosZ;
+        /// <summary>
+        /// 标定起始基准 Z 高度（mm，2026-09-10）。设基准点时锁定：把执行机构对准基准特征时读的当前 Z。
+        /// 九点走位全程保持该 Z（拍照/走位面一致），HomMat 即"该 Z 高度"的 2D 仿射。
+        /// 九点中心点(#5)成功采样时会用实测 Z 覆盖为 CalibZ（若基准 Z 未设则兜底）。
+        /// </summary>
+        public double? BasePosZ
+        {
+            get => _basePosZ;
+            set => Set(ref _basePosZ, value);
         }
 
         private double _nozzleAlignX;
@@ -679,33 +856,47 @@ namespace Grayson.Vision.Contracts.Calibration.Models
             IsToolOffsetCalibrated = true;
             ToolOffsetCalibTime = DateTime.Now;
         }
+
+        /// <summary>
+        /// 解析"工具尖压住工件特征"的 Z 高度 —— 校验台/点哪吸哪【低速到位】的下压目标（2026-09-11）。
+        /// 之所以要兜底链：NozzleAlignZ 只在 EyeInHand 间接对针（向导内记 R_n）才被写入；
+        /// ETH（固定相机）工位的对针走独立【对针专窗】，历史档案里该字段恒为 null
+        /// → 到位只动 XY、Z 悬在高位，吸嘴够不到工件面，开真空也吸不住。
+        /// 优先级：① NozzleAlignZ 对针压住高度 R_nZ（最精确） → ② BasePosZ 标定基准点 Z
+        ///        （设基准时"吸嘴尖压住标定工件特征"读的 Z） → ③ CalibZ 标定面高度（退化口径）。
+        /// </summary>
+        /// <param name="z">命中的 Z 高度（mm）</param>
+        /// <param name="source">命中口径的人话描述（写日志/提示用）</param>
+        /// <returns>三个口径都没有值时为 false（调用方应提示 JOG 手动下压）</returns>
+        public bool TryResolvePressDownZ(out double z, out string source)
+        {
+            if (NozzleAlignZ.HasValue)
+            {
+                z = NozzleAlignZ.Value;
+                source = "对针压住高度 R_nZ";
+                return true;
+            }
+            if (BasePosZ.HasValue)
+            {
+                z = BasePosZ.Value;
+                source = "标定基准点 Z（设基准时工具尖压住特征的高度）";
+                return true;
+            }
+            if (CalibZ.HasValue)
+            {
+                z = CalibZ.Value;
+                source = "标定面高度 CalibZ（无对针/基准 Z，退化取值）";
+                return true;
+            }
+            z = 0.0;
+            source = null;
+            return false;
+        }
     }
 
 
 
 
-    /// <summary>
-    /// 标定数据存储模型
-    /// </summary>
-    public class CalibrationProfileModel
-    {
-        public string Id { get; set; } = Guid.NewGuid().ToString("N");
-        public string Name { get; set; } = "默认标定方案";
-        public CalibrationType Type { get; set; } = CalibrationType.NinePointHandEye;
-        public string BoundDeviceOrStation { get; set; } = "Cam1 / Station1";
-
-        /// <summary>重投影均方根误差 (RMS) mm</summary>
-        public double RmsError { get; set; }
-
-        /// <summary>标定矩阵存储路径 (.tup)</summary>
-        public string MatrixFilePath { get; set; }
-
-        /// <summary>最后标定时间</summary>
-        public DateTime LastCalibratedTime { get; set; }
-
-        /// <summary>是否有效标定</summary>
-        public bool IsCalibrated => !string.IsNullOrEmpty(MatrixFilePath) && System.IO.File.Exists(MatrixFilePath);
-    }
     /// <summary>
     /// 标定点数据模型
     /// </summary>
@@ -817,6 +1008,15 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         /// <summary>该旋转采样点采集时的机械手命令位 Y（mm）</summary>
         public double BaseY { get => _baseY; set => Set(ref _baseY, value); }
 
+        private double _readUDeg;
+        /// <summary>
+        /// ★2026-09-15：该点采集瞬间【实读】的 U 角（度），由 StampRotationMotion 统一回填。
+        /// 与表内相对角相比：表内 AngleDeg 是"相对基准角 U_ref 的增量"，本字段是"机械手自报的绝对 U"。
+        /// 用途：|实读U − (U_ref+AngleDeg)| 就是"指令角 vs 实际到位角"的偏差——偏心结算按**实**转角才准，
+        /// 该差值偏大（&gt;0.5°）说明 U 到位精度不足或回读滞后，会直接污染 b 的方向。旧档案为 0（当年未记）。
+        /// </summary>
+        public double ReadUDeg { get => _readUDeg; set => Set(ref _readUDeg, value); }
+
         private bool _isCaptured;
         /// <summary>是否已采集回填（同 CalibrationPointModel，替代 0 哨兵判断）</summary>
         public bool IsCaptured
@@ -832,6 +1032,36 @@ namespace Grayson.Vision.Contracts.Calibration.Models
             get => _matchScore;
             set => Set(ref _matchScore, value);
         }
+    }
+
+    /// <summary>
+    /// 旋转采样点证据（2026-09-15）：把「角度 → 像素 → 采样瞬间机位 → 匹配分」全部落盘。
+    /// 用途（重标后离线复核，全都不必再上机）：
+    ///   · 弧覆盖度：把各 AngleDeg 按圆上点算"360° − 最大空隙"；&lt;90° ⇒ 圆心/偏心方向不可信。
+    ///   · 机位固定性：各点 BaseX/BaseY 的分散度必须 &lt;1mm（标准流程=XY 固定、只转 U）；
+    ///     若明显分散，说明采样期间机器人动过 XY —— 此时 O/b 的"圆心=回转轴−b"模型要按动过的情形重推。
+    ///   · 半径互校：|M·e_px|（=ToolEccW 的模）应与定圆半径一致（同一物理量的两种量法），
+    ///     差得多 ⇒ 采样点里有脏点（低分乱匹配）或弧段太短，b 的方向不可信。
+    ///   · 逐点残差：由像素反算该点到圆心的距离与半径之差，定位是哪个角度采坏了。
+    /// </summary>
+    public class RotationSampleEvidence
+    {
+        public double AngleDeg { get; set; }
+        public double PixelX { get; set; }
+        public double PixelY { get; set; }
+        /// <summary>该点采集瞬间的机械手命令位 X（mm，实读回填；旧流程未填时为 0）</summary>
+        public double BaseX { get; set; }
+        /// <summary>该点采集瞬间的机械手命令位 Y（mm，实读回填；旧流程未填时为 0）</summary>
+        public double BaseY { get; set; }
+        /// <summary>该点采集瞬间实读的 U 角（度），来自 RotationPointModel.ReadUDeg（单一来源）</summary>
+        public double ReadUDeg { get; set; }
+        /// <summary>匹配质量分（0~100）</summary>
+        public double MatchScore { get; set; }
+        public bool IsCaptured { get; set; }
+        /// <summary>该点到拟合圆心的距离（px，拟合后回填）</summary>
+        public double RadiusPx { get; set; }
+        /// <summary>该点半径相对定圆半径的偏差（px，拟合后回填；用于定位坏点）</summary>
+        public double ResidualPx { get; set; }
     }
 
     /// <summary>

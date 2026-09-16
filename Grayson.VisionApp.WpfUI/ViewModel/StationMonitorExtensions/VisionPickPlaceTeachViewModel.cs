@@ -135,6 +135,34 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         public string Nozzle2EccXText { get => _nozzle2EccXText; set => Set(ref _nozzle2EccXText, value); }
         public string Nozzle2EccYText { get => _nozzle2EccYText; set => Set(ref _nozzle2EccYText, value); }
 
+        // ---- 下相机二次校准段（2026-09-11 新增：复合工位"上相机抓 → 下相机校 → 放"三段节拍）----
+        // 仅当【工位档案声明了下固定相机槽】时才在面板显示（见 RefreshFieldRelevance）。
+        private string _enableDownCameraText = "False";
+        private string _downCameraXText = "0";
+        private string _downCameraYText = "0";
+        private string _downCameraZText = "0";
+        private string _downCameraMinScoreText = "0.5";
+        private string _downCameraAngleSignText = "-1";
+        private string _downCameraPosCorrText = "True";
+        private string _downCameraAngleCorrText = "True";
+
+        /// <summary>下相机二次校准总开关（True/False）。false=传统单相机流程，下相机段整段跳过。</summary>
+        public string EnableDownCameraText { get => _enableDownCameraText; set => Set(ref _enableDownCameraText, value); }
+        /// <summary>下相机视场中心对应的机械位 X（mm，命令位）：吸取后把卡片移到该位正上方拍照。标定九点网格中心即此点。</summary>
+        public string DownCameraXText { get => _downCameraXText; set => Set(ref _downCameraXText, value); }
+        /// <summary>下相机视场中心对应的机械位 Y（mm，命令位）。</summary>
+        public string DownCameraYText { get => _downCameraYText; set => Set(ref _downCameraYText, value); }
+        /// <summary>下相机拍照时的 Z 高度（mm）：必须与标定时一致，否则像素当量失真。</summary>
+        public string DownCameraZText { get => _downCameraZText; set => Set(ref _downCameraZText, value); }
+        /// <summary>下相机段匹配分数下限（低于判纠偏 NG，回落固定位放置）。</summary>
+        public string DownCameraMinScoreText { get => _downCameraMinScoreText; set => Set(ref _downCameraMinScoreText, value); }
+        /// <summary>下相机段角度归正符号（1 / -1）：仰视镜像通常取 -1，越归正越歪就翻。</summary>
+        public string DownCameraAngleSignText { get => _downCameraAngleSignText; set => Set(ref _downCameraAngleSignText, value); }
+        /// <summary>是否用下相机实测偏差做位置纠偏（True/False）。</summary>
+        public string DownCameraPosCorrText { get => _downCameraPosCorrText; set => Set(ref _downCameraPosCorrText, value); }
+        /// <summary>是否用下相机实测角做角度纠偏（True/False）。</summary>
+        public string DownCameraAngleCorrText { get => _downCameraAngleCorrText; set => Set(ref _downCameraAngleCorrText, value); }
+
         /// <summary>把 Config 值灌入全部文本编辑框（Bind/重置后调用）</summary>
         private void LoadCfgFields(VisionPickPlaceConfig cfg)
         {
@@ -167,6 +195,15 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             Nozzle1EccYText = cfg.Nozzle1EccY.ToString("F2");
             Nozzle2EccXText = cfg.Nozzle2EccX.ToString("F2");
             Nozzle2EccYText = cfg.Nozzle2EccY.ToString("F2");
+
+            EnableDownCameraText = cfg.EnableDownCameraCorrection ? "True" : "False";
+            DownCameraXText = cfg.DownCameraX.ToString("F3");
+            DownCameraYText = cfg.DownCameraY.ToString("F3");
+            DownCameraZText = cfg.DownCameraZ.ToString("F3");
+            DownCameraMinScoreText = cfg.DownCameraMinScore.ToString("F2");
+            DownCameraAngleSignText = cfg.DownCameraAngleSign.ToString("F0");
+            DownCameraPosCorrText = cfg.EnableDownCameraPositionCorrection ? "True" : "False";
+            DownCameraAngleCorrText = cfg.EnableDownCameraAngleCorrection ? "True" : "False";
         }
 
         public RelayCommand SaveAngleConfigCommand { get; }
@@ -188,7 +225,11 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             "XySpeed", "ZSpeed", "VacuumIo1", "VacuumIo2",
             "VacuumOnDelayMs", "VacuumOffDelayMs", "SettleMs",
             // 吸嘴形态与偏心
-            "UseSingleNozzle", "Nozzle1EccX", "Nozzle1EccY", "Nozzle2EccX", "Nozzle2EccY"
+            "UseSingleNozzle", "Nozzle1EccX", "Nozzle1EccY", "Nozzle2EccX", "Nozzle2EccY",
+            // 下相机二次校准段（2026-09-11：复合工位三段节拍参数）
+            "EnableDownCameraCorrection", "DownCameraX", "DownCameraY", "DownCameraZ",
+            "DownCameraMinScore", "DownCameraAngleSign",
+            "EnableDownCameraPositionCorrection", "EnableDownCameraAngleCorrection"
         };
 
         private string _overlayInfoText = "参数覆盖：无（全部参数以 VisionPickPlaceConfig.cs 代码默认为准）";
@@ -198,6 +239,116 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             get => _overlayInfoText;
             private set => Set(ref _overlayInfoText, value);
         }
+
+        #region 面板字段相关性（任务模板 + 工位档案联动，2026-09-11）
+
+        // 原则：面板只显示【这个工位真的用得上】的字段，不把全部字段平铺——
+        //   ① 工位档案没声明"下固定相机槽"  → 整组「下相机二次校准」不显示（显示也无从填起，反而误导）；
+        //   ② 单吸嘴形态（ToolHeadCount=1 且 UseSingleNozzle=True）→ 隐藏 放料2/真空2/嘴2 三行；
+        //   ③ 工位档案 AngleNeed 明确"不需要角度" → 隐藏「角度策略」组；
+        //   ④ 档案/模板读不到时一律【保守显示】（宁多勿缺，不把人锁在门外）。
+
+        private bool _showAngleGroup = true;
+        private bool _showDownCameraGroup;
+        private bool _showDualNozzleRows = true;
+        private string _relevanceHintText = "字段范围：未读取到工位档案 / 任务模板 —— 按全量显示（保守模式）。";
+
+        /// <summary>是否显示「角度策略」分组（档案 AngleNeed 明确不需要角度时隐藏）</summary>
+        public bool ShowAngleGroup { get => _showAngleGroup; private set => Set(ref _showAngleGroup, value); }
+
+        /// <summary>是否显示「下相机二次校准」分组（工位档案声明了下固定相机槽才显示）</summary>
+        public bool ShowDownCameraGroup { get => _showDownCameraGroup; private set => Set(ref _showDownCameraGroup, value); }
+
+        /// <summary>是否显示双吸嘴相关行（放料2 / 真空2 / 嘴2 偏心）</summary>
+        public bool ShowDualNozzleRows { get => _showDualNozzleRows; private set => Set(ref _showDualNozzleRows, value); }
+
+        /// <summary>面板顶部"字段范围依据"提示：工位/档案/模板/相机槽一句话说清。</summary>
+        public string RelevanceHintText { get => _relevanceHintText; private set => Set(ref _relevanceHintText, value); }
+
+        /// <summary>
+        /// 按【工位档案】+【任务模板】+【当前参数】决定面板显示哪些分组。
+        /// 在 Bind 与每次 LoadCfgFields 之后调用（换模板/换吸嘴形态后立即重算）。
+        /// </summary>
+        private void RefreshFieldRelevance(StationConfigModel station, VisionPickPlaceConfig cfg)
+        {
+            var profile = LoadStationProfile(station);
+            var slots = profile?.Requirement?.CameraSlots ?? new List<VisionSlotInfo>();
+            string tplCode = station?.TaskTemplateCode;
+            string tplName = station?.TaskTemplateName;
+
+            bool hasProfileInfo = profile != null;
+            bool hasDownSlot = slots.Any(IsDownLookingSlot);
+            bool hasAnySlots = slots.Count > 0;
+            bool angleNotNeeded = profile?.Requirement?.AngleNeed != null
+                                  && profile.Requirement.AngleNeed.Contains("不需要");
+            bool dualHeadByProfile = !string.IsNullOrWhiteSpace(profile?.Requirement?.ToolHeadCount)
+                                     && profile.Requirement.ToolHeadCount.Trim() != "1";
+            bool dualNozzleByCfg = cfg != null && !cfg.UseSingleNozzle;
+
+            // ① 角度策略组：档案明确"不需要角度"才隐藏（未知/未读到时显示）
+            ShowAngleGroup = !angleNotNeeded;
+
+            // ② 下相机组：档案有声明的下固定槽才显示；档案读不到时看当前参数是否已启用过（不吞掉现场已配的值）
+            ShowDownCameraGroup = hasDownSlot
+                                  || (!hasProfileInfo && cfg != null && cfg.EnableDownCameraCorrection);
+
+            // ③ 双吸嘴行：档案说多头 或 现场已切成双吸嘴 → 显示
+            ShowDualNozzleRows = dualHeadByProfile || dualNozzleByCfg || !hasProfileInfo;
+
+            // 提示文案
+            if (!hasProfileInfo)
+            {
+                RelevanceHintText = $"字段范围：工位 {_stationCode} 无工位档案 —— 按全量显示（保守模式）。"
+                                    + (string.IsNullOrWhiteSpace(tplCode) ? "" : $" 任务模板：{tplCode} {tplName}。");
+                return;
+            }
+
+            string slotText = hasAnySlots
+                ? string.Join(" / ", slots.Select(s => $"{s.SlotKey} {s.InstallKind}"))
+                : "未声明相机槽";
+            var hidden = new List<string>();
+            if (!ShowAngleGroup) hidden.Add("角度策略");
+            if (!ShowDownCameraGroup) hidden.Add("下相机二次校准");
+            if (!ShowDualNozzleRows) hidden.Add("放料2/真空2/嘴2");
+
+            RelevanceHintText =
+                $"字段范围依据 —— 工位 {profile.StationCode} {profile.StationName}"
+                + $"｜相机槽：{slotText}"
+                + (string.IsNullOrWhiteSpace(tplCode) ? "｜任务模板：未绑定" : $"｜任务模板：{tplCode} {tplName}")
+                + (hidden.Count > 0 ? $"｜已隐藏：{string.Join("、", hidden)}" : "｜无隐藏字段");
+        }
+
+        /// <summary>按工位配置文件（LiteDB）加载工位档案（Config\StationProfiles\{StationId}.json）。读不到返回 null。</summary>
+        private StationProfile LoadStationProfile(StationConfigModel station)
+        {
+            try
+            {
+                if (station == null) return null;
+                var repo = new StationProfileRepository();
+                var profile = repo.GetByStationId(station.StationId);
+                // 兜底：老档案可能只有 StationCode（StationId 缺失/不符）→ 按 StationCode 再找一遍
+                if (profile == null && !string.IsNullOrWhiteSpace(station.StationCode))
+                {
+                    profile = repo.ListAll().FirstOrDefault(p =>
+                        string.Equals(p.StationCode, station.StationCode, StringComparison.OrdinalIgnoreCase));
+                }
+                return profile;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>是否"下固定/仰视"相机槽（InstallKind 或 Purpose 里出现 下/仰 关键字）。</summary>
+        private static bool IsDownLookingSlot(VisionSlotInfo slot)
+        {
+            if (slot == null) return false;
+            string text = ((slot.InstallKind ?? "") + "|" + (slot.AxisToSurface ?? "") + "|" + (slot.SlotKey ?? ""));
+            return text.Contains("下") || text.Contains("仰");
+        }
+
+        #endregion
 
         public event Action<string, string> Log;
 
@@ -227,10 +378,12 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                     worker.OnNodeExecuted += Worker_OnNodeExecuted;
                 }
 
-                var cfg = TryLoadVisionPickPlaceConfig(out _);
+                var cfg = TryLoadVisionPickPlaceConfig(out var boundStation);
                 if (cfg != null)
                 {
                     LoadCfgFields(cfg);
+                    // 按工位档案 + 任务模板收敛面板字段范围（只显示本工位用得上的分组）
+                    RefreshFieldRelevance(boundStation, cfg);
                 }
             }
             catch (Exception ex)
@@ -562,6 +715,9 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 AddLog("INFO",
                     $"✅ 执行参数已保存 {fields.Count} 项：[{string.Join("、", parts)}]。{headline}。" +
                     "已热更新（运行中则停止后下次启动生效）；下次触发按新位点/姿态执行。");
+                // 吸嘴形态/下相机开关变化会影响面板该显示哪些字段 → 重算可见性
+                var fresh = TryLoadVisionPickPlaceConfig(out _) ?? cfg;
+                RefreshFieldRelevance(station, fresh);
             }
         }
 
@@ -576,7 +732,12 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 { "Place2X", Place2XText }, { "Place2Y", Place2YText },
                 { "XySpeed", XySpeedText }, { "ZSpeed", ZSpeedText },
                 { "Nozzle1EccX", Nozzle1EccXText }, { "Nozzle1EccY", Nozzle1EccYText },
-                { "Nozzle2EccX", Nozzle2EccXText }, { "Nozzle2EccY", Nozzle2EccYText }
+                { "Nozzle2EccX", Nozzle2EccXText }, { "Nozzle2EccY", Nozzle2EccYText },
+                // 下相机段（机位与阈值）；总开关/两个纠偏开关走 CollectBoolFields
+                { "DownCameraX", DownCameraXText }, { "DownCameraY", DownCameraYText },
+                { "DownCameraZ", DownCameraZText },
+                { "DownCameraMinScore", DownCameraMinScoreText },
+                { "DownCameraAngleSign", DownCameraAngleSignText }
             };
             foreach (var kv in defs)
             {
@@ -609,16 +770,40 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             return null;
         }
 
-        /// <summary>收集 bool 型执行参数（单双吸嘴开关）</summary>
+        /// <summary>收集 bool 型执行参数（单双吸嘴开关 + 下相机段开关）</summary>
         private string CollectBoolFields(Dictionary<string, object> fields)
         {
-            var t = (UseSingleNozzleText ?? string.Empty).Trim();
-            bool single;
-            if (t.Equals("True", StringComparison.OrdinalIgnoreCase) || t == "1") single = true;
-            else if (t.Equals("False", StringComparison.OrdinalIgnoreCase) || t == "0" || t.Length == 0) single = false;
-            else return $"字段 [UseSingleNozzle] 应为 True/False（或 1/0）：{t}——已中止，未写库。";
+            string err = ParseBoolField(UseSingleNozzleText, "UseSingleNozzle", out bool single);
+            if (err != null) return err;
             fields["UseSingleNozzle"] = single;
+
+            // 下相机段三个开关：仅在面板显示该分组时提交；未显示（工位档案无下固定相机）时跳过，
+            // 避免"隐藏字段把已配置值悄悄改回默认"。
+            if (ShowDownCameraGroup)
+            {
+                err = ParseBoolField(EnableDownCameraText, "EnableDownCameraCorrection", out bool enDown);
+                if (err != null) return err;
+                fields["EnableDownCameraCorrection"] = enDown;
+
+                err = ParseBoolField(DownCameraPosCorrText, "EnableDownCameraPositionCorrection", out bool posCorr);
+                if (err != null) return err;
+                fields["EnableDownCameraPositionCorrection"] = posCorr;
+
+                err = ParseBoolField(DownCameraAngleCorrText, "EnableDownCameraAngleCorrection", out bool angCorr);
+                if (err != null) return err;
+                fields["EnableDownCameraAngleCorrection"] = angCorr;
+            }
             return null;
+        }
+
+        /// <summary>True/False（或 1/0）文本解析；返回错误文案，null=通过</summary>
+        private static string ParseBoolField(string text, string fieldName, out bool value)
+        {
+            var t = (text ?? string.Empty).Trim();
+            if (t.Equals("True", StringComparison.OrdinalIgnoreCase) || t == "1") { value = true; return null; }
+            if (t.Equals("False", StringComparison.OrdinalIgnoreCase) || t == "0" || t.Length == 0) { value = false; return null; }
+            value = false;
+            return $"字段 [{fieldName}] 应为 True/False（或 1/0）：{t}——已中止，未写库。";
         }
 
         /// <summary>开启/退出示教模式（不改动角度参数），写回补丁并热更新。</summary>
@@ -680,6 +865,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             HotReloadWorkerProcessConfig(null);
             var defaults = new VisionPickPlaceConfig();
             LoadCfgFields(defaults);
+            RefreshFieldRelevance(station, defaults);
             UpdateOverlayInfo(null);
             AddLog("INFO",
                 $"✅ 已清除全部参数覆盖：所有参数恢复代码默认（TeachMode={defaults.TeachMode}，" +

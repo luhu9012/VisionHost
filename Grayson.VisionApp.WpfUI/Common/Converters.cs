@@ -457,29 +457,27 @@ namespace Grayson.Vision.WpfUI.Common.Converters
     }
 
     /// <summary>
-    /// 标定类型枚举 → 中文可读名（列表 Tag / KPI 显示用，避免裸显示 C# 枚举名）。
+    /// 标定物理量枚举 → 中文可读名（列表 Tag / KPI 显示用，避免裸显示 C# 枚举名）。
     /// 与 CalibrationManagerViewModel.CalibrationTypeOptions 的 DisplayName 保持一致。
     /// </summary>
-    public class CalibrationTypeToTextConverter : IValueConverter
+    public class CalibrationQuantityToTextConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            if (value is Grayson.Vision.Contracts.Calibration.Models.CalibrationType t)
+            if (value is Grayson.Vision.Contracts.Calibration.Models.CalibrationQuantity q)
             {
-                switch (t)
+                switch (q)
                 {
-                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.NinePointHandEye:
-                        return "九点手眼";
-                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.HandEyeWithRotation:
-                        return "九点+旋转(偏心)";
-                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.PickPlaceHandEye:
-                        return "吸放式 Pick&Place";
-                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.Checkerboard2D:
-                        return "棋盘格 2D";
-                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.CameraLensDistortion:
-                        return "相机内参";
-                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationType.PixelScale:
-                        return "像素比例";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationQuantity.HandEye:
+                        return "手眼 H";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationQuantity.ToolRotation:
+                        return "旋转中心 e";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationQuantity.ToolOffset:
+                        return "对针 t";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationQuantity.LensDistortion:
+                        return "镜头畸变";
+                    case Grayson.Vision.Contracts.Calibration.Models.CalibrationQuantity.PixelScale:
+                        return "像素当量 s";
                 }
             }
             return value?.ToString() ?? "";
@@ -488,6 +486,30 @@ namespace Grayson.Vision.WpfUI.Common.Converters
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
             return Binding.DoNothing;
+        }
+    }
+
+    /// <summary>
+    /// double → Thickness：仅设置上边距（Top），其余为 0。
+    /// 用于点选覆盖层让出工具栏区（HalconImageDisplayHost.TopReservedHeight）。
+    /// 不能写成 &lt;Thickness Top="{Binding ...}"/&gt;，因为 Thickness.Top 是 struct 普通属性（非 DependencyProperty），
+    /// 无法承载 Binding，会抛 XamlParseException；必须在 Margin 上绑定完整 Thickness。
+    /// </summary>
+    public class TopMarginConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            double top = 0.0;
+            if (value is double d)
+                top = d;
+            else if (value != null && double.TryParse(value.ToString(), out double parsed))
+                top = parsed;
+            return new Thickness(0, top, 0, 0);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -12,7 +12,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
             {
                 case 1: return "请选择多点手眼标定所需的相机与运动控制卡。";
                 case 2: return "先抓图确认特征：平移阶段用麻将/工件 Mark；旋转阶段若工件不动需另装延伸杆（U 轴末端）贴 Mark，确认其随 U 轴转动且入相机视野。";
-                case 3: return "先完成平移 9 点（工件 Mark），再换延伸杆端 Mark 执行旋转角度采样（默认 -45°/0°/+45° 3 点，跨度 90°；偏心大/模板角度范围有限时转大角度 Mark 会出视野或失配，可在表内改分散角扩覆盖）拟合旋转中心（固定件无法标旋转）。";
+                case 3: return "先完成平移 9 点（工件 Mark），再换延伸杆端 Mark 执行旋转角度采样（默认 -45°/0°/+45° 3 点，跨度 90°；偏心大/模板角度范围有限时转大角度 Mark 会出视野或失配，可在表内改分散角扩覆盖）拟合旋转中心（固定件无法标旋转）。★ 表内角度为【相对基准角的增量】：首个采样点读当前 U 锁为基准角 U_ref，实际 U = U_ref + 表内角度，0°=当前姿态（不会拉回绝对 0°）。";
                 case 4: return "系统将同时求解平移 HomMat2D 矩阵与旋转中心结果。";
                 default: return "请按照提示操作。";
             }
@@ -40,6 +40,8 @@ namespace Grayson.Vision.WpfUI.ViewModel.Steps
             }
 
             vm.RotationPoints.Clear();
+            // ★ 2026-09-10 相对角：点表重建 = 新一轮旋转采样，清掉旧基准角缓存（下次采样重读当前 U）
+            vm.ResetRotationBaseU();
             if (hOnly)
             {
                 // H 段会话：旋转归 e 段，不种旋转表（体检/UI/进度全部随 HasRotationStage=false 收敛）

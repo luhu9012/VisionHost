@@ -134,6 +134,15 @@ namespace Grayson.Vision.Core.Scheduling
         }
 
         /// <summary>
+        /// 【分段执行】只执行执行链 [startIndex, endIndexExclusive) 区间内的节点。
+        /// 供复合工位"上相机段 → 机械动作 → 下相机段"交错节拍使用（业务过程内部直连）。
+        /// </summary>
+        internal Task RunRangeAsync(int startIndex, int endIndexExclusive, string batchId = null)
+        {
+            return ExecuteScopedAsync(batchId, "【分段】", () => _executor.RunRangeAsync(startIndex, endIndexExclusive));
+        }
+
+        /// <summary>
         /// 单次/连续执行的公共脚手架：工单追踪 + 节点执行上下文注入 + 异常/完成统计。
         /// <paramref name="runCore"/> 只允许调用 FlowExecutor 的执行原语（StepAsync / RunContinuousAsync）。
         /// </summary>

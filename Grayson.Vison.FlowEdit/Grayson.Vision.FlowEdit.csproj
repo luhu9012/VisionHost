@@ -87,6 +87,7 @@
     <Compile Include="Services\IDialogService.cs" />
     <Compile Include="Services\IWorkerClient.cs" />
     <Compile Include="Services\LayoutService.cs" />
+    <Compile Include="Services\MultiTargetPreviewContext.cs" />
     <Compile Include="Services\NodePluginLoader.cs" />
     <Compile Include="ViewModels\FlowVm.cs" />
     <Compile Include="Views\FlowEditView.xaml.cs">

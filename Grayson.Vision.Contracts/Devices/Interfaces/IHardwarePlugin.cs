@@ -52,6 +52,7 @@ namespace Grayson.Vision.Contracts.Devices
     {
         public string DeviceId { get; set; }   // 硬件唯一标识 (如相机SN、PLC IP地址、串口号、卡号)
         public string ModelName { get; set; }  // 设备型号 (如 "MV-CA060-10GM", "S7-1200")
+        public string UserDefName { get; set; } // 用户自定义名 (如海康 MVS 里改的 "UpCamera"/"DownCamera"/"MoveCamera"，无则空)
         public DeviceCategory Category { get; set; } // 设备类型
         public string BrandName { get; set; }  // 品牌名称
 

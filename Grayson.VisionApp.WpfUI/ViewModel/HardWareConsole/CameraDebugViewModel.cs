@@ -189,6 +189,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 var res = SelectedCameraDevice.Connect();
                 if (res.Success)
                 {
+                    System.Diagnostics.Debug.WriteLine($"[CameraDebugView] [{DescribeCameraTag(SelectedCameraDevice)}] 连接成功，开始对齐触发模式");
                     // 连接后显式把硬件触发模式对齐到 UI 当前选择，
                     // 杜绝「UI 显示连续 / 硬件却停留在 On(上次软触发残留)」导致的零帧无画面。
                     // （BaslerCamera 底层 Open 已有 TriggerMode=Off 兜底，此处再按 UI 精确对齐）
@@ -212,6 +213,8 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             StartGrabCommand = new RelayCommand(_ =>
             {
                 var res = SelectedCameraDevice?.StartGrabbing();
+                System.Diagnostics.Debug.WriteLine(
+                    $"[CameraDebugView] [{DescribeCameraTag(SelectedCameraDevice)}] 开始采集: {(res?.Success == true ? "OK" : $"失败 {res?.Message}")}");
                 if (res?.Success == true) IsGrabbing = true;
             }, _ => IsConnected && !IsGrabbing && SelectedTriggerMode == 0); // 1. 连续采集按钮仅在连续模式(0)下可用
 
@@ -355,14 +358,26 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             }
         }
 
+        /// <summary>生成当前相机的日志标签：优先逻辑名 DeviceKey，回退 DeviceId。</summary>
+        private string DescribeCameraTag(object camera)
+        {
+            var dev = camera as IDevice;
+            if (dev == null) return "?";
+            return !string.IsNullOrWhiteSpace(dev.DeviceKey) ? dev.DeviceKey
+                 : !string.IsNullOrWhiteSpace(dev.DeviceId) ? dev.DeviceId
+                 : "未命名设备";
+        }
+
         // 
         private DateTime _lastRenderTime = DateTime.MinValue;
 
         private void OnCameraFrameReceived(object sender, FrameEventArgs e)
         {
-            // 诊断：帧已到达 VM 层（若能看到此日志但无画面 → 显示层问题；若看不到 → 取流问题）
+            // 诊断：帧已到达 VM 层（若能看到此日志但无画面 → 显示层问题；若看不到 → 取流问题）。
+            // 带上相机身份（2026-09-10）：多相机场景下排查"某台无画面"时才能对号入座。
+            string camTag = DescribeCameraTag(sender);
             System.Diagnostics.Debug.WriteLine(
-                $"[CameraDebugView] 收到帧 #{e?.FrameNum} {e?.Width}x{e?.Height} {e?.PixelFormat} buf={e?.Buffer?.Length}");
+                $"[CameraDebugView] [{camTag}] 收到帧 #{e?.FrameNum} {e?.Width}x{e?.Height} {e?.PixelFormat} buf={e?.Buffer?.Length}");
 
             if (e?.Buffer == null || e.Width <= 0 || e.Height <= 0) return;
 
@@ -398,7 +413,18 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
                     var old = CameraDisplayVm.ActiveImageContext;
                     CameraDisplayVm.ActiveImageContext = context;
-                    old?.Dispose(); // 释放上一帧 HImage 句柄，避免内存泄漏
+
+                    // ★ 释放上一帧的时机（2026-09-11）：不能在这里同步 Dispose。
+                    //   ActiveImageContext 的 setter 里 Display() 是 Dispatcher.InvokeAsync 排队的，
+                    //   同步 Dispose 会让"上一帧的 HImage"在它自己的 Display 还没跑时就失效，
+                    //   DispObj 抛异常 → 被 RepaintScene 吞掉 → 表现为「日志全正常但屏幕黑」。
+                    //   放到 Background 优先级（低于 Display 的 Normal），确保画完再释放。
+                    if (old != null)
+                    {
+                        Application.Current.Dispatcher.BeginInvoke(
+                            new Action(() => old.Dispose()),
+                            System.Windows.Threading.DispatcherPriority.Background);
+                    }
 
                     IsGrabbing = true;
                 }

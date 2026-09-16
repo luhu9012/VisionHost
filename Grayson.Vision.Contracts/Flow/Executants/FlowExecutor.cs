@@ -53,25 +53,47 @@ namespace Grayson.Vision.Contracts.Flow.Executants
         /// <summary>
         /// 启动连续运行
         /// </summary>
-        public async Task RunContinuousAsync()
+        /// <param name="token">可选：外部取消令牌（子流程执行器等场景用于向父层传播取消）</param>
+        public async Task RunContinuousAsync(CancellationToken token = default)
+        {
+            await RunRangeAsync(0, _executionChain.Count, token, isSegment: false).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 分段执行：从 startIndex（含）执行到 endIndexExclusive（不含）。
+        /// 供复合工位"上相机段 → 机械动作 → 下相机段"这类交错节拍使用：
+        /// 一次视觉链被拆成多段，中间由业务过程插入运动/IO。
+        /// 与 RunContinuousAsync 共用同一套节点执行/数据管线/完成通知逻辑。
+        /// </summary>
+        /// <param name="isSegment">true=分段执行：完成事件标记 IsSegment，上层只更新 LastChainResult、不做状态机回退/落库。</param>
+        public async Task RunRangeAsync(int startIndex, int endIndexExclusive, CancellationToken token = default, bool isSegment = true)
         {
             if (State == ExecutionMode.Continuous) return;
-            ResetIndex();
             State = ExecutionMode.Continuous;
-            _cts = new CancellationTokenSource();
-            LogBus.Info("Engine", $"▶ 引擎按预编译执行链开始运行 (共 {_executionChain.Count} 个节点)...");
+            _cts = token.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(token)
+                : new CancellationTokenSource();
+
+            var execChain = _executionChain.Nodes;
+            int end = Math.Min(endIndexExclusive, execChain.Count);
+            if (startIndex < 0) startIndex = 0;
+            if (startIndex >= end)
+            {
+                LogBus.Warn("Engine", $"分段执行范围无效 [{startIndex},{end})，跳过。");
+                State = ExecutionMode.Stopped;
+                return;
+            }
+
+            _currentStepIndex = startIndex;
+            LogBus.Info("Engine", $"▶ 引擎分段执行 [{startIndex},{end})，共 {end - startIndex} 个节点...");
 
             ChainExecutionResult execResult = ChainExecutionResult.Success;
             Exception fatalException = null;
-
-            // 🌟 启动耗时计时器
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                var execChain = _executionChain.Nodes;
-
-                while (_currentStepIndex < execChain.Count && State == ExecutionMode.Continuous)
+                while (_currentStepIndex < end && State == ExecutionMode.Continuous)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
 
@@ -96,7 +118,7 @@ namespace Grayson.Vision.Contracts.Flow.Executants
 
                 if (execResult == ChainExecutionResult.Success)
                 {
-                    LogBus.Info("Engine", $"✔ 执行链顺利运行完毕。");
+                    LogBus.Info("Engine", $"✔ 分段执行完毕 [{startIndex},{end})。");
                 }
             }
             catch (OperationCanceledException)
@@ -114,8 +136,8 @@ namespace Grayson.Vision.Contracts.Flow.Executants
             {
                 stopwatch.Stop();
                 Stop();
-                // 🌟 核心：通知上层执行链已结束，并传入总耗时 ExecutionTimeMs
-                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(execResult, fatalException, stopwatch.Elapsed.TotalMilliseconds));
+                // 🌟 核心：通知上层执行链已结束，并传入总耗时 ExecutionTimeMs + 分段标记
+                OnChainCompleted?.Invoke(this, new ChainCompletedEventArgs(execResult, fatalException, stopwatch.Elapsed.TotalMilliseconds, isSegment));
             }
         }
         /// <summary>

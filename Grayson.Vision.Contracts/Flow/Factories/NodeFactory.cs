@@ -183,6 +183,10 @@ namespace Grayson.Vision.Contracts.Flow.Factories
                     compositeNode.SubProcess = subProcess;
                 }
 
+                // 🌟 2026-09-11：给 CompositeFlow 子流程节点挂载执行器，使 FlowExecutor 运行时
+                //    能真正展开执行其内部视觉链（此前无 Executor → 运行时被"未挂执行器跳过"）。
+                compositeNode.Executor = new CompositeFlowExecutor();
+
                 return compositeNode;
             }
 

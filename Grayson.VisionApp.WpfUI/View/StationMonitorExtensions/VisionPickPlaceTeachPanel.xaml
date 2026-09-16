@@ -8,7 +8,7 @@
     <Border Background="#140078D4" BorderBrush="#420078D4" BorderThickness="1"
             CornerRadius="4" Padding="10">
         <StackPanel>
-            <TextBlock Text="🤖 VisionPickPlace 取放示教 / 角度策略"
+            <TextBlock Text="🤖 VisionPickPlace 取放示教 / 执行参数"
                        FontWeight="Bold" FontSize="12" Foreground="#FF0078D4"/>
             <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0"
                        Foreground="{StaticResource TextSecondaryBrush}"
@@ -18,45 +18,95 @@
                 <Run Text="最近视觉输出：wx="/><Run Text="{Binding TeachWxText, Mode=OneWay}" FontWeight="Bold"/><Run Text="  wy="/><Run Text="{Binding TeachWyText, Mode=OneWay}" FontWeight="Bold"/><Run Text="  Angle="/><Run Text="{Binding TeachAngleText, Mode=OneWay}" FontWeight="Bold"/><Run Text="°（点【单次触发】后自动更新）"/>
             </TextBlock>
 
+            <!-- 字段范围依据：由【工位档案 + 任务模板】决定本面板显示哪些分组（2026-09-11） -->
+            <Border Background="#0F000000" CornerRadius="3" Padding="6,4" Margin="0,6,0,0">
+                <TextBlock FontSize="10" TextWrapping="Wrap"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Text="{Binding RelevanceHintText}"/>
+            </Border>
+
             <Separator Margin="0,6,0,6" Background="#220078D4"/>
 
             <TextBlock FontSize="11" TextWrapping="Wrap" Margin="0,2,0,3"
                        Foreground="{StaticResource TextSecondaryBrush}"
-                       Text="① 点【单次触发】采图（示教模式安全：不走位）→ ② 观察上行走位是否正确 → ③ 随机姿态来料需归正时改下方参数并【保存】"/>
+                       Text="① 点【单次触发】采图（示教模式安全：不走位）→ ② 观察上行走位是否正确 → ③ 需调整的字段改完点对应【保存】"/>
 
-            <!-- 角度策略参数 -->
-            <TextBlock Text="⚙ 角度策略（放料前统一工件姿态）"
-                       FontWeight="Bold" FontSize="11" Foreground="#FF0078D4" Margin="0,2,0,2"/>
-            <Grid Margin="0,2,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="视觉实测角归正(True/False)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding EnableAngleCorrectionText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="RefAngle(模板参考角°)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RefAngleText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Sign(方向 1 / -1)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding AngleSignText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="WorkU(吸取角°)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WorkUText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="PlaceU(放料角°)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
-                <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding PlaceUText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
-            </Grid>
-            <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"
-                       Foreground="{StaticResource TextDisabledBrush}"
-                       Text="归正公式：U_place = PlaceU − Sign·(Angle − RefAngle)。True=读 MatchAngle 自动归正随机姿态；False=固定转 PlaceU。相机朝上(下相机检知)=Sign 取 -1。"/>
-            <Button Content="💾 保存角度策略（写回配置并热更新）" Style="{StaticResource SuccessButtonStyle}"
-                    FontSize="11" Margin="1,5,1,0" Padding="0,6" Command="{Binding SaveAngleConfigCommand}"/>
+            <!-- ===== 角度策略参数（档案明确"不需要角度"时整组隐藏） ===== -->
+            <StackPanel Visibility="{Binding ShowAngleGroup, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="⚙ 角度策略（放料前统一工件姿态）"
+                           FontWeight="Bold" FontSize="11" Foreground="#FF0078D4" Margin="0,2,0,2"/>
+                <Grid Margin="0,2,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="视觉实测角归正(True/False)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding EnableAngleCorrectionText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="RefAngle(模板参考角°)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RefAngleText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Sign(方向 1 / -1)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding AngleSignText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="WorkU(吸取角°)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding WorkUText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="PlaceU(放料角°)" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding PlaceUText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center"/>
+                </Grid>
+                <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"
+                           Foreground="{StaticResource TextDisabledBrush}"
+                           Text="归正公式：U_place = PlaceU − Sign·(Angle − RefAngle)。True=读 MatchAngle 自动归正随机姿态；False=固定转 PlaceU。相机朝上(下相机检知)=Sign 取 -1。"/>
+                <Button Content="💾 保存角度策略（写回配置并热更新）" Style="{StaticResource SuccessButtonStyle}"
+                        FontSize="11" Margin="1,5,1,0" Padding="0,6" Command="{Binding SaveAngleConfigCommand}"/>
 
-            <Separator Margin="0,8,0,6" Background="#220078D4"/>
+                <Separator Margin="0,8,0,6" Background="#220078D4"/>
+            </StackPanel>
+
+            <!-- ===== 下相机二次校准段（仅"工位档案声明了下固定相机槽"时显示）===== -->
+            <StackPanel Visibility="{Binding ShowDownCameraGroup, Converter={StaticResource BoolToVisibilityConverter}}">
+                <TextBlock Text="📍 下相机二次校准（吸取后 → 下相机拍 → 纠偏放置）"
+                           FontWeight="Bold" FontSize="11" Foreground="#FF8A2BE2" Margin="0,2,0,2"/>
+                <Grid Margin="0,2,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="6"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="启用下相机段" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding EnableDownCameraText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="EnableDownCameraCorrection：True=三段节拍（上相机抓→下相机校→放）；False=传统单相机流程（下相机子流程整段跳过）"/>
+                    <TextBlock Grid.Row="0" Grid.Column="3" Text="角度符号 1/-1" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding DownCameraAngleSignText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="DownCameraAngleSign：下相机仰视=视轴镜像，通常取 -1；若表现为【越归正越歪】就翻成 1"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="视场中心X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding DownCameraXText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="DownCameraX：下相机视场中心对应的机械位 X（命令位）。★下相机九点标定的走位网格中心必须就是这一点"/>
+                    <TextBlock Grid.Row="1" Grid.Column="3" Text="视场中心Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding DownCameraYText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="DownCameraY：下相机视场中心对应的机械位 Y（命令位）"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="拍照Z" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding DownCameraZText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="DownCameraZ：拍卡片底面时的 Z 高度。★必须与九点标定时的 Z 一致，否则像素当量失真"/>
+                    <TextBlock Grid.Row="2" Grid.Column="3" Text="匹配下限" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding DownCameraMinScoreText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="DownCameraMinScore：下相机段匹配分数下限，低于则判纠偏 NG，回落固定位放置"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="位置/角度纠偏" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
+                    <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                        <TextBox Width="46" Text="{Binding DownCameraPosCorrText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="EnableDownCameraPositionCorrection：True=放置位=固定位−R(ΔU)·δ（按 U 变化量补偿）"/>
+                        <TextBlock Text=" / " FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"/>
+                        <TextBox Width="46" Text="{Binding DownCameraAngleCorrText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="EnableDownCameraAngleCorrection：True=放料角=PlaceU−Sign·(下相机Angle−Ref)"/>
+                    </StackPanel>
+                    <TextBlock Grid.Row="3" Grid.Column="3" Grid.ColumnSpan="2" Text="位置 / 角度" FontSize="10" VerticalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"/>
+                </Grid>
+                <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"
+                           Foreground="{StaticResource TextDisabledBrush}"
+                           Text="前置条件：配方主流程须为两段子流程（上相机引导 + 下相机纠偏），且下相机子流程已选模板、已绑九点矩阵。缺任一项时引擎会在第一个周期直接报【预检未通过】，不会静默按固定位放置。"/>
+                <Button Content="💾 保存下相机段参数（写回配置并热更新）" Style="{StaticResource SuccessButtonStyle}"
+                        FontSize="11" Margin="1,5,1,0" Padding="0,6" Command="{Binding SaveMotionConfigCommand}"/>
+
+                <Separator Margin="0,8,0,6" Background="#220078D4"/>
+            </StackPanel>
 
             <!-- 执行参数：位点/姿态/吸嘴（2026-09-06：S3 灌点入口；同心吸嘴 Ecc 全 0） -->
             <TextBlock Text="🎯 执行参数（单位：mm / ms / mm·s⁻¹）"
@@ -90,10 +140,14 @@
                 <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Place1XText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Place1X：第一块放料位 X（工件中心落点）"/>
                 <TextBlock Grid.Row="2" Grid.Column="3" Text="放料1Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding Place1YText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Place1Y：第一块放料位 Y"/>
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="放料2X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Place2XText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Place2X：第二块放料位 X（仅双吸嘴）"/>
-                <TextBlock Grid.Row="3" Grid.Column="3" Text="放料2Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
-                <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding Place2YText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Place2Y：第二块放料位 Y（仅双吸嘴）"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="放料2X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"
+                           Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Place2XText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Place2X：第二块放料位 X（仅双吸嘴）"
+                         Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBlock Grid.Row="3" Grid.Column="3" Text="放料2Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"
+                           Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding Place2YText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Place2Y：第二块放料位 Y（仅双吸嘴）"
+                         Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
                 <TextBlock Grid.Row="4" Grid.Column="0" Text="XY速度" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding XySpeedText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="XySpeed：XY/U 联动移动速度（0=用引擎默认）"/>
                 <TextBlock Grid.Row="4" Grid.Column="3" Text="Z速度" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
@@ -107,15 +161,17 @@
                     <ColumnDefinition Width="6"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
-                    <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                    <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="单吸嘴形态" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding UseSingleNozzleText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="UseSingleNozzle：True=单吸嘴（放料2/真空2/嘴2 不参与）；False=双吸嘴"/>
                 <TextBlock Grid.Row="0" Grid.Column="3" Text="真空1/2 IO" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <StackPanel Grid.Row="0" Grid.Column="4" Orientation="Horizontal">
-                    <TextBox Width="40" Text="{Binding VacuumIo1Text, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="VacuumIo1：吸嘴1 真空 IO 号"/>
-                    <TextBlock Text=" / " FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"/>
-                    <TextBox Width="40" Text="{Binding VacuumIo2Text, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="VacuumIo2：吸嘴2 真空 IO 号"/>
+                    <TextBox Width="40" Text="{Binding VacuumIo1Text, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="VacuumIo1：吸嘴1 真空【业务号 0 基】—— 填 0=吸嘴1真空（映射物理 Out15）；勿填物理口号"/>
+                    <TextBlock Text=" / " FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextDisabledBrush}"
+                               Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    <TextBox Width="40" Text="{Binding VacuumIo2Text, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="VacuumIo2：吸嘴2 真空【业务号 0 基】—— 填 1=吸嘴2真空（映射物理 Out14）；勿填物理口号"
+                             Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
                 </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="真空开/关延时" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
@@ -129,10 +185,14 @@
                 <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Nozzle1EccXText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle1EccX：吸嘴1 相对 U 回转中心的偏心 X（同心=0；标定旋转中心后按发布值）"/>
                 <TextBlock Grid.Row="2" Grid.Column="3" Text="嘴1 偏心Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding Nozzle1EccYText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle1EccY：吸嘴1 偏心 Y"/>
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="嘴2 偏心X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Nozzle2EccXText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle2EccX：吸嘴2 偏心 X（双吸嘴）"/>
-                <TextBlock Grid.Row="3" Grid.Column="3" Text="嘴2 偏心Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
-                <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding Nozzle2EccYText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle2EccY：吸嘴2 偏心 Y（双吸嘴）"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="嘴2 偏心X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"
+                           Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Nozzle2EccXText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle2EccX：吸嘴2 偏心 X（双吸嘴）"
+                         Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBlock Grid.Row="3" Grid.Column="3" Text="嘴2 偏心Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"
+                           Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding Nozzle2EccYText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle2EccY：吸嘴2 偏心 Y（双吸嘴）"
+                         Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
             </Grid>
             <Button Content="💾 保存执行参数（写回配置并热更新）" Style="{StaticResource SuccessButtonStyle}"
                     FontSize="11" Margin="1,6,1,0" Padding="0,6" Command="{Binding SaveMotionConfigCommand}"/>
@@ -156,7 +216,7 @@
                     FontSize="11" Margin="1,6,1,0" Padding="0,5" Command="{Binding ResetToDefaultsCommand}"/>
             <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
                        Foreground="{StaticResource TextDisabledBrush}"
-                       Text="说明：本面板持久化 角度策略/TeachMode/位点/姿态/速度/真空 IO/偏心/单双吸嘴 等字段级覆盖；未列参数（轴号、CardAlias、TilePitch 节距、MinScore 等）以 VisionPickPlaceConfig.cs 代码默认为准。偏心也可由旋转中心标定发布写入，二者同源时以最后一次保存为准。"/>
+                       Text="说明：本面板持久化 角度策略/TeachMode/位点/姿态/速度/真空 IO/偏心/单双吸嘴/下相机段 等字段级覆盖；未列参数（轴号、CardAlias、TilePitch 节距、MinScore 等）以 VisionPickPlaceConfig.cs 代码默认为准。偏心也可由旋转中心标定发布写入，二者同源时以最后一次保存为准。"/>
         </StackPanel>
     </Border>
 </UserControl>

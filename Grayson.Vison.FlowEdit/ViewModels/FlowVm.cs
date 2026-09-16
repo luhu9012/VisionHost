@@ -149,7 +149,17 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         /// 顶部配方关键信息摘要（供 Header 绑定显示）
         /// </summary>
         //public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")} | 工位: {CurrentStationDisplayName} | 当前层级: {CurrentProcess?.ProcessName} | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
-        public string CurrentRecipeInfo => $"配方: {RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")}  | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
+        /// <summary>
+        /// 🌟 2026-09-10 修复：此处此前显示的是 <see cref="FlowProcessModel.ProcessName"/>（主流程名），
+        ///    并非配方名。演示配方工厂（DlDemoTaskFactory:439 / MeasurementDemoTaskFactory:290）刻意让
+        ///    ProcessName ≠ RecipeName，配方页手工改名也不会同步 ProcessName，
+        ///    于是编辑器顶部「配方」名与配方管理页列表名系统性不一致。
+        ///    现统一以 RecipeName 为准，主流程名另列，便于对照。
+        /// </summary>
+        public string CurrentRecipeInfo =>
+            $"配方: {CurrentRecipe?.RecipeName ?? RootProcess?.ProcessName ?? "未定义"}{(IsDirty ? " *" : "")}" +
+            $"  | 主流程: {RootProcess?.ProcessName ?? "未定义"}" +
+            $"  | 节点数: {CurrentProcess?.Nodes?.Count ?? 0}";
 
         public ObservableCollection<SharedDataItem> WatchData { get; set; } = new ObservableCollection<SharedDataItem>();
         /// <summary>WatchData 的 Key 索引（Key = "节点名.端口名"），增量更新避免列表重建闪烁</summary>
@@ -187,7 +197,9 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
                     if (!_isApplyingStationContext)
                     {
-                        SwitchWorkerStationAsync();
+                        // 🌟 2026-09-10：切换工位不再只重绑 Worker，而是先按工位绑定关系整体切换上下文
+                        //    （加载该工位绑定的配方及其编排节点；该工位未绑定配方则清空画布）
+                        SwitchStationContextAsync();
                     }
                 }
             }
@@ -283,6 +295,25 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         /// </summary>
         public Func<RecipeModel, bool> HostRecipeSaveHandler { get; set; }
 
+        /// <summary>
+        /// 🌟 2026-09-10 新增：宿主注入的配方读取委托。
+        /// 编辑器内切换工位时，用它按工位配置的 BoundRecipeId / BoundRecipeName 从配方库取回完整配方，
+        /// 从而"切工位 → 自动加载该工位绑定的配方及其编排节点"。
+        /// 未注入时退化为只重绑 Worker（保持旧行为，不换配方、不清画布）。
+        /// </summary>
+        public Func<StationConfigModel, RecipeModel> HostRecipeLoadHandler { get; set; }
+
+        private bool _isPlaceholderRecipe;
+        /// <summary>
+        /// 当前画布承载的是"工位未绑定配方"时生成的临时占位配方（切换工位自动清空画布的产物）。
+        /// 占位配方无对应的配方库实体，禁止回写配方库，避免产生垃圾配方文件。
+        /// </summary>
+        public bool IsPlaceholderRecipe
+        {
+            get => _isPlaceholderRecipe;
+            private set => Set(ref _isPlaceholderRecipe, value);
+        }
+
         #endregion
 
         #region 3. UI 命令定义
@@ -301,6 +332,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         public ICommand ResetCmd { get; }
         public ICommand AutoLayoutCmd { get; }
         public ICommand SaveCurrentPipelineAsRecipeCommand { get; }
+        /// <summary>🌟 2026-09-10 新增：重命名当前流程层级（面包屑上显示的名称）。</summary>
+        public ICommand RenameProcessCmd { get; }
         public ICommand ClearCanvasCommand { get; }
         public ICommand ToggleShowDataPortsCommand { get; }
         public ICommand OpenNodePropertyCommand { get; }
@@ -359,6 +392,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             NavigateToProcessCmd = new RelayCommand<FlowProcessModel>(NavigateToProcess);
             AutoLayoutCmd = new RelayCommand(AutoLayout);
             SaveCurrentPipelineAsRecipeCommand = new RelayCommand(OnSaveCurrentPipelineAsRecipe);
+            RenameProcessCmd = new RelayCommand(RenameCurrentProcess);
             ClearCanvasCommand = new RelayCommand(() => ClearCanvas(false));
             ToggleShowDataPortsCommand = new RelayCommand(() => ShowDataPorts = !ShowDataPorts);
             OpenNodePropertyCommand = new RelayCommand<FlowNodeBase>(OnNodeDoubleClicked);
@@ -540,6 +574,15 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                 return;
             }
 
+            // 🌟 2026-09-10：工位未绑定配方时的空白占位画布不允许回写配方库，
+            //    否则会在 Recipes 目录产生 RCP-UNBOUND-* 垃圾配方文件。
+            if (IsPlaceholderRecipe)
+            {
+                MessageBox.Show("当前工位未绑定配方，画布内容无法保存。\n请先在【配方管理】中创建配方并下发绑定到该工位。",
+                                "未绑定配方", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             // 1. 保存前校验拓扑完整性
             if (!EnsureValidExecutionChain())
             {
@@ -593,6 +636,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             if (importedRecipe != null)
             {
                 CurrentRecipe = importedRecipe;
+                // 🌟 2026-09-10：导入的是真实配方，清除"工位未绑定占位流程"标记，否则会被保存守卫误拦
+                IsPlaceholderRecipe = false;
 
                 // 🌟 1. 导入完成后，递归重新绑定并计算主流程及所有嵌套子流程的连线坐标
                 BindAndRefreshConnections(CurrentRecipe.MainProcess);
@@ -688,6 +733,29 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             }
         }
 
+        /// <summary>
+        /// 🌟 2026-09-10 新增：重命名「当前流程层级」的名称（即面包屑上显示的那个名字）。
+        /// 说明：主流程名 = 配方页「主流程名称」字段显示的值，两处改的是同一个 ProcessName；
+        /// 子流程名则只影响该子流程。改名本身不落盘，需随后点保存（与画布编辑一致）。
+        /// </summary>
+        private void RenameCurrentProcess()
+        {
+            if (CurrentProcess == null) return;
+
+            string oldName = CurrentProcess.ProcessName ?? string.Empty;
+            string input = PromptDialog.Show("重命名流程", "请输入流程名称（面包屑上显示的名称）：", oldName);
+            if (string.IsNullOrWhiteSpace(input)) return;
+
+            input = input.Trim();
+            if (string.Equals(input, oldName, StringComparison.Ordinal)) return;
+
+            CurrentProcess.ProcessName = input;   // 属性已带通知 → 面包屑即时刷新
+            IsDirty = true;
+            OnPropertyChanged(nameof(CurrentRecipeInfo)); // 顶部「主流程: xxx」依赖它
+
+            LogBus.Info("Flow", $"流程 [{oldName}] 已重命名为 [{input}]。");
+        }
+
         #endregion
 
         #region 6. Worker 客户端通信与运行控制
@@ -699,15 +767,184 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             await RebindWorkerClientAsync(GetEffectiveStationId());
         }
 
-        private async void SwitchWorkerStationAsync()
+        /// <summary>
+        /// 🌟 2026-09-10 新增：工位切换总入口（取代原先只重绑 Worker 的 SwitchWorkerStationAsync）。
+        /// 约定语义：切换工位 → 自动加载该工位绑定的配方及其编排节点；该工位未绑定配方 → 清空对应内容区域。
+        /// 切换前若画布有未保存改动 → 先自动落盘当前配方（用户约定：自动保存后切换）。
+        /// </summary>
+        private async void SwitchStationContextAsync()
         {
+            // 防御：AvailableStations 重建（Clear）时 ComboBox 会回写 null 到选中项，
+            // 那是绑定产物而非用户切换工位，不能据此清空/切换画布。
+            if (string.IsNullOrWhiteSpace(SelectedStationId))
+            {
+                return;
+            }
+
             var stationId = GetEffectiveStationId();
+            var stationConfig = ResolveStationConfig(stationId);
+
+            // 0. 工位上下文未注册（独立编辑器壳 / 未注入工位清单）→ 退化为旧行为：仅重绑 Worker
+            if (stationConfig == null)
+            {
+                await RebindWorkerClientAsync(stationId);
+                return;
+            }
+
+            var boundRecipe = ResolveBoundRecipeForStation(stationConfig);
+
+            // 1. 该工位未绑定任何配方（或绑定已失联）→ 清空画布内容区域
+            if (boundRecipe == null)
+            {
+                var hadContent = (CurrentRecipe?.MainProcess?.Nodes?.Count ?? 0) > 0
+                                 || (CurrentRecipe?.MainProcess?.Connections?.Count ?? 0) > 0;
+                if (hadContent)
+                {
+                    AutoSaveBeforeStationSwitch();
+                }
+
+                LoadRecipe(CreateUnboundPlaceholderRecipe(stationConfig), isPlaceholder: true);
+                LogBus.Warn("FlowVm", $"工位 [{stationId}] 未绑定配方，画布已清空（当前为占位空白流程，不落盘）。");
+                return;
+            }
+
+            // 2. 该工位绑定了配方，且与当前编辑的不是同一份 → 先落盘当前改动，再整体切换到目标配方
+            if (!IsSameRecipe(boundRecipe, CurrentRecipe))
+            {
+                AutoSaveBeforeStationSwitch();
+                LoadRecipe(boundRecipe);
+                LogBus.Info("FlowVm", $"已切换至工位 [{stationId}] 绑定的配方: [{boundRecipe.RecipeName}]");
+                return;
+            }
+
+            // 3. 同一份配方：画布内容保留，只重绑 Worker 到新工位
             if (_workerClient != null && string.Equals(_workerClient.StationId, stationId, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
             await RebindWorkerClientAsync(stationId);
+        }
+
+        /// <summary>
+        /// 解析指定工位绑定的配方实体。
+        /// 匹配顺序：BoundRecipeId 优先，BoundRecipeName 兜底（配方页下发时 BoundRecipeName 存的是显示名）。
+        /// 未注入宿主读取委托、或绑定失联（配方已被删除/改名）时返回 null → 由调用方按"未绑定"处理。
+        /// </summary>
+        private RecipeModel ResolveBoundRecipeForStation(StationConfigModel stationConfig)
+        {
+            if (stationConfig == null) return null;
+            if (string.IsNullOrWhiteSpace(stationConfig.BoundRecipeId)
+                && string.IsNullOrWhiteSpace(stationConfig.BoundRecipeName))
+            {
+                return null;
+            }
+
+            if (HostRecipeLoadHandler == null)
+            {
+                LogBus.Warn("FlowVm", "宿主未注入配方读取委托，无法按工位绑定加载配方。");
+                return null;
+            }
+
+            try
+            {
+                var recipe = HostRecipeLoadHandler(stationConfig);
+                if (recipe == null)
+                {
+                    LogBus.Warn("FlowVm",
+                        $"工位 [{stationConfig.StationCode ?? stationConfig.StationId}] 绑定的配方无法加载" +
+                        $"（BoundRecipeId={stationConfig.BoundRecipeId ?? "-"}，" +
+                        $"BoundRecipeName={stationConfig.BoundRecipeName ?? "-"}），按未绑定处理。");
+                }
+
+                return recipe;
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("FlowVm", $"加载工位绑定配方失败: {ex.Message}", ex);
+                return null;
+            }
+        }
+
+        /// <summary>判定两个配方是否同一份（按 RecipeId 优先、RecipeCode 兜底；引用相同直接命中）</summary>
+        private static bool IsSameRecipe(RecipeModel left, RecipeModel right)
+        {
+            if (left == null || right == null) return false;
+            if (ReferenceEquals(left, right)) return true;
+
+            if (!string.IsNullOrWhiteSpace(left.RecipeId) && !string.IsNullOrWhiteSpace(right.RecipeId))
+            {
+                return string.Equals(left.RecipeId, right.RecipeId, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (!string.IsNullOrWhiteSpace(left.RecipeCode) && !string.IsNullOrWhiteSpace(right.RecipeCode))
+            {
+                return string.Equals(left.RecipeCode, right.RecipeCode, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 切换工位前的自动落盘（用户约定：不弹窗、不丢弃，直接保存当前编排）。
+        /// 占位配方（工位未绑定）没有配方库实体，直接丢弃脏标记而不落盘。
+        /// </summary>
+        private void AutoSaveBeforeStationSwitch()
+        {
+            if (CurrentRecipe == null || !IsDirty) return;
+
+            if (IsPlaceholderRecipe)
+            {
+                IsDirty = false;
+                return;
+            }
+
+            if (HostRecipeSaveHandler == null)
+            {
+                LogBus.Warn("FlowVm", "宿主未注入配方保存委托，切换工位前的自动保存已跳过。");
+                return;
+            }
+
+            try
+            {
+                CurrentRecipe.MainProcess = RootProcess;
+                CurrentRecipe.LastModifiedTime = DateTime.Now;
+
+                if (HostRecipeSaveHandler(CurrentRecipe))
+                {
+                    IsDirty = false;
+                    LogBus.Info("Recipe", $"切换工位前已自动保存配方 [{CurrentRecipe.RecipeName}]。");
+                }
+                else
+                {
+                    LogBus.Warn("Recipe", $"切换工位前自动保存配方 [{CurrentRecipe.RecipeName}] 失败。");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBus.Error("Recipe", $"切换工位前自动保存异常: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// 构造"工位未绑定配方"时用于清空画布的空白占位配方。
+        /// 带明确命名标识，且 IsPlaceholderRecipe=true 时不允许回写配方库。
+        /// </summary>
+        private static RecipeModel CreateUnboundPlaceholderRecipe(StationConfigModel stationConfig)
+        {
+            var label = stationConfig?.StationCode ?? stationConfig?.StationId ?? "未知工位";
+
+            return new RecipeModel
+            {
+                RecipeId = Guid.NewGuid().ToString("N"),
+                RecipeCode = "RCP-UNBOUND-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"),
+                RecipeName = $"未绑定配方（{label}）",
+                ProductCategory = "未绑定工位",
+                Version = "1.0.0",
+                Author = Environment.UserName,
+                Description = "视觉流程编辑器在切换工位时自动生成的空白占位流程（该工位未绑定任何配方），不会写入配方库。",
+                MainProcess = new FlowProcessModel { ProcessName = "主流程" }
+            };
         }
 
         private string GetEffectiveStationId()
@@ -1107,6 +1344,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 //await PrepareForNewExecutionAsync();
                 await EnsureWorkerSyncedAsync(); // 🌟 运行前自动检查并重新构建
+                EnsurePreviewTarget();           // ★ 同「单步」：运行前重新武装预览目标（共享 Worker 单槽）
                 await _workerClient.StartAsync();
                 await _workerClient.RunContinuousAsync();
             }
@@ -1127,6 +1365,12 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             {
                 //await PrepareForNewExecutionAsync();
                 await EnsureWorkerSyncedAsync(); // 🌟 触发前自动检查并重新构建
+                // ★ 执行前重新武装预览目标（与 StepRunNodeAsync 同口径）。
+                //   共享 Worker 只有一个预览槽（StationContext.PreviewContext），
+                //   工位监视页进入/离开都会改它；整链「单步」不重新武装的话，
+                //   节点叠加层就会画到别的窗口（或无处可画）。必须在
+                //   EnsureWorkerSyncedAsync 之后——重新装载配方会重建执行链。
+                EnsurePreviewTarget();
                 await _workerClient.StepChainAsync();
             }
             catch (Exception ex)
@@ -1153,38 +1397,104 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         /// <summary>主编辑器视图的预览适配器（常驻默认目标），由 FlowEditView 注册</summary>
         private IFlowPreviewContext _defaultPreview;
 
-        /// <summary>属性面板的预览适配器（临时目标，优先级高于默认）</summary>
+        /// <summary>默认预览目标的注册者（视图实例）。用于卸载时"只解除自己注册的那个"</summary>
+        private object _defaultPreviewOwner;
+
+        /// <summary>属性面板的预览适配器（临时目标）</summary>
         private IFlowPreviewContext _panelPreview;
 
         /// <summary>
         /// 注册默认预览目标（主编辑器视图窗口）。
-        /// 属性面板未打开时，节点的 Preview?.Add(...) 就画到这里；
-        /// 面板打开时临时切到面板，关闭后自动回切。
+        /// 只要主视图存在，它**始终**是预览目标之一（与属性面板扇出，不再二选一）。
         /// </summary>
-        public void SetDefaultPreview(IFlowPreviewContext previewContext)
+        /// <param name="owner">注册者（视图实例），仅用于卸载时的归属校验，可为 null</param>
+        public void SetDefaultPreview(IFlowPreviewContext previewContext, object owner = null)
         {
             _defaultPreview = previewContext;
-            if (_panelPreview == null)
-            {
-                _workerClient?.SetPreviewContext(previewContext);
-            }
+            _defaultPreviewOwner = previewContext == null ? null : owner;
+            ApplyPreviewTarget();
         }
 
         /// <summary>
-        /// 执行前确认预览目标已注入：面板优先，其次主视图。
-        /// 目的：工位监视页与 FlowEdit 共享同一个 Worker（单槽），
-        /// 别的宿主 SetPreviewContext 会直接覆盖，因此每次跑之前重新武装一次。
+        /// 解除默认预览目标（视图卸载时调用）。
+        /// ★ 只解除 owner 自己注册的那一个：编辑器页面每次导航都是**新**的视图实例，
+        ///   而"新视图已注册 → 旧视图延迟卸载"的乱序会让旧视图把新视图刚注册的目标抹掉，
+        ///   结果又是"预览无处可画"却看不出是谁清的。
+        /// </summary>
+        public void ClearDefaultPreview(object owner)
+        {
+            if (_defaultPreview == null) return;
+
+            if (owner != null && _defaultPreviewOwner != null && !ReferenceEquals(_defaultPreviewOwner, owner))
+            {
+                LogBus.Info("FlowVm", "忽略非注册者的默认预览目标解除请求（防旧视图卸载抹掉新视图的注册）。");
+                return;
+            }
+
+            _defaultPreview = null;
+            _defaultPreviewOwner = null;
+            ApplyPreviewTarget();
+        }
+
+        /// <summary>
+        /// ★★ 预览目标注入的**唯一入口**：把「属性面板预览 + 编辑器主视图预览」一起注入引擎
+        /// （MultiTargetPreviewContext 扇出），而不是原来的"二选一"。
+        ///
+        /// 为什么必须扇出（2026-09-15 定案）：节点执行期间的"效果"分两部分——
+        ///   ① 图像：经端口值 → ImageDisplayVm → 主视图（这条通路本来就一直在工作）；
+        ///   ② 场景叠加层：经 NodeExecutionContext.Preview → **单个**显示宿主。
+        /// 原实现面板打开时只注入面板 ⇒ 形状匹配的十字/分数文本/贴合轮廓全画在面板里，
+        /// 主视图只剩"和上游同一实例的底图"（MatchImage 借用 InputImage），看着就像"没刷新"。
+        ///
+        /// 每次执行前重新武装的原因不变：工位监视页与 FlowEdit 共享同一个 Worker（单槽），
+        /// 别的宿主 SetPreviewContext 会直接覆盖本编辑器的注入。
+        /// </summary>
+        private void ApplyPreviewTarget()
+        {
+            // Combine 在单目标时直接返回该目标本体（不包壳），保持与改动前一致的对象身份。
+            var target = MultiTargetPreviewContext.Combine(_panelPreview, _defaultPreview);
+
+            // 只在"目标组合发生变化"时记一行（实时预览会按参数变化高频重跑，逐次记会淹掉日志）
+            var desc = target == null
+                ? "无（节点绘制将被跳过）"
+                : string.Join(" + ", new[]
+                    {
+                        _panelPreview != null ? "属性面板" : null,
+                        _defaultPreview != null ? "编辑器主视图" : null
+                    }.Where(x => x != null));
+
+            if (_workerClient == null)
+            {
+                // 不静默：视图构造期就注册默认目标（此时 Worker 还没连）是正常时序，
+                // 但"备好了却没注入"与"根本没有目标"在日志里必须能区分开，
+                // 否则永远查不出"注册了却从没生效"（本轮踩过）。
+                if (desc != _lastPreviewTargetDesc)
+                {
+                    _lastPreviewTargetDesc = desc;
+                    LogBus.Info("FlowVm", $"[VM {GetHashCode():X}] 预览目标已就绪待注入: {desc}（Worker 未连接，执行前会重新武装）");
+                }
+                return;
+            }
+
+            _workerClient.SetPreviewContext(target);
+
+            if (desc != _lastPreviewTargetDesc)
+            {
+                _lastPreviewTargetDesc = desc;
+                LogBus.Info("FlowVm", $"[VM {GetHashCode():X}] 节点预览目标已注入: {desc}");
+            }
+        }
+
+        /// <summary>上一次注入的预览目标组合描述（仅用于日志去重）</summary>
+        private string _lastPreviewTargetDesc;
+
+        /// <summary>
+        /// 执行前确认预览目标已注入（面板 + 主视图扇出）。
+        /// 保留方法名以免调用点语义扩散；行为统一收敛到 ApplyPreviewTarget。
         /// </summary>
         private void EnsurePreviewTarget()
         {
-            if (_panelPreview != null)
-            {
-                _workerClient?.SetPreviewContext(_panelPreview);
-            }
-            else if (_defaultPreview != null)
-            {
-                _workerClient?.SetPreviewContext(_defaultPreview);
-            }
+            ApplyPreviewTarget();
         }
 
         /// <summary>
@@ -1201,7 +1511,7 @@ namespace Grayson.Vison.FlowEdit.ViewModels
 
             _previewTargetNode = node;
             _panelPreview = previewContext;
-            _workerClient?.SetPreviewContext(previewContext);
+            ApplyPreviewTarget(); // 面板 + 主视图扇出（原来面板独占，主视图拿不到任何叠加层）
 
             if (node.ParameterModel is INotifyPropertyChanged pcm)
             {
@@ -1226,8 +1536,8 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             _previewDebounce?.Stop();
             _previewTargetNode = null;
             _panelPreview = null;
-            // 属性面板关闭后回切主视图预览目标，而非置空——否则工具栏「单步」无处可画
-            _workerClient?.SetPreviewContext(_defaultPreview);
+            // 属性面板关闭后回切到「主视图」预览目标，而非置空——否则工具栏「单步」无处可画
+            ApplyPreviewTarget();
         }
 
         /// <summary>参数属性变化 → 防抖 300ms（拖动滑块高频触发时只跑最后一次）</summary>
@@ -1255,6 +1565,10 @@ namespace Grayson.Vison.FlowEdit.ViewModels
             _isPreviewRunning = true;
             try
             {
+                // 与工具栏「单步」同口径：跑之前重新武装预览目标（面板 + 主视图扇出）。
+                // 共享 Worker 被别的宿主 SetPreviewContext 覆盖后，这里若不重新武装，
+                // 面板里的实时预览会"画到别处去"（现象：改参数后预览窗口不再更新）。
+                ApplyPreviewTarget();
                 await _workerClient.StepNodeAsync(_previewTargetNode);
                 OnPreviewExecuted?.Invoke();
             }
@@ -1695,11 +2009,20 @@ namespace Grayson.Vison.FlowEdit.ViewModels
                     AvailableStations.Add(item);
                 }
 
+                // 🌟 2026-09-10：不再在"配方未绑定任何工位"时静默选中列表第一个工位。
+                //    静默兜底会造出「配方 A + 工位 X」这种自相矛盾的组合（X 可能绑定的是另一份配方 B），
+                //    也让用户误以为正在为 X 编辑流程。此处保持未选中，UI 显示"未选择工位"；
+                //    Worker 侧仍由 GetEffectiveStationId() 兜底到首个可用工位，不影响调试执行。
                 var targetStationId = !string.IsNullOrWhiteSpace(preferredStationId)
                     ? preferredStationId
-                    : AvailableStations.FirstOrDefault()?.StationId;
+                    : null;
 
                 SelectedStationId = targetStationId;
+
+                if (string.IsNullOrWhiteSpace(targetStationId) && AvailableStations.Count > 0)
+                {
+                    LogBus.Info("FlowVm", "当前配方未绑定任何工位，工位选择保持为空（Worker 仍按首个可用工位调试运行）。");
+                }
             }
             finally
             {
@@ -1766,12 +2089,17 @@ namespace Grayson.Vison.FlowEdit.ViewModels
         /// 外部加载配方实体统一入口
         /// </summary>
         /// <param name="recipe">外部传入的 RecipeModel 对象</param>
-        public void LoadRecipe(RecipeModel recipe)
+        /// <param name="isPlaceholder">
+        /// 是否为"工位未绑定配方"生成的空白占位流程（切换工位清空画布的产物）。
+        /// true 时禁止回写配方库，避免污染配方库。
+        /// </param>
+        public void LoadRecipe(RecipeModel recipe, bool isPlaceholder = false)
         {
             if (recipe == null) return;
 
             // 1. 更新当前配方引用
             CurrentRecipe = recipe;
+            IsPlaceholderRecipe = isPlaceholder;
 
             // 2. 防空保护：确保主流程实体存在
             if (CurrentRecipe.MainProcess == null)

@@ -138,10 +138,76 @@ namespace Grayson.Vision.Core.Processes
         /// <summary>拍照基准位 Y（mm，命令位）——仅 EIH 需要</summary>
         public float PhotoBaseY { get; set; } = 0f;
 
-        /// <summary>旋转中心 O 的 X（命令位域）= 三点定圆圆心经 H 映射（标定档案 ToolCenterWx）。仅 EIH 需要。</summary>
+        /// <summary>旋转中心 O 的 X（命令位域）= 三点定圆圆心经 H 映射（标定档案 ToolCenterWx）。需 O 补偿时使用。</summary>
         public float RotCenterWx { get; set; } = 0f;
-        /// <summary>旋转中心 O 的 Y（命令位域）= 标定档案 ToolCenterWy。仅 EIH 需要。</summary>
+        /// <summary>旋转中心 O 的 Y（命令位域）= 标定档案 ToolCenterWy。需 O 补偿时使用。</summary>
         public float RotCenterWy { get; set; } = 0f;
+
+        /// <summary>
+        /// ★2026-09-12：X_obj 是否需叠旋转中心 O + 偏心 e 补偿（决定消费式，与 VisionPickPlaceConfig.NeedsOCompensation 同源）。
+        ///   ① EIH 眼在手 → true；② ETH 固定相机（直接拍工件 / 延伸杆辅助）→ **false**。
+        /// ★2026-09-15 二修：固定相机【不再叠 O】（O 补偿式含 P_photo，只对"相机随机械手走"成立）
+        ///   ⇒ 固定相机若 H 标的是杆端 mark，靠 <see cref="HasRodOffset"/> 补 b。
+        /// 默认 false（向后兼容）；仅 EIH 由发布链写 true。
+        /// </summary>
+        public bool NeedsOCompensation { get; set; } = false;
+
+        // ===== 2026-09-15：固定相机 + 延伸杆标定的『杆端→吸嘴偏移 b』通路（与 VisionPickPlaceConfig 同源同名）=====
+        /// <summary>
+        /// ★2026-09-15：是否启用『杆端→吸嘴偏移 b』（固定相机 + 延伸杆辅助标定专用）。
+        /// H 的域是【杆端 mark】⇒ 同心吸嘴送尖要补一个与 U 无关的常量位移：**吸点 = H(u) + b**。
+        /// ⚠ 三者互斥：HandEyeInNozzleDomain（已消杆）/ NeedsOCompensation（EIH）/ 本字段（固定相机杆端域）。
+        /// 默认 false = 与改动前一致（零回归）。符号见 <see cref="RodOffsetSign"/>。
+        /// </summary>
+        public bool HasRodOffset { get; set; } = false;
+
+        /// <summary>杆端→吸嘴偏移 b 的 X（mm，命令位域；档案 ToolEccWx）。仅 HasRodOffset 时生效。</summary>
+        public float RodOffsetWx { get; set; } = 0f;
+        /// <summary>杆端→吸嘴偏移 b 的 Y（mm，命令位域；档案 ToolEccWy）。仅 HasRodOffset 时生效。</summary>
+        public float RodOffsetWy { get; set; } = 0f;
+        /// <summary>b 的符号（+1/−1）。默认 +1（推导结论：吸点 = H(u) + b）；现场 A/B 若发现应取反改这里即可。</summary>
+        public float RodOffsetSign { get; set; } = 1f;
+
+        /// <summary>
+        /// ★★2026-09-16：现场**是否真的判定过** <see cref="RodOffsetSign"/>。
+        /// 与 <see cref="VisionPickPlaceConfig.RodOffsetSignDeclared"/> 同义同判据：
+        /// ① 符号默认就是 +1f ⇒ 键缺席时"取默认"与"判定过 +1"在数值上无法区分；
+        /// ② 发布链 SetFields 的**同值剪枝**会把现场选的 +1 静默剪掉 ⇒ 显式选择从来没落过盘。
+        /// 默认 false（写 true 永远 ≠ 默认 ⇒ 永不被剪枝）；false 时消费端硬拦（选错偏 2|b|，比不补更危险）。
+        /// </summary>
+        public bool RodOffsetSignDeclared { get; set; } = false;
+
+        /// <summary>
+        /// ★2026-09-15：九点矩阵 H 是否已在【吸嘴域】（延伸杆偏心已在标定阶段扣掉）。
+        /// true = 消费直接 X_obj = H(u)，**不叠 O、不用 P_photo**（优先于 NeedsOCompensation / CameraMountEih）。
+        /// false = 默认未声明，行为与改动前一致。
+        /// ⚠ 与 NeedsOCompensation 同时为 true 即【双重补偿】（H 已消杆又被补一遍 O/e）。
+        /// </summary>
+        public bool HandEyeInNozzleDomain { get; set; } = false;
+
+        /// <summary>
+        /// ★2026-09-15：吸嘴是否与 U 回转轴同轴。true ⇒ 消费免掉 R(U−U0)·Ecc 项（U 只定姿态）。
+        /// false = 默认（未声明 / 偏心吸嘴）→ 保留该项，与改动前一致。
+        /// </summary>
+        public bool NozzleAxisCoaxial { get; set; } = false;
+
+        /// <summary>
+        /// ★★2026-09-15：发布时那份口径判定的**标签**（口径漂移对账用）。
+        /// 形态 = "&lt;档号&gt;|&lt;档名&gt;|b=&lt;符号或n/a&gt;"，由发布链用 CalibrationConsumptionContract 生成。
+        /// 生产端启动时用**同一个反读函数**再算一遍并比对：不一致 ⇒ 打 ERROR。
+        /// 为什么需要：本配置是**一套扁平字段**（没有"哪台相机"这一维），复合工位多相机发布会互相覆盖，
+        /// 覆盖后口径可能仍是"合法值"却不代表本槽 ⇒ 只有留下发布时的判定结果才能发现漂移。
+        /// 默认空串 = **从未按口径契约发布过**。
+        /// ★★2026-09-16 语义修正：空串**不再**等于「不做对账」。
+        ///   原先这里写的是「尚未发布过（此时不做对账，避免把"没发过"误报成"漂移"）」——
+        ///   那条判断把最危险的状态（从没对过账）当成了安全状态：ST_002 就是这样在无声明状态下
+        ///   静默退到 ②直吸 H(u)，少补 |b|=132mm 撞机。现在空串 = TagReconcileStatus.NoTag，
+        ///   由 StationProcessBase.EnforceConsumptionGate 与标定档案交叉核对，冲突即拦下不许运动。
+        /// </summary>
+        public string ConsumptionTag { get; set; } = "";
+
+        /// <summary>★2026-09-15：发布时那份口径的算式文字（人话），用于生产端启动横幅与二次对账。</summary>
+        public string ConsumptionFormula { get; set; } = "";
 
         // ============================================================
         // 视觉与双牌定位
@@ -172,8 +238,25 @@ namespace Grayson.Vision.Core.Processes
         // Z 轴高度与速度
         // ============================================================
 
-        /// <summary>Z 轴安全高度（XY 运动前 Z 必须在此之上）</summary>
+        /// <summary>
+        /// Z 轴安全高度（XY 运动前 Z 必须在此之上；本机 Z 域顶=0、向下为负，现场配 -50）。
+        /// ★★2026-09-16 实测：默认值写的是 +50，在本机【不可能有效】（已超出 Z 域顶）—— 陈旧的兜底值。
+        ///   实测现存工位档案【全都带 SafeZ 键】（-10.0 与 -50.0 两种），故该默认值当前走不到；
+        ///   万一某档案缺键，会拿到 +50 并被下游【抛异常拒绝】（`ResolveGantryLimZ` 判定 limZ 不高于
+        ///   目标 Z；`MoveAbsAsync` 被脚本以 `ERR Z out of range(-144~0)` 拒后抛异常）—— 都是"响"的，不静默。
+        ///   是否改成现场实际值（-50f）按机型定夺；改前请先确认不存在"新建且不带该键"的工位。
+        /// </summary>
         public float SafeZ { get; set; } = 50f;
+
+        /// <summary>
+        /// 【门型走位 JUMP】水平段高度 mm —— 平移时先把工件抬到该 Z 再水平走，到了再下降。
+        ///
+        /// ★这是【安全通过高度】，不是速度。取值要求：严格高于路径上一切障碍顶面，
+        ///   且低于 Z 域顶(0)。本机（Epson SCARA）Z 域顶=0、向下为负；现场 SafeZ 配 -50 ⇒ 默认 -30。
+        /// ★它必须【高于目标 Z】，否则门型失效（退化成贴着目标高度横穿）—— 运行期发现越界会
+        ///   兜底为"目标 Z+30mm"，仍无效则**直接拒绝执行**（宁可不动，不可乱动）。
+        /// </summary>
+        public float JumpLimZ { get; set; } = -30f;
         /// <summary>Z 轴吸取下探高度</summary>
         public float PickZ { get; set; } = -2f;
         /// <summary>Z 轴放料下探高度</summary>

@@ -123,6 +123,21 @@ namespace Grayson.Vision.Contracts.Devices
         /// <summary>单轴绝对位置运动 (MoveAbs)</summary>
         Result MoveAbsolute(int axis, float position, float speed);
 
+        /// <summary>
+        /// 【门型运动 Jump】先垂直抬到 limZ → 在 limZ 高度水平移动到目标 XY → 垂直降到目标 Z。
+        ///
+        /// 用途：**吸持工件时的平移**。与逐轴 <see cref="MoveAbsolute"/> 的本质区别：
+        ///   ① 四轴一次性下发，末端不走"逐轴拆两步"的 L 形（不在中间拐角点停一次）；
+        ///   ② 可指定**安全通过高度 limZ**，从制度上避免"低位横穿"刮碰。
+        /// 实测依据（ST_002）：同一对点，L 形路径第二段最紧点离内圈边界仅 1.5mm（贴边飞过），
+        /// 门型走直线的最紧点余量 31.3mm。
+        ///
+        /// 属 PTP 类运动（速度档为百分比）。**不支持的卡必须返回 Fail**，
+        /// 由调用方显式降级为"分段走位"，不允许静默按单轴平移顶替。
+        /// </summary>
+        /// <param name="limZ">水平段高度 (mm)，必须【高于目标 Z】，否则门型失效（退化成贴地横穿）</param>
+        Result MoveJump(float x, float y, float z, float u, float limZ, float speed);
+
         /// <summary>轴单轴回零 (Home/Datum)</summary>
         /// <param name="axis">轴号</param>
         /// <param name="homeMode">回零模式</param>
@@ -179,5 +194,30 @@ namespace Grayson.Vision.Contracts.Devices
         Result ContinuousInterpolation(int[] axisList, List<InterpolationPoint> points, float speed);
 
         #endregion
+    }
+
+    /// <summary>
+    /// 运动卡【主动探活】可选能力（2026-09-16 新增）。
+    ///
+    /// 【为什么需要】
+    ///   `IDevice.State` 只反映"当初连上了"。当通信对端进程/脚本任务崩溃、或中途断网时，
+    ///   TCP 会进入**半死**状态：本地套接字仍报 Connected，直到下一次 Write 抛 IOException
+    ///   才现形 ⇒ 故障被推迟到"第一条业务指令"上，现场只看到业务侧报"通道忙/无应答"，
+    ///   真因（对端已不在了）被完全淹没。
+    ///
+    /// 【实现约定】
+    ///   · 必须是**轻量往返**（如 Epson TCP 通道的 PING→PONG），毫秒级、无副作用、允许只读；
+    ///   · 通道正被其它命令占用、无法判定时**必须返回 true**（宁可漏报，不可误报，
+    ///     否则会在机械手运动中途把连接断掉）；
+    ///   · 只支持 TCP/网络型通道的设备需要实现；本地卡/仿真通道不必实现本接口。
+    ///
+    /// 【调用方约定】
+    ///   · 只在**业务循环开跑前**（无运动在途时）调用，返回 false ⇒ 应断开并重连，重连后仍
+    ///     false 则向上抛带明确处置指引的异常（别把"对端已死"含糊成"通道忙"）。
+    /// </summary>
+    public interface IMotionCardHealthProbe
+    {
+        /// <summary>主动探活。false = 通道已死（应断开重连）；true = 存活或无法判定。</summary>
+        bool ProbeAlive(int timeoutMs = 1000);
     }
 }

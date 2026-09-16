@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Grayson.Vision. All rights reserved.
 // 文件名: StationProfileSanityCheck.cs
 // 说 明: 工位档案自洽校验（2026-09-05 P3 骨架：档案→标定推导的前置门）。
-//        背景：档案 CameraSlots 由向导手工填写，出现过"下固定/上固定相机却标
-//        MovesWithActuator=true"的矛盾——固定相机不可能随执行机构移动，照此推导
+//        背景：档案 CameraSlots 由向导手工填写，出现过"安装方式(InstallKind)与
+//        轴跟随(AxisFollows)不一致"的矛盾——固定相机不可能随轴移动，照此推导
 //        会把"手眼走位式"错误套到固定相机上（走位方向/镜像语义全错）。
 //        职责：静态纯函数给出 修正(Fix)/警告(Warning) 清单；ApplyAndPersist 负责
 //        落盘写回（用户拍板：校验+修正写回，而非仅警告）。
-//        边界：只修正"语义可自证的矛盾字段"（安装方式↔随动标志），其余仅警告不擅改。
+//        边界：只修正"语义可自证的矛盾字段"（安装方式↔轴跟随），其余仅警告不擅改。
 //===================================================================================
 using System;
 using System.Collections.Generic;
@@ -32,13 +32,14 @@ namespace Grayson.Vision.WpfUI.Service
     /// <summary>
     /// 档案自洽校验引擎（静态无状态）。
     /// v1 规则集：
-    ///   R1 相机槽安装方式 ↔ MovesWithActuator 联动（Fix）：
-    ///      固定安装(上固定/下固定/侧斜)→ false；随动安装(眼在手上/随执行机构)→ true；
-    ///      null 且可判定 → 按安装方式填齐（消除推导二义）。
     ///   R2 斜拍光轴 → 畸变前置提示（Warning，不擅改）
     ///   R3 槽 Purpose=飞拍纠偏 但 ShootMode≠飞拍 → 一致性提示（Warning）
     ///   R4 单相机旧字段 CameraMount 与首槽 CameraSlots 语义并存时 → 提示优先消费槽（Warning）
     ///   R5 未填执行机构 → 提示轴约定无法预设（Warning）
+    ///   R6 轴跟随 AxisFollows ↔ 安装方式 InstallKind 联动（Fix）：
+    ///      固定相机（上/下固定/斜拍）→ AxisFollows 恒"固定（不随动）"；眼在手上 → 须明确跟随哪些轴。
+    /// ★ 2026-09-12 起：随动/固定的唯一判据是 InstallKind（MovesWithActuator 已删除），
+    ///   原 R1「安装方式↔随动标志联动」规则随之移除（无需再修正冗余的随动布尔字段）。
     /// </summary>
     public static class StationProfileSanityCheck
     {
@@ -50,7 +51,7 @@ namespace Grayson.Vision.WpfUI.Service
             var req = profile.Requirement;
             if (req == null) return r;
 
-            // —— R1 槽级 安装方式 ↔ 随动标志 ——
+            // —— R2 斜拍 → 畸变前置提示 ——
             if (req.CameraSlots != null)
             {
                 for (int i = 0; i < req.CameraSlots.Count; i++)
@@ -63,22 +64,6 @@ namespace Grayson.Vision.WpfUI.Service
                     bool fixedMount = install.Contains("固定") || install.Contains("斜");
                     bool movingMount = install.Contains("眼在手上") || install.Contains("随执行机构") || install.Contains("随动");
 
-                    if (fixedMount && slot.MovesWithActuator == true)
-                    {
-                        slot.MovesWithActuator = false;
-                        r.Fixes.Add($"{slotTag}：安装为「{install}」（固定相机不会随执行机构移动），随动标志 true→false");
-                    }
-                    else if (movingMount && slot.MovesWithActuator == false)
-                    {
-                        slot.MovesWithActuator = true;
-                        r.Fixes.Add($"{slotTag}：安装为「{install}」（随执行机构移动），随动标志 false→true");
-                    }
-                    else if (slot.MovesWithActuator == null && (fixedMount || movingMount))
-                    {
-                        slot.MovesWithActuator = fixedMount ? false : true;
-                        r.Fixes.Add($"{slotTag}：随动标志缺失，按安装方式「{install}」补填 {slot.MovesWithActuator.Value}");
-                    }
-
                     // —— R2 斜拍 → 畸变前置提示 ——
                     string axis = slot.AxisToSurface ?? string.Empty;
                     if (axis.Contains("斜") || install.Contains("斜"))
@@ -86,13 +71,30 @@ namespace Grayson.Vision.WpfUI.Service
                         r.Warnings.Add($"{slotTag}：斜拍成像存在透视/畸变，建议先做畸变矫正（CameraLensDistortion 预留，当前仅提示）；垂直光轴标定更稳");
                     }
 
-                    // —— R3 飞拍纠偏一致性 ——
+                    // —— R3 飞拍一致性 ——
+                    // 只认 purpose 显式含"飞拍"：静止对位"纠偏"（精拍）不属飞拍，不应误报警。
                     string purpose = slot.Purpose ?? string.Empty;
-                    if ((purpose.Contains("飞拍") || purpose.Contains("纠偏"))
+                    if (purpose.Contains("飞拍")
                         && !string.Equals(slot.ShootMode, "飞拍", StringComparison.Ordinal)
                         && !string.Equals(slot.ShootMode, "飞拍", StringComparison.OrdinalIgnoreCase))
                     {
-                        r.Warnings.Add($"{slotTag}：用途为「{purpose}」但拍照方式=「{slot.ShootMode ?? "(未填)"}」，飞拍纠偏应在运动中成像，请现场确认");
+                        r.Warnings.Add($"{slotTag}：用途为「{purpose}」但拍照方式=「{slot.ShootMode ?? "(未填)"}」，飞拍应在运动中成像，请现场确认");
+                    }
+
+                    // —— R6 轴跟随 ↔ 安装方式 联动（2026-09-12 增补，Fix）——
+                    // 固定相机（上/下固定/斜拍）→ AxisFollows 恒"固定（不随动）"；眼在手上 → 须明确跟随哪些轴。
+                    string axisFollows = slot.AxisFollows ?? string.Empty;
+                    if (fixedMount)
+                    {
+                        if (!string.IsNullOrWhiteSpace(axisFollows) && !axisFollows.Contains("固定"))
+                        {
+                            slot.AxisFollows = "固定（不随动）";
+                            r.Fixes.Add($"{slotTag}：安装为「{install}」（固定相机不随任何轴），轴跟随「{axisFollows}」→ 固定（不随动）");
+                        }
+                    }
+                    else if (movingMount && string.IsNullOrWhiteSpace(axisFollows))
+                    {
+                        r.Warnings.Add($"{slotTag}：眼在手上相机未填「轴跟随」，请明确随哪些轴（跟随XY / 跟随XYZU / 跟随XY不随ZU…），否则手眼标定消费语义可能有偏差");
                     }
                 }
             }

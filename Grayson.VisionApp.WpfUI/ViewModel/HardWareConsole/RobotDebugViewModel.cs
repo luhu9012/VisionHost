@@ -3,6 +3,9 @@ using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.WpfUI.Common;
+using Grayson.Vision.WpfUI.Model;
+using Grayson.Vision.WpfUI.ViewModel.Steps;
 using Newtonsoft.Json;
 using Plugins.Robot.Epson; // WpfUI 已 ProjectReference 插件项目：类型判断调用 EpsonRobot 专属方法
 using System;
@@ -11,6 +14,8 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -51,6 +56,11 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         private bool _disconnectNotified;
         /// <summary>命令门闩：运动类命令执行期间禁止再发（防连点导致指令交错/协议错位）</summary>
         private bool _commandBusy;
+        /// <summary>
+        /// RC+ 示教点同步：批量读点重入保护（连点按钮不会打两轮，两轮会互相抢 _ioLock
+        /// 并让"停轮询/恢复轮询"配不成对）。
+        /// </summary>
+        private bool _rcLoadBusy;
 
         /// <summary>连续失败阈值：250ms×12 ≈ 3s 连续无应答/断线 → 判定通信中断</summary>
         private const int PollFailThreshold = 12;
@@ -235,6 +245,251 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
 
         #endregion
 
+        #region RC+ 示教点同步（只读，2026-09-11 新增）
+
+        /// <summary>从 RC+ 点文件读回的点位（只读快照，不落盘、不影响控制器）</summary>
+        public ObservableCollection<TeachPointModel> RcPoints { get; } = new ObservableCollection<TeachPointModel>();
+
+        private TeachPointModel _selectedRcPoint;
+        public TeachPointModel SelectedRcPoint
+        {
+            get => _selectedRcPoint;
+            set
+            {
+                if (Set(ref _selectedRcPoint, value))
+                {
+                    // 【回放走位】【导入】可用性随选中点变化 → 必须手动刷新（同 SelectedTeachPoint）
+                    PlayRcPointCommand?.RaiseCanExecuteChanged();
+                }
+            }
+        }
+
+        private string _rcPointCountText = "10";
+        /// <summary>要同步的点号个数（从 P0 起算，1~100）</summary>
+        public string RcPointCountText
+        {
+            get => _rcPointCountText;
+            set => Set(ref _rcPointCountText, value);
+        }
+
+        private string _rcPointsStatusText = "未同步（连接后自动读一次，或点「读取」）";
+        public string RcPointsStatusText
+        {
+            get => _rcPointsStatusText;
+            private set => Set(ref _rcPointsStatusText, value);
+        }
+
+        #endregion
+
+        #region 可达域可视化与九点预演（2026-09-11 新增）
+
+        // ★ 这一段解决的是"标定九点怎么走才不撞机 / 不被控制器拒绝"。
+        //
+        // 【为什么画实测多边形，而不是画理想圆环】
+        //   真实可达域 = 圆环 ∩ 关节限位区域，只有 J1 全周且 J2 全范围时才退化成圆环。
+        //   用圆环画会犯"画在环内其实够不着"的假安全错误 —— 那正是撞机的来源。
+        //
+        // 【数据从哪来】.workbuddy/map_workspace.py 或本页「零运动实测」——
+        //   只发只读 CHECK（内部走 SPEL+ TargetOK），机械手原地不动，不驱动电机。
+        //
+        // 【分工】VM 负责"算"（取景范围 / 绿区栅格 / 9 点判定 / 文案），View 只负责"画"。
+        //   ReachMapGeometry 是纯计算，不依赖任何 WPF 绘图类型，可离线自检。
+
+        /// <summary>实测可达域。null = 尚未载入（画布显示引导提示）</summary>
+        private ReachMapData _reachMap;
+        public ReachMapData ReachMap
+        {
+            get => _reachMap;
+            private set => Set(ref _reachMap, value);
+        }
+
+        /// <summary>可行基准位栅格位图（绿区）。只在数据/步长/margin 变化时重建；拖动基准位不重算</summary>
+        private FeasibleBitmap _reachFeasible;
+        public FeasibleBitmap ReachFeasible
+        {
+            get => _reachFeasible;
+            private set => Set(ref _reachFeasible, value);
+        }
+
+        // 画布取景范围（世界坐标 mm）—— 由 RecalcReachGeometry 统一设置，View 直接读取
+        private double _reachXMin = -450, _reachXMax = 450, _reachYMin = -450, _reachYMax = 450;
+        public double ReachXMin { get => _reachXMin; private set => Set(ref _reachXMin, value); }
+        public double ReachXMax { get => _reachXMax; private set => Set(ref _reachXMax, value); }
+        public double ReachYMin { get => _reachYMin; private set => Set(ref _reachYMin, value); }
+        public double ReachYMax { get => _reachYMax; private set => Set(ref _reachYMax, value); }
+
+        private string _reachBaseX = "0";
+        /// <summary>九点网格中心（基准位）X mm。画布上按住拖动会实时改写这里</summary>
+        public string ReachBaseX
+        {
+            get => _reachBaseX;
+            set { if (Set(ref _reachBaseX, value)) RecalcReachVerdict(); }
+        }
+
+        private string _reachBaseY = "0";
+        public string ReachBaseY
+        {
+            get => _reachBaseY;
+            set { if (Set(ref _reachBaseY, value)) RecalcReachVerdict(); }
+        }
+
+        private string _reachStepMm = "10";
+        /// <summary>九点平移走位步长 mm（与标定向导的 GridStep 同口径）</summary>
+        public string ReachStepMm
+        {
+            get => _reachStepMm;
+            set { if (Set(ref _reachStepMm, value)) RecalcReachGeometry(); }
+        }
+
+        private string _reachMarginMm = "10";
+        /// <summary>安全余量 mm：九点内圈离可达内边界、外圈离可达外边界都要留出的距离</summary>
+        public string ReachMarginMm
+        {
+            get => _reachMarginMm;
+            set { if (Set(ref _reachMarginMm, value)) RecalcReachGeometry(); }
+        }
+
+        private int _reachEyeModeIndex;   // 0 = EyeInHand(眼在手上)；1 = EyeToHand(眼在手外)
+        /// <summary>眼型：决定九点相对基准的偏移方向（与标定档案的 EyeMode 同口径）</summary>
+        public int ReachEyeModeIndex
+        {
+            get => _reachEyeModeIndex;
+            set { if (Set(ref _reachEyeModeIndex, value)) RecalcReachGeometry(); }
+        }
+
+        private int _reachModeIndex;      // 0 = 中心优先螺旋；1 = 传统逐行扫描
+        /// <summary>走位方式。只改变访问次序，不改变网格位置（与标定向导同一张顺序表）</summary>
+        public int ReachModeIndex
+        {
+            get => _reachModeIndex;
+            set
+            {
+                if (Set(ref _reachModeIndex, value))
+                {
+                    RaisePropertyChanged(nameof(ReachTraverseOrder));
+                    RaisePropertyChanged(nameof(ReachVerdictText));
+                }
+            }
+        }
+
+        private bool _reachInvertX;
+        public bool ReachInvertX
+        {
+            get => _reachInvertX;
+            set { if (Set(ref _reachInvertX, value)) RecalcReachGeometry(); }
+        }
+
+        private bool _reachInvertY;
+        public bool ReachInvertY
+        {
+            get => _reachInvertY;
+            set { if (Set(ref _reachInvertY, value)) RecalcReachGeometry(); }
+        }
+
+        private bool _showReachDomain = true;
+        public bool ShowReachDomain { get => _showReachDomain; set => Set(ref _showReachDomain, value); }
+
+        private bool _showMarginBand = true;
+        public bool ShowMarginBand { get => _showMarginBand; set => Set(ref _showMarginBand, value); }
+
+        private bool _showReachGrid = true;
+        public bool ShowReachGrid { get => _showReachGrid; set => Set(ref _showReachGrid, value); }
+
+        private bool _showFeasibleZone = true;
+        public bool ShowFeasibleZone { get => _showFeasibleZone; set => Set(ref _showFeasibleZone, value); }
+
+        private string _reachVerdictText = "尚未载入可达域数据 —— 连上控制器后点「📡 零运动实测」；没有设备时可先点「👁 示意」预览界面。";
+        /// <summary>九点判定结论（带"还差多少 mm"）</summary>
+        public string ReachVerdictText
+        {
+            get => _reachVerdictText;
+            private set => Set(ref _reachVerdictText, value);
+        }
+
+        private int _reachVerdictLevel;   // 0 中性 / 1 安全(绿) / 2 警告(橙) / 3 不可行(红)
+        public int ReachVerdictLevel
+        {
+            get => _reachVerdictLevel;
+            private set => Set(ref _reachVerdictLevel, value);
+        }
+
+        private string _reachActionText = "";
+        /// <summary>载入/扫描/开走前校验的操作反馈</summary>
+        public string ReachActionText
+        {
+            get => _reachActionText;
+            private set => Set(ref _reachActionText, value);
+        }
+
+        private string _reachScanButtonText = "📡 零运动实测";
+        public string ReachScanButtonText
+        {
+            get => _reachScanButtonText;
+            private set => Set(ref _reachScanButtonText, value);
+        }
+
+        // ---- 零运动扫描参数（2026-09-11 增强：支持指定 Z/U、方向数、进度条、落盘 JSON）----
+
+        private string _reachScanZ = "";
+        /// <summary>扫描平面 Z（mm）。留空 = 用当前机械手 Z；填了 = 按此 Z 扫</summary>
+        public string ReachScanZ
+        {
+            get => _reachScanZ;
+            set => Set(ref _reachScanZ, value);
+        }
+
+        private string _reachScanU = "";
+        /// <summary>扫描平面 U（度）。留空 = 用当前机械手 U；填了 = 按此 U 扫</summary>
+        public string ReachScanU
+        {
+            get => _reachScanU;
+            set => Set(ref _reachScanU, value);
+        }
+
+        private string _reachScanDirs = "24";
+        /// <summary>扫描方向数（越多越细，越慢）。默认 24，可调 12~72</summary>
+        public string ReachScanDirs
+        {
+            get => _reachScanDirs;
+            set => Set(ref _reachScanDirs, value);
+        }
+
+        private double _reachScanProgress;   // 0~100
+        public double ReachScanProgress
+        {
+            get => _reachScanProgress;
+            private set => Set(ref _reachScanProgress, value);
+        }
+
+        private bool _reachScanProgressVisible;
+        public bool ReachScanProgressVisible
+        {
+            get => _reachScanProgressVisible;
+            private set => Set(ref _reachScanProgressVisible, value);
+        }
+
+        public IReadOnlyList<string> ReachEyeModeOptions { get; } =
+            new[] { "眼在手上 EyeInHand", "眼在手外 EyeToHand" };
+
+        public IReadOnlyList<string> ReachTraverseModeOptions { get; } =
+            new[] { "中心优先螺旋(推荐)", "传统逐行扫描" };
+
+        /// <summary>九点走位次序（与标定向导 NinePointTraverseOrder 同一张表，保证序号标注不漂移）</summary>
+        public int[] ReachTraverseOrder => NinePointTraverseOrder.GetOrder(
+            _reachModeIndex == 1 ? NinePointTraverseMode.RowScan : NinePointTraverseMode.SpiralCenterFirst);
+
+        /// <summary>扫描取消令牌（非 null = 正在扫描；再点一次按钮即取消）</summary>
+        private System.Threading.CancellationTokenSource _reachScanCts;
+
+        public RelayCommand LoadReachMapCommand { get; private set; }
+        public RelayCommand LoadSyntheticReachMapCommand { get; private set; }
+        public RelayCommand ScanReachMapCommand { get; private set; }
+        public RelayCommand UseCurrentPosAsBaseCommand { get; private set; }
+        public RelayCommand UseBestBaseCommand { get; private set; }
+        public RelayCommand PrecheckGridCommand { get; private set; }
+
+        #endregion
+
         #region 真空阀（双吸嘴）
 
         private bool _vaccum1On;
@@ -268,6 +523,12 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         public RelayCommand DeleteTeachPointCommand { get; private set; }
         public RelayCommand ToggleVaccum1Command { get; private set; }
         public RelayCommand ToggleVaccum2Command { get; private set; }
+        /// <summary>从 RC+ 点文件读取前 N 个示教点（只读）</summary>
+        public RelayCommand LoadRcPointsCommand { get; private set; }
+        /// <summary>把选中的 RC+ 点写入目标框并走位（与手动走位同链路）</summary>
+        public RelayCommand PlayRcPointCommand { get; private set; }
+        /// <summary>把已同步的 RC+ 点批量并入本机示教点列表（同名覆盖，供业务流消费）</summary>
+        public RelayCommand ImportRcPointsCommand { get; private set; }
         /// <summary>单轴步进（参数 "X+" / "X-" / "Y+" …；按住连续/单击单步，后台 IO）</summary>
         public RelayCommand<string> StepAxisCommand { get; private set; }
         /// <summary>相机实时画面弹窗（复用 CameraLiveWindow，非模态，边动边看）</summary>
@@ -326,6 +587,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 IsServoOn = true;
                 RefreshTransportText();
                 LoadTeachPoints();
+
+                // ★ RC+ 示教点同步（2026-09-11）：连接后自动读一次前 N 个点号。
+                //   只读、不发运动指令；通道不支持（SDK/仿真）时内部会给出可读提示并退出。
+                await LoadRcPointsCoreAsync();
 
                 // ★ 安全默认（2026-09-02）：连接后把当前位置填入目标框——
                 //   默认目标 0,0,0,0 对 SCARA 是动作区域外点（4001/4007），
@@ -557,8 +822,59 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 // res == null = 门闩拦截（上一步仍在执行）→ 静默跳过，等待下次触发
             }, p => IsConnected && _motion != null && !_commandBusy && !string.IsNullOrWhiteSpace(p));
 
+            // ---- RC+ 示教点同步（只读，2026-09-11）----
+            // 只读点文件，不发运动指令、不写控制器 → 不占 _commandBusy；
+            // 但共用同一 TCP 行协议（一发一收由适配层 _ioLock 串行），IO 仍必须在后台线程。
+            LoadRcPointsCommand = new RelayCommand(async () =>
+            {
+                if (!IsConnected || _epson == null) return;
+                await LoadRcPointsCoreAsync();
+            }, () => IsConnected && _epson != null);
+
+            PlayRcPointCommand = new RelayCommand(() =>
+            {
+                if (SelectedRcPoint == null || !IsConnected || _motion == null) return;
+                // ★ 占位行（未定义/读取失败）坐标是 0,0,0,0，发出去就是动作区域外点 → 直接挡掉
+                if (SelectedRcPoint.IsUnreadable)
+                {
+                    RcPointsStatusText = $"「{SelectedRcPoint.Name}」没有可用坐标，不能回放；请先在 RC+ 里示教该点。";
+                    return;
+                }
+                // 回放：写入目标框后立即走位（与既有【回放走位】同链路，不新增运动路径）
+                TargetX = FormatCoord(SelectedRcPoint.X);
+                TargetY = FormatCoord(SelectedRcPoint.Y);
+                TargetZ = FormatCoord(SelectedRcPoint.Z);
+                TargetU = FormatCoord(SelectedRcPoint.U);
+                MoveToPointCommand.Execute(null);
+            }, () => SelectedRcPoint != null && !SelectedRcPoint.IsUnreadable
+                     && IsConnected && _motion != null && !_commandBusy);
+
+            ImportRcPointsCommand = new RelayCommand(() =>
+            {
+                int n = 0;
+                foreach (var p in RcPoints.ToList())
+                {
+                    if (p.IsUnreadable) continue;      // 占位行不导入（0,0,0,0 会污染业务流）
+                    if (string.IsNullOrWhiteSpace(p.Name)) continue;
+                    var copy = new TeachPointModel { Name = p.Name, X = p.X, Y = p.Y, Z = p.Z, U = p.U };
+                    var existing = TeachPoints.FirstOrDefault(t =>
+                        string.Equals(t.Name, p.Name, StringComparison.OrdinalIgnoreCase));
+                    if (existing != null) TeachPoints[TeachPoints.IndexOf(existing)] = copy;
+                    else TeachPoints.Add(copy);
+                    n++;
+                }
+                SaveTeachPoints();
+                SelectedTeachPoint = TeachPoints.LastOrDefault();
+                RcPointsStatusText = n > 0
+                    ? $"已把 {n} 个 RC+ 点位并入上方「示教点管理」（同名覆盖，已落盘）"
+                    : "没有可导入的 RC+ 点位（当前列表里的点都是「未定义/读取失败」占位行）";
+            }, () => RcPoints.Any(p => !p.IsUnreadable));
+
             // 相机实时画面弹窗（与相机/轴调试同款 CameraLiveWindow；非模态可边动边看）
             ShowCameraLiveCommand = new RelayCommand(() => ShowCameraLiveWindow(), () => true);
+
+            // 可达域可视化与九点预演（2026-09-11）
+            InitReachCommands();
         }
 
         /// <summary>相机实时画面弹窗单例引用（防重复打开；窗口关闭即置空）</summary>
@@ -586,6 +902,490 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 _cameraLiveWindow = null;
                 MessageBox.Show($"打开相机实时画面失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // ==================================================================
+        // 可达域可视化与九点预演 —— 命令实现与几何联动
+        // ==================================================================
+
+        private void InitReachCommands()
+        {
+            LoadReachMapCommand = new RelayCommand(LoadReachMapFromFile);
+
+            LoadSyntheticReachMapCommand = new RelayCommand(() =>
+            {
+                // 理想圆环示意数据：只为把界面先跑起来看效果，明确标注"非实测"。
+                ApplyReachMap(ReachMapData.CreateSynthetic(232, 418),
+                    "已载入【示意数据】（理想圆环 r=232~418）—— 仅用于预览界面，真实可达域请点「📡 零运动实测」");
+            });
+
+            ScanReachMapCommand = new RelayCommand(async () =>
+            {
+                if (_reachScanCts != null) { _reachScanCts.Cancel(); return; }   // 扫描中再点一次 = 取消
+                await ScanReachMapCoreAsync();
+            }, () => _reachScanCts != null || (IsConnected && _epson != null));
+
+            UseCurrentPosAsBaseCommand = new RelayCommand(() =>
+            {
+                ReachBaseX = FormatCoord(PosX);
+                ReachBaseY = FormatCoord(PosY);
+            });
+
+            UseBestBaseCommand = new RelayCommand(() =>
+            {
+                var fb = ReachFeasible;
+                if (fb?.BestCenter == null) return;
+                ReachBaseX = FormatCoord((float)fb.BestCenter.Value.X);
+                ReachBaseY = FormatCoord((float)fb.BestCenter.Value.Y);
+            }, () => ReachFeasible?.BestCenter != null);
+
+            PrecheckGridCommand = new RelayCommand(async () => await PrecheckGridCoreAsync(),
+                () => IsConnected && _epson != null && _reachMap != null);
+        }
+
+        /// <summary>把可达域数据装进界面并重算全部派生量</summary>
+        private void ApplyReachMap(ReachMapData map, string actionText)
+        {
+            ReachMap = (map != null && map.IsEmpty) ? null : map;
+            ReachActionText = actionText ?? string.Empty;
+            RecalcReachGeometry();
+        }
+
+        /// <summary>
+        /// 重算取景范围 + 绿区栅格 + 九点判定。
+        /// 代价约 15ms（448×448 栅格 × 9 次平移取交）—— 只在数据/步长/margin/眼型/镜像变化时调用。
+        /// 拖动基准位走 <see cref="RecalcReachVerdict"/>（9 次判定，微秒级），所以拖动是流畅的。
+        /// </summary>
+        private void RecalcReachGeometry()
+        {
+            var map = _reachMap;
+            if (map == null || map.IsEmpty)
+            {
+                ReachFeasible = null;
+                SetReachBounds(-450, 450, -450, 450);
+                RecalcReachVerdict();
+                return;
+            }
+
+            double step = ParseCoordOr(_reachStepMm, 10);
+            double margin = ParseCoordOr(_reachMarginMm, 10);
+            double bx = ParseCoordOr(_reachBaseX, 0);
+            double by = ParseCoordOr(_reachBaseY, 0);
+
+            // 取景必须同时容下：可达域边界、基准位、当前机器位置（后者可能在可达域外）
+            var extra = new[] { new Pt2(bx, by), new Pt2(PosX, PosY) };
+            double xMin, xMax, yMin, yMax;
+            ReachMapGeometry.ComputeBounds(map, margin, extra, out xMin, out xMax, out yMin, out yMax);
+            SetReachBounds(xMin, xMax, yMin, yMax);
+
+            var offs = BuildOffsets(step, step);
+            const int bitmapSize = 448;
+            ReachFeasible = ReachMapGeometry.ComputeFeasibleBitmap(
+                map, margin, offs, xMin, xMax, yMin, yMax, bitmapSize, bitmapSize);
+
+            UseBestBaseCommand?.RaiseCanExecuteChanged();   // 绿区重算 → "用最稳位置"可用性可能变化
+            RecalcReachVerdict();
+        }
+
+        private void SetReachBounds(double xMin, double xMax, double yMin, double yMax)
+        {
+            ReachXMin = xMin;
+            ReachXMax = xMax;
+            ReachYMin = yMin;
+            ReachYMax = yMax;
+        }
+
+        private Pt2[] BuildOffsets(double stepX, double stepY)
+            => ReachMapGeometry.GridOffsets(stepX, stepY, _reachInvertX, _reachInvertY, _reachEyeModeIndex == 0);
+
+        private Pt2[] BuildCurrentGrid()
+        {
+            double step = ParseCoordOr(_reachStepMm, 10);
+            double bx = ParseCoordOr(_reachBaseX, 0);
+            double by = ParseCoordOr(_reachBaseY, 0);
+            return ReachMapGeometry.BuildGrid(bx, by, step, step,
+                _reachInvertX, _reachInvertY, _reachEyeModeIndex == 0);
+        }
+
+        /// <summary>
+        /// 九点逐点判定并生成结论文案。
+        /// 文案要给到"第几点、哪条不满足、还差多少 mm"——这是现场能直接用的信息。
+        /// </summary>
+        private void RecalcReachVerdict()
+        {
+            var map = _reachMap;
+            if (map == null || map.IsEmpty)
+            {
+                ReachVerdictText = "尚未载入可达域数据 —— 连上控制器后点「📡 零运动实测」；没有设备时可先点「👁 示意」预览界面。";
+                ReachVerdictLevel = 0;
+                return;
+            }
+
+            double margin = ParseCoordOr(_reachMarginMm, 10);
+            double step = ParseCoordOr(_reachStepMm, 10);
+            var pts = BuildCurrentGrid();
+
+            int bad = 0, unsafeCnt = 0;
+            double worst = double.MaxValue;
+            var badDesc = new List<string>();
+
+            for (int i = 0; i < pts.Length; i++)
+            {
+                var v = ReachMapGeometry.Evaluate(map, pts[i].X, pts[i].Y, margin);
+                if (v.State == ReachPointState.Safe)
+                {
+                    if (v.Slack < worst) worst = v.Slack;
+                }
+                else
+                {
+                    bad++;
+                    if (v.State == ReachPointState.Unsafe) unsafeCnt++;
+                    if (badDesc.Count < 4) badDesc.Add($"第{i + 1}点 {v.Text}");
+                }
+            }
+
+            var fb = _reachFeasible;
+            bool zoneOk = fb != null && fb.Count > 0;
+            string zoneText = zoneOk
+                ? (fb.BestCenter.HasValue
+                    ? $"｜绿区 {fb.Count} 像素，最稳基准位 ({fb.BestCenter.Value.X:F1}, {fb.BestCenter.Value.Y:F1})、整体余量 {fb.BestClearanceMm:F1} mm"
+                    : $"｜绿区 {fb.Count} 像素")
+                : "｜⚠ 该步长/margin 下不存在可行基准位";
+
+            if (bad == 0)
+            {
+                ReachVerdictLevel = 1;
+                ReachVerdictText = $"✅ 九点全部安全（最小余量 {worst:F1} mm）{zoneText}";
+            }
+            else if (zoneOk)
+            {
+                // 当前基准位不行，但绿区里有能行的 —— 属"可救"，用橙色而不是红色吓人
+                ReachVerdictLevel = 2;
+                ReachVerdictText = $"⚠ {bad}/9 点越界：{string.Join("；", badDesc)}" +
+                                   $"\n→ 把基准位拖进绿区即可，推荐 ({fb.BestCenter?.X:F1}, {fb.BestCenter?.Y:F1})";
+            }
+            else
+            {
+                ReachVerdictLevel = 3;
+                string head = unsafeCnt > 0
+                    ? $"⛔ {bad}/9 点越界（其中 {unsafeCnt} 点落在整体不可达方向）：{string.Join("；", badDesc)}"
+                    : $"⛔ {bad}/9 点越界：{string.Join("；", badDesc)}";
+                ReachVerdictText = head +
+                                   $"\n→ 步长 {step:F1} mm 在本工位不可行，请减小步长或放宽 margin（当前 {margin:F1} mm）";
+            }
+        }
+
+        private void LoadReachMapFromFile()
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择可达域扫描结果",
+                Filter = "可达域扫描结果 (*.json)|*.json|所有文件 (*.*)|*.*",
+                InitialDirectory = FindVerifyOutDir(),
+            };
+            if (dlg.ShowDialog() != true) return;
+
+            string err;
+            var map = ReachMapData.LoadFromFile(dlg.FileName, out err);
+            if (map == null)
+            {
+                ReachActionText = "载入失败: " + err;
+                return;
+            }
+            ApplyReachMap(map, $"已载入 {Path.GetFileName(dlg.FileName)}：{map.Describe()}");
+        }
+
+        /// <summary>从程序目录向上找 .workbuddy/_verify_out（扫描器落盘目录），找不到就用程序目录</summary>
+        private static string FindVerifyOutDir()
+        {
+            var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            for (int i = 0; i < 8 && dir != null; i++)
+            {
+                string p = Path.Combine(dir.FullName, ".workbuddy", "_verify_out");
+                if (Directory.Exists(p)) return p;
+                dir = dir.Parent;
+            }
+            return AppDomain.CurrentDomain.BaseDirectory;
+        }
+
+        /// <summary>
+        /// 零运动实测扫描：逐方向径向扫描出真实可达域。
+        ///
+        /// ★ 全程只用 CheckReach（内部 SPEL+ TargetOK）—— 不驱动电机，
+        ///   越界只是返回 False，不会有 CP 直线"突然停止 + 撞击伺服"的风险。
+        /// ★ 扫描期间必须停掉 250ms 状态轮询：两者共用同一条 TCP 行协议，
+        ///   轮询抢不到锁会累积失败计数，被误判成"断线"而自动断开。
+        /// </summary>
+        private async Task ScanReachMapCoreAsync()
+        {
+            var epson = _epson;
+            if (epson == null || !IsConnected)
+            {
+                ReachActionText = "未连接控制器，无法实测扫描。";
+                return;
+            }
+
+            // 解析扫描平面 Z/U：留空 = 用当前机械手 Z/U；填了 = 按填的值扫
+            double z = ParseCoordOr(ReachScanZ, double.NaN);
+            double u = ParseCoordOr(ReachScanU, double.NaN);
+            if (double.IsNaN(z)) z = PosZ;
+            if (double.IsNaN(u)) u = PosU;
+
+            // 方向数：默认 24，钳到 8~72（越细越慢；72 方向约需几分钟）
+            int dirs = 24;
+            if (!int.TryParse((ReachScanDirs ?? "").Trim(), out dirs) || dirs < 8) dirs = 24;
+            if (dirs > 72) dirs = 72;
+
+            var cts = new CancellationTokenSource();
+            _reachScanCts = cts;
+            ReachScanButtonText = "⏹ 取消扫描";
+            ReachScanProgress = 0;
+            ReachScanProgressVisible = true;
+            _pollTimer?.Stop();
+            RefreshCommandStates();
+
+            const double rMin = 20, rMax = 450, coarse = 5, tol = 1.0;
+
+            var rows = new List<ReachMapDirection>();
+            int calls = 0;
+
+            try
+            {
+                ReachActionText = $"扫描中… 0/{dirs} 方向（Z={z:F1} U={u:F1}；机械手原地不动）";
+
+                await Task.Run(() =>
+                {
+                    for (int i = 0; i < dirs; i++)
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+                        double deg = 360.0 * i / dirs;
+
+                        double? rIn, rOut;
+                        int used;
+                        ScanOneDirection(epson, deg, z, u, rMin, rMax, coarse, tol, cts.Token,
+                                         out rIn, out rOut, out used);
+                        calls += used;
+                        rows.Add(new ReachMapDirection { Deg = Math.Round(deg, 3), RIn = rIn, ROut = rOut });
+
+                        int done = i + 1, sent = calls;
+                        var disp = Application.Current?.Dispatcher;
+                        if (disp != null)
+                            disp.BeginInvoke(new Action(() =>
+                            {
+                                ReachScanProgress = Math.Round(100.0 * done / dirs, 1);
+                                ReachActionText = $"扫描中… {done}/{dirs} 方向（已发 {sent} 次只读 CHECK）";
+                            }));
+                    }
+                }, cts.Token);
+
+                if (rows.All(r => r.ROut == null))
+                {
+                    ReachActionText = "⚠ 所有方向都不可达 —— 请检查：Z/U 是否合法、手系设定是否正确、伺服是否上电。";
+                    return;
+                }
+
+                var map = new ReachMapData
+                {
+                    ScannedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Host = SelectedRobot?.DeviceKey ?? string.Empty,
+                    PlaneZ = z,
+                    PlaneU = u,
+                    CheckCalls = calls,
+                    Directions = rows,
+                };
+
+                // ★ 落盘 JSON（与 map_workspace.py 同格式），下次点「📂 载入扫描结果」能直接选它
+                string savedPath = TrySaveReachMapJson(map);
+
+                ApplyReachMap(map,
+                    $"实测完成：{rows.Count(r => r.ROut != null)}/{dirs} 个方向可达，共 {calls} 次只读 CHECK（零运动）。"
+                    + (savedPath != null ? $" 已落盘 {Path.GetFileName(savedPath)}" : ""));
+            }
+            catch (OperationCanceledException)
+            {
+                ReachActionText = "已取消扫描（未改动任何数据）。";
+            }
+            catch (Exception ex)
+            {
+                ReachActionText = "扫描失败: " + ex.Message;
+            }
+            finally
+            {
+                _reachScanCts = null;
+                ReachScanButtonText = "📡 零运动实测";
+                ReachScanProgressVisible = false;
+                _pollTimer?.Start();
+                RefreshCommandStates();
+            }
+        }
+
+        /// <summary>
+        /// 把扫描结果落盘到 .workbuddy/_verify_out/workspace_map_*.json，
+        /// 字段与 map_workspace.py 对齐（供 ReachMapData.LoadFromFile 直接读）。
+        /// 返回落盘绝对路径；失败返回 null（不中断扫描主流程，仅记日志）。
+        /// </summary>
+        private static string TrySaveReachMapJson(ReachMapData map)
+        {
+            try
+            {
+                var dir = FindVerifyOutDir();
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string path = Path.Combine(dir, $"workspace_map_{ts}.json");
+
+                var root = new Newtonsoft.Json.Linq.JObject();
+                root["scanned_at"] = map.ScannedAt;
+                root["host"] = map.Host;
+                root["hand_reply"] = map.HandReply;
+                root["pos_reply"] = map.PosReply;
+                root["check_calls"] = map.CheckCalls;
+                var plane = new Newtonsoft.Json.Linq.JObject();
+                plane["z"] = map.PlaneZ;
+                plane["u"] = map.PlaneU;
+                root["plane"] = plane;
+                var arr = new Newtonsoft.Json.Linq.JArray();
+                foreach (var d in map.Directions)
+                {
+                    var o = new Newtonsoft.Json.Linq.JObject();
+                    o["deg"] = d.Deg;
+                    o["r_in"] = d.RIn;
+                    o["r_out"] = d.ROut;
+                    arr.Add(o);
+                }
+                root["directions"] = arr;
+
+                File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented),
+                                  new System.Text.UTF8Encoding(false));
+                return path;
+            }
+            catch
+            {
+                return null;   // 落盘失败不打断扫描（画布已能显示）
+            }
+        }
+
+        /// <summary>
+        /// 单方向径向扫描：粗扫定位"第一段连续可达区间"，再二分细化内外边界。
+        /// 遇到中间空洞直接截断（保守）——不假设"两次可达之间必然可达"。
+        /// </summary>
+        private static void ScanOneDirection(
+            EpsonRobot epson, double deg, double z, double u,
+            double rMin, double rMax, double coarse, double tol,
+            CancellationToken token,
+            out double? rIn, out double? rOut, out int calls)
+        {
+            rIn = null;
+            rOut = null;
+
+            double a = deg * Math.PI / 180.0;
+            double ca = Math.Cos(a), sa = Math.Sin(a);
+
+            int n = 0;
+            // 局部函数不能捕获 out 参数，故用局部变量计数，最后回写
+            bool Probe(double r)
+            {
+                token.ThrowIfCancellationRequested();
+                n++;
+                var res = epson.CheckReach((float)(r * ca), (float)(r * sa), (float)z, (float)u);
+                return res.Success && res.Data;
+            }
+
+            // ---- 粗扫：由内向外找第一段连续可达区间 ----
+            double? firstOk = null, lastOk = null;
+            for (double r = rMin; r <= rMax + 1e-9; r += coarse)
+            {
+                bool ok = Probe(r);
+                if (ok)
+                {
+                    if (firstOk == null) firstOk = r;
+                    lastOk = r;
+                }
+                else if (firstOk != null)
+                {
+                    break;   // 可行段结束
+                }
+            }
+
+            if (firstOk == null) { calls = n; return; }
+
+            // ---- 内边界：不可行 → 可行 的临界（二分）----
+            double lo = Math.Max(rMin, firstOk.Value - coarse), hi = firstOk.Value;
+            for (int k = 0; k < 14 && hi - lo > tol; k++)
+            {
+                double mid = (lo + hi) / 2.0;
+                if (Probe(mid)) hi = mid; else lo = mid;
+            }
+            rIn = hi;
+
+            // ---- 外边界：可行 → 不可行 的临界（二分）----
+            if (lastOk.Value >= rMax - 1e-9)
+            {
+                rOut = rMax;   // 一直到扫描上限都可达，外边界超出本次搜索范围
+            }
+            else
+            {
+                double lo2 = lastOk.Value, hi2 = Math.Min(rMax, lastOk.Value + coarse);
+                for (int k = 0; k < 14 && hi2 - lo2 > tol; k++)
+                {
+                    double mid = (lo2 + hi2) / 2.0;
+                    if (Probe(mid)) lo2 = mid; else hi2 = mid;
+                }
+                rOut = lo2;
+            }
+
+            calls = n;
+        }
+
+        /// <summary>
+        /// 开走前二次校验：把 9 个终点交给控制器自己判一次（9 次只读 CHECK，机械手不动）。
+        /// 注意语义 —— TargetOK 只管【终点】不管【轨迹】，所以"全部通过"不等于 CP 直线路径也安全。
+        /// </summary>
+        private async Task PrecheckGridCoreAsync()
+        {
+            var epson = _epson;
+            if (epson == null || !IsConnected || _reachMap == null) return;
+
+            var grid = BuildCurrentGrid();
+            double z = PosZ, u = PosU;
+
+            ReachActionText = "开走前校验中…（9 次只读 CHECK，机械手不动）";
+
+            var okFlags = new bool[9];
+            try
+            {
+                await Task.Run(() =>
+                {
+                    for (int i = 0; i < 9; i++)
+                    {
+                        var res = epson.CheckReach((float)grid[i].X, (float)grid[i].Y, (float)z, (float)u);
+                        okFlags[i] = res.Success && res.Data;
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                ReachActionText = "校验失败: " + ex.Message;
+                return;
+            }
+
+            var bad = new List<string>();
+            for (int i = 0; i < 9; i++) if (!okFlags[i]) bad.Add($"第{i + 1}点");
+
+            ReachActionText = bad.Count == 0
+                ? $"✅ 控制器裁决：9 点终点全部可达（Z={z:F1}, U={u:F1}）。注意这只管终点，直线路径仍可能中途越界。"
+                : $"⛔ 控制器拒绝：{string.Join("、", bad)} —— 请移动基准位或减小步长后重试。";
+        }
+
+        /// <summary>容错解析坐标输入框（全角字符 / 半截输入 → 回退默认值）</summary>
+        private static double ParseCoordOr(string s, double fallback)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return fallback;
+            string t = s.Trim()
+                        .Replace('。', '.').Replace('．', '.')
+                        .Replace('－', '-').Replace('，', ',');
+            double v;
+            return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out v) ? v : fallback;
         }
 
         /// <summary>
@@ -636,6 +1436,139 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 _commandBusy = false;
                 RefreshCommandStates();
             }
+        }
+
+        /// <summary>
+        /// 读取 RC+ 前 N 个示教点（只读，2026-09-11）。
+        ///
+        /// 【为什么先探一个点】
+        /// 只有 TCP 脚本通道支持读点（协议 POINT? n）。SDK/仿真通道会在第一次调用就返回
+        /// "仅 TCP 脚本通道支持" —— 先用 P0 探一次即可区分"通道不支持"与"通道正常但点未定义"，
+        /// 避免在 SDK 通道下白跑 N 次超时把界面卡住。
+        ///
+        /// 【P0 未定义不算失败】应答是 POINT 0,UNDEF（Success=true / Defined=false）。
+        /// 【为什么要把错误号说出来】脚本 POINT? 现在回 "POINT n,UNDEF,Err"。全是未定义时
+        /// 用户看到的就是"点了没反应" —— 状态栏必须给出首例原因（如 2513=标签未注册），
+        /// 否则分不清"点真没示教"和"脚本没重新编译"。
+        /// 【IO 全在后台线程】每条指令都是一发一收的阻塞式应答，绝不在 UI 线程跑。
+        /// </summary>
+        private async Task LoadRcPointsCoreAsync()
+        {
+            var epson = _epson;
+            if (epson == null) return;
+            if (_rcLoadBusy) return;            // 防重入：连点按钮不会打两轮
+            _rcLoadBusy = true;
+
+            int count = 10;
+            if (!int.TryParse((RcPointCountText ?? string.Empty).Trim(), out count) || count <= 0)
+            {
+                count = 10;
+            }
+            if (count > 100) count = 100;   // 上限：防手填 9999 把界面卡死
+
+            int undefCount = 0;
+            var rows = new SortedDictionary<int, TeachPointModel>();   // 点号 → 行（含失败/未定义占位，保 0..N-1 顺序）
+            var failed = new List<string>();                            // "P7: xxx"
+            string firstUndefReason = null;                             // 未定义点的首例原因（SPEL+ 错误号翻人话）
+            string abortReason = null;
+
+            // ★★ 关键修复（2026-09-11）：批量读点期间【必须停状态轮询】。
+            // 两者共用同一条 TCP 行协议（适配层 _ioLock 串行），轮询每 250ms 抢一次锁；
+            // 抢锁失败曾让 SendCommand 回 null → 单点被判"无应答" → 而原来上层在【第一处失败
+            // 就整轮中止】—— 现场表现就是"读到一半没了 / 某个点读不到"，且每次断在不同点号上
+            // （实测断在 1/2/3/4/6 都出现过，这正是争锁、而非某个点不可读的决定性证据）。
+            // 与 P1「📡 零运动实测」同一口径。
+            RcPointsStatusText = "正在读取 RC+ 示教点…（已暂停状态轮询）";
+            _pollTimer?.Stop();
+            RefreshCommandStates();
+
+            try
+            {
+                await Task.Run(() =>
+                {
+                    // ---- ① 能力探测：P0 必须能读回来（无论是否已定义）----
+                    // QueryPoint 内部已自带 3 次重试；走到这里仍失败 = 通道/脚本真的不支持读点，
+                    // 此时中止才是对的（避免把"通道不支持"刷成 N 条同样的错）。
+                    var probe = epson.ReadTeachPoint(0);
+                    if (!probe.Success)
+                    {
+                        abortReason = "P0: " + probe.Message;
+                        return;
+                    }
+                    Consume(probe.Data);
+
+                    // ---- ② 逐点读取：★单点失败【不再整体中止】----
+                    // 记下该点并继续读后面的 —— 少一个点，远好过整张表腰斩。
+                    for (int i = 1; i < count; i++)
+                    {
+                        var r = epson.ReadTeachPoint(i);
+                        if (!r.Success)
+                        {
+                            failed.Add($"P{i}: {r.Message}");
+                            rows[i] = new TeachPointModel { Name = $"P{i}（读取失败）", IsUnreadable = true };
+                            continue;
+                        }
+                        Consume(r.Data);
+                    }
+                });
+            }
+            finally
+            {
+                _rcLoadBusy = false;
+                _pollTimer?.Start();    // 恢复轮询（Cleanup/断开时会被再停掉；重复 Start 无害）
+                RefreshCommandStates();
+            }
+
+            void Consume(EpsonTeachPoint p)
+            {
+                if (p == null) return;
+                if (!p.Defined)
+                {
+                    undefCount++;
+                    if (firstUndefReason == null) firstUndefReason = $"P{p.Index}: {p.ReasonText}";
+                    rows[p.Index] = new TeachPointModel { Name = $"P{p.Index}（未定义）", IsUnreadable = true };
+                    return;
+                }
+                rows[p.Index] = new TeachPointModel
+                {
+                    Name = string.IsNullOrWhiteSpace(p.Label) ? $"P{p.Index}" : $"P{p.Index} {p.Label}",
+                    X = p.X,
+                    Y = p.Y,
+                    Z = p.Z,
+                    U = p.U
+                };
+            }
+
+            RcPoints.Clear();
+            foreach (var kv in rows) RcPoints.Add(kv.Value);
+            // 默认选中第一个"可回放"的点，避免落到"（读取失败）"占位行上让回放按钮永远灰着
+            SelectedRcPoint = RcPoints.FirstOrDefault(p => !p.IsUnreadable) ?? RcPoints.FirstOrDefault();
+
+            // ★ 修复（2026-09-11）：finally 里的 RefreshCommandStates() 执行在 RcPoints 更新【之前】，
+            // 导致 ImportRcPointsCommand 的 CanExecute（依赖 RcPoints.Count）评估的是旧值 —— 初次
+            // 加载后按钮一直灰。这里在集合更新后再刷一次，让「📥 并入示教点」按最新数据亮/灰。
+            RefreshCommandStates();
+
+            if (abortReason != null)
+            {
+                RcPointsStatusText = $"读取中止：{abortReason}";
+                return;
+            }
+
+            // ★"全部未定义/读不到"最容易被误当成"按钮没反应" —— 必须把原因一条条说出来：
+            //   未定义（点真没示教）与读取失败（通信/脚本问题）是两回事，分开计数。
+            int okCount = rows.Count - failed.Count - undefCount;
+            var sb = new StringBuilder();
+            sb.Append($"已同步 RC+ 点号 0~{count - 1}：有效 {okCount} 个，未定义 {undefCount} 个，读取失败 {failed.Count} 个");
+            if (failed.Count > 0)
+            {
+                sb.Append("（").Append(string.Join("；", failed.Take(3)));
+                if (failed.Count > 3) sb.Append($"；…另 {failed.Count - 3} 个");
+                sb.Append("）");
+            }
+            if (firstUndefReason != null) sb.Append($"，首例未定义原因 {firstUndefReason}");
+            sb.Append("（只读，不影响控制器）");
+            RcPointsStatusText = sb.ToString();
         }
 
         /// <summary>
@@ -779,7 +1712,17 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
                 {
                     if (_epson != null)
                     {
-                        var all = _epson.GetPositionsAll();
+                        // ★ 2026-09-16：改走 PollPositions（不抢锁 + 800ms 短超时）。
+                        //   原先 GetPositionsAll → POS? 持锁等满 5s：脚本僵死时 250ms 轮询几乎
+                        //   连续占住通道，业务命令（关真空/走位）抢锁预算只 400ms ⇒ 全被挤成
+                        //   "通道忙未发送"，真因被淹没（现场 2026-09-16 ST_002 就是这么刷屏的）。
+                        var all = _epson.PollPositions(out bool channelBusy);
+                        if (channelBusy)
+                        {
+                            // 通道正被业务命令占用 → 本轮跳过：不刷新 UI、也不计入"断线"判定
+                            //（否则工位一跑就攒够 12 次失败，误弹"通信中断"）。
+                            return;
+                        }
                         if (all.Success && all.Data != null && all.Data.Length == 4)
                         {
                             pos = all.Data;
@@ -821,6 +1764,15 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             // ---- await 恢复：UI 线程更新 ----
             if (!ioOk)
             {
+                // ★2026-09-11 修：通道被【长事务】占用时轮询本就该失败，不能算"断线"。
+                //   命令（MOVE 最长 20s）与批量读点都持着 _ioLock，轮询的 TryEnter 抢不到锁
+                //   → GetPositionsAll 失败 → 连续 12 次(3s)就误报"通信中断"弹窗，
+                //   用户按提示点「连接」→ 触发一次真重连（现场日志里那对 PING/MOTOR ON 就是它）。
+                if (_commandBusy || _rcLoadBusy)
+                {
+                    _pollFailCount = 0;   // 通道被占用 ≠ 断线，清零防误判
+                    return;
+                }
                 if (++_pollFailCount >= PollFailThreshold)
                 {
                     _pollFailCount = 0;
@@ -866,6 +1818,15 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
             ToggleVaccum2Command?.RaiseCanExecuteChanged();
             StepAxisCommand?.RaiseCanExecuteChanged();          // 单轴步进（依赖连接状态 + 命令门闩）
             ShowCameraLiveCommand?.RaiseCanExecuteChanged();    // 相机画面弹窗
+            LoadRcPointsCommand?.RaiseCanExecuteChanged();      // RC+ 点位同步
+            PlayRcPointCommand?.RaiseCanExecuteChanged();       // RC+ 点位回放走位
+            ImportRcPointsCommand?.RaiseCanExecuteChanged();    // RC+ 点位导入示教点
+            LoadReachMapCommand?.RaiseCanExecuteChanged();      // 可达域：载入扫描结果
+            LoadSyntheticReachMapCommand?.RaiseCanExecuteChanged();
+            ScanReachMapCommand?.RaiseCanExecuteChanged();      // 可达域：零运动实测（扫描中可变"取消"）
+            UseCurrentPosAsBaseCommand?.RaiseCanExecuteChanged();
+            UseBestBaseCommand?.RaiseCanExecuteChanged();       // 依赖绿区是否已算出最稳基准位
+            PrecheckGridCommand?.RaiseCanExecuteChanged();      // 开走前 9 次 CHECK 校验
         }
 
         /// <summary>Tab 隐藏/页面卸载时停止轮询并保存示教点</summary>
@@ -941,8 +1902,20 @@ namespace Grayson.Vision.WpfUI.ViewModel.HardwareConsole
         public float Z { get; set; }
         public float U { get; set; }
 
+        /// <summary>
+        /// 占位行标记：该行是"RC+ 点未定义"或"读取失败"的提示行，坐标不可用。
+        /// 用途：让"读不到的点"在列表里可见（而不是整张表腰斩或缺行），
+        /// 同时禁止回放、导入时跳过 —— 避免把 0,0,0,0 当成真点发出去。
+        /// 【不落盘】示教点 JSON 不受影响。
+        /// </summary>
+        [JsonIgnore]
+        public bool IsUnreadable { get; set; }
+
         public override string ToString()
         {
+            // 占位行（未定义/读取失败）没有坐标 —— 不打出 0.0/0.0/0.0/0.0，
+            // 否则在列表里会被误当成一个"位于原点"的真点。
+            if (IsUnreadable) return Name;
             return $"{Name}   X={X:F1}  Y={Y:F1}  Z={Z:F1}  U={U:F1}";
         }
     }

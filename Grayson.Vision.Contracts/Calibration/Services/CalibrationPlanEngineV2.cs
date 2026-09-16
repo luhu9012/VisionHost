@@ -47,6 +47,7 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 foreach (var slot in req.CameraSlots)
                 {
                     if (slot == null) continue;
+                    if (slot.IsDisabled) continue; // ★停用槽不派生标定任务
                     var s = DeriveFromSlot(profile, slot);
                     if (s != null) cameraSpecs.Add(s);
                 }
@@ -65,6 +66,10 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             // —— 工具级对针 t = 吸嘴 TCP 偏心 e_nozzle（偏心工具必做；依赖 e(带角度时) 或 H） ——
             var offsetSpecs = DeriveToolOffsetTasks(profile, req, cameraSpecs);
             specs.AddRange(offsetSpecs);
+
+            // —— ★2026-09-12 下相机像素旋转中心（依赖下相机 H；带角度作业才派生） ——
+            var downRotSpecs = DeriveDownCameraRotCenterTasks(profile, req, cameraSpecs);
+            specs.AddRange(downRotSpecs);
 
             return specs;
         }
@@ -93,12 +98,15 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             if (string.IsNullOrWhiteSpace(slotKey)) slotKey = "Cam_?";
 
             bool isGuidance = Norm.IsGuidancePurpose(purpose) || Norm.IsGuidancePurpose(install);
-            bool isFly = Norm.IsFly(shoot) || Norm.IsFly(purpose);
+            // 飞拍仅以 ShootMode（精拍/飞拍）为权威判据：purpose 的"飞拍纠偏"是纠偏场景的命名，
+            // 但"纠偏"既可能是飞拍（运动工件）也可能是精拍（静止对位），不能靠 purpose 字面触发飞拍。
+            // 静止对位纠偏（精拍）应落入下方固定相机九点 H 分支，而不是像素当量 s。
+            bool isFly = Norm.IsFly(shoot);
 
             // —— 用途门：非引导/纠偏/飞拍类用途（测量/检测/OCR…）免几何标定 ——
             if (!isGuidance && !isFly) return null;
 
-            bool moving = Norm.IsMovingMount(slot.MovesWithActuator, install);
+            bool moving = Norm.IsMovingMount(install);
             bool slant = Norm.IsSlant(slot.AxisToSurface) || Norm.IsSlant(install);
             string station = Norm.Trim(profile.StationCode);
 
@@ -140,14 +148,42 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                     Suggestion = "眼在手上随动拍固定特征，3×3 网格走位拟合像素↔机械平面（整机共享 1 条；真值=吸嘴尖落点）",
                     Reason = ReasonJoin(
                         "Purpose=" + (purpose.Length > 0 ? purpose : "未答"),
-                        "MovesWithActuator=" + (slot.MovesWithActuator == true ? "true(随动)" : "false"),
+                        "Install=" + (install.Length > 0 ? install : "未答"),
                         "随动引导 ⇒ EyeInHand 走位式 H（吸嘴对格点真值，H 已吸收工具偏距 t）"),
                     Note = slant ? "斜拍安装：建议九点网格覆盖常用工作区并评估畸变影响" : null
                 };
             }
 
-            // 固定相机引导（EyeToHand）→ 吸放式 H 首选（真值=放料命令位，吸收 t）；
-            // 备选=相机中心走位式（该路径下工具尖偏距需 t 补——见可选 t 卡）
+            // 固定相机引导（EyeToHand）→ 走位式九点首选（真值=工具尖/延伸杆端或工件特征落点，
+            // H 直接给落点、无需 t）；★2026-09-10 起不再首推吸放式（PickPlaceReturn 降为备选路径）：
+            // 吸放式真值虽也吸收 t，但要求机构吸件/放料/回拍照位三动作与真空时序，工序长且有放料误差。
+            // ★2026-09-12 下相机（仰视二次对位）分叉：真值=吸嘴吸附工件在下相机视野内的落点，
+            //   消费端只取相对偏差（ΔR=R_img−R_cdown），与上相机绝对坐标消费语义不同。
+            bool downCamera = install.Contains("下固定") || install.Contains("仰视");
+
+            if (downCamera)
+            {
+                var downSpec = new CalibrationTaskSpec
+                {
+                    SpecId = Key(station, "H", slotKey, null),
+                    StationCode = station,
+                    Quantity = CalibrationQuantity.HandEye,
+                    SlotKey = slotKey,
+                    NozzleKey = "1",
+                    Layout = EyeMode.EyeToHand,
+                    PrimaryPath = CalibrationAcquirePath.DownCameraWalk,
+                    DisplayName = "下相机手眼 H · 吸件走位式（" + slotKey + "）",
+                    Suggestion = "下相机仰视二次对位：吸嘴吸住带 Mark 的延伸杆/工件 → 移到下相机视野内 → 小范围 9 宫格平移走位 → 逐点记「机械位 + 下相机像素」→ 拟合 H_down（pixel→robot）。消费端只取相对偏差 ΔR=R_img−R_cdown，非绝对坐标",
+                    Reason = ReasonJoin(
+                        "Purpose=" + (purpose.Length > 0 ? purpose : "未答"),
+                        "Install=" + (install.Length > 0 ? install : "未答"),
+                        "下固定仰视 ⇒ DownCameraWalk（吸件走位九点，真值=吸附工件落点）"),
+                    Note = "下相机仰视：吸住工件悬空成像，标定高度须与作业拍照高度一致（Z 影响成像比例）。配合 DownCameraPixelRotCenter 求像素旋转中心后，消费端做相对偏差二次纠偏"
+                };
+                downSpec.AltPaths.Add(CalibrationAcquirePath.CameraTruthWalk);
+                return downSpec;
+            }
+
             var fixedSpec = new CalibrationTaskSpec
             {
                 SpecId = Key(station, "H", slotKey, null),
@@ -156,16 +192,18 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 SlotKey = slotKey,
                 NozzleKey = "1",
                 Layout = EyeMode.EyeToHand,
-                PrimaryPath = CalibrationAcquirePath.PickPlaceReturn,
-                DisplayName = "相机 H · 吸放式（" + slotKey + "）",
-                Suggestion = "固定/送拍相机：吸工件放 9 网格命令位 → 回拍，命令坐标↔像素拟合（真值=命令位）",
+                PrimaryPath = CalibrationAcquirePath.CameraTruthWalk,
+                DisplayName = "相机手眼 H · 固定相机走位式（" + slotKey + "）",
+                Suggestion = "固定相机观测走位：吸嘴装延伸杆（或工件特征）依次走到 3×3 网格 9 个位置 → 逐点记机械反馈位与像素（真值=工具尖落点）",
                 Reason = ReasonJoin(
                     "Purpose=" + (purpose.Length > 0 ? purpose : "未答"),
-                    "MovesWithActuator=" + (slot.MovesWithActuator == true ? "true(随动)" : "false(固定)"),
-                    "固定引导 ⇒ EyeToHand H（吸放式首推，吸收工具偏距 t）"),
-                Note = "现场确认：若机构不进相机视野（无放料回拍条件），改备选路径 相机中心走位式，并启用可选 t 对针卡"
+                    "Install=" + (install.Length > 0 ? install : "未答"),
+                    "固定引导 ⇒ EyeToHand 走位式 H（延伸杆/工具尖真值，H 直接输出落点，无需 t）"),
+                Note = slant
+                    ? "斜拍安装：九点网格覆盖常用工作区并评估畸变影响"
+                    : "现场确认：相机下若无稳定靶、只能靠吸放工件到命令位作真值 → 备选路径 吸放式 PickPlaceReturn"
             };
-            fixedSpec.AltPaths.Add(CalibrationAcquirePath.CameraTruthWalk);
+            fixedSpec.AltPaths.Add(CalibrationAcquirePath.PickPlaceReturn);
             return fixedSpec;
         }
 
@@ -176,7 +214,7 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             string shoot = Norm.Trim(req.ShootMode);
             string station = Norm.Trim(profile.StationCode);
             bool isFly = Norm.IsFly(shoot);
-            bool moving = Norm.IsMovingMount(null, mount);
+            bool moving = Norm.IsMovingMount(mount);
 
             if (isFly)
             {
@@ -217,24 +255,27 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                 Quantity = CalibrationQuantity.HandEye,
                 SlotKey = "Cam_01",
                 Layout = EyeMode.EyeToHand,
-                PrimaryPath = CalibrationAcquirePath.PickPlaceReturn,
-                DisplayName = "相机 H · 吸放式（Cam_01）",
-                Suggestion = "固定相机引导：吸放式走位（吸工件放网格命令位 → 回拍）拟合像素↔机械平面",
-                Reason = ReasonJoin("CameraMount=" + mount, "固定引导 ⇒ EyeToHand H（吸放式首推）")
+                PrimaryPath = CalibrationAcquirePath.CameraTruthWalk,
+                DisplayName = "相机手眼 H · 固定相机走位式（Cam_01）",
+                Suggestion = "固定相机引导：机构带工具尖/延伸杆端（或工件特征）走位 9 点 → 逐点记机械反馈位与像素（真值=工具尖落点）",
+                Reason = ReasonJoin("CameraMount=" + mount, "固定引导 ⇒ EyeToHand 走位式 H（延伸杆/工具尖真值，无需 t）")
             };
-            singleFixed.AltPaths.Add(CalibrationAcquirePath.CameraTruthWalk);
+            singleFixed.AltPaths.Add(CalibrationAcquirePath.PickPlaceReturn);
             return singleFixed;
         }
 
         // ==================== 工具级 e ====================
 
         /// <summary>
-        /// 工具回转 e（回转中心标定）：角度作业 且 (工具中心偏心 或 工具头≥2) → 每工具头一条。
-        /// 路径随主相机 H 的采集语义（2026-09-06 修正：不再按 eyeInHand 参杂吸放语义）：
+        /// 工具回转 e（回转中心标定）：角度作业 且 (工具中心偏心 或 工具头≥2 或 固定相机引导) → 每工具头一条。
+        /// 路径随主相机 H 的采集语义：
         ///   主 H 吸放式（PickPlaceReturn，放料命令位真值，相机/机构回拍照位）→ RotatePickPlace
         ///     （吸件转回转轴 → 放料 → 回拍测位移；仅吸放档案适用）；
-        ///   其余（走位式：EyeInHand 随动 NozzleTruthWalk / EyeToHand 相机中心 CameraTruthWalk）
+        ///   其余（走位式：EyeInHand 随动 NozzleTruthWalk / EyeToHand 固定相机 CameraTruthWalk）
         ///     → RotateCameraView（工具吸附延伸杆/治具特征，直接转回转轴由相机观测轨迹画圆，无放落）。
+        /// ★ 2026-09-10 扩判据：固定相机引导(EyeToHand)工位即使「同心 + 单吸嘴」也派生 e——
+        ///   运行时姿态补偿 C = X_obj − R(姿态U − U0)·e 需要基准角 U0 与回转中心 O（发布为工位
+        ///   ToolAlignU/RotCenterW），且"同心"仅为档案假设、须由旋转采样实证（实测 e≈0 属正常）。
         /// </summary>
         private static List<CalibrationTaskSpec> DeriveToolTasks(StationProfile profile,
             StationProfileRequirement req, List<CalibrationTaskSpec> cameraSpecs)
@@ -247,11 +288,14 @@ namespace Grayson.Vision.Contracts.Calibration.Services
 
             bool eccentric = req.ConcentricWithRotationAxis == false;
             int toolCount = Norm.ParseToolHeadCount(req.ToolHeadCount);
-            if (!eccentric && toolCount < 2) return result; // 单工具头同心：回转不引入偏置落点误差
 
             // 主相机 H 槽（旋转采样与九点用同一相机；e 的坐标系依赖它）
             var primaryH = FindFirstHandEye(cameraSpecs);
             if (primaryH == null) return result; // 无相机 H → e 无坐标系基准（不可能）
+
+            bool fixedGuidanceCamera = primaryH.PrimaryPath == CalibrationAcquirePath.CameraTruthWalk
+                                       && primaryH.Layout == EyeMode.EyeToHand;
+            if (!eccentric && toolCount < 2 && !fixedGuidanceCamera) return result; // 纯平移同心单吸嘴：无需旋转段
 
             string station = Norm.Trim(profile.StationCode);
             bool pickPlaceChain = primaryH.PrimaryPath == CalibrationAcquirePath.PickPlaceReturn;
@@ -277,10 +321,17 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                         "AngleNeed=" + (angleNeed.Length > 0 ? angleNeed : "未答"),
                         "ConcentricWithRotationAxis=" + (eccentric ? "false(偏心)" : "true(同心)"),
                         "ToolHeadCount=" + req.ToolHeadCount,
-                        "角度作业 " + (eccentric ? "且工具中心偏心" : "且多工具头") + " ⇒ 每工具头 1 条 e；依赖相机 H(" + primaryH.SlotKey + ") 提供坐标系"),
+                        (eccentric
+                            ? "角度作业 且工具中心偏心"
+                            : toolCount >= 2
+                                ? "角度作业 且多工具头"
+                                : "角度作业 且固定相机引导（同心亦标：实证偏心 + 产出基准角 U0/回转中心 O）")
+                        + " ⇒ 每工具头 1 条 e；依赖相机 H(" + primaryH.SlotKey + ") 提供坐标系"),
                     Note = eccentric
                         ? "工具中心偏离回转轴线：按角度对位作业必须补偿工具中心偏置 e"
-                        : "多工具头工位：各工具头相对回转中心的偏置独立，逐工具头标定"
+                        : (toolCount >= 2
+                            ? "多工具头工位：各工具头相对回转中心的偏置独立，逐工具头标定"
+                            : "档案标同心单吸嘴但仍需本段：① 实证偏心 e（同心是假设）② 产出 U0/O 供运行时姿态归正与发布")
                 });
             }
             return result;
@@ -352,6 +403,55 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             return result;
         }
 
+        // ==================== 下相机像素旋转中心（★2026-09-12 增补） ====================
+
+        /// <summary>
+        /// 下相机像素旋转中心任务：带角度作业工位，下固定（仰视）相机各派 1 条。
+        /// 语义与工具级机械域旋转中心 e 不同：
+        ///   · e（ToolRotation，机械域）：绕 U 转多角度，在【机械域】拟合圆求 C_rot(Xc,Yc)；
+        ///   · 本任务（像素域）：机械手在下相机中心附近不动，U 转 3 角度拍照，在【像素平面】
+        ///     直接拟合圆求圆心 P_rot_down(R,C)——这是吸嘴旋转中心在下相机图像里的像素位置，
+        ///     供消费端算 ΔR=R_img−R_cdown、ΔC=C_img−C_cdown 二次纠偏。
+        /// 依赖：同槽下相机 H（DownCameraWalk 路径），提供像素↔机械的旋转缩放关系。
+        /// </summary>
+        private static List<CalibrationTaskSpec> DeriveDownCameraRotCenterTasks(StationProfile profile,
+            StationProfileRequirement req, List<CalibrationTaskSpec> cameraSpecs)
+        {
+            var result = new List<CalibrationTaskSpec>();
+
+            string angleNeed = Norm.Trim(req.AngleNeed);
+            bool needAngle = angleNeed.Length > 0 && !Norm.HasNoAngle(angleNeed);
+            if (!needAngle) return result;
+
+            string station = Norm.Trim(profile.StationCode);
+
+            foreach (var h in cameraSpecs)
+            {
+                if (h == null || h.Quantity != CalibrationQuantity.HandEye) continue;
+                if (h.PrimaryPath != CalibrationAcquirePath.DownCameraWalk) continue; // 仅下相机派生像素旋转中心
+
+                result.Add(new CalibrationTaskSpec
+                {
+                    SpecId = Key(station, "e", h.SlotKey, "1"),
+                    StationCode = station,
+                    Quantity = CalibrationQuantity.ToolRotation,
+                    SlotKey = h.SlotKey,
+                    NozzleKey = "1",
+                    Layout = EyeMode.EyeToHand,
+                    PrimaryPath = CalibrationAcquirePath.DownCameraPixelRotCenter,
+                    DependentArtifactRef = h.ArtifactRef,
+                    DisplayName = "下相机像素旋转中心（" + h.SlotKey + "）",
+                    Suggestion = "机械手在下相机中心附近不动 → U 轴转 3 个角度（默认 -30°/0°/+30°）拍照 → 3 个 Mark 像素点在像素平面拟合圆 → 圆心 = 吸嘴旋转中心在下相机图像里的像素位置 P_rot_down(R,C)。消费端 ΔR=R_img−R_cdown 二次纠偏",
+                    Reason = ReasonJoin(
+                        "AngleNeed=" + (angleNeed.Length > 0 ? angleNeed : "未答"),
+                        "下相机=" + h.SlotKey + "（仰视二次对位）",
+                        "带角度作业 ⇒ 下相机像素旋转中心（像素域拟合，区别于机械域 e）"),
+                    Note = "依赖同槽下相机 H(" + h.SlotKey + ")：像素旋转中心与其共用坐标系。拟合在像素平面完成，勿与上相机机械域旋转中心 e 混用"
+                });
+            }
+            return result;
+        }
+
         // ==================== 内部助手 ====================
 
         private static CalibrationTaskSpec FindFirstHandEye(IEnumerable<CalibrationTaskSpec> cameraSpecs)
@@ -411,11 +511,9 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             return text.Contains("飞拍") || text.Contains("运动");
         }
 
-        /// <summary>相机随执行机构移动语义（眼在手上）</summary>
-        public static bool IsMovingMount(bool? movesWithActuator, string installText)
+        /// <summary>相机随执行机构移动语义（眼在手上）。★2026-09-12 起以 InstallKind 为唯一判据。</summary>
+        public static bool IsMovingMount(string installText)
         {
-            if (movesWithActuator == true) return true;
-            if (movesWithActuator == false) return false;
             if (string.IsNullOrWhiteSpace(installText)) return false;
             return installText.Contains("眼在手上") || installText.Contains("随执行机构")
                    || installText.Contains("随动") || installText.Contains("移动相机");

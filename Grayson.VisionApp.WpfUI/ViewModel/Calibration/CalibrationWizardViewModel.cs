@@ -45,8 +45,60 @@ namespace Grayson.Vision.WpfUI.ViewModel
     /// </summary>
     public class CalibrationWizardViewModel : ViewModelBase, IDisposable
     {
-        /// <summary>平台运动默认速度</summary>
+        /// <summary>平台运动默认速度（保留作常量基准值）</summary>
         private const float DefaultMoveSpeed = 50f;
+
+        /// <summary>
+        /// ★ 2026-09-15：CP 直线被控制器拒绝后，PTP（Go）降级重试用的速度上限。
+        /// 该值按 SPEL+ 的【PTP 速度口径】（百分比）解释 —— 适配层 MoveTo(linear:false) 发的是 `SPEED n`。
+        /// 取 20 是保守值：降级属异常路径，慢一点换取"可观察、可中止"。
+        /// </summary>
+        private const float PtpFallbackSpeedPercent = 20f;
+
+        /// <summary>本点走位是否由 PTP 降级到达（每次 MovePlatformTo 开头复位，只描述"本点"）。</summary>
+        private bool _lastMoveUsedPtpFallback;
+
+        /// <summary>PTP 降级到位后的实测残差（mm），仅在 _lastMoveUsedPtpFallback 为 true 时有意义。</summary>
+        private double _lastMovePtpResidualMm;
+
+        /// <summary>
+        /// 采点日志后缀：本点走位是否由 PTP 降级到达（CP 被拒时）。
+        /// ★ 留痕的目的：降级点的【路径特性】与其余点不同。将来排查"某一点误差偏大"时
+        ///   第一眼要能看到它 —— 缺这一条就会默认九点完全同质，把路径差异当成"偶发噪声"。
+        /// </summary>
+        private string PtpFallbackSuffix()
+            => _lastMoveUsedPtpFallback
+                 ? $" 降级=PTP(CP被拒,残差{_lastMovePtpResidualMm * 1000:F1}µm)"
+                 : "";
+
+
+        /// <summary>
+        /// 标定走位速度（2026-09-10 新增可调）：现场反馈九点走位整体偏慢。
+        /// 默认 50（与旧行为一致，不改动既有安全边界）；操作员可在步骤1 用滑块/输入框调高，
+        /// 用于缩短九点采集总时长。⚠ 提速有撞机与拖尾风险（速度过高时减速震荡 → 图像模糊 →
+        /// 圆度骤减被几何筛掉），故：① 上限 100（不提供更高档，避免现场冒进）；
+        /// ② 每次改速度写日志留痕，便于回溯"图像模糊是否因提速导致"。
+        /// 九点标定要求全程同一姿态、成像清晰，故建议 60~80 之间取值，步进 10。
+        /// </summary>
+        public float MoveSpeed
+        {
+            get => _moveSpeed;
+            set
+            {
+                float v = value;
+                if (v < 10f) v = 10f;
+                if (v > 100f) v = 100f;
+                if (Math.Abs(_moveSpeed - v) < 0.01f) return;
+                _moveSpeed = v;
+                OnPropertyChanged();
+                AppendLog($"[走位速度] 已设为 {v:F0}（原 {DefaultMoveSpeed:F0}）——提速后若出现图像模糊/圆度骤减，请调回 50。");
+            }
+        }
+        private float _moveSpeed = DefaultMoveSpeed;
+
+        /// <summary>走位速度下拉可选项（UI 绑定）</summary>
+        public System.Collections.Generic.List<float> MoveSpeedOptions { get; } =
+            new System.Collections.Generic.List<float> { 30f, 40f, 50f, 60f, 70f, 80f, 100f };
 
         private readonly Window _owner;
         /// <summary>
@@ -78,16 +130,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// 自动采集循环不再反复尝试这些点；该点补采成功后从中移除，保证拟合前校验能拦截未采集点</summary>
         private readonly HashSet<int> _skippedPointIndices = new HashSet<int>();
 
-        /// <summary>九点网格"可达性已通过"的目标坐标缓存（2026-09-06）：
-        /// Epson SCARA 可达域是内外半径环带，矩形钳制/静态计算都无法确认某点是否可达，
-        /// 唯一可靠判据是试走。每点首次遇到某目标坐标时空走验证一次并记入本表；
-        /// 基准/步长/镜像/眼型任一改动 → 目标坐标变化 → 自动失效重验。配置不变时零额外运动。
-        /// 手动逐点采集（每点一次按钮）因此只在第一点付一次空走成本。</summary>
-        private readonly Dictionary<int, (double X, double Y)> _precheckedTargets = new Dictionary<int, (double X, double Y)>();
+        /// <summary>轴向标度早期体检是否已执行（2026-09-10）：每轮采集只体检一次，避免日志刷屏</summary>
+        private bool _axisScaleChecked;
 
-        /// <summary>本轮可达性预检失败标记：AutoCollect 收尾据此给"可达域"专属提示，
-        /// 避免把 9 点全误报成"特征缺失"（2026-09-06）。</summary>
-        private bool _reachPrecheckFailed;
+        /// <summary>已试走通过的目标坐标缓存（2026-09-06 引入，2026-09-10 起不再写入：
+        /// 九点网格可达性空走预检已移除，改为「点采集直接开走」；走位被拒时本轮中止并弹窗
+        /// 提示（见 CaptureNextCalibrationPoint）。字段保留以备后续需要"记住可达点"时复用。</summary>
+        private readonly Dictionary<int, (double X, double Y)> _precheckedTargets = new Dictionary<int, (double X, double Y)>();
 
         /// <summary>旋转中心采样中被操作员主动跳过的角度集合（失败弹窗选"否"产生）：
         /// 手动/自动步进不再反复尝试这些角度；角度成功补采后从中移除</summary>
@@ -99,7 +148,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         // 旋转采样"观测位就位"确认标记：首次旋转采样前必须人工确认特征已就位（2026-09-04 P1-2）
         private bool _rotationReadyPrompted;
-        // 矩阵自动落盘设备目录失败标记（RefreshPublishChecks 展示"仅临时目录"黄项依据）
+        // 矩阵自动落盘工位目录失败标记（RefreshPublishChecks 展示"仅临时目录"黄项依据）
         private bool _matrixPersistFailed;
         // 最近一次拟合计算的矩阵健康检查报告（BuildHomMatHealthReport 多行文本，体检第④项依据）
         private string _lastHealthReport;
@@ -108,6 +157,29 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private double? _openedCalibU0;
         // 本次采样已记录标定姿态标记（九点网格中心 Index=5 成功采集时记一次）
         private bool _poseRecorded;
+
+        // ★ 2026-09-10 旋转采样基准角：本次旋转阶段首次采样时读一次当前 U 并锁定，表内采样角
+        //   （-45/0/+45…）一律按【相对该基准的增量】下发。只锁一次——若每次移动都重读当前 U，
+        //   相对角会逐点累积漂移（-45 走完再读当前 U=-45，0° 会算成原地不动）。
+        private double? _rotationBaseU;
+        private string _rotationBaseUText = "U_ref: —（未锁定；旋转采样时读当前 U 作基准）";
+
+        // ★2026-09-15：旋转证据里"像素当量"的说明（x/y 当量与各向异性百分比，或"当量不可用"）。
+        //   为什么单独留一个字段：域间互校判据（像素半径×当量 vs |ToolEccW|）是否成立完全取决于它，
+        //   所以要让它进摘要与过程证据——否则判据失效时没人知道（恒真判据的另一种形态）。
+        private string _rotationScaleNote;
+
+        // ★2026-09-15：本次标定的【关键过程日志】缓冲（按前缀白名单过滤，见 AppendLog）。
+        //   保存时与证据 JSON 配套落盘（.evidence.json + .evidence.log.txt，同名同时间戳），
+        //   这样"数据 + 过程话术"永远成对出现，离线复盘不必再翻整个会话日志。
+        private readonly List<string> _evidenceLog = new List<string>();
+        /// <summary>抑制标志（[ThreadStatic]，只对当前线程本次调用生效）：输出"自引用/收尾性"日志时跳过收集，避免污染下一份证据文件。</summary>
+        [ThreadStatic] private static bool _suppressEvidenceLog;
+        private static readonly string[] _evidenceLogTags =
+        {
+            "[标定过程记录", "[校核·旋转", "[旋转机位]", "[旋转精度]", "[旋转采样]",
+            "[e拟合", "[吸放旋转", "[吸放]", "[九点", "[发布]", "[保存]",
+        };
 
         // ============ P1b StepDef 会话（2026-09-05，v2 向导 = 任务规格 → 模板步骤 → 数据驱动） ============
         // 有 spec（v2）：CalibrationWizardTemplates.BuildFor(spec) 装配步骤序列，胶囊数/文案/完成判定随任务变；
@@ -303,8 +375,37 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 尝试复用同工位的九点标定结果。命中条件：本方案还没产出自己的矩阵
-        /// （HomMatFilePath 为空/文件不存在），且同工位存在已发布九点的其它方案。
+        /// 同工位同槽判定（★★2026-09-15 新增，复合工位安全闸）：
+        ///   "同工位" ≠ "同相机"！复合工位（如 ST_002 引导定位复合工位）一台设备上挂【上相机 Cam_A + 下相机 Cam_C】，
+        ///   四份档案（A的H / A的e / C的H / C的e）BoundStationCode 全同 ⇒ 旧谓词"同工位即可借用"会让
+        ///   **Cam_C 的档案借到 Cam_A 的 H 矩阵**（上下相机张冠李戴），并顺手把目标档案置成 IsCalibrated=true（假绿）。
+        ///   两侧都必须是【显式槽键】且相等才算同槽；任一侧缺槽 ⇒ 不共享（宁可自己标，绝不猜）。
+        /// </summary>
+        private static bool IsSameCameraSlot(CalibrationProfile a, CalibrationProfile b)
+        {
+            string sa = NormSlot(a?.CameraSlotKey);
+            string sb = NormSlot(b?.CameraSlotKey);
+            return sa.Length > 0 && sb.Length > 0
+                   && string.Equals(sa, sb, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>槽键归一（去空白；无值返回空串，绝不回退猜 CameraId——绑过物理相机后它已是设备名）</summary>
+        private static string NormSlot(string slot) => (slot ?? string.Empty).Trim();
+
+        /// <summary>
+        /// 可作为"九点矩阵 donor"的档案：**必须自报是 H 量**（Quantity==HandEye）。
+        /// 为什么加这条：e 档案历史上会（经旧继承逻辑）携带 H 的 HomMatFilePath；若只按"有矩阵路径"挑 donor，
+        /// 就会把 e 当 H 继续传染，而 e 的矩阵路径语义上根本不是"该相机的九点"。
+        /// </summary>
+        private static bool CanDonateNinePointMatrix(CalibrationProfile m)
+            => m != null
+               && m.Quantity == CalibrationQuantity.HandEye
+               && !string.IsNullOrWhiteSpace(m.HomMatFilePath)
+               && File.Exists(m.HomMatFilePath);
+
+        /// <summary>
+        /// 尝试复用【同工位 + 同相机槽 + 确为 H 量】的九点标定结果。命中条件：本方案还没产出自己的矩阵
+        /// （HomMatFilePath 为空/文件不存在），且同槽存在已发布九点的 H 方案。
         /// 复用时连带继承 CalibZ / BasePos / CalibU0 / 相机安装特性（同一台相机只有一个口径）。
         /// </summary>
         private void TryShareNinePointMatrix()
@@ -326,8 +427,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                                  && po.Model != TargetProfile
                                  && !string.Equals(po.Model.Id, TargetProfile.Id, StringComparison.Ordinal)
                                  && string.Equals(po.BoundStationCode, TargetProfile.BoundStationCode, StringComparison.OrdinalIgnoreCase)
-                                 && !string.IsNullOrWhiteSpace(po.Model.HomMatFilePath)
-                                 && File.Exists(po.Model.HomMatFilePath))
+                                 // ★★2026-09-15 复合工位修正：同工位不够，必须【同相机槽】+ donor【确为 H 量】
+                                 && IsSameCameraSlot(po.Model, TargetProfile)
+                                 && CanDonateNinePointMatrix(po.Model))
                     .OrderByDescending(po => po.Model.UpdatedAt)
                     .FirstOrDefault();
                 if (donor == null) return;
@@ -385,53 +487,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             private set { _sharedNinePointText = value; OnPropertyChanged(); OnPropertyChanged(nameof(SharedNinePointVisible)); }
         }
 
-        /// <summary>在向导初始化时调用：本方案无自有九点矩阵 → 引用同工位已发布的那一份。</summary>
-        private void TryInheritStationNinePoint()
-        {
-            IsNinePointShared = false;
-            SharedNinePointText = "";
-            try
-            {
-                if (TargetProfile == null) return;
-                // 本方案已有自己的九点矩阵（且文件在）→ 不共享
-                if (!string.IsNullOrWhiteSpace(TargetProfile.HomMatFilePath)
-                    && File.Exists(TargetProfile.HomMatFilePath)) return;
-                if (string.IsNullOrWhiteSpace(TargetProfile.BoundStationCode)) return;
-
-                var donor = _calibrationProfileRepository.GetAll()
-                    .Where(po => po?.Model != null
-                                 && !string.Equals(po.Model.Id, TargetProfile.Id, StringComparison.Ordinal)
-                                 && string.Equals(po.BoundStationCode, TargetProfile.BoundStationCode, StringComparison.OrdinalIgnoreCase)
-                                 && !string.IsNullOrWhiteSpace(po.Model.HomMatFilePath)
-                                 && File.Exists(po.Model.HomMatFilePath))
-                    .OrderByDescending(po => po.Model.UpdatedAt)
-                    .FirstOrDefault();
-                if (donor == null) return;
-
-                TargetProfile.HomMatFilePath = donor.Model.HomMatFilePath;
-                OutputHomMatPath = donor.Model.HomMatFilePath;
-                if (TargetProfile.CalibZ == null) TargetProfile.CalibZ = donor.Model.CalibZ;
-                if (TargetProfile.CameraMovesWithZ == null) TargetProfile.CameraMovesWithZ = donor.Model.CameraMovesWithZ;
-                if (TargetProfile.CalibU0 == null) TargetProfile.CalibU0 = donor.Model.CalibU0;
-                if (!TargetProfile.IsBasePosSet && donor.Model.IsBasePosSet)
-                {
-                    TargetProfile.BasePosX = donor.Model.BasePosX;
-                    TargetProfile.BasePosY = donor.Model.BasePosY;
-                }
-                TargetProfile.IsCalibrated = true;      // 矩阵确实可用（复用自同工位）
-
-                IsNinePointShared = true;
-                SharedNinePointText = $"♻ 已复用同工位《{donor.ProfileName}》的九点标定结果 —— 本任务无需重采九点。";
-                AppendLog("[九点共享] " + SharedNinePointText);
-                AppendLog($"[九点共享] 矩阵文件：{donor.Model.HomMatFilePath}");
-                if (donor.Model.CalibZ.HasValue)
-                    AppendLog($"[九点共享] 沿用九点标定高度 CalibZ={donor.Model.CalibZ.Value:F1}mm");
-            }
-            catch (Exception ex)
-            {
-                AppendLog("[九点共享] 复用同工位九点失败（按独立标定继续）：" + ex.Message);
-            }
-        }
+        // ★★2026-09-15 删除死代码 TryInheritStationNinePoint()（"同工位即借用九点矩阵"的第二份实现）：
+        //   ① 全仓零调用方（实测 grep 只有定义处）——真正生效的是上面的 TryShareNinePointMatrix()；
+        //   ② 它与上面那份逻辑几乎相同却**多一句 TargetProfile.IsCalibrated = true**（"矩阵可用"顺手当"本档案已标定"），
+        //      对 e/t 档案就是假绿：e 段一行没跑，管理页却显示已标定；
+        //   ③ 判据写两遍 = 靠巧合正确。留一份（已加同槽 + H-only 约束），删掉重复的那份。
+        //   若将来确实需要"向导外单独补共享"，请复用 TryShareNinePointMatrix 并把"IsCalibrated 只对本量成立"
+        //   写进方法契约，不要另起一份谓词。
 
         /// <summary>本档案未声明时，到同工位其它档案里继承已声明的相机安装特性</summary>
         private (bool Found, bool Value, string Name) TryInheritCameraMountFromSiblings()
@@ -652,7 +714,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 switch (_sessionSpec.PrimaryPath)
                 {
                     case CalibrationAcquirePath.NozzleTruthWalk: path = "吸嘴真值走位：移动吸嘴依次对准 9 个标定位采集"; break;
-                    case CalibrationAcquirePath.CameraTruthWalk: path = "相机真值走位：固定相机下移动目标块至视野 9 个位置采集"; break;
+                    case CalibrationAcquirePath.CameraTruthWalk: path = "固定相机走位：吸嘴装延伸杆（或工件特征）走到视野内 9 个网格位采集（真值=工具尖落点，H 直接输出落点）"; break;
                     case CalibrationAcquirePath.PickPlaceReturn: path = "吸放式 H：吸取→放料命令位→回拍照位成像（真值=命令位）"; break;
                     case CalibrationAcquirePath.RotatePickPlace: path = "吸放旋转 e：吸件转 U 各角度放落→回拍测位移→圆拟合偏心"; break;
                     case CalibrationAcquirePath.RotateCameraView: path = "旋转观测 e：吸嘴吸附延伸杆/治具特征，转 U 多角度成像→轨迹圆拟合旋转中心+偏心"; break;
@@ -688,7 +750,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         // 九点网格走位会拍照不到。吸嘴与工件的对准关系由偏心 e 与换算公式负责，不在本步示教。
                         return "操作：① 手动 Jog 使标定工件特征（如麻将背面图案）在相机画面内清晰成像并尽量居中（取景位）→ ② 点【🎯 设当前轴位置为基准】记录 (X,Y) 为网格中心 → ③ 核对下方步长。后续 9 点网格以此基准为中心向四周推算走位。注意：基准取『工件取景位』而非『吸嘴对准工件位』——相机与吸嘴偏心可达几十 mm，吸嘴对准时工件反而不在画面内，九点走位会拍不到。";
                     case CalibrationAcquirePath.CameraTruthWalk:
-                        return "操作（相机固定）：① 把目标特征移动到相机视野中心 → ② 确认执行机构（吸嘴/探针）恰好对准该特征后点【🎯 设当前轴位置为基准】→ ③ 核对下方步长。后续 9 点网格以此为中心扩展。";
+                        // ★ 2026-09-10 语义补齐：固定相机 + 走位有两条现场做法，真值都是"相机视野里的靶点"——
+                        //   ① 工具尖/延伸杆端作靶（引导定位工位首选：靶随机构走，H 直接给出"工具尖该送到哪"，
+                        //      与吸嘴同心时即落点，无需再叠工具偏距 t）；② 工件/标定块作靶（靶置于机构或平台上，
+                        //      由平台/机构走位移动到视野内）。两者采集代码相同，差别只在"谁带着靶走"。
+                        return "操作（相机固定走位式）：① 把靶点清晰成像并尽量居中——推荐吸嘴装延伸杆，让【杆端特征】进视野（不做吸放动作）；也可用工件/标定块特征，由平台或机构走位把它移进视野；② 点【🎯 设当前轴位置为基准】记录网格中心（此刻靶点在画面中的机械位）；③ 核对下方步长（3×3 网格以此为中心向四周扩展）。真值语义：以工具尖/延伸杆端作靶时，H 输出的就是『把工具尖送到该像素处所需的机械位』= 落点，无需再叠工具偏距 t；若以工件特征作靶且工具与相机不同轴，则工具偏距需另做对针 t 补。";
                     case CalibrationAcquirePath.PickPlaceReturn:
                     case CalibrationAcquirePath.RotatePickPlace:
                         return "操作：先设【初始吸取位】（吸嘴悬停工件吸点正上方），再设【固定拍照位】（回拍照位并看清网格区），最后做一次首件试放验证再进采样。";
@@ -721,7 +787,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                                 ? $"图像距 {MeasuredPixelDistance:F1} px · 已知 {KnownPhysicalDistanceMm:F2} mm"
                                 : "先抓图并框选已知距离特征";
                         }
-                        if (TargetProfile != null && TargetProfile.Type == CalibrationType.Checkerboard2D)
+                        if (TargetProfile != null && TargetProfile.Quantity == CalibrationQuantity.LensDistortion)
                         {
                             return "拍摄标定板并提取角点/圆心阵列图像…";
                         }
@@ -1443,27 +1509,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             };
         }
 
-        /// <summary>v2 物理量/路径 → 旧 CalibrationType 桥（Step3 模板选择器与采集策略按旧 Type 分流，必须对齐）</summary>
-        private static CalibrationType? MapQuantityToLegacyType(CalibrationQuantity quantity, CalibrationAcquirePath path)
-        {
-            switch (quantity)
-            {
-                case CalibrationQuantity.HandEye:
-                    return path == CalibrationAcquirePath.PickPlaceReturn
-                        ? CalibrationType.PickPlaceHandEye
-                        : CalibrationType.NinePointHandEye;
-                case CalibrationQuantity.PixelScale:
-                    return CalibrationType.PixelScale;
-                case CalibrationQuantity.ToolRotation:
-                    // 吸放旋转 e（RotatePickPlace）→ legacy 吸放档案型；走位旋转（RotateCameraView）→ 走位混合档案型
-                    return path == CalibrationAcquirePath.RotatePickPlace
-                        ? CalibrationType.PickPlaceHandEye
-                        : CalibrationType.HandEyeWithRotation;
-                default:
-                    return null;
-            }
-        }
-
         private string BuildSessionTitle()
         {
             if (_sessionSpec == null) return "通用视觉标定向导";
@@ -1552,6 +1597,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand TriggerSampleCommand { get; }
         /// <summary>旋转中心手动采样命令</summary>
         public ICommand TriggerRotationSampleCommand { get; }
+        /// <summary>★ 直线性定点探针（2026-09-10）：走 0/d/2d 三点验轨迹是否共线，判走位弧线问题</summary>
+        public ICommand RunLinearityProbeCommand { get; }
         /// <summary>全自动采集所有点位（平台自动走位+自动采图）</summary>
         public ICommand AutoRunAllCommand { get; }
         /// <summary>执行标定算法计算，求解单应矩阵/畸变参数</summary>
@@ -1605,28 +1652,30 @@ namespace Grayson.Vision.WpfUI.ViewModel
             };
 
             // 如果没有传入旧方案，创建全新标定方案
-            TargetProfile = profile ?? new CalibrationProfile { Id = Guid.NewGuid().ToString("N"), Name = "新建标定方案", Type = CalibrationType.NinePointHandEye };
+            TargetProfile = profile ?? new CalibrationProfile { Id = Guid.NewGuid().ToString("N"), Name = "新建标定方案", Quantity = CalibrationQuantity.HandEye };
             // 几何字段写回联动刷新（按钮示教/手动输入均覆盖），Dispose 中退订
             TargetProfile.PropertyChanged += OnTargetProfileGeometryChanged;
 
-            // v2 会话且无旧 profile：按 spec 物理量/路径确定旧 Type（供采集策略/Step3 模板选择器分流）
+            // 相机槽候选（工位档案定义的槽优先）——2026-09-11：推荐方案判错槽时现场可改
+            LoadCameraSlotOptions();
+
+            // v2 会话且无旧 profile：按 spec 物理量/路径确定新 profile 的 Quantity/PrimaryPath（供采集策略/模板分流）
             if (_sessionSpec != null && profile == null)
             {
-                var legacy = MapQuantityToLegacyType(_sessionSpec.Quantity, _sessionSpec.PrimaryPath);
-                if (legacy.HasValue)
-                {
-                    TargetProfile.Type = legacy.Value;
-                }
+                TargetProfile.Quantity = _sessionSpec.Quantity;
+                TargetProfile.PrimaryPath = _sessionSpec.PrimaryPath;
             }
             // 旧标定姿态快照：若重标同一方案，发布前体检会比对"上次 vs 本次"Z/U₀ 差异并提醒（Z 敏感）
             _openedCalibZ = TargetProfile.CalibZ;
             _openedCalibU0 = TargetProfile.CalibU0;
+            // ★ 2026-09-10：重开/新建档案时清掉旋转基准角缓存（下次旋转采样重新读当前 U 锁定）
+            ResetRotationBaseU();
 
             // 【九点同工位共享】本方案还没有自己的九点矩阵 → 自动引用同工位已发布的那一份（2026-09-09）
             TryShareNinePointMatrix();
 
-            // 根据标定类型选择对应的策略实现
-            SelectStrategy(TargetProfile.Type);
+            // 根据标定物理量选择对应的策略实现
+            SelectStrategy(TargetProfile.Quantity);
             // 策略初始化标定点集合（初始化9个点/旋转采样点）
             _strategy.InitializePoints(this);
 
@@ -1643,6 +1692,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 _strategy.TriggerSample(this);
             });
             TriggerRotationSampleCommand = new RelayCommand(_ => DispatchRotationSampleTrigger());
+
+            // ★ 2026-09-10 二轮：直线性定点探针命令（步骤2 数据采集页，操作员主动触发）。
+            //   用几何事实判定"走位轨迹到底直不直"，一锤定音区分：
+            //     轨迹真弯（运动学问题） vs 轨迹已直（问题在相机/标定板/采样）。
+            RunLinearityProbeCommand = new RelayCommand(_ => RunLinearityProbe());
+
             AutoRunAllCommand = new RelayCommand(_ =>
             {
                 // ★ P2 e 单量会话：自动全采=只跑旋转采样（不碰九点列表）
@@ -1713,7 +1768,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog($"[StepDef v2] 任务 {_sessionSpec.SpecId ?? _sessionSpec.DisplayName ?? "?"} 模板装配 {_stepItems.Count} 步：{stepNames}");
                 AppendLog($"[StepDef v2] 完成门禁已启用（每步满足条件才能进入下一步）；发布在末步『完成并保存』走 体检-红阻-黄确认 链");
             }
-            AppendLog($"标定向导已就绪，标定类型: {TargetProfile.Type}{nozzleTag}");
+            AppendLog($"标定向导已就绪，标定物理量: {TargetProfile.Quantity}{nozzleTag}");
         }
 
         /// <summary>
@@ -1770,16 +1825,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             try
             {
-                // 从底层运动卡读取当前绑定的 X/Y 轴位置
+                // 从底层运动卡读取当前绑定的 X/Y 轴位置；并锁定 Z/U 作基准（2026-09-10：
+                // 九点平移走位据此保持固定 U 姿态、旋转采样以此作 U_ref，不再强制归零）
                 var posXRes = SelectedMotionDevice.GetFeedbackPosition(TargetProfile.BindXAxisIndex);
                 var posYRes = SelectedMotionDevice.GetFeedbackPosition(TargetProfile.BindYAxisIndex);
+                var posZRes = SelectedMotionDevice.GetFeedbackPosition(TargetProfile.BindZAxisIndex);
+                var posURes = SelectedMotionDevice.GetFeedbackPosition(TargetProfile.BindRotationAxisIndex);
 
                 if (posXRes.Success && posYRes.Success)
                 {
                     TargetProfile.BasePosX = posXRes.Data;
                     TargetProfile.BasePosY = posYRes.Data;
-                    AppendLog($"[基准设置成功] 绑定轴(X:{TargetProfile.BindXAxisIndex}, Y:{TargetProfile.BindYAxisIndex}) -> 基准坐标: X={TargetProfile.BasePosX:F3}, Y={TargetProfile.BasePosY:F3}");
-                    MessageBox.Show($"基准位置设定成功！\nX: {TargetProfile.BasePosX:F3} mm\nY: {TargetProfile.BasePosY:F3} mm", "基准更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                    if (posZRes != null && posZRes.Success) TargetProfile.BasePosZ = posZRes.Data;
+                    if (posURes != null && posURes.Success) TargetProfile.BasePosU = posURes.Data;
+                    AppendLog($"[基准设置成功] 绑定轴(X:{TargetProfile.BindXAxisIndex}, Y:{TargetProfile.BindYAxisIndex}) -> 基准坐标: X={TargetProfile.BasePosX:F3}, Y={TargetProfile.BasePosY:F3}"
+                        + (TargetProfile.BasePosZ.HasValue ? $", Z={TargetProfile.BasePosZ.Value:F3}" : "")
+                        + (TargetProfile.BasePosU.HasValue ? $", U={TargetProfile.BasePosU.Value:F2}°" : ""));
+                    MessageBox.Show($"基准位置设定成功！\nX: {TargetProfile.BasePosX:F3} mm\nY: {TargetProfile.BasePosY:F3} mm"
+                        + (TargetProfile.BasePosZ.HasValue ? $"\nZ: {TargetProfile.BasePosZ.Value:F3} mm" : "")
+                        + (TargetProfile.BasePosU.HasValue ? $"\nU: {TargetProfile.BasePosU.Value:F2}°" : "")
+                        + "\n\n九点走位将保持该 U 姿态（不再强制归零），旋转采样以该 U 为相对角基准。",
+                        "基准更新", MessageBoxButton.OK, MessageBoxImage.Information);
                     // 写回后必须刷新两处 UI 状态，否则自检仍显示旧值(0,0 红)、Next 按钮门禁不重算：
                     // ① RefreshGeometryChecks：重建"配置自检"红绿清单（IsBasePosSet 刚被置位）；
                     // ② RaiseNextGate：Next 按钮 CanExecute=CanAdvanceFrom→EvalStepReady(DefineOrigin)
@@ -2134,7 +2200,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (!CalibrationPoints.Any(p => p.IsCaptured))
             {
                 CalibService.ResetMarkReference();
-                AppendLog("[H九点·重标核对] 首点开始前请确认：① 标定工件(麻将)固定在生产实际取料位/治具位；② 步骤1『设当前轴位置为基准』= JOG 使工件特征成像在画面中央时的机械坐标（取景位）——勿要求吸嘴对准工件：相机与吸嘴偏心可达几十 mm，吸嘴对准时工件偏出画面、九点走位会拍照不到（基准=取景位，吸嘴对准关系由偏心 e/换算公式负责）；③ 网格步长内工件成像全程在视野内。本次起逐点回放 世界位↔像素，供换算语义核验。");
+                bool ethWalk = TargetProfile != null && TargetProfile.EyeMode == EyeMode.EyeToHand;
+                AppendLog(ethWalk
+                    ? "[H九点·重标核对] 首点开始前请确认：① 靶点已就位并能清晰成像——推荐吸嘴装延伸杆、让杆端特征进固定相机视野（本工位不做吸放）；② 步骤1『设当前轴位置为基准』= JOG 使靶点在画面中央时的机械坐标（此刻轴读数即网格中心）；③ 网格步长内靶点全程在视野内。真值语义：以工具尖/延伸杆端作靶 ⇒ H 直接输出『工具尖该送到的机械位』，无需再叠工具偏距 t。本次起逐点回放 世界位↔像素，供换算语义核验。"
+                    : "[H九点·重标核对] 首点开始前请确认：① 标定工件(麻将)固定在生产实际取料位/治具位；② 步骤1『设当前轴位置为基准』= JOG 使工件特征成像在画面中央时的机械坐标（取景位）——勿要求吸嘴对准工件：相机与吸嘴偏心可达几十 mm，吸嘴对准时工件偏出画面、九点走位会拍照不到（基准=取景位，吸嘴对准关系由偏心 e/换算公式负责）；③ 网格步长内工件成像全程在视野内。本次起逐点回放 世界位↔像素，供换算语义核验。");
             }
 
             // 走位顺序数组（元素为点 Index 编号），由步骤1选择的走位方式决定：
@@ -2142,67 +2211,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
             int[] order = NinePointTraverseOrder.GetOrder(TraverseMode);
             // 游标：记录顺序数组中已处理到的位置，天然支持断点续采
             int cursor = 0;
-            // 0.6 九点网格可达性空走预检（2026-09-06，Epson SCARA 环带可达域适配）：
-            //    背景：SCARA 可达域是内外半径环带——矩形 0~600 钳制与上位机静态计算都无法
-            //    预判某点是否可达，控制器才是一锤定音的裁决者（4007 外圈够不着 / 4001 内圈
-            //    收不拢或 U 姿态不可达 / 2997 Z 超软限）。若基准/步长组合把边角点推出环带，
-            //    旧逻辑会在采图进行中弹"走位被拒"打断流程。
-            //    本预检把"走位被拒"整体前置：凡目标坐标未验证过的待采点，先空走验证一遍；
-            //    全部可达才进入采图循环（循环内 0 拒绝）。验证通过的坐标记入 _precheckedTargets，
-            //    基准/步长/镜像/眼型改动会改变坐标 → 自动失效重验；配置不变时零额外运动
-            //    （手动逐点采集只有第一点付一次空走成本）。
-            var pendingPrecheck = new List<(int Index, double X, double Y)>();
-            foreach (int idx in order)
-            {
-                if (_skippedPointIndices.Contains(idx)) continue;
-                if (CalibrationPoints.Any(p => p.Index == idx && p.IsCaptured)) continue;
-                if (!TryGetNinePointTarget(idx, out double px, out double py)) continue;
-                if (_precheckedTargets.TryGetValue(idx, out var prev) &&
-                    Math.Abs(prev.X - px) < 1e-6 && Math.Abs(prev.Y - py) < 1e-6)
-                {
-                    continue; // 同配置已试走通过，跳过
-                }
-                pendingPrecheck.Add((idx, px, py));
-            }
-            if (pendingPrecheck.Count > 0)
-            {
-                var failed = new List<string>();
-                foreach (var (pidx, px, py) in pendingPrecheck)
-                {
-                    if (!MovePlatformTo(px, py, out string rejectReason))
-                    {
-                        failed.Add($"· 点{pidx} 目标 (X:{px:F1}, Y:{py:F1})：{DecodeEpsonRejectReason(rejectReason)}");
-                        continue;
-                    }
-                    _precheckedTargets[pidx] = (px, py); // 该目标坐标试走通过 → 后续同坐标直接放行
-                }
-                if (failed.Count > 0)
-                {
-                    _reachPrecheckFailed = true;
-                    string hint =
-                        "九点网格可达性预检未通过——以下网格点被控制器拒绝走位，已在本轮采图前中止（已采数据保留）：\n\n" +
-                        string.Join("\n", failed) + "\n\n" +
-                        "【原因】Epson SCARA 可达域是内外半径环带而非矩形：\n" +
-                        "· code 4007 超动作区域 → 多在外圈之外（机械臂够不着）；\n" +
-                        "· code 4001 关节超脉冲范围 → 多进内圈空洞（两臂收不拢）或当前 U 姿态不可达；\n" +
-                        "· code 2997 → Z 超出 RC+ 软限（现场实测约 -145.5mm）。\n\n" +
-                        "【调整建议】\n" +
-                        "· 基准位置尽量选在环带中腰——目视两臂夹角舒展（约 90°），远离折叠/伸直极限；\n" +
-                        "· 或减小网格步长，让 9 点整体收拢在可达区内；\n" +
-                        "· 基准请用『设当前轴位置为基准』（JOG 到达过的点必然可达），勿手输理论坐标。\n\n" +
-                        "调整后重新点击采集即可——坐标变化的点会自动重验，已验证的点直接跳过。";
-                    if (!autoResolveFailures)
-                    {
-                        RunOnUi(() => MessageBox.Show(hint, "走位可达性预检未通过", MessageBoxButton.OK, MessageBoxImage.Warning));
-                    }
-                    else
-                    {
-                        AppendLog("[可达性预检未通过] " + hint.Replace("\n", " "));
-                    }
-                    return false;
-                }
-                AppendLog($"[可达性预检] {pendingPrecheck.Count} 个网格点空走验证全部可达，进入采图循环（同配置后续不再重复验证）。");
-            }
+            // ★ 2026-09-10 移除「九点网格可达性空走预检」：
+            //    原预检（2026-09-06 加入）会在进入采图循环前，把所有未验证目标坐标先空走一遍，
+            //    全部可达才开采。实测代价太大——每次重采（哪怕只补 1 个缺失点）都要先空走
+            //    最多 9 个网格点，走位时间翻倍，操作员体感"点一下等半天才真正开始拍"。
+            //    现在改为「直接开走」：点采集立刻进入采图循环，走位即采图，无前置空走。
+            //    ⚠ 若某点被控制器拒绝（4007/4001/2997），行为与预检时期一致：本轮采集中止并弹窗
+            //    提示（见 CaptureNextCalibrationPoint 内 moved==false 分支），已采点保留，
+            //    调整基准/步长后重新点采集即可续采（已采点不会重复走位）。
+            //    注：_precheckedTargets 字段保留（2026-09-10 起不再写入，备后续复用），
+            //    此处不再做任何预检写入。
 
             // 手动模式补采解除开关（2026-09-03）：当剩余未采集点全部被跳过时，自动解除跳过
             // 标记进入补采（操作员回步骤2调参后回来点采集，期望直接补采失败点而不是弹『均已跳过』）。
@@ -2285,6 +2303,31 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     return false;
                 }
 
+                // 1.x ★ 用【实际反馈位置】替代【指令目标值】回填 World（2026-09-10）：
+                //     原先 World 记的是 TryGetNinePointTarget 算出的指令坐标（如 240.001），
+                //     而实际到位位置可能差几十微米~零点几毫米。拟合 H 时用指令值 = 假设
+                //     "指令=到位"，把这个误差也算进矩阵，属于系统性偏差。
+                //     改为走位后读一次真实反馈（X/Y 轴），世界侧数据才与像素侧严格对应。
+                //     读失败不阻断（沿用指令值），仅记日志——避免因查询接口异常中断标定。
+                double actualX = posX, actualY = posY;
+                try
+                {
+                    var fx = SelectedMotionDevice?.GetFeedbackPosition(TargetProfile.BindXAxisIndex);
+                    var fy = SelectedMotionDevice?.GetFeedbackPosition(TargetProfile.BindYAxisIndex);
+                    if (fx != null && fx.Success) actualX = fx.Data;
+                    if (fy != null && fy.Success) actualY = fy.Data;
+                    double dx = actualX - posX, dy = actualY - posY;
+                    if (Math.Abs(dx) > 0.02 || Math.Abs(dy) > 0.02)
+                    {
+                        AppendLog($"[第 {index} 点] 到位偏差 指令({posX:F3},{posY:F3}) → 反馈({actualX:F3},{actualY:F3}) " +
+                                  $"Δ=({dx:+0.000;-0.000;0.000},{dy:+0.000;-0.000;0.000})mm —— World 已改用反馈值。");
+                    }
+                }
+                catch (Exception exFb)
+                {
+                    AppendLog($"[第 {index} 点] 反馈位置读取异常（沿用指令值）：{exFb.Message}");
+                }
+
                 // 2. 相机抓图
                 bool captured = CaptureAndDisplayFrame("九点采样", true);
                 if (!captured)
@@ -2350,11 +2393,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 var capturedPixel = feature.Value;
 
                 // 5. 回填真实机械绝对坐标与图像像素坐标，并标记该点已采集（UI 线程变更绑定属性）
+                //    World 用【实际反馈位置】actualX/actualY（2026-09-10 起），非指令目标值。
                 double capturedScore = CalibService?.LastMatchReport != null ? CalibService.LastMatchReport.Score : 0;
                 RunOnUi(() =>
                 {
-                    targetPoint.WorldX = posX;
-                    targetPoint.WorldY = posY;
+                    targetPoint.WorldX = actualX;
+                    targetPoint.WorldY = actualY;
                     targetPoint.PixelX = capturedPixel.PixelX;
                     targetPoint.PixelY = capturedPixel.PixelY;
                     targetPoint.IsCaptured = true;
@@ -2362,6 +2406,24 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     targetPoint.MatchScore = capturedScore;   // 记录该点匹配质量分（表格展示）
                 });
                 _skippedPointIndices.Remove(index); // 若该点此前被跳过过，补采成功即销账
+
+                // 5.y ★ 轴向标度早期体检（2026-09-10）：已采到足够点就立刻验「世界 X/Y
+                //     各走一个步长，像素位移是否等幅」。
+                //
+                //     背景：现场实测九点 RMS=0.536mm（看似合格）但 σ1/σ2=1.490（形状非法），
+                //     发布被红阻。离线复算证实：沿世界 X 走 10mm → 像素位移 125.7px，
+                //     沿世界 Y 走 10mm → 只有 110.8px，比值 1.13；且两方向夹角 116.8°
+                //     （应 90°）。留一法排除个别点污染（剔除任一点 σ1/σ2 仍 ≈1.49），
+                //     证明是【整体性】失真 —— 世界网格与像素网格不成相似关系。
+                //     这种矩阵若用于引导，误差会按距离线性放大（跨 80mm 偏约 19mm）。
+                //
+                //     因此在这里提前拦截：等到第 2/3 行或第 2/3 列凑齐即可判定，
+                //     不必等 9 点全采完才发现白跑一趟。判定只做提示与阻断建议，不自动中止
+                //     （允许操作员继续采完看完整报告），但日志给出明确的下一步动作。
+                if (!_axisScaleChecked)
+                {
+                    CheckAxisScaleEarly();
+                }
 
                 // 5.x 标定姿态记录（2026-09-04）：网格中心(Index=5)成功采集时读取此刻轴位姿，
                 //    记录拍照高度 Z 与旋转基准 U₀。HomMat 对拍照 Z 敏感，落档供业务端"姿态≠标定姿态→重标提醒"；
@@ -2397,7 +2459,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 // 换算语义核验明细（2026-09-06）：世界=走位命令位（麻将固定、机械手带相机走的网格），
                 // 像素=麻将成像。若重标后此表仍是"世界≈BasePos±10 网格、麻将真身却远在网格外"，
                 // 则矩阵输出 H(u) 语义=“成像 u 时机械手位”而非“工件真位”——校验台直走 H(u) 必然不到麻将。
-                AppendLog($"[H点 #{index}] World=({posX:F3},{posY:F3}) Pixel=({targetPoint.PixelX:F1},{targetPoint.PixelY:F1}) Score={capturedScore:F3} 可靠={featureReliable} | Base=({TargetProfile.BasePosX:F3},{TargetProfile.BasePosY:F3}) 步长=({GridStepX:F1},{GridStepY:F1})");
+                AppendLog($"[H点 #{index}] World=({posX:F3},{posY:F3}) Pixel=({targetPoint.PixelX:F1},{targetPoint.PixelY:F1}) Score={capturedScore:F3} 可靠={featureReliable} | Base=({TargetProfile.BasePosX:F3},{TargetProfile.BasePosY:F3}) 步长=({GridStepX:F1},{GridStepY:F1}){PtpFallbackSuffix()}");
                 NotifySamplingUi();
                 return true;
             }
@@ -2533,6 +2595,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     + "开始前请确认：\n"
                     + " · 拍照位正下方『网格中心（基准点）』放料区已清空、可接收工件；\n"
                     + " · 已在步骤1 完成【🧪 首件试放验证】（吸取/放料/Z 序/真空链路可靠，工件特征清晰）。\n\n"
+                    + "★ 角度为【相对吸持姿态的增量】：工件在 U_pick（吸持姿态）被吸住，放料前 U = U_pick + 表内角度，\n"
+                    + "   例如表内 0° 表示不额外旋转、-45° 表示相对吸持姿态反转 45°，不会被拉回绝对角。\n\n"
                     + "确认后才开始逐角度吸放采样（仅首个旋转点询问一次，后续角度/补采不再打断）。";
             }
             else
@@ -2542,6 +2606,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     + "请现在用 Jog 把『旋转特征』移到相机视野中央附近——\n"
                     + " · 旋转特征 = 随轴转动的那一个（延伸杆端 Mark 或吸嘴自身特征）；\n"
                     + " · 若视野里只有固定工件/麻将，旋转标定无法成立（需要先装延伸杆并把麻将移开）。\n\n"
+                    + "★ 角度为【相对当前 U 的增量】：确认的这一刻会把当前 U 锁定为基准角 U_ref，\n"
+                    + "   表内 0° 即当前姿态（原地不动）、±45° 即相对当前姿态左右各转 45°——不会把 U 拉回绝对 0°。\n"
+                    + "   （基准角只在首个采样点锁定一次；若中途手动转过 U，可重开点表/重进档案重新锁定。）\n\n"
                     + "确认特征已就位后才开始逐角度采样（否则每个角度都在空视野漏识别）。";
             }
             if (TargetProfile.FeatureType == CalibrationFeatureType.TemplateMatch)
@@ -2565,8 +2632,143 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
+        /// 旋转采样基准角显示（UI 只读）：锁定后显示实际读到的 U_ref。
+        /// </summary>
+        public string RotationBaseUText
+        {
+            get => _rotationBaseUText;
+            private set => Set(ref _rotationBaseUText, value);
+        }
+
+        /// <summary>
+        /// 旋转采样基准角（懒加载·只锁定一次）：读当前 U 轴实际角度作基准。
+        ///
+        /// ★ 2026-09-10 定案：旋转采样角（-45°/0°/+45°…）是【相对基准角的增量】，不是绝对 U 指令。
+        ///   现场 U 轴常停在任意角度——若把表内 "0°" 直接当绝对角下发，手臂会被强行拽回绝对 0°
+        ///   （可能撞机/超行程），且与操作员"以当前姿态为 0°"的直觉完全相反。
+        ///
+        /// ⚠ 基准只能锁一次：不能每次移动都重读当前 U 作基准（否则相对角逐点累积漂移）。
+        /// ⚠ 偏心矢量 e 以九点基准 U0 为参考系：基准角与 U0 差得较多时给出提醒（e 方向会整体偏该差值）。
+        /// </summary>
+        private double EnsureRotationBaseU()
+        {
+            if (_rotationBaseU.HasValue)
+            {
+                return _rotationBaseU.Value;
+            }
+
+            double u = 0;
+            var pose = ReadCurrentPose(out string failMsg);
+            if (pose.HasValue)
+            {
+                u = pose.Value.U;
+                // ★ 2026-09-10：基准点已锁定 U（BasePosU）时，旋转基准 U_ref 优先取基准点 U，
+                //   与九点平移走位保持同一固定 U 姿态——否则走位按 BasePosU、旋转按当前 U，两段参考系不一致。
+                if (TargetProfile.BasePosU.HasValue && Math.Abs(u - TargetProfile.BasePosU.Value) > 2.0)
+                {
+                    AppendLog($"[旋转基准] ⚠ 当前 U={u:F2}° 与基准点 U={TargetProfile.BasePosU.Value:F2}° 相差 "
+                        + $"{Math.Abs(u - TargetProfile.BasePosU.Value):F1}°——旋转基准 U_ref 取基准点 U（与九点走位同姿态）。"
+                        + "请确认已把 U 转回基准点姿态；若基准点 U 需变更，返回步骤1重设基准点。");
+                }
+                if (TargetProfile.BasePosU.HasValue)
+                {
+                    u = TargetProfile.BasePosU.Value;
+                }
+                AppendLog($"[旋转基准] 已锁定基准角 U_ref = {u:F2}°（表内采样角为相对 U_ref 的增量：0° 即当前姿态）");
+                if (TargetProfile.CalibU0.HasValue && Math.Abs(u - TargetProfile.CalibU0.Value) > 2.0)
+                {
+                    AppendLog($"[旋转基准] ⚠ 基准角 U_ref={u:F2}° 与九点基准 U0={TargetProfile.CalibU0.Value:F2}° 相差 "
+                        + $"{Math.Abs(u - TargetProfile.CalibU0.Value):F1}°——偏心矢量 e 以 U0 为参考系，"
+                        + "建议先把 U 转回 U0 再采样，否则 e 方向会整体偏该差值。");
+                }
+            }
+            else
+            {
+                AppendLog($"[旋转基准] ⚠ 未能读取当前 U（{failMsg}）——基准角按 0.00° 处理（采样角等价于绝对角下发）。");
+            }
+
+            _rotationBaseU = u;
+            double shown = u;
+            RunOnUi(() => RotationBaseUText = $"U_ref = {shown:F2}°（表内角度为该基准的相对增量）");
+
+            // ⚠ 补采/续采一致性：已有已采点却没有缓存基准（关窗重开、点表未重建）时，本次重锁的基准
+            //   可能与已采点所用的旧基准不同——两套相对角混在一起拟合会把圆心拉歪。给明确提醒。
+            if (RotationPoints.Any(p => p.IsCaptured))
+            {
+                AppendLog("[旋转基准] ⚠ 已存在已采旋转点却仍需重锁基准角（多见于关窗重开后补采）："
+                    + "已采点角度是相对【上一轮基准】记录的，本次按当前 U 重锁可能与之不一致——"
+                    + "请确认 U 自上轮采样后未被手动 Jog 过；若不确定，建议清空旋转点表重新采样，避免基准混用。");
+            }
+            return u;
+        }
+
+        /// <summary>
+        /// 清除旋转采样基准角缓存（重开档案 / 重新初始化旋转点表时调用）：
+        /// 下次旋转采样会重新读当前 U 作基准，避免沿用上一轮会话的旧基准。
+        /// </summary>
+        public void ResetRotationBaseU()
+        {
+            if (_rotationBaseU.HasValue)
+            {
+                AppendLog($"[旋转基准] 已清除基准角缓存（原 U_ref={_rotationBaseU.Value:F2}°），下次旋转采样将重新锁定当前 U。");
+            }
+            _rotationBaseU = null;
+            RunOnUi(() => RotationBaseUText = "U_ref: —（未锁定；旋转采样时读当前 U 作基准）");
+        }
+
+        /// <summary>
+        /// ★2026-09-15：把"该旋转采样点采集瞬间的机位"回填到 RotationPointModel.BaseX/BaseY。
+        ///
+        /// 为什么必须记（本工位 2026-09-15 踩坑）：这是判断"采样期间 XY 是否真的固定"的**唯一**依据。
+        ///   标准流程 = "XY 固定、只转 U"，此时该点机位应各点一致；机位分散 ⇒ 模型要按动过的情形重推。
+        ///   此前该字段【全仓无赋值点】——模型有定义、注释写了用途，却从来没被填过，
+        ///   于是事后只能靠"猜"，无法离线归因（这正是本轮排查卡住的地方）。
+        /// 分散度 &gt;1mm 显式告警（不阻断，同时写进日志与过程证据 JSON）。
+        /// </summary>
+        private void StampRotationMotion(RotationPointModel p)
+        {
+            var pose = ReadCurrentPose(out string failMsg);
+            if (!pose.HasValue)
+            {
+                AppendLog($"[旋转机位] ⚠ {p.AngleDeg:F1}° 未能读取机位（{failMsg}）——该点 BaseX/BaseY 留空，过程证据里会标为缺失。");
+                return;
+            }
+            p.BaseX = pose.Value.X;
+            p.BaseY = pose.Value.Y;
+            // ★2026-09-15：同一处把【实读 U】也回填（单一来源，走位式/吸放式两条路径共用本方法）。
+            //   为什么必须记：AngleDeg 是相对基准角 U_ref 的增量，与"指令绝对角"不是一回事；
+            //   偏心结算按【实】转角才准，|实读U − (U_ref+AngleDeg)| 就是 U 到位精度，偏大直接污染 b 的方向。
+            p.ReadUDeg = pose.Value.U;
+            var others = RotationPoints.Where(q => q.IsCaptured && !ReferenceEquals(q, p) && (q.BaseX != 0 || q.BaseY != 0)).ToList();
+            if (others.Count > 0)
+            {
+                double maxD = others.Max(q =>
+                {
+                    double dx = q.BaseX - p.BaseX, dy = q.BaseY - p.BaseY;
+                    return Math.Sqrt(dx * dx + dy * dy);
+                });
+                if (maxD > 1.0)
+                {
+                    AppendLog($"[旋转机位] ⚠ {p.AngleDeg:F1}° 机位({p.BaseX:F3},{p.BaseY:F3}) 与已采点最大差 {maxD:F2}mm（>1mm）"
+                              + "——标准流程是『XY 固定、只转 U』；机位分散说明采样期间动过 XY，"
+                              + "此时圆心/偏心的『固定机位』模型需按动过的情形复核（已记入过程证据）。");
+                }
+                else
+                {
+                    AppendLog($"[旋转机位] {p.AngleDeg:F1}° 机位({p.BaseX:F3},{p.BaseY:F3}) 与已采点一致（最大差 {maxD:F3}mm）✓");
+                }
+            }
+            else
+            {
+                AppendLog($"[旋转机位] {p.AngleDeg:F1}° 机位锁定 ({p.BaseX:F3},{p.BaseY:F3})，后续点将与之比分散度。");
+            }
+        }
+
+        /// <summary>
         /// 旋转采样（单步）：把旋转轴转到下一个未采集角度 → 拍照 → 提取旋转特征（延伸杆/吸嘴特征）。
         /// 失败自动自愈（连拍+曝光±30%）；手动模式弹三选（重试/跳过/中止）；自动模式跳过由 AutoCollect 收尾补采。
+        /// ★ 2026-09-10 相对角：表内角度是【相对基准角 U_ref 的增量】，首次采样时读当前 U 锁定 U_ref，
+        ///   实际下发 = U_ref + 表内角度（回读实读 U 记日志）。
         /// </summary>
         public bool CaptureNextRotationPoint(bool autoResolveFailures = false)
         {
@@ -2626,10 +2828,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
 
             double angle = targetPoint.AngleDeg;
+            // ★ 2026-09-10 相对角：基准角在本次旋转阶段首次采样时锁定一次（读当前 U），表内角度按增量下发
+            double uRef = EnsureRotationBaseU();
             while (true)
             {
-                // 旋转轴转到设定角度 → 拍帧 → 提取
-                MoveRotationTo(angle);
+                // 旋转轴转到【基准角 U_ref + 相对角】→ 拍帧 → 提取
+                double absU = uRef + angle;
+                AppendLog($"[旋转采样] 相对角 {angle:+0.0;-0.0;0.0}°（基准 U_ref={uRef:F2}°）→ 绝对目标 U={absU:F2}°");
+                MoveRotationTo(absU);
                 bool shot = CaptureAndDisplayFrame("旋转采样", true);
                 var feature = shot ? EstimateRotationFeaturePoint(angle) : null;
                 // 识别失败 → 自动自愈（连拍 + 曝光微调）
@@ -2642,10 +2848,37 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     var rot = feature.Value;
                     double rotScore = CalibService?.LastMatchReport != null ? CalibService.LastMatchReport.Score : 0;
-                    // 实读 U（到位后回读，防指令角与实际角偏差——偏心结算按实转角才准）
-                    double actU = angle;
-                    var rotPose = ReadCurrentPose(out _);
-                    if (rotPose.HasValue) { actU = rotPose.Value.U; }
+                    // ★2026-09-12 脏点门控：旋转采样对匹配质量要求远高于九点——延伸杆 Mark 随 U 轴
+                    //   转出视野/转出模板角度范围时，模板匹配会命中一个【低分乱匹配】（Score≈70、
+                    //   且模板匹配角度乱到 ±110°~125°），该脏点一旦混入圆拟合，旋转中心 O 会被拉到
+                    //   (0,0) 甚至反向，最终"吸嘴不落特征点"。判据：Score 低于阈值视为不可信，不标记
+                    //   已采集，转走自愈/跳过。
+                    //   ★ 阈值按特征类型区分：模板匹配脏点分数骤降到 ~70，正常 ~98，85 分界清晰；
+                    //     圆/十字 Mark 靠几何筛选（圆度/半径）+ 全图搜索中性分(0.85)，分数分布偏软，
+                    //     用 60 分界避免误杀正常点（离群点剔除仍会兜底）。
+                    double rotMinScore100 = TargetProfile?.FeatureType == CalibrationFeatureType.TemplateMatch
+                        ? 85.0 : 60.0;
+                    if (rotScore > 0 && rotScore < rotMinScore100)
+                    {
+                        AppendLog($"[旋转 {angle:F1}°] ⚠ 匹配分 {rotScore:F0} 偏低（<{rotMinScore100:F0}），判为乱匹配脏点，拒绝采入——避免污染圆拟合。将按未识别处理（自愈/跳过）。");
+                        feature = null;
+                    }
+                }
+                if (feature.HasValue)
+                {
+                    var rot = feature.Value;
+                    double rotScore = CalibService?.LastMatchReport != null ? CalibService.LastMatchReport.Score : 0;
+                    // ★2026-09-15：回填该点采样瞬间【机位 + 实读U】（判断"XY 是否真的固定"的唯一依据，
+                    //   且实读 U 是"指令角 vs 到位角"偏差的唯一来源；走位式/吸放式共用本方法，见 StampRotationMotion）
+                    StampRotationMotion(targetPoint);
+                    // 实读 U（单一来源 targetPoint.ReadUDeg）；读机位失败时退回指令角，日志里的偏差会暴露出来
+                    double actU = Math.Abs(targetPoint.ReadUDeg) > 1e-9 ? targetPoint.ReadUDeg : absU;
+                    double uDev = Math.Abs(actU - absU);
+                    if (uDev > 0.5)
+                    {
+                        AppendLog($"[旋转精度] ⚠ 相对角 {angle:+0.0;-0.0;0.0}° 指令绝对U={absU:F3}° 实读U={actU:F3}° 偏差 {uDev:F3}°（>0.5°）"
+                                  + "——U 到位/回读精度不足会让偏心矢量的方向整体旋转，直接污染 b 的方向（已记入过程证据）。");
+                    }
                     RunOnUi(() =>
                     {
                         targetPoint.PixelX = rot.PixelX;
@@ -2654,7 +2887,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         targetPoint.MatchScore = rotScore; // 记录该角度匹配质量分（表格展示）
                     });
                     _skippedRotationAngles.Remove(angle); // 若此前被跳过，补采成功即销账
-                    AppendLog($"[e点 {angle:F1}°] 指令U={angle:F1} 实读U={actU:F2} Pixel=({targetPoint.PixelX:F1},{targetPoint.PixelY:F1}) Score={rotScore:F3}");
+                    AppendLog($"[e点 {angle:F1}°] 基准U_ref={uRef:F2} 指令U={absU:F2} 实读U={actU:F2} Pixel=({targetPoint.PixelX:F1},{targetPoint.PixelY:F1}) Score={rotScore:F3}");
                     break;
                 }
 
@@ -2707,15 +2940,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
 
             AppendLog($"[旋转 {angle:F1}°] 采样像素 Px:{targetPoint.PixelX:F1}, Py:{targetPoint.PixelY:F1}");
-            // 旋转 0° 采样点兜底：若网格中心点未记录到 U₀（如九点后手动转轴再进旋转段），补记此刻轴 U 读数作基准
+            // 相对角 0° 采样点兜底：若网格中心点未记录到 U₀（如九点后手动转轴再进旋转段），补记此刻轴 U 读数作基准。
+            // ★ 2026-09-10 相对角：0° 即"基准姿态"，此刻 U 应等于锁定的 U_ref —— 实读优先，读不到用 U_ref 兜底。
             if (Math.Abs(angle) < 0.01 && !TargetProfile.CalibU0.HasValue)
             {
                 var pose0 = ReadCurrentPose(out _);
-                if (pose0.HasValue)
-                {
-                    TargetProfile.CalibU0 = pose0.Value.U;
-                    AppendLog($"[姿态] 已补记旋转 U 基准 = {pose0.Value.U:F2}°（0° 旋转采样点实测）");
-                }
+                double u0 = pose0.HasValue ? pose0.Value.U : uRef;
+                TargetProfile.CalibU0 = u0;
+                AppendLog($"[姿态] 已补记旋转 U 基准 = {u0:F2}°（相对角 0° 采样点实测；本次基准 U_ref={uRef:F2}°）");
             }
             // 采样完更新旋转中心计算结果UI（回 UI 线程）
             RunOnUi(UpdateRotationCenterResults);
@@ -2808,31 +3040,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// </summary>
         public void AutoCollectNinePointSamples()
         {
-            _reachPrecheckFailed = false; // 每轮自动采集前重置预检失败标记
+            _axisScaleChecked = false;    // ★ 每轮重新做轴向标度体检（2026-09-10）
             // 第一轮：顺序采集（失败自动跳过，不中断）
             while (CalibrationPoints.Any(p => !p.IsCaptured))
             {
                 if (!CaptureNextCalibrationPoint(autoResolveFailures: true))
                 {
-                    break; // 无点可采（全部完成 / 剩余均已跳过 / 可达性预检未通过）
+                    break; // 无点可采（全部完成 / 剩余均已跳过）
                 }
-            }
-
-            // ★ 可达性预检未通过：网格点被控制器拒绝走位（不可达）属配置问题，不是特征缺失——
-            //    给专属提示并中止，避免收尾把 9 点全误报成"未取到特征"误导操作员调光源/曝光。
-            if (_reachPrecheckFailed)
-            {
-                _reachPrecheckFailed = false;
-                AppendLog("[自动采集] 因九点网格可达性预检未通过而中止（走位被控制器拒绝，非特征识别问题）。");
-                RunOnUi(() => MessageBox.Show(
-                    "自动采集中止：九点网格可达性预检未通过——有网格点被控制器拒绝走位（不在 SCARA 可达环带内）。\n\n" +
-                    "调整建议：\n" +
-                    "· 基准位置选到环带中腰（两臂夹角约 90° 舒展处，勿贴内外边界）；\n" +
-                    "· 或减小网格步长让 9 点整体收拢在可达区内；\n" +
-                    "· 基准请用『设当前轴位置为基准』（JOG 到达过的点必然可达）。\n\n" +
-                    "调整后重新运行自动采集即可；已采点保留，会自动补采缺失点。",
-                    "走位可达性预检未通过", MessageBoxButton.OK, MessageBoxImage.Warning));
-                return;
             }
 
             // 第二轮：仅对缺失点补采（解除跳过标记；成功点不动）
@@ -2866,12 +3081,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     $"自动采集结束：已采 {got}/9 点，仍有 {missing.Count} 点未取到特征（#{list}）。\n\n" +
                     "可能原因：该点 Mark 成像差 / 反光 / 半出视野。建议：\n" +
                     "· 点击【⚡ 轴步进并采单个点】逐点补采（可先调光源或特征参数）\n" +
-                    "· 或直接点击【🧮 立即执行标定拟合计算】——已采点数 ≥3 时允许拟合（误差会反映在 RMS 中）",
+                    "· 或直接点击【🧮 立即执行标定拟合计算】——已采点数 ≥3 时允许拟合（误差会反映在 RMS 中）\n" +
+                    "· 也可再次点击【⚡ 自动采集平移 9 点】继续补采缺失点（已采点保留，不会重复走位）",
                     "部分点位缺失", MessageBoxButton.OK, MessageBoxImage.Warning));
             }
             else
             {
                 AppendLog("[自动采集] 全部 9 点采集完成！");
+                // ★ 2026-09-10 需求：9 点采完后按钮仍可再点，用于「重走位重采」。
+                //    提示操作员可选项，不阻断（不弹窗，避免打断操作节奏）。
+                AppendLog("[自动采集] 如需重走位重采：再次点击【⚡ 自动采集平移 9 点】按钮即可" +
+                          "（将清空已采点重新采一轮；若只想补缺点则不会触发，因已全采满）。");
             }
         }
 
@@ -2967,12 +3187,29 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             // ⚠ 2026-09-04 角度覆盖门控：仅"点数≥3"不够——0/30/60 三点覆盖 60° 弧时，
             //   圆心沿缺弧方向误差被放大数倍。覆盖 <90° 时不写最终结果，明确提示补采。
+            //   ★ 2026-09-12 放宽：下相机像素旋转中心（DownCameraPixelRotCenter）求的是"吸嘴旋转轴
+            //     在下相机图像里的投影点"，三点严格共圆（半径=偏心距，圆心=轴投影），±30°（60° 覆盖）
+            //     也能拟合——仅圆心误差随弧长缩短放大。为此路径放宽到 45° 覆盖，并显式标注"低角度
+            //     覆盖、精度降低"，而不是直接拒绝（否则下相机相对纠偏永远缺 R_cdown，恒报"缺像素
+            //     旋转中心"）。上相机偏心 e（RotateCameraView 等）仍保持 90° 门控（精度敏感）。
             if (sampled.Count >= 3)
             {
                 double coverage = RotationArcCoverageDeg(sampled);
-                if (coverage < 90.0)
+                bool isDownRotCenter = TargetProfile?.PrimaryPath == CalibrationAcquirePath.DownCameraPixelRotCenter;
+                // ★2026-09-12 延伸杆标定放宽：上相机"固定相机+延伸杆辅助"场景（H 走 CameraTruthWalk、
+                //   真值=相机中心），杆端 Mark 绕吸嘴轴扫圆半径 r 大，固定相机视野内只能采到小弧段
+                //   （±30° 即 60° 覆盖往往已是极限，再扩 Mark 就转出视野）。三点定圆在 r 大时圆心误差
+                //   有界，故放宽到 60° 覆盖并显式标注精度下降，而不是直接拒绝（否则该场景永远缺 O，
+                //   消费端恒"退化为视觉直吸"——正是本次"吸嘴不落特征点"的直接诱因）。
+                //   纯吸嘴直接成像（半径 r 小、可采大弧段）仍保持 90° 严格门控（精度敏感）。
+                bool isRodAssistedUpCam =
+                       TargetProfile?.PrimaryPath == CalibrationAcquirePath.RotateCameraView
+                    && TargetProfile?.EyeMode == EyeMode.EyeToHand
+                    && IsRotationSession;
+                double gate = isDownRotCenter ? 45.0 : (isRodAssistedUpCam ? 60.0 : 90.0);
+                if (coverage < gate)
                 {
-                    string tip = $"⚠ 旋转角度覆盖仅 {coverage:F0}°（<90°）：圆心沿缺弧方向误差大，结果不可信。请把采样角扩到 ≥90°（默认 ±45° 即达标；受视野/模板限制扩不动时需更换观测特征或调整视野基准）后重算。";
+                    string tip = $"⚠ 旋转角度覆盖仅 {coverage:F0}°（<{gate:F0}°）：圆心沿缺弧方向误差大，结果不可信。请把采样角扩到 ≥{gate:F0}°（默认 ±45° 即达标；受视野/模板限制扩不动时需更换观测特征或调整视野基准）后重算。";
                     AppendLog("[旋转结果] " + tip);
                     RotationCenterResult = tip;
                     RotationCenterPixelResult = "（未拟合：角度覆盖不足）";
@@ -2980,10 +3217,19 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     UpdateRotationPlot();
                     return;
                 }
+                if (isDownRotCenter && coverage < 90.0)
+                {
+                    AppendLog($"[下相机旋转中心] ⚠ 角度覆盖 {coverage:F0}°（<90°）：旋转轴投影点已按放宽门控拟合，但圆心沿缺弧方向误差偏大，相对纠偏精度下降——条件允许时请扩到 ≥90° 重算。");
+                }
+                else if (isRodAssistedUpCam && coverage < 90.0)
+                {
+                    AppendLog($"[延伸杆旋转] ⚠ 角度覆盖 {coverage:F0}°（<90°，已放宽至 60° 门控）：延伸杆杆端 Mark 在固定相机视野内弧段有限，圆心沿缺弧方向误差偏大——条件允许时请扩到 ≥90° 重算以提高 O 精度。");
+                }
             }
 
             double centerPx;
             double centerPy;
+            double fitRadiusPx = 0;   // ★2026-09-15：定圆半径必须留一手——它是 |e| 的**唯一独立对照量**
             string methodInfo;
 
             // e 拟合输入回放（2026-09-06）：三点像素应绕同一圆心分布——若圆心距任意点很近
@@ -2991,16 +3237,52 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var ptTrace = string.Join("  ", sampled.Select(s => $"{s.AngleDeg:F1}°→({s.PixelX:F1},{s.PixelY:F1})"));
             AppendLog($"[e拟合] 输入点回放: {ptTrace}");
 
+            // ★2026-09-12 离群点迭代剔除：旋转采样即使过了 Score 门控，仍可能有残留脏点
+            //   （低分乱匹配/延伸杆 Mark 半出视野的形变匹配）。圆拟合对离群点极敏感——一个脏点
+            //   就能把圆心拉到 (0,0) 甚至反向。策略：≥4 点时先全量拟合，若 RMS 大（>2px），
+            //   逐个剔除"距圆心最远"的点重拟合，取 RMS 最小的组合；剔除后 ≥3 点即可。
+            //   ★ 仅像素域/映射域定圆都套用，保证 O 不被脏点带偏。
             if (sampled.Count >= 3)
             {
+                var pts = sampled.Select(p => (X: p.PixelX, Y: p.PixelY)).ToList();
                 var fitRes = Calib2DTool.FitCircleKasa(
-                    sampled.Select(p => p.PixelX).ToArray(),
-                    sampled.Select(p => p.PixelY).ToArray());
+                    pts.Select(p => p.X).ToArray(), pts.Select(p => p.Y).ToArray());
+                int dropped = 0;
+                if (fitRes.Success && pts.Count >= 4 && fitRes.Data.Rms > 2.0)
+                {
+                    // 逐点剔除重拟合，找 RMS 最小者（剔除 1~2 个最脏点；保留 ≥3 点）
+                    var best = fitRes;
+                    int bestDrop = 0;
+                    for (int dropCnt = 1; dropCnt <= Math.Min(2, pts.Count - 3); dropCnt++)
+                    {
+                        // 按"距当前圆心最远"排序，剔除最远的 dropCnt 个
+                        var ordered = pts.OrderByDescending(pt =>
+                        {
+                            double dx = pt.X - best.Data.Cx, dy = pt.Y - best.Data.Cy;
+                            return Math.Sqrt(dx * dx + dy * dy);
+                        }).ToList();
+                        var kept = ordered.Skip(dropCnt).ToList();
+                        var retry = Calib2DTool.FitCircleKasa(
+                            kept.Select(p => p.X).ToArray(), kept.Select(p => p.Y).ToArray());
+                        if (retry.Success && retry.Data.Rms < best.Data.Rms)
+                        {
+                            best = retry;
+                            bestDrop = dropCnt;
+                        }
+                    }
+                    if (bestDrop > 0)
+                    {
+                        fitRes = best;
+                        dropped = bestDrop;
+                        AppendLog($"[e拟合] ⚠ 检测到 {dropped} 个离群脏点（原 RMS {best.Data.Rms:F2}px 偏大），已剔除最远点重拟合——避免脏点把旋转中心 O 拉到 (0,0)。");
+                    }
+                }
                 if (fitRes.Success)
                 {
                     centerPx = fitRes.Data.Cx;
                     centerPy = fitRes.Data.Cy;
-                    methodInfo = $"最小二乘圆拟合 (半径 {fitRes.Data.Radius:F2}px, RMS {fitRes.Data.Rms:F2}px)";
+                    fitRadiusPx = fitRes.Data.Radius;   // ★ 留给偏心矢口径自洽校验（|e| 必须 == 半径）
+                    methodInfo = $"最小二乘圆拟合 (半径 {fitRes.Data.Radius:F2}px, RMS {fitRes.Data.Rms:F2}px" + (dropped > 0 ? $", 剔脏 {dropped}" : "") + ")";
                 }
                 else
                 {
@@ -3021,23 +3303,63 @@ namespace Grayson.Vision.WpfUI.ViewModel
             TargetProfile.ToolCenterPx = centerPx;
             TargetProfile.ToolCenterPy = centerPy;
 
-            // 偏心矢量（像素系，θ=0 方向）：R(-θ) 平均——特征(延伸杆/治具标记)随 U 刚体旋转，
-            // p_θ − 圆心 = R(θ)·e，故 e = mean(R(-θ)·(p_θ − 圆心))。与吸放式同数学，观测式同样导出
-            // ToolEcc（2026-09-06：e 会话收敛为观测式后放料补偿字段不缺失）
-            double ex = 0, ey = 0;
+            // ★ 下相机像素旋转中心（2026-09-12 修复）：DownCameraPixelRotCenter 路径的"圆心"就是
+            //   吸嘴旋转轴在下相机图像里的投影 R_cdown，必须回写 DownRotCenterRow/Col——
+            //   消费端（校验台 HasDownRotCenter / 门面 HasDownRotCenter）只认这两个字段。
+            //   此前从未回写（字段定义了但无人赋值）→ 下相机相对纠偏恒判"缺 R_cdown"，正是
+            //   "下相机旋转中心 e 不见了"的根因。像素坐标约定与 MapPixelToWorld 一致：col=X、row=Y。
+            if (TargetProfile.PrimaryPath == CalibrationAcquirePath.DownCameraPixelRotCenter)
+            {
+                TargetProfile.DownRotCenterCol = centerPx;
+                TargetProfile.DownRotCenterRow = centerPy;
+                AppendLog($"[下相机旋转中心] 圆心像素已回写 R_cdown=(Col:{centerPx:F2}, Row:{centerPy:F2})px —— 相对纠偏 δ=H_down(R_img)−H_down(R_cdown) 可用。");
+            }
+
+            // ★★ 2026-09-15 修复（现场事故定案，'吸嘴落点对不上'的第一根因）：
+            //   偏心矢 e 的**旋转方向必须由数据实测**，不能写死。
+            //
+            //   旧式注释断言 "p_θ − 圆心 = R(θ)·e ⇒ e = mean(R(-θ)·(p_θ − 圆心))"，即假定
+            //   【图像里的 mark 转向 = 指令 U 的转向】。这个前提在本工位**不成立**：
+            //   上固定相机 + 延伸杆，U 增大时杆端 mark 的像素角是**减小**的
+            //   （实测 U=−20/25/65° ↔ 像素角 +25.18/−19.99/−59.91°，斜率 ≈ −1.00）。
+            //
+            //   方向写反的后果不是"差一点点"，而是各点相位互消：e = mean(R(-2θ)·e_true)，
+            //   量级塌到 |mean(R(-2θ))| 倍、方向也被旋转——本例 |b| 从真值 131mm 缩成 51mm、
+            //   方位从 87° 偏到 137°，消费端 吸点=H(u)+b 直接偏 105mm。
+            //   ⚠ 踩坑记录：当时『校核·旋转①/②』其实**已经报 FAIL**
+            //     （定圆半径 656.4px vs 偏心矢模 256.5px 差 60.9%、131.38mm vs 51.26mm 差 61.0%），
+            //     而 机位固定/U 到位 Score 97~98 全 PASS —— 采样是干净的，问题在换算。
+            //     判据没冤枉人，是我没把 FAIL 当拦路。
+            //
+            //   物理恒等式（本判据的立足点）：|e| ≡ 定圆半径——e 就是"杆端 mark 相对回转轴"的矢量，
+            //   而各采样点到圆心的距离正是同一个量。⇒ 口径一对，两者必然相等。
+            //   σ 取自【像素角随 U 的变化方向】（与半径无关），所以随后的 |e| vs 半径 是**独立**校验，不是自证。
+            double ex = 0, ey = 0, sigmaDetected = 0;
             if (sampled.Count >= 2)
             {
-                foreach (var s in sampled)
+                sigmaDetected = DetectImageRotationSign(sampled, centerPx, centerPy);
+                AverageEccentricityPx(sampled, centerPx, centerPy, sigmaDetected, out ex, out ey);
+
+                string sigmaWhy = sigmaDetected < 0
+                    ? "反向（U 增大→像素角减小；本工位上固定相机+延伸杆即如此）"
+                    : "同向（U 增大→像素角增大）";
+                AppendLog($"[e拟合] 偏心平均采用**实测**旋转符号 σ={(sigmaDetected > 0 ? "+1" : sigmaDetected < 0 ? "-1" : "0")}——{sigmaWhy}");
+
+                if (sigmaDetected == 0)
+                    AppendLog("[e拟合] ⚠ 采样角度跨度≈0，旋转方向不可判——两种口径数值接近但都不可靠，请把 U 铺开（≥60°，尽量 ≥90°）后重采。");
+
+                if (fitRadiusPx > 0)
                 {
-                    double rad = s.AngleDeg * Math.PI / 180.0;
-                    double dx = s.PixelX - centerPx;
-                    double dy = s.PixelY - centerPy;
-                    double c = Math.Cos(rad), sn = Math.Sin(rad);
-                    ex += dx * c + dy * sn;
-                    ey += -dx * sn + dy * c;
+                    double magE = Math.Sqrt(ex * ex + ey * ey);
+                    double devi = Math.Abs(magE - fitRadiusPx) / fitRadiusPx * 100.0;
+                    if (devi <= 5.0)
+                        AppendLog($"[e拟合·口径自洽] ✓ 偏心矢模 {magE:F2}px 与定圆半径 {fitRadiusPx:F2}px 相符（偏差 {devi:F2}% ≤ 5%）"
+                                  + "——|e|≡半径 成立，b 的量级与方向可信。");
+                    else
+                        AppendLog($"[e拟合·口径自洽] ⚠ 偏心矢模 {magE:F2}px 与定圆半径 {fitRadiusPx:F2}px 差 {devi:F2}%（>5%）"
+                                  + "——采样点与『刚体绕同一圆心旋转』不符（脏点 / 部分点没随 U 转 / 角度记错），"
+                                  + "b 不可当基准，请重采（先看逐点像素是否真的绕一个圆心）。");
                 }
-                ex /= sampled.Count;
-                ey /= sampled.Count;
             }
             TargetProfile.ToolEccPx = ex;
             TargetProfile.ToolEccPy = ey;
@@ -3056,11 +3378,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 // 【椭圆】上（H 非相似：x/y 当量差 / 安装剪切），用圆拟合椭圆点圆心必然偏。
                 // 仿真实测（x/y 当量差 8%+剪切）：像素定圆再映射误差 8.46mm，先映射再定圆 0.000mm。
                 bool worldFitOk = false;
-                double wcx = 0, wcy = 0;
+                double wcx = 0, wcy = 0, wRadius = 0;
+                var wxs = new System.Collections.Generic.List<double>();
+                var wys = new System.Collections.Generic.List<double>();
                 if (sampled.Count >= 3)
                 {
-                    var wxs = new System.Collections.Generic.List<double>();
-                    var wys = new System.Collections.Generic.List<double>();
                     bool mapAllOk = true;
                     foreach (var sp in sampled)
                     {
@@ -3074,8 +3396,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         var wf = Calib2DTool.FitCircleKasa(wxs.ToArray(), wys.ToArray());
                         if (wf.Success)
                         {
-                            wcx = wf.Data.Cx; wcy = wf.Data.Cy; worldFitOk = true;
-                            AppendLog($"[e拟合] O=映射域定圆(半径{wf.Data.Radius:F3}mm 被丢弃) 圆心=({wcx:F3},{wcy:F3}) —— 严格法：先 H 映射各点再定圆");
+                            wcx = wf.Data.Cx; wcy = wf.Data.Cy; wRadius = wf.Data.Radius; worldFitOk = true;
+                            AppendLog($"[e拟合] O=映射域定圆(半径{wRadius:F3}mm 被丢弃) 圆心=({wcx:F3},{wcy:F3}) —— 严格法：先 H 映射各点再定圆");
                         }
                     }
                 }
@@ -3094,22 +3416,280 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         AppendLog($"[e拟合] ⚠ 映射域定圆不可用，已回退【像素定圆再映射】=({mapRes.Data.WorldX:F3},{mapRes.Data.WorldY:F3})：H 有各向异性时该值不可信，请检查矩阵与采样点。");
                     }
                     TargetProfile.HasRotationCenter = true; // 2026-09-08：消费式与对针求 e 都依赖 O
-                    AppendLog($"[e拟合] 旋转中心 O(H域)=({mapRes.Data.WorldX:F3},{mapRes.Data.WorldY:F3}) —— 已落库（半径被丢弃，延伸杆长度/偏心不影响）");
-                    RotationCenterWorldResult = $"Wx: {mapRes.Data.WorldX:F3}, Wy: {mapRes.Data.WorldY:F3}";
-                    if (Math.Abs(ex) > 1e-9 || Math.Abs(ey) > 1e-9)
+                    // ⚠ 日志必须打【落库的那个值】：旧式这里打的是 map(像素圆心)，与落库值（映射域定圆）
+                    //   差 H 各向异性量级（本例 1.3mm：267.248,30.647 vs 267.628,29.403）——排查时误导自己。
+                    AppendLog($"[e拟合] 旋转中心 O(H域)=({TargetProfile.ToolCenterWx:F3},{TargetProfile.ToolCenterWy:F3}) —— 已落库（半径被丢弃，延伸杆长度/偏心不影响）");
+                    RotationCenterWorldResult = $"Wx: {TargetProfile.ToolCenterWx:F3}, Wy: {TargetProfile.ToolCenterWy:F3}";
+
+                    // ★★2026-09-15：b 必须与 O **同一口径**（都在映射域算）。
+                    //   旧式 O 取映射域定圆、b 却用「像素定圆的 e 再映射」——同一个物理量两处各算一遍，
+                    //   必然分叉（本例 1.3mm，正是 H 各向异性量级）。映射域还更准：真值轨迹在映射域才是圆，
+                    //   在像素域被 H 压成椭圆，其"半径"只是平均值。
+                    if (worldFitOk && wxs.Count == sampled.Count && sampled.Count >= 2)
                     {
+                        var wAngles = sampled.Select(s => s.AngleDeg).ToList();
+                        double sigmaW = RotationEccentricity.DetectRotationSign(wxs, wys, wAngles, wcx, wcy);
+                        double wex = 0, wey = 0;
+                        RotationEccentricity.AverageEccentricity(wxs, wys, wAngles, wcx, wcy, sigmaW, out wex, out wey);
+                        TargetProfile.ToolEccWx = wex;
+                        TargetProfile.ToolEccWy = wey;
+                        double wmag = Math.Sqrt(wex * wex + wey * wey);
+                        double wdev = wRadius > 0 ? Math.Abs(wmag - wRadius) / wRadius * 100.0 : 0;
+                        string sigTxt = sigmaW > 0 ? "+1" : (sigmaW < 0 ? "-1" : "0");
+                        RotationFitSummaryText = $"圆心({wcx:F1},{wcy:F1}) · b=({wex:F1},{wey:F1}) ({Math.Atan2(wey, wex) * 180.0 / Math.PI:F0}°) → " + RotationCenterWorldResult;
+                        AppendLog($"[e拟合·世界系] O=({wcx:F3},{wcy:F3}) b=({wex:F3},{wey:F3})mm |b|={wmag:F3}mm 方位={Math.Atan2(wey, wex) * 180.0 / Math.PI:F1}°"
+                                  + $"  （映射域实测符号 σ={sigTxt}；"
+                                  + (wRadius > 0 ? $"|b| vs 定圆半径 {wRadius:F3}mm 偏差 {wdev:F2}%" : "定圆半径不可得") + "）");
+                    }
+                    else if (Math.Abs(ex) > 1e-9 || Math.Abs(ey) > 1e-9)
+                    {
+                        // 兜底：映射域定圆不可用 ⇒ 只能用像素域的 e 再映射（有各向异性时偏差大，上文已告警）
                         var eccTip = CalibService.MapPixelToWorld(OutputHomMatPath, centerPx + ex, centerPy + ey);
                         if (eccTip.Success)
                         {
                             TargetProfile.ToolEccWx = eccTip.Data.WorldX - mapRes.Data.WorldX;
                             TargetProfile.ToolEccWy = eccTip.Data.WorldY - mapRes.Data.WorldY;
                             RotationFitSummaryText = $"圆心({centerPx:F1},{centerPy:F1}) · 偏心 Px={ex:F1},Py={ey:F1} ({TargetProfile.ToolEccAngleDeg:F0}°) → " + RotationCenterWorldResult;
-                            AppendLog($"[e拟合·世界系] 旋转中心World=({mapRes.Data.WorldX:F3},{mapRes.Data.WorldY:F3}) 偏心端World=({eccTip.Data.WorldX:F3},{eccTip.Data.WorldY:F3}) → ToolEccW=({TargetProfile.ToolEccWx:F3},{TargetProfile.ToolEccWy:F3})mm (经 {OutputHomMatPath} 映射)");
+                            AppendLog($"[e拟合·世界系] ⚠ 映射域定圆不可用 ⇒ b 回退用像素域 e 映射：ToolEccW=({TargetProfile.ToolEccWx:F3},{TargetProfile.ToolEccWy:F3})mm（H 各向异性下不可信）");
                         }
                     }
                 }
             }
+            // ★2026-09-15：全过程证据落盘 + 内部一致性校核（重标后离线复核的唯一数据源）
+            //   注：覆盖率就地重算——上面那处 `coverage` 声明在内层 if 作用域，此处不可见（避免再犯同一处）。
+            CaptureRotationEvidence(sampled, RotationArcCoverageDeg(sampled), centerPx, centerPy, ex, ey, methodInfo);
             UpdateRotationPlot();
+        }
+
+        // ==================== ★★2026-09-15 偏心矢 e 的口径（全仓唯一） ====================
+        //
+        // 背景（现场事故）：重标 Cam_A 的 e 后校验台落点仍偏。日志里校核①/② 双双 FAIL：
+        //   定圆半径 656.45px(131.38mm)  vs  偏心矢模 256.48px(51.26mm)，差 61%；
+        //   而机位固定/U 到位全 PASS、Score 97~98 —— 采样干净，错在【换算】。
+        //
+        // 物理恒等式：e 就是"杆端 mark 相对回转轴"的矢量，而各采样点到圆心的距离就是同一个量
+        //   ⇒ **|e| ≡ 定圆半径**。所以"偏心矢模 vs 定圆半径"是一条**独立且必然成立**的判据
+        //     （半径来自径向距离拟合，e 来自角度模型，两者不同源）。
+        //
+        // 根因：旋转符号写死。旧式假定"图像里 mark 的转向 = 指令 U 的转向"（e = mean(R(-θ)·(p−C))），
+        //   而图像转向取决于【运动卡 U 正方向 + 相机安装是否镜像】，上下相机可以相反、翻装镜头也会变。
+        //   写死一个符号 ⇒ 有一半现场会把 e 算反：e = mean(R(-2θ)·e_true)，各点相位互消，
+        //   量级塌成 |mean(R(-2θ))| 倍、方向也被旋转（本例 131mm→51mm，方位 87°→137°，吸点偏 105mm）。
+        //   ⚠ 更阴的是"塌"不是"炸"：3 点小弧长时仍给出一个看着像真的数（51.260mm 有三位有效数字），
+        //     若判据不拦，现场只会看到"落点偏十几~几十毫米"这种"标定不准"的假象。
+        //
+        // 处置：符号 σ 由数据实测（像素角随 U 的变化方向），再用 |e| vs 半径做**独立**校验
+        //   （σ 不取自半径，故不构成自证）。
+
+        // ★2026-09-15：实现已收到 Contracts 的 RotationEccentricity（全仓唯一）。这里只留
+        //   「RotationPointModel → 三列数组」的适配，不再保留第二份公式副本
+        //   （这条公式曾在杆辅助 / 吸放式两处各写一遍，只改一处就是"判据写两遍=靠巧合正确"）。
+        private static double DetectImageRotationSign(IReadOnlyList<RotationPointModel> sampled, double cx, double cy)
+        {
+            if (sampled == null || sampled.Count < 2) return 0;
+            return RotationEccentricity.DetectRotationSign(
+                sampled.Select(s => s.PixelX).ToList(), sampled.Select(s => s.PixelY).ToList(),
+                sampled.Select(s => s.AngleDeg).ToList(), cx, cy);
+        }
+
+        private static void AverageEccentricityPx(IReadOnlyList<RotationPointModel> sampled,
+            double cx, double cy, double sigma, out double ex, out double ey)
+        {
+            if (sampled == null || sampled.Count == 0) { ex = 0; ey = 0; return; }
+            RotationEccentricity.AverageEccentricity(
+                sampled.Select(s => s.PixelX).ToList(), sampled.Select(s => s.PixelY).ToList(),
+                sampled.Select(s => s.AngleDeg).ToList(), cx, cy, sigma, out ex, out ey);
+        }
+
+        /// <summary>
+        /// ★2026-09-15：把旋转标定的【全部原始证据 + 拟合摘要】落进档案，供重标后离线复核。
+        ///
+        /// 为什么必须做（本工位 2026-09-15 亲历的坑）：出问题时最需要的三项当时**都拿不到**——
+        ///   ① 旋转采样点从未落盘（Samples 只装九点，RotationPoints 全丢）⇒ 弧覆盖度/逐点残差无法离线复核；
+        ///   ② 定圆半径被丢弃 ⇒ 而半径 = |杆端 mark ↔ 回转轴| = |b|，正是最需要的量；
+        ///   ③ 各采样点机位（BaseX/BaseY）无人填 ⇒ 无法判断"采样期间是否动过 XY"。
+        /// ⇒ 只能靠上机试、靠猜。这里把这三项补齐，并把结论写成人可读摘要 + 逐条 PASS/FAIL 校核。
+        /// </summary>
+        private void CaptureRotationEvidence(
+            List<RotationPointModel> sampled, double coverageDeg,
+            double centerPx, double centerPy, double eccPx, double eccPy, string methodInfo)
+        {
+            try
+            {
+                _rotationScaleNote = null; // 每次重算（像素当量说明），避免上一次的结论残留
+                var captured = sampled.Where(p => p.IsCaptured).OrderBy(p => p.AngleDeg).ToList();
+                double radiusPx = captured.Count > 0
+                    ? captured.Average(p => Math.Sqrt((p.PixelX - centerPx) * (p.PixelX - centerPx) + (p.PixelY - centerPy) * (p.PixelY - centerPy)))
+                    : 0.0;
+                double eccMagPx = Math.Sqrt(eccPx * eccPx + eccPy * eccPy);
+
+                // 机位分散度：标准流程 = "XY 固定、只转 U" ⇒ 各点机位应一致（≈0）；分散即"采样期间动过"
+                var withPose = captured.Where(p => Math.Abs(p.BaseX) > 1e-9 || Math.Abs(p.BaseY) > 1e-9).ToList();
+                double spread = 0.0;
+                if (withPose.Count >= 2)
+                {
+                    double mx = withPose.Average(p => p.BaseX), my = withPose.Average(p => p.BaseY);
+                    spread = withPose.Max(p => Math.Sqrt((p.BaseX - mx) * (p.BaseX - mx) + (p.BaseY - my) * (p.BaseY - my)));
+                }
+
+                TargetProfile.RotationSamples = captured.Select(p => new RotationSampleEvidence
+                {
+                    AngleDeg = p.AngleDeg,
+                    PixelX = p.PixelX,
+                    PixelY = p.PixelY,
+                    BaseX = p.BaseX,
+                    BaseY = p.BaseY,
+                    ReadUDeg = p.ReadUDeg,
+                    MatchScore = p.MatchScore,
+                    IsCaptured = true,
+                    RadiusPx = Math.Sqrt((p.PixelX - centerPx) * (p.PixelX - centerPx) + (p.PixelY - centerPy) * (p.PixelY - centerPy)),
+                }).ToList();
+                foreach (var s in TargetProfile.RotationSamples) s.ResidualPx = s.RadiusPx - radiusPx;
+                // 拟合 RMS（px）= 逐点半径残差的均方根。就地算，避免"声明了字段却没人填"
+                //   （本模块刚吃过"BaseX 有定义从不被赋值"的亏）。
+                TargetProfile.RotationFitRmsPx = TargetProfile.RotationSamples.Count > 0
+                    ? Math.Sqrt(TargetProfile.RotationSamples.Average(s => s.ResidualPx * s.ResidualPx))
+                    : 0.0;
+
+                TargetProfile.RotationFitRadiusPx = radiusPx;
+
+                // ★★ 定圆半径的 H 域量（2026-09-15 修正）：必须是【独立于 ToolEccW】的量法，否则"半径互校"判据恒真。
+                //   旧实现写成 |ToolEccW| ⇒ 与对照量同一个数 ⇒ 判据永远 PASS（"几乎退化"陷阱的极端形态：严格退化）。
+                //   正确量法：像素域定圆半径 × 像素当量，而像素当量只由 H 决定（不碰采样点、不碰偏心矢）⇒ 真独立。
+                //   当量取两方向模长的几何平均（面积等效）：H 各向异性时 x/y 当量不同，这里同时把两者打进摘要，
+                //   让"各向异性"看得见（本工位 2026-09-15 实测 2.32%，是残余偏差的候选来源之一）。
+                double? scaleEst = null;
+                try
+                {
+                    var m00 = CalibService?.MapPixelToWorld(OutputHomMatPath, 0.0, 0.0);
+                    var mx0 = CalibService?.MapPixelToWorld(OutputHomMatPath, 100.0, 0.0);
+                    var m0y = CalibService?.MapPixelToWorld(OutputHomMatPath, 0.0, 100.0);
+                    if (m00 != null && m00.Success && mx0 != null && mx0.Success && m0y != null && m0y.Success)
+                    {
+                        double sx = Math.Sqrt(Math.Pow(mx0.Data.WorldX - m00.Data.WorldX, 2) + Math.Pow(mx0.Data.WorldY - m00.Data.WorldY, 2)) / 100.0;
+                        double sy = Math.Sqrt(Math.Pow(m0y.Data.WorldX - m00.Data.WorldX, 2) + Math.Pow(m0y.Data.WorldY - m00.Data.WorldY, 2)) / 100.0;
+                        if (sx > 1e-9 && sy > 1e-9)
+                        {
+                            scaleEst = Math.Sqrt(sx * sy);
+                            _rotationScaleNote = $"像素当量 x={sx:F5} y={sy:F5} mm/px（各向异性 {(Math.Max(sx, sy) / Math.Min(sx, sy) - 1) * 100:F2}%）";
+                        }
+                    }
+                }
+                catch { /* 当量估计失败不阻断；下面按"不可用"降级并显式标注 */ }
+                if (scaleEst.HasValue)
+                {
+                    TargetProfile.RotationFitRadiusMm = radiusPx * scaleEst.Value;
+                }
+                else
+                {
+                    // 降级：当量不可用（矩阵读不到）。⚠ 此时该值与 |ToolEccW| 同源，互校判据失效——
+                    //   必须让它在摘要/判据里显示为"不可用"，否则又是一条恒真判据（假绿）。
+                    TargetProfile.RotationFitRadiusMm = null;
+                    _rotationScaleNote = "⚠ 像素当量不可用（矩阵读取失败）——半径互校判据本次失效，请检查 HomMatFilePath";
+                }
+
+                TargetProfile.RotationArcCoverageDeg = coverageDeg;
+                TargetProfile.RotationMotionSpreadMm = withPose.Count >= 2 ? spread : (double?)null;
+                TargetProfile.RotationBaseU = _rotationBaseU;
+                if (withPose.Count > 0)
+                {
+                    TargetProfile.RotationBaseX = withPose[0].BaseX;
+                    TargetProfile.RotationBaseY = withPose[0].BaseY;
+                }
+                TargetProfile.RotationFitSummary =
+                    $"样本{captured.Count}点 覆盖{coverageDeg:F0}° 圆心px=({centerPx:F2},{centerPy:F2}) "
+                    + $"半径{radiusPx:F1}px/{(TargetProfile.RotationFitRadiusMm.HasValue ? TargetProfile.RotationFitRadiusMm.Value.ToString("F2") + "mm(像素当量口径)" : "当量不可用")} "
+                    + $"偏心e_px=({eccPx:F1},{eccPy:F1})|{eccMagPx:F1}px "
+                    + $"机位分散{spread:F3}mm U_ref={(_rotationBaseU.HasValue ? _rotationBaseU.Value.ToString("F2") : "?")}° 方法[{methodInfo}]"
+                    + (string.IsNullOrWhiteSpace(_rotationScaleNote) ? "" : "  " + _rotationScaleNote);
+
+                AppendLog($"[标定过程记录·旋转] {TargetProfile.RotationFitSummary}");
+                AppendLog("[标定过程记录·旋转点] " + string.Join("  ", captured.Select(p =>
+                    $"{p.AngleDeg:F0}°→px({p.PixelX:F1},{p.PixelY:F1}) 机位({p.BaseX:F3},{p.BaseY:F3}) 实读U={p.ReadUDeg:F2}° 分{p.MatchScore:F0}")));
+
+                // ---- 内部一致性校核：每一条都能离线判死，且各自的归因互不相同（归因必须落到子判据级）----
+                //
+                // ★★ 事故记录（2026-09-15，'吸嘴落点对不上'）：本组判据当时【已经报了 FAIL】
+                //    （① 差 60.9%、② 差 61.0%），但因为下面只是 AppendLog，没有任何一处把它接到
+                //    "发布 / 消费"的咽喉点上 ⇒ 错值照旧落档案、照旧被生产消费，现场偏 106mm。
+                //    ⇒ 教训：**判据 FAIL 必须当拦路，否则等于没判**；能独立解释的判据（本组的 |e| vs 半径）
+                //      才是证据，而"3 点圆拟合 RMS=0.00px"是结构恒真、没有鉴别力。
+                //    ⚠ 已知缺口（本处故意保留，待现场稳定后再动）：①② 目前仍只告警不拦截。
+                //      若要拦，正确位置不是这里，而是**消费咽喉点**：口径不自洽时不要写
+                //      ToolEccW/Wy（或同时置 HasRotationCenter=false），让生产端"拒绝消费一个错的 b"
+                //      而不是"安静地用上一个错的 b"。
+                // ① 像素域互校：半径（|p−圆心| 的平均）vs 偏心矢模（R(−σθ)(p−圆心) 的平均的模）。
+                //    点都落在真圆上时两者相等；不等 ⇒ 点不在同一圆上/角度定义错/有脏点。
+                //    ★ σ 必须用**实测**方向（RotationEccentricity.DetectRotationSign）；写死方向时
+                //      本判据必然 FAIL——这正是它作为"拦路判据"的价值所在。
+                if (eccMagPx > 1e-9 && radiusPx > 1e-9)
+                {
+                    double d = Math.Abs(radiusPx - eccMagPx) / radiusPx;
+                    if (d > 0.05)
+                        AppendLog($"[校核·旋转①] ⚠ 像素域：定圆半径 {radiusPx:F1}px 与偏心矢模 {eccMagPx:F1}px 相差 {d * 100:F1}%（>5%）"
+                                  + "——点应同在一圆上。相差大 ⇒ 有力点采坏(低分乱匹配)或角度定义不一致，"
+                                  + "ToolEccW(=b) 的方向不可信；对照上方逐点像素是否绕圆心成圆后重采。");
+                    else
+                        AppendLog($"[校核·旋转①] ✓ 像素域半径与偏心矢互校通过（{radiusPx:F1}px vs {eccMagPx:F1}px，差 {d * 100:F1}%）");
+                }
+                // ② ★域间互校（本判据的价值：抓 H 的各向异性/畸变/映射错，像素域①抓不到）。
+                //    像素半径 × 像素当量（当量只由 H 决定）应当 ≈ |ToolEccW|（映射域定圆的偏心矢模）。
+                //    两者独立：一个来自"像素域 + H 标量当量"，一个来自"逐点映射后在 H 域定圆"。
+                double bMag = Math.Sqrt(TargetProfile.ToolEccWx * TargetProfile.ToolEccWx
+                                      + TargetProfile.ToolEccWy * TargetProfile.ToolEccWy);
+                if (TargetProfile.RotationFitRadiusMm.HasValue && bMag > 1e-9 && radiusPx > 1e-9)
+                {
+                    double rMm = TargetProfile.RotationFitRadiusMm.Value;
+                    double d2 = Math.Abs(rMm - bMag) / Math.Max(rMm, bMag);
+                    if (d2 > 0.05)
+                        AppendLog($"[校核·旋转②] ⚠ 域间互校失败：像素半径×当量 = {rMm:F3}mm  vs  |ToolEccW| = {bMag:F3}mm，差 {d2 * 100:F1}%（>5%）"
+                                  + "——同一物理量（杆端 mark↔回转轴）在两种量法下不一致 ⇒ 优先怀疑 H 的各向异性/镜头畸变未校正，"
+                                  + "或矩阵与采样不是同一次标定（旧矩阵配新采样）。此时 b 的量级都会偏，不要把 |b| 当基准。");
+                    else
+                        AppendLog($"[校核·旋转②] ✓ 域间互校通过：像素当量口径 {rMm:F3}mm vs |ToolEccW| {bMag:F3}mm（差 {d2 * 100:F1}%）");
+                }
+                else
+                {
+                    AppendLog("[校核·旋转②] ⚠ 域间互校未执行（像素当量不可用）——本次无法交叉验证 |b| 的量级，请检查矩阵文件。");
+                }
+                if (withPose.Count >= 2 && spread > 1.0)
+                    AppendLog($"[校核·旋转③] ⚠ 各采样点机位分散 {spread:F2}mm（>1mm）：采样期间动过 XY 时，"
+                              + "『圆心 = 停车位 − b』的固定机位模型不成立，圆心/偏心须按实际机位逐点折算后复核。");
+                else if (withPose.Count >= 2)
+                    AppendLog($"[校核·旋转③] ✓ 各采样点机位分散 {spread:F3}mm（<1mm）：XY 固定、只转 U，固定机位模型成立。");
+                else
+                    AppendLog("[校核·旋转③] ⚠ 本次未采到机位（BaseX/BaseY 全空）——无法验证『XY 固定』前提，建议重采。");
+                // ④ 弧覆盖
+                if (coverageDeg < 90.0)
+                    AppendLog($"[校核·旋转④] ⚠ 角度覆盖仅 {coverageDeg:F0}°（<90°）：圆心沿缺弧方向误差被放大，半径/b 的量级会偏。");
+                else
+                    AppendLog($"[校核·旋转④] ✓ 角度覆盖 {coverageDeg:F0}°（≥90°），圆心/偏心方向可信。");
+                // ⑤ U 到位精度（指令角 vs 实读角）——只能靠本字段，旧流程全丢
+                var uDevs = captured.Where(p => Math.Abs(p.ReadUDeg) > 1e-9)
+                                    .Select(p => Math.Abs(p.ReadUDeg - (_rotationBaseU ?? 0) - p.AngleDeg)).ToList();
+                if (uDevs.Count >= 2)
+                {
+                    double uMax = uDevs.Max();
+                    if (uMax > 0.5)
+                        AppendLog($"[校核·旋转⑤] ⚠ U 到位偏差最大 {uMax:F3}°（>0.5°）：实读 U 与『U_ref+相对角』不符，"
+                                  + "偏心矢量的方向会整体旋转 uMax 度 —— b 的方向不可信，先查 U 轴闭环/回读再谈 b 的精度。");
+                    else
+                        AppendLog($"[校核·旋转⑤] ✓ U 到位偏差最大 {uMax:F3}°（<0.5°），实转角与指令角一致。");
+                }
+                else
+                {
+                    AppendLog("[校核·旋转⑤] ⚠ 未采到实读 U（ReadUDeg 全空）——无法验证 U 到位精度。");
+                }
+
+                if (bMag > 1e-9)
+                    AppendLog($"[标定过程记录·b] ToolEccW=b=({TargetProfile.ToolEccWx:F3},{TargetProfile.ToolEccWy:F3})mm "
+                              + $"|b|={bMag:F3}mm 方位{Math.Atan2(TargetProfile.ToolEccWy, TargetProfile.ToolEccWx) * 180.0 / Math.PI:F1}° "
+                              + "——现场可用量具量『吸嘴尖↔杆端 mark』的水平距离复核对（应≈|b|）；差得多就别急着验收。");
+            }
+            catch (Exception ex)
+            {
+                AppendLog("[标定过程记录·旋转] ⚠ 证据落盘异常（不影响标定结果本身）：" + ex.Message);
+            }
         }
         #endregion
 
@@ -3185,8 +3765,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             //   档案若原本已开则原样保留，此预设只加不开）。
             bool rotationType = IsSessionV2
                 ? IsRotationSession
-                : TargetProfile.Type == CalibrationType.HandEyeWithRotation
-                  || TargetProfile.Type == CalibrationType.PickPlaceHandEye;
+                : TargetProfile != null && TargetProfile.Quantity == CalibrationQuantity.ToolRotation;
 
             // 旋转中心/偏心类标定必然带末端旋转工具 → 自动开启 TCP（无需手动勾选）
             if (rotationType && !TargetProfile.HasToolOffset)
@@ -3204,7 +3783,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
 
             // 每次进入向导打印一份"生效配置快照"，出问题直接看日志对照
-            AppendLog($"[预设] 生效配置快照：类型={TargetProfile.Type} | 特征={TargetProfile.FeatureType}" +
+            AppendLog($"[预设] 生效配置快照：物理量={TargetProfile.Quantity} | 特征={TargetProfile.FeatureType}" +
                       (TargetProfile.FeatureType == CalibrationFeatureType.TemplateMatch ? "(" + (TargetProfile.FeatureTemplateName ?? "未选") + ")" : "") +
                       $" | EyeMode={TargetProfile.EyeMode} | 轴 X/Y/Rot/Z={TargetProfile.BindXAxisIndex}/{TargetProfile.BindYAxisIndex}/{TargetProfile.BindRotationAxisIndex}/{TargetProfile.BindZAxisIndex}" +
                       $" | HasToolOffset={TargetProfile.HasToolOffset} | 基准=({TargetProfile.BasePosX:F3},{TargetProfile.BasePosY:F3}) 步长=({GridStepX:F1},{GridStepY:F1}) | 方向反转 X/Y={TargetProfile.InvertXAxis}/{TargetProfile.InvertYAxis}");
@@ -3328,8 +3907,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog("[吸放] 运动设备连接失败: " + c.Message);
                 return false;
             }
-            var rx = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindXAxisIndex, (float)x, DefaultMoveSpeed);
-            var ry = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindYAxisIndex, (float)y, DefaultMoveSpeed);
+            var rx = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindXAxisIndex, (float)x, MoveSpeed);
+            var ry = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindYAxisIndex, (float)y, MoveSpeed);
             if ((rx != null && !rx.Success) || (ry != null && !ry.Success))
             {
                 AppendLog($"[吸放走位被拒] (X:{x:F3}, Y:{y:F3})：{(rx != null && !rx.Success ? rx.Message : "")}{(ry != null && !ry.Success ? " / " + ry.Message : "")}");
@@ -3352,7 +3931,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog("[吸放] 运动设备连接失败: " + c.Message);
                 return false;
             }
-            var rz = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindZAxisIndex, (float)z, DefaultMoveSpeed);
+            var rz = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindZAxisIndex, (float)z, MoveSpeed);
             if (rz != null && !rz.Success)
             {
                 AppendLog($"[吸放] Z 轴升降到 {z:F1} 被拒: {rz.Message}");
@@ -3545,10 +4124,33 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
                 var pixel = feature.Value;
                 double score = CalibService?.LastMatchReport != null ? CalibService.LastMatchReport.Score : 0;
+
+                // ★ 放料点 World 改用【实际反馈位置】（2026-09-10，与普通九点同口径）：
+                //   吸放式放的是工件，工件实际落在哪由机械手到位精度决定——指令值≠落点。
+                //   拟合 H 时用实际落点，世界侧才与像素侧严格对应。读失败沿用指令值。
+                double actualX = posX, actualY = posY;
+                try
+                {
+                    var fx = SelectedMotionDevice?.GetFeedbackPosition(TargetProfile.BindXAxisIndex);
+                    var fy = SelectedMotionDevice?.GetFeedbackPosition(TargetProfile.BindYAxisIndex);
+                    if (fx != null && fx.Success) actualX = fx.Data;
+                    if (fy != null && fy.Success) actualY = fy.Data;
+                    double dx = actualX - posX, dy = actualY - posY;
+                    if (Math.Abs(dx) > 0.02 || Math.Abs(dy) > 0.02)
+                    {
+                        AppendLog($"[吸放 #{index}] 落点偏差 指令({posX:F3},{posY:F3}) → 反馈({actualX:F3},{actualY:F3}) " +
+                                  $"Δ=({dx:+0.000;-0.000;0.000},{dy:+0.000;-0.000;0.000})mm —— World 已改用反馈值。");
+                    }
+                }
+                catch (Exception exFb)
+                {
+                    AppendLog($"[吸放 #{index}] 反馈位置读取异常（沿用指令值）：{exFb.Message}");
+                }
+
                 RunOnUi(() =>
                 {
-                    targetPoint.WorldX = posX;
-                    targetPoint.WorldY = posY;
+                    targetPoint.WorldX = actualX;
+                    targetPoint.WorldY = actualY;
                     targetPoint.PixelX = pixel.PixelX;
                     targetPoint.PixelY = pixel.PixelY;
                     targetPoint.IsCaptured = true;
@@ -3595,8 +4197,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // 旋转采样统一放到网格中心（基准点），保证各角度成像区域一致
             double spotX = TargetProfile.BasePosX;
             double spotY = TargetProfile.BasePosY;
-            AppendLog($"[吸放旋转 {angle:F1}°] 吸住→转U→放({spotX:F1},{spotY:F1})→回拍照位→采图...");
-            if (!PerformPickPlaceCycle(spotX, spotY, angle, "吸放旋转采样"))
+            // ★ 2026-09-10 相对角：吸放式工件是在吸持姿态 U_pick(PickBaseU) 被吸住的，
+            //   放料前 U 应为【吸持姿态 + 表内相对角】，而不是把表内角度当绝对 U 指令
+            //   （U_pick 不在 0° 时会把工件多转/少转 U_pick 度，偏心矢量方向随之整体偏移）。
+            double holdU = TargetProfile.PickBaseU + angle;
+            AppendLog($"[吸放旋转 {angle:+0.0;-0.0;0.0}°] 吸持姿态 U_pick={TargetProfile.PickBaseU:F2}° → 放料 U={holdU:F2}°（相对角；吸住→转U→放({spotX:F1},{spotY:F1})→回拍照位→采图）...");
+            if (!PerformPickPlaceCycle(spotX, spotY, holdU, "吸放旋转采样"))
             {
                 if (autoResolveFailures)
                 {
@@ -3640,6 +4246,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             var px = feature.Value;
             double score = CalibService?.LastMatchReport != null ? CalibService.LastMatchReport.Score : 0;
+            // ★2026-09-15：同上，回填采样瞬间机位（吸放旋转路径）
+            StampRotationMotion(target);
             RunOnUi(() =>
             {
                 target.PixelX = px.PixelX;
@@ -3827,6 +4435,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             double centerPx;
             double centerPy;
+            double fitRadiusPx = 0;   // ★2026-09-15：|e| 的独立对照量（吸放式同样要口径自洽校验）
             if (sampled.Count >= 3)
             {
                 var fit = Calib2DTool.FitCircleKasa(sampled.Select(p => p.PixelX).ToArray(), sampled.Select(p => p.PixelY).ToArray());
@@ -3834,6 +4443,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     centerPx = fit.Data.Cx;
                     centerPy = fit.Data.Cy;
+                    fitRadiusPx = fit.Data.Radius;
                     AppendLog($"[吸放旋转] 圆拟合 圆心({centerPx:F2},{centerPy:F2}) 半径 {fit.Data.Radius:F2}px RMS {fit.Data.Rms:F2}px");
                 }
                 else
@@ -3854,19 +4464,21 @@ namespace Grayson.Vision.WpfUI.ViewModel
             RotationCenterResult = $"Cx: {centerPx:F2}, Cy: {centerPy:F2}（吸放式·放置点圆心）";
             RotationCenterPixelResult = $"Px: {centerPx:F2}, Py: {centerPy:F2}";
 
-            // 偏心矢量（像素系，θ=0 方向）：R(-θ) 平均
+            // ★★2026-09-15：与杆辅助路径同一处修复——偏心平均的旋转符号必须【实测】（吸放式/观测式同数学）。
+            //   ⚠ 两边必须同源：这条公式曾在两处各写一遍，只改一处就是"判据写两遍=靠巧合正确"。
             double ex = 0, ey = 0;
-            foreach (var s in sampled)
+            double sigmaDetected = DetectImageRotationSign(sampled, centerPx, centerPy);
+            AverageEccentricityPx(sampled, centerPx, centerPy, sigmaDetected, out ex, out ey);
+            AppendLog($"[吸放旋转] 偏心平均采用实测旋转符号 σ={(sigmaDetected > 0 ? "+1" : sigmaDetected < 0 ? "-1" : "0")}"
+                      + $"（σ=-1 = U 增大时像素角减小；符号写死会让 |e| 塌成真值的 |mean(R(-2θ))| 倍）");
+            if (fitRadiusPx > 0)
             {
-                double rad = s.AngleDeg * Math.PI / 180.0;
-                double dx = s.PixelX - centerPx;
-                double dy = s.PixelY - centerPy;
-                double c = Math.Cos(rad), sn = Math.Sin(rad);
-                ex += dx * c + dy * sn;
-                ey += -dx * sn + dy * c;
+                double magE = Math.Sqrt(ex * ex + ey * ey);
+                double devi = Math.Abs(magE - fitRadiusPx) / fitRadiusPx * 100.0;
+                AppendLog(devi <= 5.0
+                    ? $"[吸放旋转·口径自洽] ✓ 偏心矢模 {magE:F2}px 与定圆半径 {fitRadiusPx:F2}px 相符（偏差 {devi:F2}% ≤ 5%）。"
+                    : $"[吸放旋转·口径自洽] ⚠ 偏心矢模 {magE:F2}px 与定圆半径 {fitRadiusPx:F2}px 差 {devi:F2}%（>5%）——b 不可当基准，请重采。");
             }
-            ex /= sampled.Count;
-            ey /= sampled.Count;
             TargetProfile.ToolEccPx = ex;
             TargetProfile.ToolEccPy = ey;
             TargetProfile.ToolEccAngleDeg = Math.Atan2(ey, ex) * 180.0 / Math.PI;
@@ -3890,6 +4502,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog($"[吸放旋转] 工具偏心(像素 θ=0 方向): Px={ex:F2}, Py={ey:F2}，方向角 {TargetProfile.ToolEccAngleDeg:F1}°（待矩阵生成后映射世界）。");
             }
             RotationFitSummaryText = $"圆心({centerPx:F1},{centerPy:F1}) · 偏心 Px={ex:F1},Py={ey:F1} ({TargetProfile.ToolEccAngleDeg:F0}°)";
+            // ★2026-09-15：吸放式旋转路径同样落全过程证据（与杆辅助路径同一份，保存时可离线复核）
+            CaptureRotationEvidence(sampled, RotationArcCoverageDeg(sampled), centerPx, centerPy, ex, ey,
+                $"吸放式圆拟合 (圆心({centerPx:F2},{centerPy:F2})px)");
             NotifySamplingUi();
             UpdateRotationPlot();
         }
@@ -3919,22 +4534,30 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 MotionDeviceList.Add(motion);
             }
 
-            // 优先选中标定方案历史绑定的相机、运动卡；没有就取列表第一个
-            SelectedCameraDevice = CameraDeviceList.FirstOrDefault(c => IsBoundDevice(c, TargetProfile.CameraId)) ?? CameraDeviceList.FirstOrDefault();
-            SelectedMotionDevice = MotionDeviceList.FirstOrDefault(m => IsBoundDevice(m, TargetProfile.AxisId)) ?? MotionDeviceList.FirstOrDefault();
+            // 优先选中标定方案历史绑定的相机、运动卡；档案没有记录则取列表第一个。
+            // ★ 2026-09-15：区分「档案没有记录」（新建方案，给第一个是合理默认）与
+            //   「有记录但匹配不到」（占位值 / 设备已改名）——后者**必须出声**：
+            //   Cam_C 档案曾出现 CameraId="Cam_C"（槽名被当设备名）这类占位，旧写法会静默预选
+            //   到列表第一个设备（往往是上相机）⇒ 用户点下一步就把上相机写进了下相机档案。
+            //   这里保留兜底（新建体验不变），但把"替用户猜了"这件事显式打出来。
+            var camMatch = CalibrationBindingWriter.MatchBound(CameraDeviceList, TargetProfile.CameraId) as ICamera;
+            var motMatch = CalibrationBindingWriter.MatchBound(MotionDeviceList, TargetProfile.AxisId) as IMotionCard;
+            SelectedCameraDevice = camMatch ?? CameraDeviceList.FirstOrDefault();
+            SelectedMotionDevice = motMatch ?? MotionDeviceList.FirstOrDefault();
+
+            if (camMatch == null && !string.IsNullOrWhiteSpace(TargetProfile.CameraId))
+                AppendLog($"[警告] 档案记录的相机「{TargetProfile.CameraId}」不在设备池里（占位值或设备已改名），"
+                          + $"已默认选中「{GetDeviceDisplayName(SelectedCameraDevice)}」——请核对后再下一步，"
+                          + "或回标定中心用「重绑相机/运动卡」改正。");
+            if (motMatch == null && !string.IsNullOrWhiteSpace(TargetProfile.AxisId))
+                AppendLog($"[警告] 档案记录的运动卡「{TargetProfile.AxisId}」不在设备池里（占位值或设备已改名），"
+                          + $"已默认选中「{GetDeviceDisplayName(SelectedMotionDevice)}」——请核对后再下一步。");
         }
 
-        /// <summary>判断设备是否匹配标定方案保存的设备ID；兼容DeviceKey / DeviceId / DeviceName三种匹配</summary>
+        /// <summary>判断设备是否匹配标定方案保存的设备ID；兼容DeviceKey / DeviceId / DeviceName三种匹配
+        /// （→ 同源实现 <see cref="CalibrationBindingWriter.IsBoundDevice"/>）</summary>
         private static bool IsBoundDevice(IDevice device, string profileId)
-        {
-            if (device == null || string.IsNullOrWhiteSpace(profileId))
-            {
-                return false;
-            }
-            return string.Equals(device.DeviceKey, profileId, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(device.DeviceId, profileId, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(device.DeviceName, profileId, StringComparison.OrdinalIgnoreCase);
-        }
+            => CalibrationBindingWriter.IsBoundDevice(device, profileId);
 
         /// <summary>加载已经保存的镜头畸变标定方案，手眼标定可以前置套用畸变矫正</summary>
         private void LoadAvailableDistortionProfiles()
@@ -3950,7 +4573,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 foreach (var po in _calibrationProfileRepository.GetAll())
                 {
                     // 只加载镜头畸变类型方案，排除当前正在编辑的方案
-                    if (po.Model != null && po.Model.Type == CalibrationType.CameraLensDistortion && po.Model.Id != TargetProfile.Id)
+                    if (po.Model != null && po.Model.Quantity == CalibrationQuantity.LensDistortion && po.Model.Id != TargetProfile.Id)
                     {
                         AvailableDistortionProfiles.Add(po.Model);
                     }
@@ -3964,13 +4587,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(DistortionHintText));
         }
 
-        /// <summary>根据标定类型选择对应的策略实现（策略模式）</summary>
-        private void SelectStrategy(CalibrationType type)
+        /// <summary>根据标定物理量选择对应的策略实现（策略模式）</summary>
+        private void SelectStrategy(CalibrationQuantity quantity)
         {
-            // ★ 2026-09-06 彻底会话化：v2 单量会话由 spec（物理量 × 采集路径）唯一裁决——
-            //   旧混合档案(九点+旋转/吸放)的 H 段会话必须落纯九点/吸放九点策略，
-            //   否则混合策略 ExecuteCalibration 会把旋转硬门槛带进只采九点的 H 会话。
-            //   旧兼容壳（无 spec）仍按档案 Type 分流，行为不变。
+            // ★ 2026-09-12 彻底会话化：由 Quantity × PrimaryPath 唯一裁决。
             if (_sessionSpec != null)
             {
                 switch (_sessionSpec.Quantity)
@@ -4008,23 +4628,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
             }
 
-            switch (type)
+            // 无会话 spec：按 Quantity 分流（旧壳删除后仅此一条）
+            switch (quantity)
             {
-                case CalibrationType.HandEyeWithRotation:
+                case CalibrationQuantity.ToolRotation:
                     _strategy = new HandEyeWithRotationCalibrationStrategy();
                     break;
-                case CalibrationType.PickPlaceHandEye:
-                    _strategy = new PickPlaceCalibrationStrategy();
-                    break;
-                case CalibrationType.Checkerboard2D:
-                case CalibrationType.CameraLensDistortion:
-                    // ⚠ 2026-09-04 两个"标定板/相机内参"类型均未实现真实角点检测，共用占位策略：
-                    //   拟合计算阶段会明确拒绝（绝不产出硬编码假矩阵/静默跑九点）。正常入口（标定管理页）
-                    //   已把这两种类型从可选列表移除并拦截，此处分流仅为兜底历史遗留方案。
-                    _strategy = new CheckerboardCalibrationStrategy();
-                    break;
-                case CalibrationType.PixelScale:
+                case CalibrationQuantity.PixelScale:
                     _strategy = new PixelScaleCalibrationStrategy();
+                    break;
+                case CalibrationQuantity.LensDistortion:
+                    _strategy = new CheckerboardCalibrationStrategy();
                     break;
                 default:
                     _strategy = new NinePointCalibrationStrategy();
@@ -4172,44 +4786,43 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }));
         }
 
-        /// <summary>更新标定方案绑定硬件信息：记录当前相机、运动卡ID，更新界面显示字符串</summary>
+        /// <summary>
+        /// 更新标定方案绑定硬件信息：记录当前相机、运动卡 ID，更新界面显示字符串。
+        /// ★ 2026-09-15：写回口径收敛到 <see cref="CalibrationBindingWriter.Apply"/>（与标定中心**同一实现**）。
+        ///   此前向导与标定中心各写一份，而标定中心那份写的是占位文本（"工位: 站名 (站号)"）⇒
+        ///   "按计划创建"出来的档案既不是物理设备、在标定中心又没有任何编辑入口。
+        ///   Cam_C 两份档案的 CameraId="Cam_C" / AxisId="Axis_X" / BoundDeviceId=null 就是这么来的
+        ///   （BoundDeviceId 为空还会让矩阵落到 Recipes\Devices\Default\Calib\）。
+        /// </summary>
         private void UpdateBindingInfo()
         {
-            TargetProfile.CameraId = SelectedCameraDevice != null ? (string.IsNullOrWhiteSpace(SelectedCameraDevice.DeviceKey) ? SelectedCameraDevice.DeviceId : SelectedCameraDevice.DeviceKey) : null;
-            TargetProfile.AxisId = SelectedMotionDevice != null ? (string.IsNullOrWhiteSpace(SelectedMotionDevice.DeviceKey) ? SelectedMotionDevice.DeviceId : SelectedMotionDevice.DeviceKey) : null;
-            TargetProfile.BoundDeviceId = TargetProfile.CameraId;
-            TargetProfile.BindingInfo = string.Format("相机: {0} | 运动卡: {1}", GetDeviceDisplayName(SelectedCameraDevice), GetDeviceDisplayName(SelectedMotionDevice));
+            CalibrationBindingWriter.Apply(TargetProfile, SelectedCameraDevice, SelectedMotionDevice);
             HardwareBindingSummary = TargetProfile.BindingInfo;
         }
 
-        /// <summary>获取设备友好显示名称，优先DeviceName，其次DeviceKey，最后DeviceId</summary>
+        /// <summary>获取设备友好显示名称，优先DeviceName，其次DeviceKey，最后DeviceId（→ 同源实现）</summary>
         private static string GetDeviceDisplayName(IDevice device)
-        {
-            if (device == null)
-            {
-                return "未选择";
-            }
-            if (!string.IsNullOrWhiteSpace(device.DeviceName))
-            {
-                return device.DeviceName;
-            }
-            if (!string.IsNullOrWhiteSpace(device.DeviceKey))
-            {
-                return device.DeviceKey;
-            }
-            return device.DeviceId;
-        }
+            => CalibrationBindingWriter.DisplayName(device);
         #endregion
 
         #region 相机采集逻辑
 
         /// <summary>
         /// 相机采集一张图片，软触发，等待图像帧，渲染到UI图像控件
-        /// waitForFrame=true 会等待AutoResetEvent收到帧信号，1200ms超时
+        /// waitForFrame=true 会等待AutoResetEvent收到帧信号，软触发模式下超时 3000ms
         /// ★ 2026-09-06 修复：软触发失败 / 超时不再静默沿用旧画面（ActiveImageContext 兜底）。
         ///   九点/旋转每个采样点都必须拿到"本点位的新帧"——走位后旧图 = 上一位置坐标，
-        ///   会导致该点像素坐标错乱却"看似成功"。现在自动重触发至多 3 次，仍无新帧返回 false，
+        ///   会导致该点像素坐标错乱却"看似成功"。现在自动重触发至多 5 次，仍无新帧返回 false，
         ///   由外层自愈/自动采集流程重采或中止（自愈连拍本身就会再次调本方法）。
+        ///
+        /// ★ 2026-09-10 修复（本次「3 次触发均未收到新帧」的直接原因）：
+        ///   ① 相机侧先走 ConfigureSoftwareTrigger()，确保真正处于软触发模式且
+        ///      关闭帧率限制——之前 SetTriggerMode(1) 只写 TriggerMode/TriggerSource，
+        ///      若相机固件停在连续自由流，触发要么被吞要么等一个随机出帧时刻；
+        ///   ② 超时 1200ms → 3000ms。GigE 单帧（2590x1942 BayerRG8 ≈ 5MB）在
+        ///      非巨帧链路上实测可达 2s+，1200ms 会把「慢但有效」的帧判成失败；
+        ///   ③ 重试 3 次 → 5 次，并区分「触发指令失败」与「触发成功但无帧」两类日志，
+        ///      便于排障时一眼看出是相机没武装还是链路丢帧。
         /// </summary>
         private bool CaptureAndDisplayFrame(string actionName, bool waitForFrame)
         {
@@ -4226,17 +4839,50 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return false;
             }
 
-            // 设置相机软触发模式，开始取流
-            SelectedCameraDevice.SetTriggerMode(1);
+            // ★ 相机侧完整切到软触发（含 TriggerSelector=FrameStart / 关帧率限制）。
+            //   这是本次「等帧久 / 收不到新帧」的根因修复：只有真正处于软触发模式，
+            //   "触发→出帧"才是确定性的，而不是等连续流的下一个随机出帧时刻。
+            var trigModeRes = SelectedCameraDevice.ConfigureSoftwareTrigger();
+            if (!trigModeRes.Success)
+            {
+                // ★ 2026-09-10 三轮修复：配置失败不再「一行警告 + 硬跑」。
+                //   上一轮病灶：配置失败只退化 SetTriggerMode(1)，然后带着自由流
+                //   继续跑完整轮九点 → 卡顿（自由流持续推大图）+ 结果错（拿到旧帧）。
+                //   现在配置失败直接中止，明确告诉操作员相机没进软触发，
+                //   避免「卡 2 分钟 + 结果全错」的双输。消息带具体原因便于定位。
+                RunOnUi(() => MessageBox.Show(
+                    "相机软触发配置失败，本次采样中止。\n\n原因：" + trigModeRes.Message +
+                    "\n\n软触发未生效时相机处于自由流，走位后可能采到旧帧导致标定结果错误，已阻止继续。",
+                    "采样中止", MessageBoxButton.OK, MessageBoxImage.Error));
+                AppendLog($"[错误] {actionName} 软触发配置失败，中止采样: {trigModeRes.Message}");
+                return false;
+            }
+
             var startRes = SelectedCameraDevice.StartGrabbing();
             if (!startRes.Success)
             {
                 AppendLog($"[警告] {actionName} 启动采集流失败: {startRes.Message}");
             }
 
-            const int maxTriggerAttempts = 3;
+            // ★★ 2026-09-10 二轮修复：等帧策略从「固定 3000ms × 5 次」改为
+            //   「首帧给足、失败快速重触发」，总预算从最坏 15s 降到 ~5.7s。
+            //
+            //   上一轮的病灶（日志实锤）：9 个点里 #1/#3/#9 反复超时，
+            //   #3 用了 5 次触发（≈24s）、#9 用了 4 次（≈19s），整轮 70.8s。
+            //   原因不是"相机慢"，而是【单次等帧窗口 3000ms 太长】：
+            //   GigE buffer underrun 一旦发生，这一帧就永远不来了，继续干等
+            //   3000ms 是纯浪费——应当立刻重触发。反之首帧（取流刚启动、
+            //   相机固件状态机切换）确实需要较长窗口，不能一刀切缩短。
+            //
+            //   所以：第 1 次 2500ms（覆盖冷启动），第 2~5 次各 800ms（快速重试）。
+            //   正常情况第 1 次即命中（日志里 6/9 个点都是第 1 次命中）→ 无额外开销。
+            const int maxTriggerAttempts = 5;
+            const int firstFrameWaitMs = 2500;  // 首帧：容忍 GigE 冷启动/大帧传输
+            const int retryFrameWaitMs = 800;   // 重试：丢帧了就立刻重触发，不干等
             for (int attempt = 1; attempt <= maxTriggerAttempts; attempt++)
             {
+                int frameWaitMs = attempt == 1 ? firstFrameWaitMs : retryFrameWaitMs;
+
                 _frameArrivedEvent.Reset();
                 // 软触发拍照，兼容两种API方法名 SoftwareTrigger / SoftTrigger
                 var triggerRes = SelectedCameraDevice.SoftwareTrigger();
@@ -4246,10 +4892,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
                 if (!triggerRes.Success)
                 {
-                    AppendLog($"[警告] {actionName} 软触发失败(第{attempt}/{maxTriggerAttempts}次): {triggerRes.Message}");
+                    // 形态一：触发指令本身失败（相机未武装/未起流）
+                    AppendLog($"[警告] {actionName} 软触发指令失败(第{attempt}/{maxTriggerAttempts}次): {triggerRes.Message}");
                     if (attempt < maxTriggerAttempts)
                     {
-                        Thread.Sleep(200);
+                        Thread.Sleep(150);
                         continue;
                     }
                     return false; // 触发不了 = 拿不到新帧：宁可中止，也不吃上一位置的旧图
@@ -4260,23 +4907,275 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     return true;
                 }
 
-                // 等待图像到达，最多等待1200ms
-                bool signaled = _frameArrivedEvent.WaitOne(1200);
+                // 等待图像到达（软触发模式下这里等的就是"本次触发"对应的一帧）
+                bool signaled = _frameArrivedEvent.WaitOne(frameWaitMs);
                 if (signaled)
                 {
-                    AppendLog($"[{actionName}] 已完成抓图并刷新显示（第{attempt}次触发命中新帧）。");
+                    AppendLog($"[{actionName}] 已完成抓图并刷新显示（第{attempt}次触发命中新帧，等待 {frameWaitMs}ms 窗口内）。");
                     return true;
                 }
 
-                AppendLog($"[警告] {actionName} 第{attempt}/{maxTriggerAttempts}次触发后 1200ms 内未收到新帧，自动重触发…");
+                // 形态二：触发指令成功但没帧回来（GigE 丢帧 / 相机未武装）
+                // 快速重触发：丢帧的那一帧不会再来，继续等无意义。
+                AppendLog($"[警告] {actionName} 第{attempt}/{maxTriggerAttempts}次触发已下发，但 {frameWaitMs}ms 内未收到新帧（疑似 GigE 丢帧或相机未武装），立即重触发…");
                 if (attempt < maxTriggerAttempts)
                 {
-                    Thread.Sleep(150);
+                    Thread.Sleep(80);
                 }
             }
 
             AppendLog($"[{actionName}] {maxTriggerAttempts} 次触发均未收到新帧 —— 中止本次采样（不沿用旧画面，避免坐标错乱）。");
             return false;
+        }
+
+        /// <summary>
+        /// 轴向标度早期体检（2026-09-10）：用已采集的九点，验「世界 X/Y 各走一个网格步长，
+        /// 像素位移幅值是否相等、方向是否正交」。
+        ///
+        /// 为什么需要它：
+        ///   现场出现 RMS=0.536mm（看似合格）但 σ1/σ2=1.490（形状非法）的矩阵——
+        ///   根因是世界网格与像素网格不成「相似+镜像」关系。这种错误在 9 点全采完后
+        ///   才由健康检查发现，等于白跑一轮。本方法在凑齐 2 行或 2 列时就给结论。
+        ///
+        /// 判据（项目长期结论）：
+        ///   · 平面成像 + 方形像素 ⇒ 两个方向的像素位移幅值比应 ≈1.000；
+        ///   · 两方向夹角应 ≈90°（正交）；
+        ///   · 若幅值比 >1.05 或正交偏差 >3° ⇒ 世界侧轴标度/方向有问题，不是相机问题。
+        ///
+        /// 只做诊断与提示，不自动中止（允许操作员采完看完整报告），但给出明确动作指引。
+        /// </summary>
+        private void CheckAxisScaleEarly()
+        {
+            // 收集已采集点：需要至少 2 个「同 Y、X 相邻」或 2 个「同 X、Y 相邻」的点对
+            var pts = CalibrationPoints.Where(p => p.IsCaptured).ToList();
+            if (pts.Count < 3) return;
+
+            // 找同一行（WorldY 相同）内 X 相邻的两对，或同一列内 Y 相邻的两对
+            var rowGroups = pts.GroupBy(p => Math.Round(p.WorldY, 3)).Where(g => g.Count() >= 2).ToList();
+            var colGroups = pts.GroupBy(p => Math.Round(p.WorldX, 3)).Where(g => g.Count() >= 2).ToList();
+            if (rowGroups.Count == 0 && colGroups.Count == 0) return;
+
+            _axisScaleChecked = true;
+
+            // 世界 X 方向：同一行内相邻点的像素位移 / 世界位移
+            double? pxPerMmX = null, angX = null;
+            foreach (var g in rowGroups)
+            {
+                var ordered = g.OrderBy(p => p.WorldX).ToList();
+                for (int i = 0; i + 1 < ordered.Count; i++)
+                {
+                    double dw = ordered[i + 1].WorldX - ordered[i].WorldX;
+                    double dpx = ordered[i + 1].PixelX - ordered[i].PixelX;
+                    double dpy = ordered[i + 1].PixelY - ordered[i].PixelY;
+                    if (Math.Abs(dw) < 1e-6) continue;
+                    double n = Math.Sqrt(dpx * dpx + dpy * dpy);
+                    pxPerMmX = n / Math.Abs(dw);
+                    angX = Math.Atan2(dpy, dpx) * 180.0 / Math.PI;
+                    break;
+                }
+                if (pxPerMmX.HasValue) break;
+            }
+
+            // 世界 Y 方向：同一列内相邻点的像素位移 / 世界位移
+            double? pxPerMmY = null, angY = null;
+            foreach (var g in colGroups)
+            {
+                var ordered = g.OrderBy(p => p.WorldY).ToList();
+                for (int i = 0; i + 1 < ordered.Count; i++)
+                {
+                    double dw = ordered[i + 1].WorldY - ordered[i].WorldY;
+                    double dpx = ordered[i + 1].PixelX - ordered[i].PixelX;
+                    double dpy = ordered[i + 1].PixelY - ordered[i].PixelY;
+                    if (Math.Abs(dw) < 1e-6) continue;
+                    double n = Math.Sqrt(dpx * dpx + dpy * dpy);
+                    pxPerMmY = n / Math.Abs(dw);
+                    angY = Math.Atan2(dpy, dpx) * 180.0 / Math.PI;
+                    break;
+                }
+                if (pxPerMmY.HasValue) break;
+            }
+
+            if (!pxPerMmX.HasValue || !pxPerMmY.HasValue)
+            {
+                _axisScaleChecked = false; // 条件不足，等更多点再体检
+                return;
+            }
+
+            double ratio = pxPerMmX.Value / pxPerMmY.Value;
+            double angDiff = Math.Abs(angY.Value - angX.Value);
+            if (angDiff > 180) angDiff = 360 - angDiff;
+            double orthErr = Math.Abs(90.0 - angDiff);
+
+            AppendLog($"[轴向体检] 世界 X 每 1mm → {pxPerMmX.Value:F4}px（方向 {angX.Value:F2}°）；" +
+                      $"世界 Y 每 1mm → {pxPerMmY.Value:F4}px（方向 {angY.Value:F2}°）");
+            AppendLog($"[轴向体检] 两方向幅值比 = {ratio:F4}（应≈1.000），正交偏差 = {orthErr:F2}°（应≈0°）");
+
+            if (ratio > 1.05 || ratio < 0.95 || orthErr > 3.0)
+            {
+                AppendLog("[轴向体检] ⛔ 世界网格与像素网格不成相似关系 —— 这不是相机问题！");
+                AppendLog("[轴向体检] 成因排查（按可能性）：① 轴绑定错（BindXAxisIndex/BindYAxisIndex " +
+                          $"当前={TargetProfile.BindXAxisIndex}/{TargetProfile.BindYAxisIndex}，是否绑反或绑到非正交关节）；" +
+                          "② SCARA 关节空间插补使实际轨迹非直线（PTP 走位 X/Y 耦合）；" +
+                          "③ 世界坐标混用了指令值与反馈值两种来源。");
+                AppendLog("[轴向体检] 建议：先停下，手动 JOG 沿 +X 走 15mm 与沿 +Y 走 15mm，" +
+                          "各记特征像素位移——两数不等即坐实世界侧问题（查 ①②③）；两数相等才怀疑相机安装。");
+            }
+            else
+            {
+                AppendLog("[轴向体检] ✓ 两方向幅值比与正交性均在容差内，世界网格与像素网格关系正常。");
+            }
+        }
+
+        /// <summary>
+        /// ★★ 直线性定点探针（2026-09-10 二轮新增）—— 一锤定音判据。
+        ///
+        /// 【为什么需要它】
+        ///   上一轮把标定走位从 MOVE(PTP/Go) 改成 LMOVE(CP/Move)，但实测 σ1/σ2 不降反升
+        ///   （1.478 vs 1.490）。这说明「换了指令」并不等于「轨迹真的直了」——可能：
+        ///     a) RC+ 侧脚本没重新编译运行（改的是磁盘上的 .prg，跑的还是旧任务）；
+        ///     b) 控制器对 SCARA 的 LMOVE 在特定姿态段仍做了关节级插补；
+        ///     c) 走位确实直了，问题在别处（相机/标定板/采样）。
+        ///   靠"看日志里是不是 LMOVE"无法区分以上三种——必须用几何事实说话。
+        ///
+        /// 【探针原理】（纯几何，不依赖任何标定矩阵）
+        ///   从当前基准位 P0 出发，取同一方向的两段位移：走 d 和走 2d。
+        ///   若轨迹是直线 ⇒ 三次成像的特征必须【严格共线】，且
+        ///       中间点的像素位置 = 两端点的中点（偏差应 &lt; 2px）。
+        ///   若轨迹是弧线 ⇒ 中点必然偏离两端连线（弦弧差），偏移量随曲率增大。
+        ///
+        /// 【判据】中点偏离（px）：
+        ///   &lt; 2px   → 轨迹直，世界侧无问题（问题不在走位）
+        ///   2~10px  → 轻微弧线，标定精度受损但可用
+        ///   &gt; 10px  → 明确弧线轨迹，矩阵必然各向异性，必须解决运动学（不是标定算法问题）
+        ///
+        /// 本探针只在操作员主动点击时执行（会实际动 3 次轴），不做自动调用。
+        /// </summary>
+        public void RunLinearityProbe()
+        {
+            const double d = 20.0; // 单段位移 mm（2d=40mm，足够放大弧线偏差）
+
+            if (SelectedMotionDevice == null || SelectedCameraDevice == null)
+            {
+                AppendLog("[直线探针] 未绑定运动设备或相机，无法执行。");
+                return;
+            }
+            if (!TargetProfile.IsBasePosSet)
+            {
+                AppendLog("[直线探针] 基准位未设置，请先在步骤1『设当前轴位置为基准』。");
+                return;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    AppendLog("══════════ 直线性探针开始 ══════════");
+                    AppendLog($"[直线探针] 从基准位出发，沿世界 +X 走 {d:F0}mm 与 {2 * d:F0}mm，检验三点是否共线。");
+
+                    double bx = TargetProfile.BasePosX;
+                    double by = TargetProfile.BasePosY;
+
+                    // 三次走位：0 / d / 2d（沿世界 +X，固定 Y）
+                    var targets = new (double x, double y, string tag)[]
+                    {
+                        (bx,       by, "P0(起点)"),
+                        (bx + d,   by, $"P1(+{d:F0}mm)"),
+                        (bx + 2*d, by, $"P2(+{2 * d:F0}mm)"),
+                    };
+
+                    var px = new double[3];
+                    var py = new double[3];
+                    bool ok = true;
+
+                    for (int i = 0; i < targets.Length; i++)
+                    {
+                        var (tx, ty, tag) = targets[i];
+                        if (!MovePlatformTo(tx, ty, out string why))
+                        {
+                            AppendLog($"[直线探针] {tag} 走位失败：{DecodeEpsonRejectReason(why)} —— 探针中止。");
+                            ok = false;
+                            break;
+                        }
+                        if (!CaptureAndDisplayFrame($"直线探针-{tag}", true))
+                        {
+                            AppendLog($"[直线探针] {tag} 抓图失败 —— 探针中止。");
+                            ok = false;
+                            break;
+                        }
+                        var f = EstimateFeaturePoint(0, tx, ty, out _);
+                        if (f == null)
+                        {
+                            AppendLog($"[直线探针] {tag} 特征未识别 —— 探针中止（请确认工件在视野内）。");
+                            ok = false;
+                            break;
+                        }
+                        px[i] = f.Value.PixelX;
+                        py[i] = f.Value.PixelY;
+                        AppendLog($"[直线探针] {tag} 世界({tx:F3},{ty:F3}) → 像素({px[i]:F1},{py[i]:F1})");
+                    }
+
+                    if (!ok) return;
+
+                    // ── 几何判定 ──────────────────────────────────────────
+                    // ① 两端点连线长度（像素）
+                    double ax = px[2] - px[0];
+                    double ay = py[2] - py[0];
+                    double spanLen = Math.Sqrt(ax * ax + ay * ay);
+                    if (spanLen < 20)
+                    {
+                        AppendLog($"[直线探针] 两端点像素间距仅 {spanLen:F1}px，位移过小无法判定（请增大步长或检查轴映射）。");
+                        return;
+                    }
+
+                    // ② 中点到两端连线的垂距（弦弧差指标）
+                    double vx = px[1] - px[0];
+                    double vy = py[1] - py[0];
+                    double cross = Math.Abs(ax * vy - ay * vx) / spanLen;
+
+                    // ③ 中点是否落在线段正中（共线之外的对称性检查）
+                    double half = Math.Sqrt(vx * vx + vy * vy);
+                    double asym = Math.Abs(half - spanLen / 2.0);
+
+                    // ④ 两段"当量"是否一致（弧线的直接指纹：前后半段每毫米像素数不同）
+                    double seg1 = half / d;
+                    double seg2 = Math.Sqrt((px[2] - px[1]) * (px[2] - px[1]) + (py[2] - py[1]) * (py[2] - py[1])) / d;
+                    double eqRatio = Math.Max(seg1, seg2) / Math.Min(seg1, seg2);
+
+                    AppendLog($"[直线探针] 两端点间距 {spanLen:F1}px（世界 {2 * d:F0}mm，当量 {2 * d / spanLen:F4} mm/px）");
+                    AppendLog($"[直线探针] 中点偏离两端连线 {cross:F2}px（直线应≈0）");
+                    AppendLog($"[直线探针] 中点对称偏差 {asym:F2}px（直线应≈0）");
+                    AppendLog($"[直线探针] 前半段当量 {seg1:F1}px/mm vs 后半段 {seg2:F1}px/mm，比 {eqRatio:F4}（直线应≈1.000）");
+
+                    AppendLog("──────────────────────────────");
+                    if (cross < 2.0 && eqRatio < 1.005)
+                    {
+                        AppendLog("[直线探针] ✓ 轨迹为直线。世界侧无问题 —— 标定误差不来自走位，");
+                        AppendLog("           请转向检查：相机安装/对焦、标定板平面度、模板匹配精度、Z 高度一致性。");
+                    }
+                    else if (cross < 10.0)
+                    {
+                        AppendLog("[直线探针] ⚠ 轨迹存在轻微弯曲（弦弧差 " + cross.ToString("F2") + "px）。");
+                        AppendLog("           会带来小幅各向异性，标定可继续但落点精度受限。");
+                    }
+                    else
+                    {
+                        AppendLog("[直线探针] ⛔ 轨迹明确为【弧线】（弦弧差 " + cross.ToString("F2") + "px，当量比 " + eqRatio.ToString("F4") + "）。");
+                        AppendLog("           ⇒ 走位指令虽已是 LMOVE，但控制器实际执行的不是世界空间直线。");
+                        AppendLog("           必须排查（按顺序）：");
+                        AppendLog("             ① RC+ 侧是否【停止任务→重新编译→重新运行】了最新 mainTCP.prg；");
+                        AppendLog("                （脚本注释明写：改了不重编译 = 跑的还是旧版）");
+                        AppendLog("             ② RC+ 项目里机器人型号/臂长参数是否与实际机型一致；");
+                        AppendLog("                （臂长填错会让逆解出的关节角偏，CP 直线也会走歪）");
+                        AppendLog("             ③ 该姿态区间是否接近奇异点/关节限位（换基准位到环带中腰再测）；");
+                        AppendLog("             ④ 用 RC+ 自带示教器手动 LMOVE 走同样两点，对照是否同样弯。");
+                    }
+                    AppendLog("══════════ 直线性探针结束 ══════════");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"[直线探针] 执行异常：{ex.Message}");
+                }
+            });
         }
 
         /// <summary>确保相机处于已连接状态；未连接则执行Connect()</summary>
@@ -4335,6 +5234,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private bool MovePlatformTo(double worldX, double worldY, out string rejectReason)
         {
             rejectReason = null;
+            _lastMoveUsedPtpFallback = false;      // ★ 每点复位：该标志只描述"本次走位"
+            _lastMovePtpResidualMm = double.NaN;
             if (SelectedMotionDevice == null)
             {
                 AppendLog("[提示] 当前未绑定运动控制卡，本次仅执行抓图采样。");
@@ -4348,24 +5249,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return false;
             }
 
-            // ★ Epson 机械手九点平移前强制 U 轴归零（2026-09-03 现场 4001 修复）：
+            // ★ Epson 机械手九点平移前固定 U 姿态（2026-09-03 现场 4001 修复 → 2026-09-10 改"基准 U"）：
             //   旋转采样若中止/残留会停在 ±60° 等非零角度；此时再做 XY 平移，MOVE 整点
             //   携带 U=±60° 走位——SCARA 在该姿态下部分 XY 坐标不可达 → 控制器 4001
             //   拒绝（日志实锤：MOVE 241.09,47.03,-75,-60.008 → ERR motion rejected 4001）。
-            //   且手眼标定要求在固定 U 姿态下平移采样（U≠0 相当于换了相机视角，矩阵会错）。
+            //   且手眼标定要求在固定 U 姿态下平移采样（U 漂动=换相机视角，矩阵会错）。
+            //   ★ 2026-09-10 定案：不再强制归零——基准点可能设在 U=180° 等非零姿态，走位须
+            //   保持"基准 U"（BasePosU；未设则退回 CalibU0，再退回 0），而不是把 U 拽回 0°。
             if (IsEpsonMotion)
             {
                 try
                 {
                     int rotAxis = TargetProfile.BindRotationAxisIndex;
+                    double baseU = TargetProfile.BasePosU ?? TargetProfile.CalibU0 ?? 0.0;
                     var uRes = SelectedMotionDevice.GetFeedbackPosition(rotAxis);
-                    if (uRes.Success && Math.Abs(uRes.Data) > 0.5)
+                    if (uRes.Success && Math.Abs(uRes.Data - baseU) > 0.5)
                     {
-                        AppendLog($"[走位前] 检测到 U 轴残留 {uRes.Data:F1}°，九点平移前先归零（防 4001 与视角错乱）。");
-                        var rz = SelectedMotionDevice.MoveAbsolute(rotAxis, 0, DefaultMoveSpeed);
+                        AppendLog($"[走位前] 当前 U={uRes.Data:F1}°，统一到基准 U={baseU:F1}°（防 4001 与视角错乱，不再强制归零）。");
+                        var rz = SelectedMotionDevice.MoveAbsolute(rotAxis, (float)baseU, MoveSpeed);
                         if (rz != null && !rz.Success)
                         {
-                            AppendLog($"[走位前] U 轴归零失败: {rz.Message} —— 中止本次平移，请先手动回 U 到 0°。");
+                            AppendLog($"[走位前] 回到基准 U={baseU:F1}° 失败: {rz.Message} —— 中止本次平移，请先手动回 U 到 {baseU:F1}°。");
                             rejectReason = rz.Message;
                             return false;
                         }
@@ -4374,14 +5278,19 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
                 catch (Exception ex)
                 {
-                    AppendLog($"[走位前] U 轴归零检查异常（忽略继续平移）: {ex.Message}");
+                    AppendLog($"[走位前] U 基准归位检查异常（忽略继续平移）: {ex.Message}");
                 }
             }
 
             // 动态驱动方案绑定的 X 轴与 Y 轴（检查拒绝结果：超行程/范围钳制）
-            // ★ Epson SCARA 合并单次 PTP（2026-09-06）：EpsonRobot.MoveAbsolute(单轴) 内部
+            // ★ Epson SCARA 合并单次整点走位（2026-09-06）：EpsonRobot.MoveAbsolute(单轴) 内部
             //   也是"读四轴当前值补全后整点 MOVE"，连发两次 = 同目标两次整点位走位（先 X 后 Y），
-            //   浪费一次运动且中间姿态不必要。改为直接四轴 PTP，Z/U 取当前位置（U 前置已归零）。
+            //   浪费一次运动且中间姿态不必要。改为直接四轴整点，Z/U 取当前位置（U 前置已归零）。
+            // ★★ 2026-09-10 关键修复：走位从 PTP 改为【CP 直线】（MoveToLinear → LMOVE）。
+            //   根因：PTP 走 Go 在关节空间插补，末端轨迹是弧线 → 沿世界 X / 沿世界 Y 的
+            //   "像素当量"必然不等（现场实测差 13.78%、夹角偏 15.3°），导致九点 H 矩阵
+            //   各向异性 σ1/σ2≈1.49 被判非法、落点跨距离线性放大误差。
+            //   标定的本质是"精确到达世界坐标点"，必须走直线。详见 MoveToLinear 注释。
             if (SelectedMotionDevice is EpsonRobot epsonRobot)
             {
                 var cur = epsonRobot.GetPositionsAll();
@@ -4391,22 +5300,47 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     rejectReason = cur.Message;
                     return false;
                 }
-                var ptp = epsonRobot.MoveToPtp((float)worldX, (float)worldY,
-                                               cur.Data[EpsonRobot.AxisZ], cur.Data[EpsonRobot.AxisU],
-                                               DefaultMoveSpeed);
-                if (ptp != null && !ptp.Success)
+                var linear = epsonRobot.MoveToLinear((float)worldX, (float)worldY,
+                                                     cur.Data[EpsonRobot.AxisZ], cur.Data[EpsonRobot.AxisU],
+                                                     MoveSpeed);
+                if (linear != null && !linear.Success)
                 {
-                    // 原始消息形如 "PTP 定位失败: 指令 [MOVE ...] 失败，控制器应答: ERR motion rejected(code 4007): ..."
+                    // 原始消息形如 "直线定位失败: 指令 [LMOVE ...] 失败，控制器应答: ERR motion rejected(code 4007): ..."
                     // —— 完整透传，调用方可按 (code NNN) 解码成可读原因
-                    AppendLog($"[走位被拒] 目标 (X:{worldX:F3}, Y:{worldY:F3}) PTP 运动失败：{ptp.Message}");
-                    rejectReason = ptp.Message;
-                    return false;
+                    AppendLog($"[走位被拒] 目标 (X:{worldX:F3}, Y:{worldY:F3}) 直线运动失败：{linear.Message}");
+                    AppendLog($"[走位被拒] 可读原因：{DecodeEpsonRejectReason(linear.Message)}");
+
+                    // ★★ 2026-09-15（现场 4041）：CP 直线被拒 ⇒ 降级 PTP(Go) 重试。
+                    //   现场形态：下相机九点走到网格左下角时 CP 被 4041「机器人背面禁止区域」拒。
+                    //   为什么降级到 PTP 仍可用于标定（这是本轮的关键判断，务必按此理解）：
+                    //     · 九点采的是【终点那一帧】；(世界,像素) 配对只取决于端点，与路径形状无关；
+                    //     · Go 的【终点是精确的】（关节插补只改变路径，不改变终点）；
+                    //     · 上层 World 用的是走位后的【反馈位置】，终点若有偏差会被如实记录。
+                    //   ★ 但必须配 MoveToPtpAndWait 的真到位判据 —— 本通道 IsMotionDone() 恒 true、
+                    //     位置又带 100ms 缓存，原 WaitAxesIdle 对 PTP 是空闸，不等到位就采图会拍到拖影帧。
+                    float retrySpeed = Math.Min(MoveSpeed, PtpFallbackSpeedPercent);
+                    AppendLog($"[走位降级] 改用 PTP(Go) 重试（速度 {retrySpeed:F0}，路径为弧线、终点精确），并按实时 POS? 收敛确认到位……");
+                    var ptp = epsonRobot.MoveToPtpAndWait((float)worldX, (float)worldY,
+                                                          cur.Data[EpsonRobot.AxisZ], cur.Data[EpsonRobot.AxisU],
+                                                          retrySpeed, out double ptpResidualMm);
+                    if (ptp != null && !ptp.Success)
+                    {
+                        AppendLog($"[走位降级] PTP 重试仍失败：{ptp.Message}");
+                        AppendLog("[走位降级] ⇒ 该点【两种插补方式都到不了】，属真实不可达 / 姿态禁止区域。"
+                                + "请移动机位（背离基座方向）或改小步长 / 换网格方向，不要靠反复重试。");
+                        rejectReason = linear.Message + " ／ PTP降级: " + ptp.Message;
+                        return false;
+                    }
+                    _lastMoveUsedPtpFallback = true;
+                    _lastMovePtpResidualMm = ptpResidualMm;
+                    AppendLog($"[走位降级] PTP 重试成功：实测到位残差 {ptpResidualMm * 1000:F1}µm"
+                            + "（采点仍用走位后的反馈位置；本点已在 [H点] 日志标记 降级=PTP）。");
                 }
             }
             else
             {
-                var rx = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindXAxisIndex, (float)worldX, DefaultMoveSpeed);
-                var ry = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindYAxisIndex, (float)worldY, DefaultMoveSpeed);
+                var rx = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindXAxisIndex, (float)worldX, MoveSpeed);
+                var ry = SelectedMotionDevice.MoveAbsolute(TargetProfile.BindYAxisIndex, (float)worldY, MoveSpeed);
                 if ((rx != null && !rx.Success) || (ry != null && !ry.Success))
                 {
                     rejectReason = (rx != null && !rx.Success ? rx.Message : "") +
@@ -4471,6 +5405,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return "控制器判定目标超出动作区域(code 4007)——SCARA 可达域是环形带，此点多半落在外圈之外(机械臂够不着)";
             if (m.Contains("code 4001"))
                 return "控制器判定关节超脉冲范围(code 4001)——多为目标落进内圈空洞(两臂收不拢)或当前 U 姿态下该 XY 不可达";
+            if (m.Contains("code 4041"))
+                return "控制器判定目标落入【机器人背面禁止区域】(code 4041)——这是【姿态/区域】裁决，"
+                     + "不是\"够不着\"（同批点的零运动 CHECK 往往判可达）。处置顺序："
+                     + "① 看随后是否出现\"[走位降级] PTP 重试成功\"——若已降级成功则本点有效，可继续；"
+                     + "② 若 PTP 也被拒，说明该点在当前手系下两种插补都摆不出来 ⇒ 移动机位（背离基座方向）"
+                     + "或改小网格步长/换网格方向；③ 换手系(HAND L/R)可能过，但姿态会镜像，须确认周边无干涉";
             if (m.Contains("code 2997"))
                 return "控制器判定 Z 轴超出软限(code 2997)——目标 Z 低于 RC+ 设置的 Z 下限(现场实测约 -145.5mm)";
             if (m.Contains("out of range"))
@@ -4479,12 +5419,20 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 轮询等待指定轴全部空闲（到位），到位后再留 100ms 稳定时间消除残余震荡。
-        /// 运动卡不支持 IsAxisIdle 查询（返回失败）或超时（默认 8s）时降级为固定等待并记日志。
+        /// 轮询等待指定轴全部空闲（到位）。
+        /// ★ 2026-09-10 提速（标定走位体感慢的主因之一）：
+        ///   ① 到位后固定 Sleep(100) → 改为「位置收敛确认」：连续两次读反馈位置差值 < 阈值
+        ///      即认定真正停稳，正常情况 20~40ms 即返回（原固定 100ms 白等）；
+        ///      若读不到反馈位置则退化为原 100ms 稳定等待，行为不变、不引入风险。
+        ///   ② 轮询间隔 20ms → 8ms：到位检测延迟从"最多 20ms"降到"最多 8ms"，
+        ///      9 个点累计省下的检测延迟可观，且 8ms 对控制器查询接口压力仍很小。
+        /// 注：运动卡不支持 IsAxisIdle 查询时仍降级固定等待（原逻辑保留）。
         /// </summary>
         private void WaitAxesIdle(params int[] axes)
         {
             const int timeoutMs = 8000;
+            const int pollMs = 8;          // ★ 20 → 8：缩短到位检测延迟
+            const double settleMm = 0.002; // 位置收敛阈值（2µm，远小于像素当量 ~0.07mm/px）
             if (SelectedMotionDevice == null || axes == null || axes.Length == 0)
             {
                 return;
@@ -4514,10 +5462,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     }
                     if (allIdle)
                     {
-                        Thread.Sleep(100); // 到位后稳定片刻（消除减速末端残余震荡）
+                        SettleAfterIdle(axes, settleMm);
                         return;
                     }
-                    Thread.Sleep(20);
+                    Thread.Sleep(pollMs);
                 }
                 AppendLog($"[警告] 等待轴({string.Join("/", axes)})到位超时({timeoutMs}ms)，继续执行采图。");
             }
@@ -4528,6 +5476,51 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
+        /// <summary>
+        /// 到位后的稳定确认（2026-09-10 新增，替代原固定 Sleep(100)）：
+        /// 连续读两次反馈位置，若各轴位移均 &lt; settleMm 则认为真正停稳（消除减速末端残余震荡），
+        /// 立即返回；读不到反馈位置时退化为固定等待 100ms（与原行为一致，保证兼容）。
+        /// 最多重试 5 次（约 5×(间隔+读耗时)），避免极少数持续震荡场景无限等待。
+        /// </summary>
+        private void SettleAfterIdle(int[] axes, double settleMm)
+        {
+            const int maxTries = 5;
+            const int gapMs = 15;
+
+            double[] prev = null;
+            for (int t = 0; t < maxTries; t++)
+            {
+                var cur = new double[axes.Length];
+                bool ok = true;
+                for (int i = 0; i < axes.Length; i++)
+                {
+                    var posRes = SelectedMotionDevice.GetFeedbackPosition(axes[i]);
+                    if (!posRes.Success) { ok = false; break; }
+                    cur[i] = posRes.Data;
+                }
+                if (!ok)
+                {
+                    // 无反馈位置可用 → 回退固定稳定等待（保守，不改变既有行为）
+                    Thread.Sleep(100);
+                    return;
+                }
+
+                if (prev != null)
+                {
+                    bool settled = true;
+                    for (int i = 0; i < axes.Length; i++)
+                    {
+                        if (Math.Abs(cur[i] - prev[i]) >= settleMm) { settled = false; break; }
+                    }
+                    if (settled) return; // 连续两次位置一致 → 已停稳，直接采图
+                }
+
+                prev = cur;
+                Thread.Sleep(gapMs);
+            }
+            // 多次仍不收敛：不再无限等，交由采图（位置已到位，仅残余微震）
+        }
+
 
         /// <summary>
         /// 旋转轴绝对运动，角度单位度。
@@ -4535,6 +5528,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// - ZMC 双滑台工位默认 0（0号轴 = Z/旋转轴，与旧行为一致）；
         /// - Epson SCARA 工位须在向导步骤1选 3（U 轴）——
         ///   否则会把 X 轴转到"角度值"的毫米位置，实机上有撞机风险。
+        /// ⚠ 本方法是【绝对角】下发。旋转采样段要传"基准角 + 相对角"的绝对目标
+        ///   （见 EnsureRotationBaseU / CaptureNextRotationPoint），不要把表内相对角直接传进来。
         /// </summary>
         private void MoveRotationTo(double angleDeg)
         {
@@ -4550,8 +5545,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return;
             }
             int rotAxis = TargetProfile.BindRotationAxisIndex;
-            AppendLog($"[旋转采样] 旋转轴 {rotAxis} → {angleDeg:F1}°");
-            SelectedMotionDevice.MoveAbsolute(rotAxis, (float)angleDeg, DefaultMoveSpeed);
+            AppendLog($"[旋转采样] 旋转轴 {rotAxis} → 绝对角 {angleDeg:F2}°");
+            SelectedMotionDevice.MoveAbsolute(rotAxis, (float)angleDeg, MoveSpeed);
             // 等待旋转轴到位后再采图，避免拍到运动中的 Mark（等待轴号与运动轴号保持一致）
             WaitAxesIdle(TargetProfile.BindRotationAxisIndex);
         }
@@ -5048,10 +6043,222 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
-        /// <summary>保存标定方案到仓储（数据库/配置文件）</summary>
-        public bool SaveProfile()
+        /// <summary>
+        /// ★2026-09-15：保存前跑一遍交叉校核，输出人可读的多行结论（写进档案 + 日志）。
+        ///
+        /// 设计原则：**每条结论都必须能离线判死**，且必须配"看到别的意味着什么"的解读——
+        /// 否则现场只会得到一句"还是不准"，排查又要从头来（本轮 2026-09-15 亲历）。
+        /// </summary>
+        private string BuildCalibrationEvidence(List<CalibrationPointModel> ninePoints)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"标定过程证据（生成于 {DateTime.Now:yyyy-MM-dd HH:mm:ss}）");
+            sb.AppendLine($"  档案: {TargetProfile.Name}  槽={TargetProfile.CameraSlotKey}  Path={TargetProfile.PrimaryPath}");
+            sb.AppendLine($"  绑定: 相机={TargetProfile.CameraId} | 运动卡={TargetProfile.AxisId} | 工位={TargetProfile.BoundStationCode} 吸嘴={TargetProfile.NozzleKey}");
+            sb.AppendLine($"  基准: 基准点=({TargetProfile.BasePosX:F3},{TargetProfile.BasePosY:F3}) U0={TargetProfile.CalibU0:F3}° 标定Z={TargetProfile.CalibZ:F3}mm 模板={TargetProfile.FeatureTemplateName}");
+
+            // ---- 九点（H）----
+            sb.AppendLine($"  [九点/H] 已采 {ninePoints.Count} 点  RMS={(TargetProfile.RmsError > 1e-9 ? TargetProfile.RmsError.ToString("F4") + "mm" : "未写入")}  矩阵={TargetProfile.HomMatFilePath}");
+            sb.AppendLine($"    ⚠ H 的域 = 九点特征（本工位=延伸杆杆端 mark）落在该像素时的【命令位】。"
+                        + "固定相机消费须补『杆端→吸嘴偏移 b』：吸点 = H(u) + b。");
+
+            // ---- 旋转（e/b）----
+            if (TargetProfile.RotationSamples != null && TargetProfile.RotationSamples.Count > 0)
+            {
+                sb.AppendLine($"  [旋转/e] {TargetProfile.RotationFitSummary}");
+                double bMagLine = Math.Sqrt(TargetProfile.ToolEccWx * TargetProfile.ToolEccWx
+                                          + TargetProfile.ToolEccWy * TargetProfile.ToolEccWy);
+                sb.AppendLine($"    O(ToolCenterW)=({TargetProfile.ToolCenterWx:F3},{TargetProfile.ToolCenterWy:F3})  "
+                            + $"ToolEccW=b=({TargetProfile.ToolEccWx:F3},{TargetProfile.ToolEccWy:F3})mm |b|={bMagLine:F3}mm");
+                sb.AppendLine($"    停车位 P_f=({TargetProfile.RotationBaseX:F3},{TargetProfile.RotationBaseY:F3})  "
+                            + $"U_ref={(TargetProfile.RotationBaseU.HasValue ? TargetProfile.RotationBaseU.Value.ToString("F3") + "°" : "未记录")}");
+                sb.AppendLine("    逐点: " + string.Join("  ", TargetProfile.RotationSamples.Select(s =>
+                    $"{s.AngleDeg:F0}°→px({s.PixelX:F1},{s.PixelY:F1}) 机位({s.BaseX:F1},{s.BaseY:F1}) 实读U={s.ReadUDeg:F2}° 分{s.MatchScore:F0} 半径{s.RadiusPx:F1}px 残{s.ResidualPx:+0.0;-0.0}px")));
+                // 逐条判据（每条归因不同，互不替代；"PASS/FAIL/未执行"三态，禁止恒真）
+                double rPx = TargetProfile.RotationFitRadiusPx ?? 0;
+                double spread = TargetProfile.RotationMotionSpreadMm ?? -1;
+                double cov = TargetProfile.RotationArcCoverageDeg ?? -1;
+                double rmsPx = TargetProfile.RotationFitRmsPx ?? -1;
+                double bMag = Math.Sqrt(TargetProfile.ToolEccWx * TargetProfile.ToolEccWx
+                                      + TargetProfile.ToolEccWy * TargetProfile.ToolEccWy);
+                sb.AppendLine($"    判据① 像素域圆性: 逐点半径残差RMS {rmsPx:F2}px（口径：各点 |p−圆心| 相对平均半径；"
+                            + $"圆拟合自身 RMS 见上方『方法[...]』）→ {(rmsPx < 0 ? "未算" : rmsPx <= 3.0 ? "PASS（点共圆，脏点少）" : "FAIL（>3px：有脏点/非圆，先剔点再谈 b）")}");
+                sb.AppendLine($"    判据② 域间互校: 像素半径×当量 {(TargetProfile.RotationFitRadiusMm.HasValue ? TargetProfile.RotationFitRadiusMm.Value.ToString("F3") + "mm" : "不可用")}"
+                            + $" vs |ToolEccW| {bMag:F3}mm → "
+                            + (!TargetProfile.RotationFitRadiusMm.HasValue || bMag <= 1e-9 || rPx <= 1e-9
+                                ? "未执行（缺当量或偏心矢）"
+                                : (Math.Abs(TargetProfile.RotationFitRadiusMm.Value - bMag) / Math.Max(TargetProfile.RotationFitRadiusMm.Value, bMag) <= 0.05
+                                    ? "PASS（两量法一致，b 的量级可信）"
+                                    : "FAIL（>5%：H 各向异性/畸变未校正，或矩阵与采样不同次；|b| 不可当基准）")));
+                sb.AppendLine($"    判据③ 机位固定性: 分散 {spread:F3}mm → {(spread < 0 ? "未采到机位(需重采)" : spread <= 1.0 ? "PASS（XY 固定、只转 U）" : "FAIL（采样期间动过 XY，固定机位模型不成立）")}");
+                sb.AppendLine($"    判据④ 弧覆盖度: {cov:F0}° → {(cov >= 90 ? "PASS" : "FAIL（<90°，圆心沿缺弧方向误差被放大）")}");
+                double uDevMax = -1.0;
+                var uS = TargetProfile.RotationSamples.Where(s => Math.Abs(s.ReadUDeg) > 1e-9).ToList();
+                if (uS.Count >= 2)
+                {
+                    double uRef0 = TargetProfile.RotationBaseU ?? 0.0;
+                    uDevMax = uS.Max(s => Math.Abs(s.ReadUDeg - uRef0 - s.AngleDeg));
+                }
+                sb.AppendLine($"    判据⑤ U 到位精度: "
+                            + (uDevMax < 0
+                                ? "未采到实读 U（ReadUDeg 全空）→ 无法验证 U 到位精度"
+                                : $"最大偏差 {uDevMax:F3}° → " + (uDevMax <= 0.5
+                                    ? "PASS（实转角=指令角）"
+                                    : "FAIL（>0.5°：b 的方向被整体转过同样度数，先修 U 闭环再谈 b）")));
+                sb.AppendLine($"    现场复核: 量『吸嘴尖↔杆端 mark』水平距离 ≈ |b|={bMag:F3}mm、方位 {Math.Atan2(TargetProfile.ToolEccWy, TargetProfile.ToolEccWx) * 180.0 / Math.PI:F1}°（从吸嘴尖看向 mark）");
+                sb.AppendLine("    消费口径: 固定相机杆端域 ⇒ 吸点 = H(u) + b（b 优先取对针 t 直量，其次取本 ToolEccW 推算值）");
+            }
+            else
+            {
+                sb.AppendLine("  [旋转/e] 本次未落盘旋转采样证据（旧流程或未做旋转标定）——无法离线复核 b 的量级/方向/参考姿态。");
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// ★2026-09-15：把本次标定的全过程证据另存一份 JSON（带时间戳，**不覆盖**），便于两次标定 diff。
+        /// 位置：&lt;AppBase&gt;\Config\Calibrations\Evidence\&lt;方案名&gt;__&lt;Id前8&gt;__&lt;时间戳&gt;.evidence.json
+        /// 内容 = 档案本体的证据字段快照（含 RotationSamples 逐点）+ 结论文本；只读用途，失败不影响保存。
+        ///
+        /// ★★ 为什么刻意放在 **Evidence 子目录**（而不是档案目录顶层）：
+        ///   `JsonCalibrationProfileRepository.GetAll()` 用 `Directory.GetFiles(RootDirectory, "*.json")`
+        ///   ——【非递归】，只扫顶层。所以子目录里的 `.evidence.json` 不会被当成标定档案加载，
+        ///   也就不会混进"产物聚合"造成重复/抢注（2026-09-15 本工位刚被"e 档案抢注 H 位"坑过）。
+        ///   ⚠ 如果**将来**有人把 GetAll 改成 `SearchOption.AllDirectories`，这里会立刻制造同类事故
+        ///     ⇒ 那一步必须同时给 GetAll 加 `*.evidence.json` 排除，否则证据文件会污染档案聚合。
+        /// </summary>
+        private void WriteCalibrationEvidenceFile(List<CalibrationPointModel> ninePoints)
         {
             try
+            {
+                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "Calibrations", "Evidence");
+                Directory.CreateDirectory(dir);
+                string id8 = string.IsNullOrWhiteSpace(TargetProfile.Id)
+                    ? "newid" : TargetProfile.Id.Substring(0, Math.Min(8, TargetProfile.Id.Length));
+                string file = Path.Combine(dir,
+                    $"{CalibrationMatrixStore.SanitizeFileName(TargetProfile.Name)}__{id8}__{DateTime.Now:yyyyMMdd-HHmmss}.evidence.json");
+                var payload = new
+                {
+                    GeneratedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    ProfileName = TargetProfile.Name,
+                    ProfileId = TargetProfile.Id,
+                    Station = TargetProfile.BoundStationCode,
+                    CameraSlotKey = TargetProfile.CameraSlotKey,
+                    NozzleKey = TargetProfile.NozzleKey,
+                    CameraId = TargetProfile.CameraId,
+                    AxisId = TargetProfile.AxisId,
+                    PrimaryPath = TargetProfile.PrimaryPath.ToString(),
+                    FeatureTemplateName = TargetProfile.FeatureTemplateName,
+                    Env = new
+                    {
+                        BasePosX = TargetProfile.BasePosX,
+                        BasePosY = TargetProfile.BasePosY,
+                        CalibU0 = TargetProfile.CalibU0,
+                        CalibZ = TargetProfile.CalibZ,
+                    },
+                    NinePoint = new
+                    {
+                        Count = ninePoints.Count,
+                        RmsError = TargetProfile.RmsError,
+                        HomMatFilePath = TargetProfile.HomMatFilePath,
+                        Points = ninePoints.Select(p => new
+                        {
+                            p.Index, p.WorldX, p.WorldY, p.PixelX, p.PixelY, p.IsReliable, p.MatchScore
+                        }).ToList(),
+                    },
+                    Rotation = new
+                    {
+                        Samples = TargetProfile.RotationSamples,
+                        FitRadiusPx = TargetProfile.RotationFitRadiusPx,
+                        // 语义：像素域定圆半径 × 像素当量（独立于 ToolEccW 的量法）；null = 当量不可用（互校判据失效）
+                        FitRadiusMmFromPixelScale = TargetProfile.RotationFitRadiusMm,
+                        PixelScaleNote = _rotationScaleNote,
+                        ArcCoverageDeg = TargetProfile.RotationArcCoverageDeg,
+                        FitRmsPx = TargetProfile.RotationFitRmsPx,
+                        MotionSpreadMm = TargetProfile.RotationMotionSpreadMm,
+                        BaseX = TargetProfile.RotationBaseX,
+                        BaseY = TargetProfile.RotationBaseY,
+                        BaseU = TargetProfile.RotationBaseU,
+                        FitSummary = TargetProfile.RotationFitSummary,
+                        ToolCenterWx = TargetProfile.ToolCenterWx,
+                        ToolCenterWy = TargetProfile.ToolCenterWy,
+                        ToolEccWx = TargetProfile.ToolEccWx,
+                        ToolEccWy = TargetProfile.ToolEccWy,
+                        ToolEccAngleDeg = TargetProfile.ToolEccAngleDeg,
+                        ToolEccPx = TargetProfile.ToolEccPx,
+                        ToolEccPy = TargetProfile.ToolEccPy,
+                        ToolEccMagMm = Math.Sqrt(TargetProfile.ToolEccWx * TargetProfile.ToolEccWx
+                                               + TargetProfile.ToolEccWy * TargetProfile.ToolEccWy),
+                    },
+                    KeyLogs = SnapshotEvidenceLog(),
+                    Conclusion = BuildCalibrationEvidence(ninePoints),
+                };
+                string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload, Newtonsoft.Json.Formatting.Indented);
+                File.WriteAllText(file, json, new System.Text.UTF8Encoding(false));
+
+                // 关键过程日志配套落盘（同名同时间戳，只换后缀）：JSON 给机器/人，txt 直接肉眼扫。
+                //   ⚠ 严格成对：只要 JSON 写了，log 也必须写；log 写失败要在日志里点名（避免"以为有"）。
+                string logFile = Path.ChangeExtension(file, ".log.txt");
+                try
+                {
+                    var logs = SnapshotEvidenceLog();
+                    var head = new System.Text.StringBuilder();
+                    head.AppendLine($"# 标定过程关键日志（与证据 JSON 配套）");
+                    head.AppendLine($"# 档案: {TargetProfile.Name}  槽={TargetProfile.CameraSlotKey}  Path={TargetProfile.PrimaryPath}");
+                    head.AppendLine($"# 生成: {DateTime.Now:yyyy-MM-dd HH:mm:ss}  配套 JSON: {Path.GetFileName(file)}");
+                    head.AppendLine(new string('-', 80));
+                    foreach (var ln in logs) { head.AppendLine(ln); }
+                    File.WriteAllText(logFile, head.ToString(), new System.Text.UTF8Encoding(false));
+                    AppendLogNoEvidence($"[标定过程记录] 关键日志已另存：{logFile}（{logs.Length} 行）");
+                }
+                catch (Exception lex)
+                {
+                    AppendLogNoEvidence("[标定过程记录] ⚠ 关键日志落盘失败（证据 JSON 仍在）：" + lex.Message);
+                }
+
+                TargetProfile.EvidenceFilePath = file;
+                AppendLogNoEvidence($"[标定过程记录] 证据 JSON 已另存：{file}");
+            }
+            catch (Exception ex)
+            {
+                AppendLog("[标定过程记录] ⚠ 证据 JSON 落盘失败（不影响标定保存）：" + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 取关键过程日志快照（线程安全）。用于证据 JSON/配套 txt。
+        /// ★与 AppendLog 的收集端成对：那边加锁写，这里加锁读，故后台保存线程取快照不会撕裂。
+        /// </summary>
+        private string[] SnapshotEvidenceLog()
+        {
+            lock (_evidenceLog) { return _evidenceLog.ToArray(); }
+        }
+
+        /// <summary>清空关键日志缓冲（保存成功后调用：下次标定的日志只含下次）</summary>
+        private void ClearEvidenceLog()
+        {
+            lock (_evidenceLog) { _evidenceLog.Clear(); }
+        }
+
+        /// <summary>
+        /// 输出日志但不进"关键日志缓冲"。用于自引用/收尾性的行（例如"证据摘要如下…"，其内容已整体写进
+        /// 证据文件的 Conclusion 字段）——若也收进缓冲，会残留到**下一次**标定的证据文件里，成为噪声。
+        /// </summary>
+        private void AppendLogNoEvidence(string message)
+        {
+            bool bak = _suppressEvidenceLog;
+            _suppressEvidenceLog = true;
+            try { AppendLog(message); }
+            finally { _suppressEvidenceLog = bak; }
+        }
+
+        /// <summary>Id 短显示（日志用，与档案文件名后缀同长，便于人对上文件）</summary>
+        private static string ShortIdOf(string id)
+            => string.IsNullOrWhiteSpace(id) ? "(空)" : id.Substring(0, Math.Min(8, id.Length));
+
+        /// <summary>保存标定方案到仓储（数据库/配置文件）</summary>
+        public bool SaveProfile()
+        {            try
             {
                 // ── P3 采样点快照落盘（2026-09-05）：校验台"残差反投影/现场复验"的数据源。
                 //    把本次会话已采集点（世界命令位 + 像素识别位 + 可靠度）包成采样批次写进
@@ -5070,23 +6277,58 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     TargetProfile.Samples = new System.Collections.Generic.List<CalibrationSampleModel>();
                 }
 
+                // ★2026-09-15：九点摘要（逐点在 Samples 里，这里补"拟合结果侧"的一行结论，便于离线对照）
+                if (captured.Count > 0)
+                {
+                    double maxR = captured.Max(p => Math.Sqrt((p.WorldX - captured.Average(q => q.WorldX)) * (p.WorldX - captured.Average(q => q.WorldX))
+                                                             + (p.WorldY - captured.Average(q => q.WorldY)) * (p.WorldY - captured.Average(q => q.WorldY))));
+                    AppendLog($"[标定过程记录·九点] 已采 {captured.Count} 点 命令位域最大跨距 {maxR:F1}mm RMS={(TargetProfile.RmsError > 1e-9 ? TargetProfile.RmsError.ToString("F4") + "mm" : "未写入")}"
+                              + $" 基准点=({TargetProfile.BasePosX:F3},{TargetProfile.BasePosY:F3}) U0={TargetProfile.CalibU0:F3}° 标定Z={TargetProfile.CalibZ:F3}mm");
+                    AppendLog("[标定过程记录·九点逐点] " + string.Join("  ", captured.Select(p =>
+                        $"#{p.Index} 命令({p.WorldX:F1},{p.WorldY:F1})→px({p.PixelX:F1},{p.PixelY:F1}) 分{p.MatchScore:F0}{(p.IsReliable ? "" : "·不可靠")}")));
+                }
+
+                // ★2026-09-15：保存前跑一遍交叉校核并把结论写进档案 + 另存过程证据 JSON（不覆盖，便于两次标定 diff）
+                TargetProfile.CalibrationEvidence = BuildCalibrationEvidence(captured);
+                WriteCalibrationEvidenceFile(captured);
+                // ⚠ 本行不进关键日志缓冲：它的内容已整体写进证据文件的 Conclusion 字段（自引用会污染下一份）
+                AppendLogNoEvidence("[标定过程记录] ===== 本次标定证据摘要（完整版已写入档案 CalibrationEvidence 与证据 JSON）=====\n"
+                          + TargetProfile.CalibrationEvidence);
+
                 TargetProfile.UpdatedAt = DateTime.Now;
                 var po = new CalibrationProfilePo
                 {
                     Id = string.IsNullOrWhiteSpace(TargetProfile.Id) ? Guid.NewGuid().ToString("N") : TargetProfile.Id,
                     ProfileName = TargetProfile.Name,
-                    CalibrationType = TargetProfile.Type,
+                    CalibrationQuantity = TargetProfile.Quantity,
                     BoundStationCode = TargetProfile.BoundStationCode,
                     BoundDeviceId = TargetProfile.BoundDeviceId,
                     IsCalibrated = TargetProfile.IsCalibrated,
                     Model = TargetProfile
                 };
-                // 存在则更新，不存在插入
-                var existing = _calibrationProfileRepository.GetById(po.Id) ?? _calibrationProfileRepository.GetByName(TargetProfile.Name);
+                // 存在则更新，不存在插入。
+                // ★★2026-09-15：按名回退必须【核对 Id】。同名档案（复合工位上下相机的 e 曾同名）会让
+                //   GetByName 返回**别人的**档案 ⇒ "存在则更新"的判断失去鉴别力（历史真凶之一）。
+                //   命中但 Id 不同 ⇒ 是重名不是同一条 ⇒ 走 Insert（仓库按 Model.Id 落文件名，不会覆盖对方）并留痕。
+                var existing = _calibrationProfileRepository.GetById(po.Id);
+                if (existing == null)
+                {
+                    var byName = _calibrationProfileRepository.GetByName(TargetProfile.Name);
+                    if (byName != null && !string.Equals(byName.Id, po.Id, StringComparison.OrdinalIgnoreCase))
+                        AppendLog($"[保存] ⚠ 重名检出：「{TargetProfile.Name}」已有 Id={ShortIdOf(byName.Id)}，"
+                                  + $"本次 Id={ShortIdOf(po.Id)} → 按新档案写入（建议改名带上槽/吸嘴）。");
+                    else
+                        existing = byName;
+                }
                 bool saved = existing == null ? _calibrationProfileRepository.Insert(po) : _calibrationProfileRepository.Update(po);
                 if (!saved)
                 {
                     AppendLog("[警告] 标定方案保存返回失败。");
+                }
+                else
+                {
+                    // 保存成功 ⇒ 本次关键日志已随证据文件落盘，清空缓冲，让下一轮只含下一轮的日志
+                    ClearEvidenceLog();
                 }
                 return saved;
             }
@@ -5098,11 +6340,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         /// <summary>
-        /// 把标定矩阵从生成时的 %TEMP% 暂存路径，幂等落盘到"设备级"持久目录
-        /// Recipes\Devices\{BoundDeviceId|Default}\Calib\{方案名}_HandEye.tup（P1-3，2026-09-04）。
+        /// 把标定矩阵从生成时的 %TEMP% 暂存路径，幂等落盘到**工位级唯一归宿**
+        /// Recipes\Workstations\{BoundStationCode|Default}\Calib\{方案名}_HandEye.tup。
         /// 收敛在向导内部"✔ 完成并保存"链路：保存前先落盘并回填路径，
         /// 杜绝"profile 显示已标定、矩阵文件却在 %TEMP% 重启即丢"的空窗。
         /// 管理页 OpenWizard 回调里的同类落盘保留为幂等兜底（源==目标时直接返回）。
+        ///
+        /// ★★2026-09-15 定案：已废弃"设备级"落盘（Recipes\Devices\{设备ID}\Calib）。
+        ///   标定矩阵是"机械手 + 相机在该工位安装位姿"的属性，不是相机/轴卡设备实例的属性：
+        ///   按设备落盘会随设备换装/同一相机被多工位领用而静默张冠李戴（两个工位互相覆盖同一份）。
+        ///   单轨存储路径与作用域语义见 CalibrationMatrixStore 类型注释。
         /// </summary>
         private void EnsureMatrixPersisted()
         {
@@ -5111,50 +6358,33 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 return;
             }
-            string device = string.IsNullOrWhiteSpace(TargetProfile.BoundDeviceId) ? "Default" : TargetProfile.BoundDeviceId;
-            string targetDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Recipes", "Devices", device, "Calib");
-            string targetFile = Path.Combine(targetDir, $"{SanitizeFileName(TargetProfile.Name)}_HandEye.tup");
-            try
-            {
-                Directory.CreateDirectory(targetDir);
-                if (string.Equals(Path.GetFullPath(OutputHomMatPath), Path.GetFullPath(targetFile), StringComparison.OrdinalIgnoreCase))
-                {
-                    return; // 已在目标位
-                }
-                var saveRes = CalibService.SaveHomMatFile(OutputHomMatPath, targetFile);
-                if (!saveRes.Success)
-                {
-                    // 目标文件可能被在线校验/流程节点短暂读取占用——等待后重试一次
-                    Thread.Sleep(300);
-                    saveRes = CalibService.SaveHomMatFile(OutputHomMatPath, targetFile);
-                }
-                if (!saveRes.Success)
-                {
-                    _matrixPersistFailed = true;
-                    AppendLog($"[落盘] 矩阵自动落盘设备目录失败：{saveRes.Message}；暂保留 %TEMP% 副本（保存后请用管理页『保存并应用』发布）。");
-                    return;
-                }
-                OutputHomMatPath = targetFile;
-                TargetProfile.HomMatFilePath = targetFile;
-                AppendLog($"[落盘] 标定矩阵已落盘设备目录：{targetFile}");
-            }
-            catch (Exception ex)
+
+            string targetFile;
+            string failMessage;
+            if (!CalibrationMatrixStore.TryPersistToStationScope(
+                    OutputHomMatPath,
+                    TargetProfile.Name,
+                    TargetProfile.BoundStationCode,
+                    out targetFile,
+                    out failMessage))
             {
                 _matrixPersistFailed = true;
-                AppendLog($"[落盘] 矩阵自动落盘异常：{ex.Message}");
+                AppendLog($"[落盘] 矩阵自动落盘工位目录失败：{failMessage}；暂保留 %TEMP% 副本（保存后请用管理页『保存并应用』发布）。");
+                return;
             }
+
+            OutputHomMatPath = targetFile;
+            TargetProfile.HomMatFilePath = targetFile;
+            if (CalibrationMatrixStore.IsLegacyDeviceScopePath(TargetProfile.HomMatFilePath))
+            {
+                // 断言：单轨存储下产物路径绝不允许再落在设备级作用域
+                AppendLog("[落盘] ⛔ 产物路径仍指向已废弃的设备级目录，请检查 CalibrationMatrixStore 接线。");
+            }
+            AppendLog($"[落盘] 标定矩阵已落盘工位目录：{targetFile}");
         }
 
-        /// <summary>文件名清洗：替换 Windows 非法文件名字符（防方案名含冒号/斜杠等导致落盘失败）</summary>
-        private static string SanitizeFileName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return "Calibration";
-            }
-            var invalid = Path.GetInvalidFileNameChars();
-            return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        }
+        // 注：文件名清洗统一由 Contracts 层 CalibrationMatrixStore.SanitizeFileName 提供（单轨存储真源），
+        //     本类不再各留一份副本——重复实现正是"产物名与消费端不一致"的温床（2026-09-15 收敛）。
 
         /// <summary>
         /// 保存标定结果并关闭向导。
@@ -5536,7 +6766,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
 
             // 像素当量标定无 HomMat 矩阵文件，直接保存
-            if (TargetProfile.Type == CalibrationType.PixelScale)
+            if (TargetProfile.Quantity == CalibrationQuantity.PixelScale)
             {
                 // P4 自动发布：v2 s 会话完成即打发布标记（像素当量无矩阵体检域；卡上无需再手动发布）
                 if (IsSessionV2 && _sessionSpec != null)
@@ -5563,7 +6793,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 AppendLog("[保存阻断] 发布前体检存在红项：\n· " + list);
                 MessageBox.Show(
                     $"发布前体检有 {reds.Count} 项未通过（红色），已阻止保存：\n\n· {list}\n\n"
-                    + "请先回到对应步骤修正（红项原因都写在上方，常见：未执行拟合计算 / RMS 严重超差 / 带旋转类型没做旋转采样或角度覆盖不足 / 矩阵镜像)。",
+                    + "请先回到对应步骤修正（红项原因都写在上方，常见：未执行拟合计算 / RMS 严重超差 / 带旋转类型没做旋转采样或角度覆盖不足 / 矩阵镜像)。\n"
+                    + (RelaxShapeGate
+                        ? "当前已开启诊断模式——若仍见" + reds.Count + " 项红阻，说明属于诊断模式不放宽的硬项（如矩阵未生成），需先修正对应步骤。"
+                        : "若确认红项源于相机安装几何/轴方向约定（非数据错误）且需先推进，可勾选上方『放宽门禁(诊断模式)』后重试。"),
                     "保存被阻断", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -5582,7 +6815,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
             }
 
-            // ③ 落盘 %TEMP% → 设备目录（P1-3），失败会在下一遍体检变黄项提示
+            // ③ 落盘 %TEMP% → 工位目录（P1-3），失败会在下一遍体检变黄项提示
             EnsureMatrixPersisted();
             RefreshPublishChecks();
 
@@ -5672,6 +6905,30 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// <summary>写入日志，自动带上时间，通知UI更新LogText；并镜像到 LogBus（VS 输出窗口/日志文件可见，调试取证用）</summary>
         public void AppendLog(string message)
         {
+            // ★2026-09-15：关键过程日志同时收进内存缓冲，保存时与"证据 JSON"配套落盘。
+            //   为什么：出问题时需要的是"当时那些数 + 当时那些话"放在一起看；只落 JSON 或只落全会话日志，
+            //   排查时都要两头对（本工位 2026-09-15 就是这么卡住的）。按前缀白名单**只留关键行**，避免整卷日志。
+            try
+            {
+                bool key = false;
+                if (!_suppressEvidenceLog)
+                {
+                    for (int i = 0; i < _evidenceLogTags.Length; i++)
+                    {
+                        if (message.IndexOf(_evidenceLogTags[i], StringComparison.Ordinal) >= 0) { key = true; break; }
+                    }
+                }
+                if (key)
+                {
+                    lock (_evidenceLog)
+                    {
+                        _evidenceLog.Add($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+                        if (_evidenceLog.Count > 4000) { _evidenceLog.RemoveAt(0); } // 防无限增长
+                    }
+                }
+            }
+            catch { /* 关键日志收集失败不影响主流程 */ }
+
             // 镜像到 LogBus：与 [Info] [CalibrationService] 同通道，VS 输出窗口可直接看到（2026-09-06）
             try
             {
@@ -5804,39 +7061,213 @@ namespace Grayson.Vision.WpfUI.ViewModel
         // HandEyeWithRotationStepViews（DataTemplate）被「九点+旋转(HandEyeWithRotation)」与
         // 「吸放式(PickPlace)」两类共用：PickPlace 的工件是"被吸放移动"的，标题/图例/按钮/
         // 提示若仍显示"平移 9 点 / R 轴 / 装延伸杆"会严重误导操作员（延伸杆是固定件场景才需要）。
-        // 以下文案按 TargetProfile.Type 自适应（2026-09-04）。
+        // 以下文案按 TargetProfile.Quantity 自适应（2026-09-12）。
 
         /// <summary>
         /// 当前会话是否为吸放式（PickPlace 专属 UI 分支开关）。
         /// ★ 2026-09-06 彻底会话化：v2 单量会话由 spec 采集路径唯一裁决（H 吸放=PickPlaceReturn、
-        /// e 吸放旋转=RotatePickPlace）；旧兼容壳（无 spec）才回退按档案 Type 判定——
-        /// 不再让"已建档混合档案 Type=PickPlaceHandEye"污染其它路径会话的 UI/行为。
+        /// e 吸放旋转=RotatePickPlace）；旧兼容壳（无 spec）才回退按档案采集路径判定。
         /// </summary>
         public bool IsPickPlaceProfile =>
             IsSessionV2
                 ? (_sessionSpec != null && IsPickPlacePath(_sessionSpec.PrimaryPath))
-                : TargetProfile != null && TargetProfile.Type == CalibrationType.PickPlaceHandEye;
+                : TargetProfile != null && TargetProfile.PrimaryPath.HasValue
+                  && IsPickPlacePath(TargetProfile.PrimaryPath.Value);
 
         /// <summary>
         /// 本次会话是否含旋转/偏心采样段（决定旋转轴选择行、旋转进度、旋转图卡、Compute 旋转残差区等 UI 是否出现）。
         /// ★ 2026-09-06 彻底会话化：v2 单量会话只有 e(旋转) 会话含旋转段；H/s/t 会话即便档案是旧
         /// 混合型（九点+旋转/吸放）也不含——旋转已拆 e 段独立会话，向导内绝不要求 H 会话采旋转。
-        /// 旧兼容壳（无 spec）保持按档案混合 Type 判定。
+        /// 旧兼容壳（无 spec）按档案物理量（ToolRotation）判定。
         /// </summary>
         public bool HasRotationStage =>
             IsSessionV2
                 ? IsRotationSession
-                : TargetProfile != null
-                  && (TargetProfile.Type == CalibrationType.HandEyeWithRotation
-                      || TargetProfile.Type == CalibrationType.PickPlaceHandEye);
+                : TargetProfile != null && TargetProfile.Quantity == CalibrationQuantity.ToolRotation;
 
         /// <summary>是否为纯九点（无旋转阶段）：旋转相关 UI 一律隐藏，避免"旋转 0/0、空画布"误导</summary>
         public bool IsNinePointOnly =>
-            TargetProfile != null && TargetProfile.Type == CalibrationType.NinePointHandEye;
+            TargetProfile != null && TargetProfile.Quantity == CalibrationQuantity.HandEye;
 
-        /// <summary>EyeMode 是否可编辑：吸放式放料点=基准+网格偏移，与相机装在手上/外无关（放料点公式不含镜像），
-        /// 故吸放式下该选项灰显，避免现场误改导致困惑。</summary>
-        public bool IsEyeModeEditable => !IsPickPlaceProfile;
+        /// <summary>
+        /// EyeMode 是否可编辑。
+        /// ⚠ 2026-09-11 改为恒可编辑：复合工位（上相机 Cam_A + 下相机 Cam_C）的推荐方案常常判错布局，
+        ///   而吸放式置灰的逻辑会让现场"明明是固定下相机却被锁成眼在手上"且无法修正。
+        ///   吸放式放料点公式确实不含镜像（改布局不影响放料点），但该字段同时决定任务卡布局与
+        ///   H 消费式（ETH: X_obj=H(u) / EIH: X_obj=P_photo+O−H(u)），必须允许现场改对。
+        /// </summary>
+        public bool IsEyeModeEditable => true;
+
+        // ==================== 会话方案可编辑：相机槽 / 眼模式（2026-09-11） ====================
+        // 背景：从工位工程工作台跳标定中心时，方案按工位档案推荐生成；推荐判错时现场无处可改——
+        //   · 相机槽（Cam_A / Cam_C）：档案无独立槽字段，只能从 CameraId 猜；而向导第 1 步绑物理相机
+        //     会把 CameraId 写成设备名（Hikvision_…_DownCamera）→ 恒猜成 Cam_01；且根本没有任何 UI 改它。
+        //     ⟹ 复合工位上下相机两条标定产物撞在同一槽，任务卡互相顶掉。
+        //   · 眼在手上/外：向导该行旧逻辑 Visibility=IsLegacyMode → v2 会话（有推荐 spec）整行不显示。
+        // 现统一暴露为可编辑属性：改动同时写回 spec（本次会话语义）与 profile（持久化），
+        // 并按新布局重算采集路径（走位式 ↔ 相机中心走位）后重建步骤模板。
+
+        /// <summary>相机槽候选项：工位档案定义的槽 ∪ 常用槽 ∪ 当前值（当前值排前，去重）</summary>
+        public ObservableCollection<string> CameraSlotOptions { get; } = new ObservableCollection<string>();
+
+        /// <summary>
+        /// 当前会话的相机槽（可编辑）。v2 会话读 spec.SlotKey，旧兼容壳读档案解析值。
+        /// 写入时同步 spec.SlotKey + profile.CameraSlotKey，并按新槽重算产物 ArtifactId。
+        /// </summary>
+        public string SessionSlotKey
+        {
+            get
+            {
+                if (IsSessionV2 && _sessionSpec != null) return _sessionSpec.SlotKey;
+                return TargetProfile != null ? CalibrationProfileSessionPlanner.GuessSlotKey(TargetProfile) : "Cam_01";
+            }
+            set
+            {
+                string v = (value ?? string.Empty).Trim();
+                string cur = SessionSlotKey ?? string.Empty;
+                if (string.Equals(cur, v, StringComparison.OrdinalIgnoreCase)) return;
+
+                if (TargetProfile != null) TargetProfile.CameraSlotKey = v; // 落盘：槽与物理设备解耦
+                if (_sessionSpec != null)
+                {
+                    _sessionSpec.SlotKey = v;
+                    try
+                    {
+                        _sessionSpec.SpecId = CalibrationArtifact.BuildArtifactId(
+                            _sessionSpec.StationCode, _sessionSpec.Quantity, v, _sessionSpec.NozzleKey);
+                    }
+                    catch { /* SpecId 重算失败不影响会话执行 */ }
+                }
+                AppendLog($"[会话] 相机槽已改：{cur} → {v}（产物身份 站|量|槽|吸嘴 同步更新；此后绑定物理相机不再覆盖槽）");
+
+                EnsureSlotOption(v);
+                OnPropertyChanged(nameof(SessionSlotKey));
+                OnPropertyChanged(nameof(SessionSpecSummary));
+                OnPropertyChanged(nameof(HardwareBindingSummary));
+                OnPropertyChanged(nameof(WindowTitle));
+            }
+        }
+
+        /// <summary>
+        /// 当前会话的相机布局（可编辑）。v2 会话读 spec.Layout，旧兼容壳读 profile.EyeMode。
+        /// 写入时同步 spec.Layout + profile.EyeMode，按新布局重算采集路径并重建步骤模板。
+        /// </summary>
+        public EyeMode SessionEyeMode
+        {
+            get
+            {
+                if (IsSessionV2 && _sessionSpec != null) return _sessionSpec.Layout;
+                return TargetProfile != null ? TargetProfile.EyeMode : EyeMode.EyeToHand;
+            }
+            set
+            {
+                EyeMode cur = SessionEyeMode;
+                if (cur == value) return;
+
+                string curName = cur == EyeMode.EyeInHand ? "眼在手上(EyeInHand)" : "眼在手外(EyeToHand)";
+                string newName = value == EyeMode.EyeInHand ? "眼在手上(EyeInHand)" : "眼在手外(EyeToHand)";
+
+                if (TargetProfile != null) TargetProfile.EyeMode = value;
+
+                if (_sessionSpec != null)
+                {
+                    _sessionSpec.Layout = value;
+                    _sessionSpec.PrimaryPath = RecomputePrimaryPath(_sessionSpec.Quantity,
+                        _sessionSpec.PrimaryPath, value);
+                }
+
+                AppendLog($"[会话] 相机安装方式已改：{curName} → {newName}"
+                          + (IsSessionV2 ? "；采集路径已按新布局重算，步骤模板已重建。" : "。"));
+
+                OnPropertyChanged(nameof(SessionEyeMode));
+                OnPropertyChanged(nameof(SessionSpecSummary));
+                RebuildStepsForSessionChange();
+            }
+        }
+
+        /// <summary>
+        /// 布局变更后重算采集路径：仅平移手眼 H（非吸放）随布局切换走位语义——
+        /// EyeInHand → NozzleTruthWalk（吸嘴真值走位）；EyeToHand → CameraTruthWalk（固定相机走位）。
+        /// 吸放式/旋转/对针/当量路径与布局无关，原样保留。
+        /// </summary>
+        private static CalibrationAcquirePath RecomputePrimaryPath(CalibrationQuantity q,
+            CalibrationAcquirePath current, EyeMode layout)
+        {
+            if (q != CalibrationQuantity.HandEye) return current;
+            if (current == CalibrationAcquirePath.PickPlaceReturn) return current; // 吸放式与布局无关
+            return layout == EyeMode.EyeInHand
+                ? CalibrationAcquirePath.NozzleTruthWalk
+                : CalibrationAcquirePath.CameraTruthWalk;
+        }
+
+        /// <summary>重建步骤模板（布局/路径变更后同步胶囊与文案），保持当前步序号不越界</summary>
+        private void RebuildStepsForSessionChange()
+        {
+            int keep = Math.Max(0, Math.Min(CurrentStep, Math.Max(0, _stepItems.Count - 1)));
+            BuildWizardSteps();
+            if (CurrentStep >= _stepItems.Count) CurrentStep = Math.Max(0, _stepItems.Count - 1);
+            else CurrentStep = keep;
+            RefreshStepItemStates();
+            OnPropertyChanged(nameof(StepItems));
+            OnPropertyChanged(nameof(StepOrdinalText));
+            OnPropertyChanged(nameof(CurrentStepTitle));
+            OnPropertyChanged(nameof(CurrentStepGuideText));
+            OnPropertyChanged(nameof(CurrentStepPrecondition));
+            OnPropertyChanged(nameof(OriginPathHintText));
+            RaiseNextGate();
+        }
+
+        /// <summary>把槽值补进候选（手填槽也留得住，下拉回显不会丢）</summary>
+        private void EnsureSlotOption(string slot)
+        {
+            if (string.IsNullOrWhiteSpace(slot)) return;
+            if (!CameraSlotOptions.Contains(slot)) CameraSlotOptions.Add(slot);
+        }
+
+        /// <summary>
+        /// 加载相机槽候选：优先工位档案（BoundStationCode → Requirement.CameraSlots）定义的槽，
+        /// 兜底常用槽 Cam_01/Cam_A…Cam_D；当前值排第一，保证下拉默认回显与实际生效值一致。
+        /// </summary>
+        private void LoadCameraSlotOptions()
+        {
+            CameraSlotOptions.Clear();
+            var slots = new List<string>();
+            try
+            {
+                string station = TargetProfile != null ? TargetProfile.BoundStationCode : null;
+                if (!string.IsNullOrWhiteSpace(station))
+                {
+                    var repo = new Grayson.Vision.WpfUI.Service.StationProfileRepository();
+                    var archive = repo.GetByStationId(station)
+                                  ?? repo.ListAll().FirstOrDefault(p =>
+                                      string.Equals(p.StationCode, station, StringComparison.OrdinalIgnoreCase));
+                    var defined = archive?.Requirement?.CameraSlots;
+                    if (defined != null)
+                    {
+                        foreach (var s in defined)
+                        {
+                            string k = (s != null ? s.SlotKey : null)?.Trim();
+                            if (!string.IsNullOrWhiteSpace(k) && !slots.Contains(k)) slots.Add(k);
+                        }
+                    }
+                }
+            }
+            catch { /* 档案不可读不影响向导：走兜底槽 */ }
+
+            foreach (var d in new[] { "Cam_01", "Cam_A", "Cam_B", "Cam_C", "Cam_D" })
+            {
+                if (!slots.Contains(d)) slots.Add(d);
+            }
+
+            string cur = SessionSlotKey;
+            if (!string.IsNullOrWhiteSpace(cur))
+            {
+                slots.RemoveAll(x => string.Equals(x, cur, StringComparison.OrdinalIgnoreCase));
+                slots.Insert(0, cur);
+            }
+            foreach (var s in slots) CameraSlotOptions.Add(s);
+            OnPropertyChanged(nameof(CameraSlotOptions));
+        }
 
         /// <summary>是否存在可绑定的前置畸变标定方案（相机内参类型当前未实现→恒空，UI 空态提示用）</summary>
         public bool HasDistortionProfiles => AvailableDistortionProfiles.Count > 0;
@@ -5858,6 +7289,31 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>发布前体检项（步骤4卡列表：矩阵/RMS/旋转覆盖/健康报告，红=阻断 黄=确认 绿=通过）</summary>
         public ObservableCollection<CalibCheckItemModel> PublishChecks { get; } = new ObservableCollection<CalibCheckItemModel>();
+
+        /// <summary>
+        /// 放宽形状门禁（诊断模式，2026-09-10 定案）：当前相机存在"非正交+各向异性"安装几何，
+        /// 导致九点矩阵 σ1/σ2 偏离 1、RMS&gt;1mm，纯软件标定无法根治，需现场调相机。
+        /// 开启后把「RMS 严重超差」「矩阵形状非法」「固定相机负行列式(镜像)」「体检未执行」四处红阻
+        /// 降级为黄警（仍弹确认框、仍记录提醒），允许先保存继续推进，
+        /// 但落盘矩阵质量需由走位快检/实拍兜底。
+        /// 默认 true（放宽）；相机调平后可改回 false 恢复严格门禁。
+        /// ⚠ 2026-09-10 修正：本属性原先是不带通知的自动属性 —— 勾选/取消勾选后体检清单不会重算，
+        ///    界面上仍显示旧的红色项（"勾了宽松还是没法保存"的观感来源之一）。现改为带通知属性，
+        ///    变更时立即重算体检并落日志。
+        /// </summary>
+        private bool _relaxShapeGate = true;
+        public bool RelaxShapeGate
+        {
+            get => _relaxShapeGate;
+            set
+            {
+                if (!Set(ref _relaxShapeGate, value)) return;
+                AppendLog(value
+                    ? "[门禁] 已开启诊断模式（放宽门禁）：RMS 超差 / 矩阵形状非法 / 固定相机镜像 / 体检未执行 四项红阻降级为黄警（仍需弹窗确认）。"
+                    : "[门禁] 已关闭诊断模式：恢复严格门禁——上述四项按红色阻断保存。");
+                try { RefreshPublishChecks(); } catch { /* 体检依赖步骤状态，异常不阻断勾选 */ }
+            }
+        }
 
         private string _publishSummaryText = "尚未执行拟合计算——体检在拟合后生效。";
         /// <summary>发布前体检汇总文字（红黄数量与结论）</summary>
@@ -5954,8 +7410,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>Step3 Tab2 旋转提示（PickPlace 与普通场景物理前提不同，必须分开描述）</summary>
         public string RotationSampleHintText => IsPickPlaceProfile
-            ? "吸放式旋转标定：工件被吸嘴转 U 角后放回网格中心，各角度像素绕 U 轴投影画弧（默认 -45°/0°/+45° 3 点、跨度 90°，可在表内改）。拟合圆心=旋转轴投影；偏心含吸持偏差（工件参考点级），用于运行时 U 角补偿。偏心大/模板范围有限时请勿盲目扩角——特征须全程在视野且模板角度范围够，跨度/分布越大圆心越稳。"
-            : "旋转标定要求被观测 Mark 随 R/U 轴转动——若麻将/工件固定不动，需先在 U 轴末端装延伸杆并在杆端贴 Mark（移入相机视野），再旋转 3 个角度（默认 -45°/0°/+45°、跨度 90°）。系统拟合圆心=旋转轴投影。角度可在表格内直接修改（偏心大时特征出视野/失配即收窄，清晰且模板范围够才扩角，跨度/分布越大圆心越稳）。";
+            ? "吸放式旋转标定：工件被吸嘴转 U 角后放回网格中心，各角度像素绕 U 轴投影画弧（默认 -45°/0°/+45° 3 点、跨度 90°，可在表内改）。★ 表内角度是【相对吸持姿态 U_pick 的增量】，放料 U = U_pick + 角度，0°=不额外旋转。拟合圆心=旋转轴投影；偏心含吸持偏差（工件参考点级），用于运行时 U 角补偿。偏心大/模板范围有限时请勿盲目扩角——特征须全程在视野且模板角度范围够，跨度/分布越大圆心越稳。"
+            : "旋转标定要求被观测 Mark 随 R/U 轴转动——若麻将/工件固定不动，需先在 U 轴末端装延伸杆并在杆端贴 Mark（移入相机视野），再旋转 3 个角度（默认 -45°/0°/+45°、跨度 90°）。系统拟合圆心=旋转轴投影。★ 表内角度是【相对当前 U 的增量】：首个采样点锁定当前 U 为基准角 U_ref，0°=当前姿态、±45°=相对当前姿态左右 45°（不会拉回绝对 0°）；中途手动转过 U 后可重开点表重新锁定。角度可在表格内直接修改（偏心大时特征出视野/失配即收窄，清晰且模板范围够才扩角，跨度/分布越大圆心越稳）。";
 
         /// <summary>Step3 类型感知文案批量通知（构造/预设/采样刷新时调用，属性为只读 getter）</summary>
         private void NotifyStep3UiText()
@@ -6062,7 +7518,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 Add(TargetProfile.IsPickBaseSet, $"吸取位已设置 ({TargetProfile.PickBaseX:F1}, {TargetProfile.PickBaseY:F1}, U{TargetProfile.PickBaseU:F1})");
                 Add(TargetProfile.IsPhotoPoseSet, $"固定拍照位已设置 ({TargetProfile.PhotoPoseX:F1}, {TargetProfile.PhotoPoseY:F1}, Z{TargetProfile.PhotoPoseZ:F1})");
             }
-            Add(TargetProfile.IsBasePosSet, $"网格中心基准已设置 ({TargetProfile.BasePosX:F1}, {TargetProfile.BasePosY:F1})");
+            Add(TargetProfile.IsBasePosSet, $"网格中心基准已设置 ({TargetProfile.BasePosX:F1}, {TargetProfile.BasePosY:F1}"
+                + (TargetProfile.BasePosZ.HasValue ? $", Z{TargetProfile.BasePosZ.Value:F1}" : "")
+                + (TargetProfile.BasePosU.HasValue ? $", U{TargetProfile.BasePosU.Value:F1}°" : "")
+                + ")");
             Add(GridStepX > 0 && GridStepY > 0, $"网格步长有效 (X {GridStepX:F1} / Y {GridStepY:F1} mm)");
             if (pp)
             {
@@ -6318,11 +7777,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             int red = PublishChecks.Count(c => c.Level == 2);
             int yellow = PublishChecks.Count(c => c.Level == 1);
+            string mode = RelaxShapeGate ? "　【诊断模式已开：几何类红阻已降级为黄警】" : "";
             PublishSummaryText = red == 0 && yellow == 0
-                ? "✔ 发布前体检全部通过——可以保存"
+                ? "✔ 发布前体检全部通过——可以保存" + mode
                 : red > 0
-                    ? $"✘ 存在 {red} 项红色阻断（禁止保存）" + (yellow > 0 ? $"；另有 {yellow} 项黄色提醒" : "——请先修正红项再保存")
-                    : $"⚠ 存在 {yellow} 项黄色提醒——可确认后保存，但请先阅读提醒内容";
+                    ? $"✘ 存在 {red} 项红色阻断（禁止保存）" + (yellow > 0 ? $"；另有 {yellow} 项黄色提醒" : "——请先修正红项再保存") + mode
+                    : $"⚠ 存在 {yellow} 项黄色提醒——可确认后保存，但请先阅读提醒内容" + mode;
             OnPropertyChanged(nameof(PublishChecks));
             OnPropertyChanged(nameof(PublishSummaryText));
             OnPropertyChanged(nameof(ViewChipText));
@@ -6351,7 +7811,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
             else if (_matrixPersistFailed && OutputHomMatPath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase))
             {
-                Add(1, "矩阵已生成，但自动落盘设备目录失败——现仅存系统临时目录，重启后可能丢失（可保存，稍后请用管理页『保存并应用』发布）");
+                Add(1, "矩阵已生成，但自动落盘工位目录失败——现仅存系统临时目录，重启后可能丢失（可保存，稍后请用管理页『保存并应用』发布）");
             }
             else if (OutputHomMatPath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase))
             {
@@ -6359,7 +7819,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
             else
             {
-                Add(0, "矩阵已生成并落盘到设备目录");
+                Add(0, "矩阵已生成并落盘到工位目录");
             }
 
             // ── ② RMS 重投影误差 ──
@@ -6377,7 +7837,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
             else
             {
-                Add(2, $"RMS = {CalculatedRms:F4} mm（>1.0mm 严重超差——必为数据问题，禁止保存，请按日志定位坏点重新采样）");
+                if (RelaxShapeGate)
+                {
+                    Add(1, $"RMS = {CalculatedRms:F4} mm（>1.0mm 严重超差——诊断模式已放宽为提醒：通常源于相机安装几何（非正交/各向异性）而非采样错误；确认后仍可保存，但请用『相机装调助手→走位比对』复核同口径夹角/RMS，现场调平相机后再重标收敛）");
+                }
+                else
+                {
+                    Add(2, $"RMS = {CalculatedRms:F4} mm（>1.0mm 严重超差——必为数据问题，禁止保存，请按日志定位坏点重新采样）");
+                }
             }
 
             // ── ③ 旋转/偏心覆盖（仅带旋转阶段的类型评估；纯九点不适用）──
@@ -6436,18 +7903,41 @@ namespace Grayson.Vision.WpfUI.ViewModel
             string h = _lastHealthReport;
             if (string.IsNullOrWhiteSpace(h))
             {
-                Add(2, "矩阵健康检查尚未执行（拟合成功后生成，详见日志）");
+                // 2026-09-10：旧档案/草稿重开后未重跑拟合时体检文本为空，此前硬红且无法绕过
+                // （矩阵本身已在位，只是没做本次体检）。诊断模式下降级为黄警。
+                if (RelaxShapeGate)
+                {
+                    Add(1, "矩阵健康检查尚未执行（多为打开既有档案未重跑拟合）——诊断模式已放宽为提醒。"
+                        + "可先保存推进，但强烈建议回到『计算』步重跑一次拟合，让形状/RMS/网格体检重新跑出来。");
+                }
+                else
+                {
+                    Add(2, "矩阵健康检查尚未执行（拟合成功后生成，详见日志）——请回到『计算』步重跑拟合；"
+                        + "若矩阵已确认可用、只想先落盘，可勾选上方『放宽门禁(诊断模式)』放行。");
+                }
             }
             else if (h.Contains("⛔"))
             {
                 // 2026-09-09：形状非法必须红阻。此前当量差 30% 只落进 contains("⚠") 的黄警分支
                 // （"可保存"），坏矩阵被一路存下来 —— 直到校验台实拍才发现偏 20mm。
                 // 落点误差 = 失真 × 差分距离，九点 RMS 小根本发现不了。
-                Add(2, "矩阵健康检查：⛔ 形状非法（各向异性 σ1/σ2 偏离 1）→ 九点数据被污染。"
-                    + "此矩阵用于引导会按距离线性放大误差（失真 22.7% 时跨 80mm 就偏约 19mm），禁止保存发布。"
-                    + "请重做九点：全程同一 Z、每点确认真的走到位、模板别误匹配、相机别动。"
-                    + "若反复重做仍非法，做 XY 位移实测定性：沿 +X 走 15mm 与沿 +Y 走 15mm 各记下特征像素位移——"
-                    + "两数相等=仍是数据问题（继续查九点）；两数不等=相机物理斜视/镜头各向异性（调相机安装，别再重标）。");
+                // 2026-09-10：诊断模式（RelaxShapeGate）下本项降级为黄警——纯软件标定无法根治
+                // 相机安装几何造成的形状失真，允许先保存推进（由走位快检/实拍兜底），现场调相机后重标。
+                if (RelaxShapeGate)
+                {
+                    Add(1, "矩阵健康检查：⛔ 形状非法（各向异性 σ1/σ2 偏离 1）——诊断模式已放宽为提醒。"
+                        + "成因多为相机安装几何（非正交/各向异性/roll 旋转）而非九点数据污染；"
+                        + "确认后仍可保存，但此矩阵用于引导会按距离放大误差，务必用『相机装调助手→走位比对』复核，"
+                        + "现场调平相机（垂直度读数压到≈0）后重标收敛。");
+                }
+                else
+                {
+                    Add(2, "矩阵健康检查：⛔ 形状非法（各向异性 σ1/σ2 偏离 1）→ 九点数据被污染。"
+                        + "此矩阵用于引导会按距离线性放大误差（失真 22.7% 时跨 80mm 就偏约 19mm），禁止保存发布。"
+                        + "请重做九点：全程同一 Z、每点确认真的走到位、模板别误匹配、相机别动。"
+                        + "若反复重做仍非法，做 XY 位移实测定性：沿 +X 走 15mm 与沿 +Y 走 15mm 各记下特征像素位移——"
+                        + "两数相等=仍是数据问题（继续查九点）；两数不等=相机物理斜视/镜头各向异性（调相机安装，别再重标）。");
+                }
             }
             else if (h.Contains("镜像"))
             {
@@ -6456,9 +7946,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     Add(1, "矩阵健康检查：负行列式=眼在手上（相机随动）固有镜像（机械 X+ 时特征图像左移，H 首列反号）——物理正常，不阻断保存；请以 RMS/网格规整为准（其他告警详见日志）");
                 }
+                else if (RelaxShapeGate)
+                {
+                    // 2026-09-10：固定相机(det<0)不是"必然错误"——det 符号取决于【世界 X/Y 轴向约定】与
+                    // 【图像行列方向】的相对关系：俯视相机 + 右手世界系（Y 与图像行方向反向）天然 det<0；
+                    // 换轴映射（如 ZMC 轴号 1/3 → 0/1）也会翻转符号。故诊断模式下降级为黄警，
+                    // 允许先保存推进，由校验台反向金标准(绿十字)与实拍兜底方向/比例正确性。
+                    Add(1, "矩阵健康检查：检测到负行列式（固定相机口径）——诊断模式已放宽为提醒。"
+                        + "det<0 本身不等于错误：俯视相机配右手世界系、或轴映射/符号约定不同都会天然为负"
+                        + "（本档案眼型=固定相机，若实际是相机随动请先改正眼型设置）。"
+                        + "确认方向无误后可保存，请务必用『校验台→②反向 H 单验』画绿十字核对，"
+                        + "或『相机装调助手→走位比对』复核：沿世界 +X/+Y 各走 15mm，看特征是否按预期方向移动。");
+                }
                 else
                 {
-                    Add(2, "矩阵健康检查：检测到负行列式（镜像变换）——固定相机(眼在外)配置下轴方向或相机成像方向疑似配置错误，禁止保存（详见日志）");
+                    Add(2, "矩阵健康检查：检测到负行列式（镜像变换）——固定相机(眼在外)配置下轴方向或相机成像方向疑似配置错误，禁止保存（详见日志）。"
+                        + "若确为轴方向/成像方向约定所致（俯视相机+右手世界系天然 det<0），可勾选上方『放宽门禁(诊断模式)』放行后保存，"
+                        + "并用校验台反向金标准(绿十字)确认方向后再用于生产。");
                 }
             }
             else if (h.Contains("⚠"))
@@ -6513,7 +8017,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var lines = _log.ToString().Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var tail = lines.Length > 60 ? lines.Skip(lines.Length - 60) : lines;
             string text = "===== 标定向导排障块 =====" + Environment.NewLine
-                + "· 类型: " + TargetProfile.Type + "  特征: " + TargetProfile.FeatureType + Environment.NewLine
+                + "· 物理量: " + TargetProfile.Quantity + "  特征: " + TargetProfile.FeatureType + Environment.NewLine
                 + "· 设备相机/运动: " + (SelectedCameraDevice?.DeviceName ?? "未选") + " / " + (SelectedMotionDevice?.DeviceName ?? "未选") + Environment.NewLine
                 + "· 最近日志（60 行）:" + Environment.NewLine
                 + string.Join(Environment.NewLine, tail);

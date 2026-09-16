@@ -133,6 +133,33 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         }
 
         /// <summary>
+        /// ★2026-09-12 定案：像素 → 工件特征真实位置 X_obj（区分"纯 ETH 直吸"与"固定相机+延伸杆标定"）。
+        ///
+        /// 背景：旧 ObjectBase 用 bool eih 一刀切——ETH（固定相机）就直吸 H(u)、不加 O/e。这在
+        ///   "相机直接拍工件本体（吸嘴尖/特征同轴可见）"时是对的（麻将料盘场景）。
+        ///   但【固定相机 + 延伸杆辅助标定】是第三种场景：相机固定、吸嘴尖被遮挡无法直接成像，
+        ///   九点标定用的是延伸杆（mark 偏离吸嘴尖一个 r）。此时 H 标的是【杆端 mark / 相机中心】，
+        ///   不是吸嘴尖——H(u) 只是杆端读数，要精确落点必须叠旋转中心 O 和偏心 e 把 r 消掉。
+        ///   这正是 CalibrationAcquirePath.CameraTruthWalk 的语义（"真值=相机中心，工具尖偏距需补"）。
+        ///
+        /// 判据：needsOCompensation = eih（相机随动） || rodAssistedEth（固定相机但延伸杆标定）。
+        ///   两者消费式数学形式一致，都是 X_obj = P_photo + O − H(u)。
+        /// </summary>
+        /// <param name="wx">H(u).X（像素经矩阵映射后的机械 X）</param>
+        /// <param name="wy">H(u).Y</param>
+        /// <param name="photoX">拍照瞬间机械手命令位 X（P_photo）</param>
+        /// <param name="photoY">拍照瞬间机械手命令位 Y</param>
+        /// <param name="ox">旋转中心 O 的 X（= ToolCenterWx = F0 − r）</param>
+        /// <param name="oy">旋转中心 O 的 Y</param>
+        /// <param name="needsOCompensation">true=需 O 补偿（EIH 或 固定相机+延伸杆标定）；false=纯 ETH 直吸</param>
+        public static (double X, double Y) ObjectBaseV2(
+            double wx, double wy, double photoX, double photoY, double ox, double oy, bool needsOCompensation)
+        {
+            if (!needsOCompensation) return (wx, wy);
+            return (photoX + ox - wx, photoY + oy - wy);
+        }
+
+        /// <summary>
         /// 工件真实位置 → 机械手该走到的位置：P_go = X_obj − R(U_go − U0)·e。
         /// 即"把吸嘴偏心退掉"。吸取（U_go=吸取角）和放料（U_go=放料角，X_obj=摆放位）同一式。
         /// </summary>
@@ -157,6 +184,41 @@ namespace Grayson.Vision.Contracts.Calibration.Models
             var (oxb, oyb) = ObjectBase(wx, wy, photoX, photoY, ox, oy, eih);
             var (cx, cy) = CommandFor(oxb, oyb, ex, ey, uGoDeg, u0Deg);
             return (cx, cy, oxb, oyb);
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 下相机（仰视二次对位）相对纠偏语义（2026-09-12 定案）
+        // ══════════════════════════════════════════════════════════════════
+        //
+        // 与上相机「绝对定位」不同，下相机仰视拍的是【已吸在吸嘴上的悬空工件】，
+        // 它不回答"工件在世界的哪"，只回答"工件相对吸嘴旋转轴偏了多少"。
+        //
+        //   下相机 H_down 是 pixel→robot 命令位域映射（九点标定，真值=吸附工件落点）。
+        //   像素旋转中心 R_cdown（DownCameraPixelRotCenter 标定）＝吸嘴旋转轴在下相机
+        //   图像里的投影（像素）。工件特征成像在 R_img，则：
+        //
+        //       δ = H_down(R_img) − H_down(R_cdown)     （机械偏移）
+        //
+        //   δ 就是"工件中心相对吸嘴旋转轴的机械偏移"。吸嘴反向移动 δ（或放置位 =
+        //   固定位 − R(ΔU)·δ）即可让工件回到旋转轴正下方 / 落到目标位。
+        //
+        // ★ 为何用"两个像素点的机械位之差"而不是"直接读 H_down(R_img) 当绝对坐标"：
+        //   下相机九点的真值是"吸嘴吸工件走到已知机位"，H_down 的平移项里掺着拍照机位，
+        //   绝对读数没有物理意义；只有"相对像素旋转中心的差分"才有意义（消掉平移项）。
+        //
+
+        /// <summary>
+        /// 下相机相对纠偏：工件特征像素 R_img → 机械偏移 δ（相对像素旋转中心 R_cdown）。
+        /// </summary>
+        /// <param name="imgWx">工件特征像素经 H_down 映射后的 X（= H_down(R_img).X）</param>
+        /// <param name="imgWy">工件特征像素经 H_down 映射后的 Y</param>
+        /// <param name="rotWx">像素旋转中心经 H_down 映射后的 X（= H_down(R_cdown).X）</param>
+        /// <param name="rotWy">像素旋转中心经 H_down 映射后的 Y</param>
+        /// <returns>δ = H_down(R_img) − H_down(R_cdown)；吸嘴反向移动 δ 即让工件居中</returns>
+        public static (double Dx, double Dy) DownCameraOffset(
+            double imgWx, double imgWy, double rotWx, double rotWy)
+        {
+            return (imgWx - rotWx, imgWy - rotWy);
         }
     }
 }

@@ -403,6 +403,8 @@
                                                 <ColumnDefinition Width="32"/>
                                             </Grid.ColumnDefinitions>
 
+                                            <!-- 2026-09-11：IsEditable=True 时文本交给 PART_EditableTextBox 显示，
+                                                 这里必须让位（否则只读文本与可编辑框叠字）。 -->
                                             <ContentPresenter Grid.Column="0"
                                                               Margin="10,0,8,0"
                                                               VerticalAlignment="Center"
@@ -411,7 +413,17 @@
                                                               Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                               ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
                                                               ContentStringFormat="{Binding SelectionBoxItemStringFormat, RelativeSource={RelativeSource AncestorType=ComboBox}}"
-                                                              RecognizesAccessKey="True"/>
+                                                              RecognizesAccessKey="True">
+                                                <ContentPresenter.Style>
+                                                    <Style TargetType="ContentPresenter">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsEditable, RelativeSource={RelativeSource AncestorType=ComboBox}}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ContentPresenter.Style>
+                                            </ContentPresenter>
 
                                             <Border Grid.Column="1" Background="Transparent" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
                                                 <Path Data="M 0 0 L 4 4 L 8 0 Z"
@@ -435,6 +447,32 @@
                                 </ControlTemplate>
                             </ToggleButton.Template>
                         </ToggleButton>
+
+                        <!-- 2026-09-11：可编辑 ComboBox 的必需部件。缺它时 IsEditable=True 只生效"半个"——
+                             绑定写得进去、下拉也能选，但既看不到当前值也打不了字（相机槽下拉就是这么哑的）。
+                             非可编辑场景保持 Collapsed，外观与旧版完全一致。 -->
+                        <TextBox x:Name="PART_EditableTextBox"
+                                 Margin="10,0,40,0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                 Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                 CaretBrush="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                 IsReadOnly="{Binding IsReadOnly, RelativeSource={RelativeSource AncestorType=ComboBox}}">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEditable, RelativeSource={RelativeSource AncestorType=ComboBox}}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
 
                         <Popup x:Name="PART_Popup"
                                Placement="Bottom"

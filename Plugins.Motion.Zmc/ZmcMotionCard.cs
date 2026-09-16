@@ -431,6 +431,20 @@ namespace Plugins.Motion.Zmc
         }
 
         /// <summary>
+        /// 【门型运动 Jump】ZMC 脉冲卡没有"门型/点位运动族"这一概念，无法表达
+        /// "先抬到 limZ → 水平走 → 降目标"。
+        ///
+        /// ★这里**显式返回 Fail**，绝不静默按"XY 平移 + 降 Z"顶替：
+        ///   静默顶替会把「安全通过高度被忽略」这件事盖住 —— 正是本次要修的病灶形态
+        ///   （吸持工件在低位横穿 / 走 L 形拐角）。调用方必须拿到 Fail 后**显式降级并留痕**。
+        /// </summary>
+        public Result MoveJump(float x, float y, float z, float u, float limZ, float speed)
+        {
+            return Result.Fail("ZMC 运动卡不支持门型运动(JUMP)，无法表达'先抬到安全高度再水平走'"
+                + "（本卡仅单轴脉冲运动）；调用方应降级为【先抬 Z 到安全高度 → XY 走位 → 再降 Z】的分段走位");
+        }
+
+        /// <summary>
         /// 解析安全的运动速度：speed &lt;= 0 时读取轴当前设定速度（ZAux_Direct_GetSpeed）沿用，
         /// 仍无效则兜底 50。
         /// 严禁 SetSpeed(0) 后下发 MoveAbs：ZMC 控制器速度 0 时指令被缓冲但轴不运动，

@@ -41,7 +41,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ScannedDeviceItemViewModel(DeviceInfo info)
         {
             RawInfo = info;
+            // 默认逻辑名 = 品牌_类别_物理ID；插件若上报了用户自定义名（如海康 MVS 里
+            // 改的 "UpCamera"/"DownCamera"/"MoveCamera"），追加在尾部便于现场对号入座
             TargetDeviceKey = $"{info.BrandName}_{info.Category}_{info.DeviceId}";
+            if (!string.IsNullOrWhiteSpace(info.UserDefName))
+            {
+                TargetDeviceKey += $"_{info.UserDefName.Trim()}";
+            }
         }
     }
 

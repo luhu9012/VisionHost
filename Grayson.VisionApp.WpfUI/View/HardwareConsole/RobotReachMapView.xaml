@@ -1,0 +1,202 @@
+<UserControl x:Class="Grayson.Vision.WpfUI.View.HardwareConsole.RobotReachMapView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignHeight="560" d:DesignWidth="680">
+    <!--
+        可达域与九点预演画布（2026-09-11 新增）。
+
+        设计要点：
+        · 不做几何建模 —— 边界来自 .workbuddy/map_workspace.py 的零运动实测（36 方向径向扫描）。
+          真实可达域 = 圆环 ∩ 关节限位区域，用理想圆环画会产生"假安全"，后果是撞机。
+        · 绿色区域 = 可行基准位集合。把基准位拖进去，9 个点全部安全。
+          这样"标定九点怎么才不撞机"就从"我不知道怎么保证"变成"绿区里随便挑"。
+        · 拖动基准位不触发重算（绿区只和 margin/步长有关），所以拖动是流畅的；
+          margin/步长改动走 200ms 去抖后再重算 512×512 栅格。
+    -->
+    <Border Style="{StaticResource CardBorderStyle}" Padding="14">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ==================== 标题 + 数据来源操作 ==================== -->
+            <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" Text="可达域与九点预演"
+                           Style="{StaticResource SectionTitleTextStyle}" VerticalAlignment="Center"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="📂 载入扫描结果" Command="{Binding LoadReachMapCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" Margin="0,0,6,0"
+                            ToolTip="载入 .workbuddy/_verify_out/workspace_map_*.json（零运动扫描器输出）"/>
+                    <Button Content="👁 示意" Command="{Binding LoadSyntheticReachMapCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" Margin="0,0,6,0"
+                            ToolTip="用理想圆环合成一份示意数据，把界面先跑起来看效果。这不是现场依据——真实可达域必须实测"/>
+                    <Button Content="{Binding ReachScanButtonText}" Command="{Binding ScanReachMapCommand}"
+                            Style="{StaticResource SuccessButtonStyle}" Padding="8,3"
+                            ToolTip="发 CHECK 只读指令扫出真实可达域。机械手原地不动，仅查询，不驱动电机（扫描中再点一次 = 取消）"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- ==================== 画布 ==================== -->
+            <Border Grid.Row="1" Background="#FF121212" CornerRadius="6" ClipToBounds="True"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" MinHeight="330">
+                <Grid>
+                    <Canvas x:Name="PlotRoot" ClipToBounds="True" Background="Transparent"
+                            MouseLeftButtonDown="PlotRoot_MouseLeftButtonDown"
+                            MouseMove="PlotRoot_MouseMove"
+                            MouseLeftButtonUp="PlotRoot_MouseLeftButtonUp"
+                            MouseRightButtonDown="PlotRoot_MouseRightButtonDown"/>
+
+                    <TextBlock x:Name="EmptyHint" IsHitTestVisible="False"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               TextAlignment="Center" FontSize="12" LineHeight="20"
+                               Foreground="{StaticResource TextDisabledBrush}"
+                               Text="尚未载入可达域数据&#10;点右上「📂 载入扫描结果」，或连上控制器后点「📡 零运动实测」&#10;（提示：可先用「示意数据」把界面跑起来看效果）"/>
+
+                    <!-- 左下角：数据自述（防止把示意数据当实测依据） -->
+                    <TextBlock x:Name="DataCaption" IsHitTestVisible="False"
+                               HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                               Margin="8,0,0,6" FontSize="10.5"
+                               Foreground="{StaticResource TextDisabledBrush}"/>
+
+                    <!-- 右下角：操作提示 -->
+                    <TextBlock IsHitTestVisible="False"
+                               HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                               Margin="0,0,8,6" FontSize="10.5" TextAlignment="Right"
+                               Foreground="#66FFFFFF"
+                               Text="左键按住拖动 = 移动基准位&#10;右键 = 基准位回到当前机器位置"/>
+                </Grid>
+            </Border>
+
+            <!-- ==================== 参数与判定 ==================== -->
+            <StackPanel Grid.Row="2" Margin="0,8,0,0">
+
+                <!-- 零运动扫描参数（📡 实测前可指定 Z/U/方向数；留空 Z/U = 用当前机械手位姿） -->
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="56"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="扫描 Z(mm):" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Margin="4,0,0,0"
+                             Text="{Binding ReachScanZ, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="扫描平面的 Z 高度。留空 = 用机械手当前 Z。九点标定在哪个 Z 做，就填/移到哪个 Z"/>
+                    <TextBlock Grid.Column="2" Text="U(°):" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <TextBox Grid.Column="3" Style="{StaticResource ModernTextBoxStyle}" Margin="4,0,0,0"
+                             Text="{Binding ReachScanU, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="扫描平面的 U 姿态。留空 = 用机械手当前 U"/>
+                    <TextBlock Grid.Column="4" Text="方向:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <TextBox Grid.Column="5" Style="{StaticResource ModernTextBoxStyle}" Margin="4,0,0,0"
+                             Text="{Binding ReachScanDirs, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="扫描方向数（8~72）。越多越细也越慢；默认 24"/>
+                    <TextBlock Grid.Column="6" Text="（点右上「📡 零运动实测」开始；扫描中该按钮变「取消」）"
+                               Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap"/>
+                </Grid>
+
+                <!-- 扫描进度（仅扫描期间可见） -->
+                <ProgressBar Height="6" Margin="0,0,0,8" Maximum="100"
+                             Value="{Binding ReachScanProgress, Mode=OneWay}"
+                             Visibility="{Binding ReachScanProgressVisible, Converter={StaticResource BoolToVisibilityConverter}}"/>
+
+                <!-- 基准位 -->
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="基准位 X / Y (mm):"
+                               Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Margin="6,0"
+                             Text="{Binding ReachBaseX, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="也可直接在左侧画布上按住拖动来移动基准位"/>
+                    <TextBox Grid.Column="3" Style="{StaticResource ModernTextBoxStyle}" Margin="6,0"
+                             Text="{Binding ReachBaseY, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Button Grid.Column="4" Content="📍 取当前位置" Command="{Binding UseCurrentPosAsBaseCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Padding="8,4" Margin="0,0,6,0"
+                            ToolTip="把基准位设为机械手当前所在位置"/>
+                    <Button Grid.Column="5" Content="⭐ 用最稳位置" Command="{Binding UseBestBaseCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}" Padding="8,4"
+                            ToolTip="跳到绿区里余量最大的位置（最大内接圆圆心）"/>
+                </Grid>
+
+                <!-- 网格参数 -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="步长(mm):" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <TextBox Width="56" Margin="6,0,10,0" Style="{StaticResource ModernTextBoxStyle}"
+                             Text="{Binding ReachStepMm, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="margin(mm):" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <TextBox Width="56" Margin="6,0,10,0" Style="{StaticResource ModernTextBoxStyle}"
+                             Text="{Binding ReachMarginMm, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="安全余量：九点内圈离可达内边界、外圈离可达外边界都要留出的距离"/>
+                    <TextBlock Text="眼型:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <ComboBox Width="118" Margin="6,0,10,0" Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding ReachEyeModeOptions}"
+                              SelectedIndex="{Binding ReachEyeModeIndex}"/>
+                    <TextBlock Text="走位:" Style="{StaticResource FormLabelStyle}" VerticalAlignment="Center"/>
+                    <ComboBox Width="132" Margin="6,0,0,0" Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding ReachTraverseModeOptions}"
+                              SelectedIndex="{Binding ReachModeIndex}"/>
+                </StackPanel>
+
+                <!-- 显示开关 + 网格镜像 -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <CheckBox Content="可达域" IsChecked="{Binding ShowReachDomain}"
+                              VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"/>
+                    <CheckBox Content="margin 安全线" IsChecked="{Binding ShowMarginBand}"
+                              VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"/>
+                    <CheckBox Content="九点网格" IsChecked="{Binding ShowReachGrid}"
+                              VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"/>
+                    <CheckBox Content="可行基准位(绿区)" IsChecked="{Binding ShowFeasibleZone}"
+                              VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"/>
+                    <CheckBox Content="X 轴反向" IsChecked="{Binding ReachInvertX}"
+                              VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
+                              ToolTip="与标定向导的轴镜像开关一致；影响九点落在基准位的哪一侧"/>
+                    <CheckBox Content="Y 轴反向" IsChecked="{Binding ReachInvertY}"
+                              VerticalAlignment="Center" FontSize="12"/>
+                </StackPanel>
+
+                <!-- 判定结论 -->
+                <TextBlock Text="{Binding ReachVerdictText}" FontSize="12" TextWrapping="Wrap"
+                           Margin="0,2,0,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ReachVerdictLevel}" Value="1">
+                                    <Setter Property="Foreground" Value="#FF00E676"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ReachVerdictLevel}" Value="2">
+                                    <Setter Property="Foreground" Value="#FFFF9800"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding ReachVerdictLevel}" Value="3">
+                                    <Setter Property="Foreground" Value="#FFE53935"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- 二次确认：开走前把 9 个点交给控制器自己判一次 -->
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button Content="🔎 开走前校验（9 次 CHECK）" Command="{Binding PrecheckGridCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}" Padding="10,4" Margin="0,0,10,0"
+                            ToolTip="逐点发只读 CHECK 交由控制器裁决（零运动）。本机几何判定 + 控制器裁决双重把关"/>
+                    <TextBlock Text="{Binding ReachActionText}" Style="{StaticResource FormLabelStyle}"
+                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

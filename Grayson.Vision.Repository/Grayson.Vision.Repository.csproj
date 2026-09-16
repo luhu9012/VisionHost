@@ -59,6 +59,7 @@
     <Compile Include="Entities\StationConfigPo.cs" />
     <Compile Include="Entities\UserPo.cs" />
     <Compile Include="Implementations\LiteDbCalibrationProfileRepository.cs" />
+    <Compile Include="Implementations\JsonCalibrationProfileRepository.cs" />
   <Compile Include="Implementations\LiteDbDeviceConfigRepository.cs" />
     <Compile Include="Implementations\LiteDbInspectionLogRepository.cs" />
     <Compile Include="Implementations\LiteDbRecipeRepository.cs" />

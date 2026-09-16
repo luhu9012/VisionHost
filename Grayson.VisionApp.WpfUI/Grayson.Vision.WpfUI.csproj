@@ -84,7 +84,6 @@
     <Compile Include="Service\IAuthenticationService.cs" />
     <Compile Include="Service\INavigationAware.cs" />
     <Compile Include="Service\CalibrationMotionFacade.cs" />
-    <Compile Include="Service\CalibrationPlanEngine.cs" />
     <Compile Include="Service\INavigationService.cs" />
     <Compile Include="Service\LiteDbAuthenticationService.cs" />
     <Compile Include="Service\MockMesBridgeService.cs" />
@@ -115,10 +114,10 @@
     <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\AlarmViewModel.cs" />
     <Compile Include="Model\CommonModel.cs" />
+    <Compile Include="Model\ReachMapData.cs" />
     <Compile Include="ViewModel\CalibrationManagerViewModel.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationToolOffsetViewModel.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationVerifierViewModel.cs" />
-    <Compile Include="ViewModel\Calibration\CalibrationVerifierViewModel.Geometry.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationWizardViewModel.cs" />
     <Compile Include="ViewModel\Calibration\Steps\CheckerboardCalibrationStrategy.cs" />
     <Compile Include="ViewModel\Calibration\Steps\HandEyeWithRotationCalibrationStrategy.cs" />
@@ -232,6 +231,9 @@
     <Compile Include="View\HardwareConsole\RobotDebugView.xaml.cs">
       <DependentUpon>RobotDebugView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="View\HardwareConsole\RobotReachMapView.xaml.cs">
+      <DependentUpon>RobotReachMapView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="View\HardwareSelectWindow.xaml.cs">
       <DependentUpon>HardwareSelectWindow.xaml</DependentUpon>
     </Compile>
@@ -291,6 +293,7 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Common\ReachMapGeometry.cs" />
     <Compile Include="Common\Converters.cs" />
     <Compile Include="Common\Enums.cs" />
     <Compile Include="Common\GlobalData.cs" />
@@ -385,6 +388,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\HardwareConsole\RobotDebugView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\HardwareConsole\RobotReachMapView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

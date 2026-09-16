@@ -89,7 +89,10 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             if (hasT) return;
 
             string station = Norm.Trim(profile.BoundStationCode);
-            string slot = Norm.Trim(profile.CameraId);
+            // 2026-09-11：优先显式槽字段（与 Planner/LegacyMapper 同口径）——
+            // 只看 CameraId 会在绑物理相机后恒归一成 Cam_01，上下相机任务卡撞同一槽。
+            string slot = Norm.Trim(profile.CameraSlotKey);
+            if (string.IsNullOrWhiteSpace(slot)) slot = Norm.Trim(profile.CameraId);
             if (!slot.StartsWith("Cam_", StringComparison.OrdinalIgnoreCase)) slot = "Cam_01";
             string nz = Norm.Trim(profile.NozzleKey);
             if (string.IsNullOrWhiteSpace(nz)) nz = "1";
@@ -126,7 +129,15 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             cards.Add(t);
         }
 
-        /// <summary>档案级旋转证据（与 HasRotationEvidence 同判据，供草稿卡偏心实证用）</summary>
+        /// <summary>
+        /// 档案级旋转证据（供草稿卡偏心实证用）：基准角 U0 / 回转中心 O（世界或像素）/ 偏心矢 任一在位。
+        ///
+        /// ★★2026-09-15 修正：**删掉 `p.HasToolOffset`**。该字段由向导在"会话规格含旋转段"时
+        ///   **一进会话就自动置 true**（见 CalibrationWizardViewModel 的预设段，早于任何采样）⇒
+        ///   它是【声明要转】不是【真的转出了结果】。拿它当证据 ⇒ "勾了旋转类型但旋转段没跑/跑失败"
+        ///   的档案会被判成"有旋转证据"（假绿：草稿卡凭空出现、e 卡显示已完成）。
+        ///   ⇒ 证据一律**只认数值**。判据与 CalibrationCardDeriver.HasRotationEvidence 同源同口径。
+        /// </summary>
         private static bool HasRotationEvidenceOnProfile(CalibrationProfile p)
         {
             return p.CalibU0.HasValue
@@ -135,8 +146,7 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                    || Math.Abs(p.ToolEccWx) > 1e-9
                    || Math.Abs(p.ToolEccWy) > 1e-9
                    || Math.Abs(p.ToolCenterPx) > 1e-9
-                   || Math.Abs(p.ToolCenterPy) > 1e-9
-                   || p.HasToolOffset;
+                   || Math.Abs(p.ToolCenterPy) > 1e-9;
         }
 
         // ==================== 卡片构建 ====================
@@ -262,7 +272,15 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                            || card.State == CalibrationArtifactState.Published;
         }
 
-        /// <summary>旋转数据证据（e 卡）：圆心/偏心/基准角任一有值即算跑过旋转段</summary>
+        /// <summary>
+        /// 旋转数据证据（e 卡）：圆心/偏心/基准角任一有值即算跑过旋转段。
+        ///
+        /// ★★2026-09-15 修正：**删掉 `p.HasToolOffset`**。它是向导"会话含旋转段"时自动置位的**声明**，
+        ///   不是结果（详见 HasRotationEvidenceOnProfile 的说明）。保留它的后果是本函数的调用点
+        ///   （`case CalibrationQuantity.ToolRotation`）会把"旋转段未执行/无结果"的档案判成 dataOk
+        ///   ⇒ e 卡从 Draft 被提升为 SampleComplete ⇒ **UI 显示已完成，实际没标**（假绿）。
+        ///   该调用点的 dataNote 本来写的就是"旋转段未执行/无结果"，却被这个 OR 项短路了。
+        /// </summary>
         private static bool HasRotationEvidence(CalibrationArtifact a, CalibrationProfile p)
         {
             return p.CalibU0.HasValue
@@ -271,8 +289,7 @@ namespace Grayson.Vision.Contracts.Calibration.Services
                    || Math.Abs(p.ToolEccWx) > 1e-9
                    || Math.Abs(p.ToolEccWy) > 1e-9
                    || Math.Abs(p.ToolCenterPx) > 1e-9
-                   || Math.Abs(p.ToolCenterPy) > 1e-9
-                   || p.HasToolOffset;
+                   || Math.Abs(p.ToolCenterPy) > 1e-9;
         }
 
         // ==================== 依赖联动 ====================
@@ -407,10 +424,16 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             switch (quantity)
             {
                 case CalibrationQuantity.HandEye:
-                    // 矩阵路径变（换文件/重新落盘到新路径）→ 需确认重标；同路径覆盖内容变化本轮不感知（见 P4 记录）
+                    // ★★2026-09-15 修正：不能只用路径 —— 九点重标恰恰是【同路径覆盖内容】的
+                    //   （矩阵文件名由方案名派生 ⇒ 方案名不变则路径不变）。旧写法 "H|路径" 让
+                    //   "重标过、内容已变"的档案指纹与发布时**完全相同** ⇒ 卡片继续显示"已发布"
+                    //   （数据已变、指纹不变 ⇒ Expired 联动失效 = 静默陈旧，与本次反复抓的假绿同族）。
+                    //   现把矩阵【内容摘要】折进指纹：存在 → "H|路径|<md5前16>/<bytes>"。
+                    //   ⚠ 格式变更后，历史发布标记（旧格式 "H|路径"）必然不等 ⇒ 首次比对即判 Expired。
+                    //     这是**保守方向**（宁可要求重标/重发布），符合"发布后数据变更需重新确认"的本意。
                     return string.IsNullOrWhiteSpace(p.HomMatFilePath)
                         ? null
-                        : "H|" + p.HomMatFilePath;
+                        : "H|" + p.HomMatFilePath + "|" + FileDigest(p.HomMatFilePath);
 
                 case CalibrationQuantity.ToolRotation:
                     return "e|" + FmtNum(p.CalibU0) + "|" + FmtNum(p.ToolCenterWx) + "|" + FmtNum(p.ToolCenterWy)
@@ -427,6 +450,30 @@ namespace Grayson.Vision.Contracts.Calibration.Services
         private static string FmtNum(double? v)
         {
             return v.HasValue ? v.Value.ToString("0.######", CultureInfo.InvariantCulture) : "-";
+        }
+
+        /// <summary>
+        /// ★2026-09-15：矩阵文件内容摘要（md5 前 16 hex + 字节数），供 H 的发布指纹用。
+        /// 文件不可读/不存在 → "?"（显式表示"取不到"，绝不静默当成"没变"）。
+        /// </summary>
+        private static string FileDigest(string path)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path)) return "?";
+                using (var md5 = System.Security.Cryptography.MD5.Create())
+                using (var fs = System.IO.File.OpenRead(path))
+                {
+                    var hash = md5.ComputeHash(fs);
+                    var sb = new System.Text.StringBuilder(20);
+                    for (int i = 0; i < 8; i++) sb.Append(hash[i].ToString("x2"));
+                    return sb.ToString() + "/" + new System.IO.FileInfo(path).Length;
+                }
+            }
+            catch
+            {
+                return "?";
+            }
         }
 
         private static string FmtNum(double v)

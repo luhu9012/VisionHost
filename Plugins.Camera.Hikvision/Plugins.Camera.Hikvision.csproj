@@ -32,7 +32,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="MvCamCtrl.Net">
-      <HintPath>..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\MvCamCtrl.Net.dll</HintPath>
+      <!-- 2026-09-10：原路径 ..\..\Grayson.VisionApp\HardwarePlugins\bin\Debug\ 已不存在，
+           导致本工程整体编译失败（MvCamCtrl/CCameraInfo 等全部 CS0246），进而阻断 WpfUI 编译。
+           改指向仓库内 SDK 目录 DLLLib（与 halcondotnet/zmotion 同级）。 -->
+      <HintPath>..\DLLLib\MvCamCtrl.Net.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>

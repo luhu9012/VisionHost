@@ -6,6 +6,36 @@
         Width="1180" Height="720"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}">
+    <Window.Resources>
+        <!-- 单轴步进 RepeatButton 样式：按下高亮、禁用透明（与机械臂调试窗口同款） -->
+        <Style x:Key="StepRepeatBtnStyle" TargetType="RepeatButton">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Margin" Value="1"/>
+            <Setter Property="Delay" Value="450"/>
+            <Setter Property="Interval" Value="260"/>
+            <Setter Property="ToolTip" Value="单击走一步；按住连续微动（松开即停，最多再走一步）"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="0,3">
+                            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -69,10 +99,14 @@
                     <halcon:HalconImageDisplayHost x:Name="ImageHost"
                                                    DataContext="{Binding ImageDisplay}"
                                                    ShowToolbar="True"/>
+                    <!-- 点选覆盖层：上边距让出工具栏区（TopReservedHeight），鼠标移到工具栏恢复正常点击/悬停，不再被覆盖层抢走 -->
                     <Border Background="Transparent"
                             PreviewMouseLeftButtonDown="Overlay_PreviewMouseLeftButtonDown"
-                            Cursor="Cross">
-                        <TextBlock Text="点选特征 P 的真实位置(A') — 到位前不会动轴"
+                            PreviewMouseMove="Overlay_PreviewMouseMove"
+                            PreviewMouseLeftButtonUp="Overlay_PreviewMouseLeftButtonUp"
+                            Cursor="Cross"
+                            Margin="{Binding TopReservedHeight, ElementName=ImageHost, Converter={StaticResource TopMarginConverter}}">
+                        <TextBlock Text="拖动黄色 B 点到特征 P 真实位置松开写入，或直接点选 P"
                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4"
                                    Foreground="#88000000" FontSize="11" Background="#22000000" Padding="10,3"/>
                     </Border>
@@ -105,23 +139,82 @@
                     <!-- ① 步进对针 -->
                     <TextBlock Grid.Row="1" Text="① 低速步进对准特征 P" FontSize="12" FontWeight="Bold"
                                Margin="0,10,0,0" Foreground="#FF25579B"/>
-                    <WrapPanel Grid.Row="2" Margin="0,6,0,0">
-                        <UniformGrid Columns="2" Width="150" Margin="0,0,8,0">
-                            <Button Content="-X" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding StepMoveCommand}"
-                                    CommandParameter="-x" Height="26" Margin="0,0,4,4"/>
-                            <Button Content="+X" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding StepMoveCommand}"
-                                    CommandParameter="+x" Height="26" Margin="0,0,0,4"/>
-                            <Button Content="-Y" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding StepMoveCommand}"
-                                    CommandParameter="-y" Height="26" Margin="0,0,4,0"/>
-                            <Button Content="+Y" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding StepMoveCommand}"
-                                    CommandParameter="+y" Height="26"/>
-                        </UniformGrid>
-                        <StackPanel VerticalAlignment="Top">
-                            <ComboBox Width="80" ItemsSource="{Binding StepSizeOptions}" SelectedItem="{Binding StepSize}"
-                                      VerticalAlignment="Center"/>
-                            <TextBlock Text="步距 mm" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}"/>
+                    <StackPanel Grid.Row="2" Margin="0,6,0,0">
+                        <DockPanel Margin="0,0,0,6">
+                            <TextBlock Text="单轴步进（单击单步 / 按住连续）" FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="步长 (mm/°):" FontSize="10" Foreground="{DynamicResource TextDisabledBrush}" VerticalAlignment="Center"/>
+                                <ComboBox Width="64" Margin="4,0,0,0" ItemsSource="{Binding StepSizeOptions}" SelectedItem="{Binding StepSize}"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DockPanel>
+                        <!-- 示教遥控器式键位：左 3×3 十字方向键（X/Y 平面）＋右 Z/U 键组 -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="56"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="56"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="40"/>
+                                    <RowDefinition Height="40"/>
+                                    <RowDefinition Height="40"/>
+                                </Grid.RowDefinitions>
+
+                                <RepeatButton Grid.Row="0" Grid.Column="1" Content="▲ Y+"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="+y"
+                                              Background="#27AE60" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="Y+ 正向微动（示教遥控：上键）"/>
+                                <RepeatButton Grid.Row="1" Grid.Column="0" Content="◀ X−"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="-x"
+                                              Background="#3498DB" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="X− 负向微动（示教遥控：左键）"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="X / Y"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" FontSize="10"/>
+                                <RepeatButton Grid.Row="1" Grid.Column="2" Content="X+ ▶"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="+x"
+                                              Background="#3498DB" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="X+ 正向微动（示教遥控：右键）"/>
+                                <RepeatButton Grid.Row="2" Grid.Column="1" Content="▼ Y−"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="-y"
+                                              Background="#27AE60" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="Y− 负向微动（示教遥控：下键）"/>
+                            </Grid>
+
+                            <Border Width="1" Background="{DynamicResource BorderBrush}" Height="72" Margin="14,2"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="56"/>
+                                    <ColumnDefinition Width="56"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="40"/>
+                                    <RowDefinition Height="40"/>
+                                </Grid.RowDefinitions>
+
+                                <RepeatButton Grid.Row="0" Grid.Column="0" Content="▲ Z+"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="+z"
+                                              Background="#E67E22" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="Z+ 上行微动"/>
+                                <RepeatButton Grid.Row="1" Grid.Column="0" Content="▼ Z−"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="-z"
+                                              Background="#E67E22" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="Z− 下行微动"/>
+                                <RepeatButton Grid.Row="0" Grid.Column="1" Content="U+"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="+u"
+                                              Background="#8E44AD" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="U+ 正向旋转（角度增大）"/>
+                                <RepeatButton Grid.Row="1" Grid.Column="1" Content="U−"
+                                              Command="{Binding StepMoveCommand}" CommandParameter="-u"
+                                              Background="#8E44AD" Style="{StaticResource StepRepeatBtnStyle}"
+                                              ToolTip="U− 反向旋转（角度减小）"/>
+                            </Grid>
                         </StackPanel>
-                    </WrapPanel>
+                    </StackPanel>
 
                     <Button Grid.Row="3" Content="📌 工具头已对准特征 —— 锁定 M_tool"
                             Style="{StaticResource PrimaryButtonStyle}" Height="34" Margin="0,8,0,0"

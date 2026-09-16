@@ -78,6 +78,7 @@ namespace Grayson.Vison.FlowEdit.Views
             if (node == null) return;
 
             _previewAdapter = new HalconDisplayContextAdapter(PreviewHost);
+            PreviewHost.LogTag = "节点属性面板"; // 显示层日志带窗口身份（多窗口并存时才判得出谁画了、谁清了）
             ParentFlowVm.OnPreviewExecuted += HidePreviewHint;
             ParentFlowVm.AttachPreview(_previewAdapter, node);
             _previewAttached = true;

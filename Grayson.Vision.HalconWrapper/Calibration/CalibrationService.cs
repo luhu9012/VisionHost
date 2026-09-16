@@ -424,7 +424,7 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 {
                     win.DrawRecorded(w =>
                     {
-                        w.SetFont("-Adobe-Helvetica-Bold-*-*-*-*-28-*-*-*-*-*-*");
+                        HalconGlobalHelper.SetFontSafe(w, 28);
                         HalconGlobalHelper.DispTextSafe(w, text, "window", 8, 8, color);
                     });
                 }
@@ -910,9 +910,30 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 bool badShape = double.IsNaN(aniso) || Math.Abs(aniso - 1.0) > 0.03;
                 sb.Append($"① 像素当量: col={sCol:F5} row={sRow:F5} mm/px，两轴差 {scaleRatio * 100:F2}% ｜ "
                     + (badShape
-                        ? $"⛔ 形状非法（各向异性 σ1/σ2={aniso:F3}，应≈1.000）→ 九点数据被污染（走位没到位/点对错位/采样 Z 不一致/模板误匹配），此矩阵禁止用于引导"
+                        ? $"⛔ 形状非法（各向异性 σ1/σ2={aniso:F3}，应≈1.000）"
                         : $"✓ 形状合法（各向异性 σ1/σ2={aniso:F3}）"));
                 sb.AppendLine();
+
+                // ①.x ★ 2026-09-10 二轮：形状非法时的【定向归因】。
+                //   历史教训：此处原写"九点数据被污染（走位没到位/点对错位/采样 Z 不一致/模板误匹配）"，
+                //   把操作员往"重做九点/查模板"方向带——但现场三次独立实测（手动 JOG 13.78%、
+                //   两轮九点 1.490/1.478）都指向【世界侧轨迹非直线】，与相机/模板/采样无关。
+                //   故改为按"失真量"给出可操作的排查顺序，并把决定性实验（直线性探针）写在第一条。
+                if (badShape)
+                {
+                    double anisoPct = (aniso - 1.0) * 100.0;
+                    sb.AppendLine($"   ↳ 失真量 {anisoPct:F1}%。按可能性排查（顺序勿颠倒）：");
+                    sb.AppendLine("     ① 【决定性】跑『📐 直线性探针』（步骤2 数据采集页）：沿世界 +X 走 0/20/40mm，");
+                    sb.AppendLine("        验三点是否共线。弦弧差 >10px = 走位轨迹是弧线 → 世界侧问题，与相机无关；");
+                    sb.AppendLine("        <2px = 轨迹直 → 才轮到查相机安装/对焦、标定板平面度、采样 Z 一致性。");
+                    sb.AppendLine("     ② 走位是否走了 CP 直线：日志应出现 LMOVE（非 MOVE）。出现 LMOVE 但探针仍报弧线");
+                    sb.AppendLine("        → RC+ 侧脚本未『停止任务→重新编译→运行』，跑的还是旧版。");
+                    sb.AppendLine("     ③ RC+ 项目里机器人型号/臂长参数是否与实际机型一致（臂长错 → 逆解关节角偏，CP 也走歪）。");
+                    sb.AppendLine("     ④ 基准位是否靠近可达域内圈/外圈边界或奇异点（换到环带中腰重测）。");
+                    sb.AppendLine("     ⚠ 已排除：相机斜视（需倾角 " +
+                                  (aniso > 1.0 ? $"{Math.Acos(Math.Min(1.0, 1.0 / aniso)) * 180.0 / Math.PI:F1}°" : "—") +
+                                  "，物理不可能）、单点采样污染（留一法剔除任一点失真不变）。");
+                }
 
                 // ② 正交性：非对角项相对主轴缩放
                 double shearX = Math.Abs(h12) / Math.Max(Math.Abs(h11), 1e-9);

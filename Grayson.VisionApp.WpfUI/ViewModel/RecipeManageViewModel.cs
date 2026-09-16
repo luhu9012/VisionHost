@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 
+using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Infrastructure.Permission;
 using Grayson.Vision.Contracts.Recipe.Models;
@@ -139,8 +140,35 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     OnPropertyChanged(nameof(ShowApproveApproval));
                     OnPropertyChanged(nameof(ShowRejectApproval));
                     OnPropertyChanged(nameof(BoundStationsSummary));
+                    OnPropertyChanged(nameof(MainProcessName));
                     RaiseCommandsCanExecuteChanged();
                 }
+            }
+        }
+
+        /// <summary>
+        /// 🌟 2026-09-10 新增：「编排流程（主流程）」名称 —— 与配方名称相互独立，均可编辑。
+        /// 它同时就是视觉流程编辑器面包屑 / 顶部「主流程:」显示的那个名字。
+        /// 历史配方 JSON 可能没有 MainProcess 节点，故 getter 做空安全，setter 在首次输入时按需补建容器。
+        /// </summary>
+        public string MainProcessName
+        {
+            get => SelectedRecipe?.MainProcess?.ProcessName ?? string.Empty;
+            set
+            {
+                if (SelectedRecipe == null) return;
+
+                if (SelectedRecipe.MainProcess == null)
+                {
+                    if (string.IsNullOrWhiteSpace(value)) return;
+                    SelectedRecipe.MainProcess = new FlowProcessModel { ProcessName = value };
+                }
+                else if (!string.Equals(SelectedRecipe.MainProcess.ProcessName, value, StringComparison.Ordinal))
+                {
+                    SelectedRecipe.MainProcess.ProcessName = value;
+                }
+
+                OnPropertyChanged();
             }
         }
 

@@ -1,0 +1,65 @@
+<UserControl x:Class="VisualCalibTool.Controls.DistortionImpactView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+      ★「去畸变后会好多少」对比视图（P0 第 10 步，决策 3 的界面出口）。
+
+      为什么要有它：
+        决策 3 定的是「先量化再定」—— 到底要不要为畸变改消费语义，得先看**毫米级**
+        的影响量有多大。量化早就有了（Algorithm/DistortionImpactAnalyzer），
+        但只有产物和日志的话，现场的人是看不到的：既不知道该不该处理，
+        也不知道处理了能好多少。这一屏就是把那几个数变成一眼能判断的东西。
+
+      ★ 界面文案里<b>不出现 κ / k1 / LOO / σ1</b> 这些字（与向导面板同规矩）：
+        要做的是「偏了多少毫米、值不值得处理」，不是再开一课。
+        数字照给，但主语是"落点会偏多少"，不是"矩阵的性质"。
+    -->
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!--
+                  ★ 必须**自己**合并主题：构造内层 UserControl 时它还没有父级，
+                    StaticResource 只能查到"本控件自己的资源 + Application.Resources"，
+                    宿主那份此时还没接上 —— 不自带就是启动即崩（VctCardStyle 找不到）。
+                -->
+                <ResourceDictionary Source="/VisualCalibTool.Wpf;component/Themes/Theme.Dark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+        <StackPanel>
+            <Border Style="{StaticResource VctCardStyle}" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="去畸变后会好多少" Style="{StaticResource VctHeaderStyle}" />
+                    <TextBlock x:Name="VerdictText"
+                               Style="{StaticResource VctTextStyle}"
+                               Text="（还没量过）"
+                               TextWrapping="Wrap"
+                               Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource VctCardStyle}" Padding="10" Margin="0,8,0,0">
+                <StackPanel>
+                    <TextBlock Text="量级" Style="{StaticResource VctCaptionStyle}" />
+                    <Grid x:Name="KpiGrid" Margin="0,8,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource VctCardStyle}" Padding="10" Margin="0,8,0,0">
+                <StackPanel>
+                    <TextBlock Text="越往画面边角，偏得越多" Style="{StaticResource VctCaptionStyle}" />
+                    <Canvas x:Name="ChartCanvas"
+                            Height="200"
+                            Margin="0,8,0,0"
+                            SizeChanged="ChartCanvas_SizeChanged" />
+                    <TextBlock x:Name="AxisText"
+                               Style="{StaticResource VctCaptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

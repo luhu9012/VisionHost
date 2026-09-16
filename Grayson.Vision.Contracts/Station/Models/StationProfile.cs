@@ -46,14 +46,53 @@ namespace Grayson.Vision.Contracts.Station.Models
         /// <summary>拍照方式：精拍 / 飞拍（槽级；与旧单相机字段 ShootMode 同语义）</summary>
         public string ShootMode { get; set; }
 
-        /// <summary>是否随执行机构移动（眼在手上=true；固定安装=false）。null=未答</summary>
-        public bool? MovesWithActuator { get; set; }
+        /// <summary>
+        /// 相机与轴的跟随关系（★2026-09-12 增补，G5 缺口）：表达相机随执行机构哪些轴联动。
+        /// 取值（自由文本，向导给固定选项）：固定 / 跟随X / 跟随XY / 跟随XYZ / 跟随XYU / 跟随XYZU / 跟随XZU …
+        /// 语义：轴名取自执行机构轴约定（SCARA: X/Y/Z/U；双滑台: X/Y左/Y右/Z…）。
+        /// 对消费语义的影响：
+        ///   · 固定（不随任何轴）→ EyeToHand，X_obj=H(u)，标定面与作业面一致；
+        ///   · 跟随XY（不随ZU）→ 相机随水平面动，但 Z 升降与 U 旋转时相机不动 → 拍照高度/角度独立；
+        ///   · 跟随XYZU → 相机全随动（真眼在手上）→ X_obj=P_photo+O−H(u)。
+        /// ⚠ 随动/固定的粗粒度判据以 InstallKind 为准（眼在手上=随动、固定/斜拍=固定），
+        ///   本字段是精粒度补充（随哪些轴、是否随 Z）。消费时本字段优先于 InstallKind 细化。
+        /// </summary>
+        public string AxisFollows { get; set; }
 
         /// <summary>光轴与工面：垂直拍摄 / 斜拍（斜拍建议畸变矫正前置）</summary>
         public string AxisToSurface { get; set; }
 
+        /// <summary>
+        /// 标定板可用性：true=该相机视野内可放标定板（棋盘格/圆点阵列，走内参+畸变标定）；
+        /// false=无标定板（走九点走位，可能需延伸杆/吸放件辅助）；null=未答（裁决时应提示补填）。
+        /// ★ G1 缺口字段（2026-09-12 增补）：决定 H 走「棋盘格内参」还是「九点走位」。
+        /// </summary>
+        public bool? UsesCalibrationBoard { get; set; }
+
         /// <summary>备注（相机型号倾向 / FOV 诉求等，自由文本）</summary>
         public string Remark { get; set; }
+
+        /// <summary>
+        /// 槽停用标记（★2026-09-12 增补）：true=本槽暂不参与推导/装配（如 ST_002 的 Cam_D
+        /// 眼在手上相机暂用不到，保留定义但标记停用）。停用槽不派生标定任务、不参与装配旅程。
+        /// </summary>
+        public bool IsDisabled { get; set; }
+
+        /// <summary>
+        /// 标定板可用性三态字符串视图（仅 UI 编辑用，不序列化）：空串=待确认 / 有标定板 / 无标定板。
+        /// ★ 槽级 UI 编辑项（2026-09-12 增补）：多相机工位各槽标定板条件不同，需逐槽可配。
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string UsesCalibrationBoardText
+        {
+            get => UsesCalibrationBoard == true ? "有标定板" : UsesCalibrationBoard == false ? "无标定板" : string.Empty;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value)) UsesCalibrationBoard = null;
+                else if (value == "有标定板") UsesCalibrationBoard = true;
+                else UsesCalibrationBoard = false;
+            }
+        }
     }
 
     /// <summary>
@@ -96,6 +135,12 @@ namespace Grayson.Vision.Contracts.Station.Models
 
         /// <summary>工具与法兰/旋转轴同心？true=同心 / false=偏心 —— 是否需要旋转中心标定+偏心补偿</summary>
         public bool? ConcentricWithRotationAxis { get; set; }
+
+        /// <summary>
+        /// 标定板可用性（工位级兜底，旧单相机档案无槽时使用）：true=可用 / false=不可用 / null=未答。
+        /// ★ 槽级优先（VisionSlotInfo.UsesCalibrationBoard），本字段仅在无 CameraSlots 或槽未答时兜底。
+        /// </summary>
+        public bool? UsesCalibrationBoard { get; set; }
 
         /// <summary>角度需求：抓取/放置是否带角度 —— 影响模板角度范围与输出→旋转轴</summary>
         public string AngleNeed { get; set; }

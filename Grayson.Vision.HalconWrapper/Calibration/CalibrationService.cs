@@ -854,7 +854,7 @@ namespace Grayson.Vision.HalconWrapper.Calibration
                 var save = Calib2DTool.SaveHomMatToFile(res.Data, tmp);
                 if (!save.Success) return Result<CalibrationResult>.Fail("矩阵保存失败: " + save.Message);
 
-                // ── 矩阵健康检查（面试/现场亮点：不止 RMS，还要度量矩阵几何合理性）──
+                // ── 矩阵健康检查（不止 RMS，还要度量矩阵几何合理性）──
                 // ① 两轴像素当量一致性：理想正交安装下 H11≈H22（像素→mm 缩放应各向同性）
                 // ② 正交性：|H12|、|H21| 相对主轴缩放应很小（否则轴/相机安装有剪切）
                 // ③ 行列式：负值 = 镜像变换（轴方向/相机成像镜像，标定语义可能不对）

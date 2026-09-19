@@ -18,7 +18,6 @@ obj/
 *.user
 *.userosscache
 *.sln.docstates
-*.slnx
 
 # NuGet 本地包文件夹（packages.config保留，文件夹忽略）
 packages/
@@ -86,3 +85,18 @@ desktop.ini
 
 # 个人简历文件夹（含独立 git 仓库与本地履历，不入库）
 resume/
+InterviewPrep/
+Archive/
+
+# ============================================
+# 远程仓库清理（2026-09-19）：仓库只保留干净的项目源码
+# ============================================
+# 所有文档一律本地化，仅保留各级 README*（根目录 README.md + 各工程说明）
+*.md
+!README.md
+!**/README*.md
+
+# 根目录过程产物（学习笔记/操作单/Epson 脚本/事实表等）
+/*.html
+/*.json
+/*.prg

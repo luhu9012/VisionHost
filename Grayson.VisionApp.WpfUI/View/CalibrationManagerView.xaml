@@ -37,6 +37,9 @@
                                            Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
+                        <Button Content="{Binding ChainStatusText}" Command="{Binding OpenChainVerifyCommand}"
+                                FontSize="11" Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
+                                ToolTip="当前定位工位的 Chain.json 审计摘要（范式2 链状态；点击打开链校验台）。"/>
                     </StackPanel>
                 </DockPanel>
                 <StackPanel Grid.Row="1" Margin="0,6,0,0">

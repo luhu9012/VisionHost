@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
+using Grayson.Vision.Contracts.Calibration.Chain;
 using Grayson.Vision.Contracts.Calibration.Models;
 using Grayson.Vision.Contracts.Calibration.Services;
 using Grayson.Vision.Contracts.Devices;
@@ -1363,6 +1364,28 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(IsStationScope));
             OnPropertyChanged(nameof(ScopeChipText));
             OnPropertyChanged(nameof(ScopeHintText));
+            OnPropertyChanged(nameof(ChainStatusText));
+        }
+
+        /// <summary>
+        /// 当前定位工位的链审计摘要（范式2：链状态是工位级属性，不是方案级——
+        /// 故不进主列表加列，做成顶部 chip，点击进链校验台）。只读、异常吞掉显示"—"。
+        /// </summary>
+        public string ChainStatusText
+        {
+            get
+            {
+                if (!IsStationScope) return "链状态：—（未定位工位）";
+                try
+                {
+                    var rep = ChainAuditor.AuditStation(_scopeStationCode);
+                    if (!rep.Loaded) return "🔗 链：未落盘（fail-closed 待补链）";
+                    int bad = rep.GlobalIssues.Count + rep.Rows.Count(r => !r.Ok);
+                    return bad == 0 ? "🔗 链：✓ 就绪（" + rep.EdgeCount + " 边）"
+                                    : "🔗 链：✗ " + bad + " 项问题";
+                }
+                catch { return "🔗 链：—"; }
+            }
         }
 
         /// <summary>按当前钉住工位的需求档案建议标定物理量（兜底；v2 引擎已按槽派生，此方法仅无槽档案兜底）。</summary>

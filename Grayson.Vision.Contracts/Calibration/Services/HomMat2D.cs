@@ -59,6 +59,96 @@ namespace Grayson.Vision.Contracts.Calibration.Services
             wy = A21 * px + A22 * py + Ty;
         }
 
+        //---------------------------------------------------------------------
+        // 范式2（坐标系传导矩阵链）扩展（2026-09-27，paradigm2 分支）：
+        //   链式求值需要的最小代数集：单位阵 / 平移 / 旋转 / 链乘 / 求逆。
+        //   单元纪律与上同：纯算术、不抛异常、不 here 做质量判定。
+        //   语义约定（与总则一致，列向量左乘）：Compose(outer, inner) = outer ∘ inner，
+        //   即 (outer ∘ inner)(p) = outer(inner(p))；T_{A→C} = Compose(T_{B→C}, T_{A→B})。
+        //---------------------------------------------------------------------
+
+        /// <summary>单位阵 [1,0,0,0,1,0]</summary>
+        public static HomMat2D Identity()
+        {
+            return new HomMat2D { A11 = 1, A12 = 0, Tx = 0, A21 = 0, A22 = 1, Ty = 0 };
+        }
+
+        /// <summary>按 Halcon 元素顺序直接构造 [a11, a12, tx, a21, a22, ty]</summary>
+        public static HomMat2D FromElements(double a11, double a12, double tx,
+                                            double a21, double a22, double ty)
+        {
+            return new HomMat2D { A11 = a11, A12 = a12, Tx = tx, A21 = a21, A22 = a22, Ty = ty };
+        }
+
+        /// <summary>纯平移矩阵（TCP 偏移矢量、O 补偿用）</summary>
+        public static HomMat2D Translation(double tx, double ty)
+        {
+            return new HomMat2D { A11 = 1, A12 = 0, Tx = tx, A21 = 0, A22 = 1, Ty = ty };
+        }
+
+        /// <summary>绕原点旋转 deg 度（U 轴运动学正解 T_F→B 的旋转分量）</summary>
+        public static HomMat2D RotationDeg(double deg)
+        {
+            double rad = deg * Math.PI / 180.0;
+            double c = Math.Cos(rad), s = Math.Sin(rad);
+            return new HomMat2D { A11 = c, A12 = -s, Tx = 0, A21 = s, A22 = c, Ty = 0 };
+        }
+
+        /// <summary>
+        /// 链乘：outer ∘ inner。先 inner 后 outer。
+        /// 例：EIH 世界求值 = Compose(T_F→B(X,Y,U), H_Cam→Flange)。
+        /// </summary>
+        public static HomMat2D Compose(HomMat2D outer, HomMat2D inner)
+        {
+            if (outer == null) return inner;
+            if (inner == null) return outer;
+            return new HomMat2D
+            {
+                A11 = outer.A11 * inner.A11 + outer.A12 * inner.A21,
+                A12 = outer.A11 * inner.A12 + outer.A12 * inner.A22,
+                Tx  = outer.A11 * inner.Tx + outer.A12 * inner.Ty + outer.Tx,
+                A21 = outer.A21 * inner.A11 + outer.A22 * inner.A21,
+                A22 = outer.A21 * inner.A12 + outer.A22 * inner.A22,
+                Ty  = outer.A21 * inner.Tx + outer.A22 * inner.Ty + outer.Ty,
+            };
+        }
+
+        /// <summary>逆映射：世界点 → 像素（失败 = 退化矩阵）</summary>
+        public bool TryMapInverse(double wx, double wy, out double px, out double py)
+        {
+            HomMat2D inv;
+            if (!TryInverse(out inv, out _))
+            {
+                px = py = 0;
+                return false;
+            }
+            inv.Map(wx, wy, out px, out py);
+            return true;
+        }
+
+        /// <summary>矩阵求逆（2×2 旋转部分求逆 + 平移反推）。退化返回 false。</summary>
+        public bool TryInverse(out HomMat2D inverse, out string error)
+        {
+            double det = Determinant;
+            if (Math.Abs(det) < 1e-12)
+            {
+                inverse = null;
+                error = "矩阵退化（行列式≈0），无法求逆: " + ToString();
+                return false;
+            }
+            double ia11 = A22 / det, ia12 = -A12 / det;
+            double ia21 = -A21 / det, ia22 = A11 / det;
+            inverse = new HomMat2D
+            {
+                A11 = ia11, A12 = ia12,
+                Tx  = -(ia11 * Tx + ia12 * Ty),
+                A21 = ia21, A22 = ia22,
+                Ty  = -(ia21 * Tx + ia22 * Ty),
+            };
+            error = null;
+            return true;
+        }
+
         /// <summary>
         /// 从 .tup 文件读取。文件格式（Halcon 元组序列化）：
         /// <code>

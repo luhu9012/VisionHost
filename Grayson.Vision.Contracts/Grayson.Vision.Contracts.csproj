@@ -82,6 +82,9 @@
     <Compile Include="Calibration\Services\RotationEccentricity.cs" />
     <Compile Include="Calibration\Services\CalibrationBindingWriter.cs" />
     <Compile Include="Calibration\Services\CalibrationMatrixStore.cs" />
+    <Compile Include="Calibration\Services\HomMat2D.cs" />
+    <Compile Include="Calibration\Chain\StationCalibGraph.cs" />
+    <Compile Include="Calibration\Chain\ChainEngine.cs" />
     <Compile Include="Templates\Models\TemplateModels.cs" />
     <Compile Include="TaskLibrary\Models\TaskTemplateModels.cs" />
     <Compile Include="Communication\CommunicationMessage.cs" />

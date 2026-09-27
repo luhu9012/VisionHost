@@ -2,8 +2,9 @@
 // 任务类型·行业全量目录（2026-09-09 stage9-2 迭代）。
 //
 // 背景：机器视觉行业任务类型远不止三类；任务模板中心的"新建任务"向导出全量目录，
-// 但**只落地三大任务族**（引导定位 / 深度学习推理 / 外观测量），其余条目标"规划中"禁用——
+// 已落地任务族（引导定位 / 深度学习推理 / 外观测量 / 特征识别读取），其余条目标"规划中"禁用——
 // 目录数据源独立于 TaskKind 枚举，后续族扩充分支时只需追加目录行 + 实现对应引擎。
+// 2026-09-26：新增「特征识别读取族」=原 PLAN-COLOR（颜色识别）转正，条码/OCR 仍规划中待补引擎。
 using Grayson.Vision.Contracts.TaskLibrary.Models;
 using System.Collections.Generic;
 
@@ -112,27 +113,31 @@ namespace Grayson.Vision.WpfUI.Service
                 DefaultTemplateName = "外观量化测量模板"
             },
 
-            // ============ 规划中：识别读取族等（行业全量，暂不落地） ============
+            // ============ 已实现：特征识别读取族（TaskKind.FeatureIdentification，2026-09-26 落地） ============
             new IndustryTaskType
             {
-                Id = "PLAN-OCR", Icon = "🔤", Name = "OCR 字符识别",
-                FamilyKind = null, FamilyText = "规划中", IsImplemented = false,
-                Description = "打印字符/批号读取（工业 OCR）",
-                RoadmapHint = "后续归入「识别读取族」落地（K 层已具备 OCRTool）"
+                Id = "ID-01", Icon = "🎨", Name = "颜色识别与分拣",
+                FamilyKind = TaskKind.FeatureIdentification, FamilyText = "特征识别读取",
+                IsImplemented = true,
+                Description = "HSV 色彩空间取色：输出颜色区域 + 面积占比，按占比/有无判 OK-NG（纯软件，颜色区间在配方链节点上配）",
+                DefaultTemplateName = "颜色识别与分拣模板"
             },
+
+            // ============ 规划中：条码/OCR 等（族已落地，条目待补引擎） ============
             new IndustryTaskType
             {
                 Id = "PLAN-BARCODE", Icon = "〰️", Name = "条码 / 二维码读取",
                 FamilyKind = null, FamilyText = "规划中", IsImplemented = false,
                 Description = "1D/2D 码读取与校验",
-                RoadmapHint = "后续归入「识别读取族」（节点 ReadBarcode 已存在，族入口待接）"
+                RoadmapHint = "归入「特征识别读取族」；节点 ReadBarcode 已在、但引擎层仍是占位实现（硬编码假值），待补 HALCON 真算子"
             },
             new IndustryTaskType
             {
-                Id = "PLAN-COLOR", Icon = "🎨", Name = "颜色识别",
+                Id = "PLAN-OCR", Icon = "🔤", Name = "OCR 字符识别",
                 FamilyKind = null, FamilyText = "规划中", IsImplemented = false,
-                Description = "颜色分类/色差判定",
-                RoadmapHint = "后续归入「识别读取族」（ColorIdentify/ColorTool 已存在）"
+                Description = "打印字符/批号读取（工业 OCR）",
+                RoadmapHint = "归入「特征识别读取族」；节点 ReadOCR 已在、但引擎层仍是占位实现（硬编码假值）。" +
+                              "另需先定案路线：课程脚本走「分割 + read_ocr_class_mlp 分类器」，现节点参数更偏 text_finder 一体路线"
             },
             new IndustryTaskType
             {

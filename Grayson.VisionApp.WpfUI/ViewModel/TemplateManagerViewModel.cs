@@ -13,6 +13,7 @@ using Grayson.Vision.Contracts.Imaging;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Templates.Models;
+using Grayson.Vision.HalconWrapper.Core; // HalconColorNames：色名的单一真源
 using Grayson.Vision.HalconWrapper.Templates;
 using Grayson.Vision.HalconWrapper.Wpf.Controls;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
@@ -2905,7 +2906,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     var marks = TemplateCreationBridge.CreateEdgePointMarkers(measure.Measurements);
                     if (marks != null)
                     {
-                        overlays.Add(new ImageOverlay { Kind = OverlayKind.Xld, Color = "lime", NativeHandle = marks });
+                        overlays.Add(new ImageOverlay { Kind = OverlayKind.Xld, Color = HalconColorNames.EdgePoint, NativeHandle = marks });
                     }
                 }
                 catch (Exception ex)
@@ -3611,7 +3612,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         _maskOverlays.Add(new ImageOverlay
                         {
                             Kind = OverlayKind.Xld,
-                            Color = "lime", // 版图边界恒用 lime（与引擎"学习域"同源，∪/∖ 过程由灰化帧明暗表达）
+                            Color = HalconColorNames.EdgePoint, // 版图边界恒用 lime（与引擎"学习域"同源，∪/∖ 过程由灰化帧明暗表达）
                             NativeHandle = contour
                         });
                     }

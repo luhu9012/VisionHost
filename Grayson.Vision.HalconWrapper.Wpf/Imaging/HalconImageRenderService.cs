@@ -6,6 +6,7 @@
 using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.Contracts.Imaging;
 using Grayson.Vision.Contracts.Infrastructure.Logging;
+using Grayson.Vision.HalconWrapper.Core; // HalconColorNames：叠加层色名守卫
 using HalconDotNet;
 using System;
 using System.Collections.Generic;
@@ -458,7 +459,9 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Imaging
             {
                 if (overlay == null) continue;
 
-                hWindow.SetColor(overlay.Color ?? "green");
+                // ★ 色名守卫（2026-09-25）：本调用链的 Color 来自 VM/配置（如模板管理里的
+                //   "lime" 学习域轮廓），非法名同样会让 set_color 抛 #5105、该叠加整条消失。
+                hWindow.SetColor(HalconColorNames.Normalize(overlay.Color, "green") ?? "green");
                 switch (overlay.Kind)
                 {
                     case OverlayKind.Text:

@@ -7,6 +7,7 @@
 //        所有 HALCON 算子经 HalconWrapper.Measure2D.CaliperNodeMeasure 执行（Node 零句柄引用）。
 //===================================================================================
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,8 @@ using Grayson.Vision.Contracts.Flow.Attributes;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.HalconWrapper;      // NodePreviewHelper：覆盖图形的显示副本 / 无预览时静默释放
+using Grayson.Vision.HalconWrapper.Core; // HalconColorNames：边缘点色名的单一真源
 using Grayson.Vision.HalconWrapper.ImageProc;
 using Grayson.Vision.HalconWrapper.Measure2D;
 using Grayson.Vision.Nodes.Common;
@@ -98,11 +101,13 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.FitLine
             context.SetOutputValue(node, PORT_OUT_IMAGE, inputImage);
 
             // 直线卡尺取样 + 拟合（HALCON 算子全部后台执行）
+            // probeGeom：顺带收集"卡尺齿"几何（每条探针一条测区矩形），仅用于上屏，不影响测量
+            var probeGeom = new List<double[]>();
             var res = await Task.Run(() => CaliperNodeMeasure.MeasureLine(inputImage,
                 midRow, midCol, phiRad,
                 param.HalfSpanAlongEdge, param.ScanHalf, param.ProbeAvgHalf,
                 param.NumPoints, param.Sigma, param.Threshold, param.Transition, param.Select,
-                Math.Max(2, param.MinEdgePoints)));
+                Math.Max(2, param.MinEdgePoints), probeGeom));
 
             if (!res.Success)
             {
@@ -112,6 +117,17 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.FitLine
             }
 
             var mo = res.Data;
+
+            // ★「原型卡尺」上屏：把本次【真正参与取样】的测量带画出来（NumPoints 个小矩形沿边排成梳状，
+            //   与 hdev `get_metrology_object_measures` 同形）。放在拟合判定【之前】——
+            //   拟合失败时更要能看见卡尺架在哪、有没有跨到边缘上。
+            var regionXld = mo.MeasureRegionXld;
+            if (regionXld != null)
+            {
+                if (Preview != null) Preview.Add(regionXld, "cyan", 1);  // 提交即所有权转移给显示层
+                else NodePreviewHelper.DisposeQuietly(regionXld);        // 无预览窗口：释放，防句柄泄漏
+            }
+
             if (mo.LineFit == null)
             {
                 string reason = mo.EdgeCount < Math.Max(2, param.MinEdgePoints)
@@ -139,7 +155,7 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.FitLine
             for (int i = 0; i < cap; i++)
             {
                 var p = mo.Points[i];
-                Preview?.AddCross(p.Row, p.Col, 5, "lime");
+                Preview?.AddCross(p.Row, p.Col, 5, HalconColorNames.EdgePoint);
             }
             Preview?.AddCross(fit.Row1, fit.Col1, 16, "green");
             Preview?.AddCross(fit.Row2, fit.Col2, 16, "green");

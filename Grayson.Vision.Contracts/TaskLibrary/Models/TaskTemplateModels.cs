@@ -27,7 +27,15 @@ namespace Grayson.Vision.Contracts.TaskLibrary.Models
         DeepLearningInference = 1,
 
         /// <summary>外观测量（尺寸/几何/缺陷形态）：本地图片源 + 算法算子族，纯软件可运行</summary>
-        AppearanceMeasurement = 2
+        AppearanceMeasurement = 2,
+
+        /// <summary>
+        /// 特征识别读取（颜色 / 条码 / OCR 等）：本地图片源 + 识别算子族，
+        /// 输出识别结果（区域+占比 / 码值 / 字符串），纯软件可运行。
+        /// 2026-09-26 落地：行业目录中早已预留的「识别读取族」（PLAN-COLOR 等）正式转正；
+        /// 首批实现=颜色识别（ColorIdentify 真引擎），条码/OCR 待补引擎（引擎层目前仍是占位实现）。
+        /// </summary>
+        FeatureIdentification = 3
     }
 
     /// <summary>运行载体（任务对"工位硬件"的依赖声明）。</summary>

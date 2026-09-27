@@ -33,7 +33,12 @@
                         <TextBlock Text="窗口尺寸 (Mask Size):" Style="{StaticResource NodeParamHeaderLabel}"/>
                         <TextBox Text="{Binding DynamicMaskSize, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 5"/>
                         <TextBlock Text="亮度偏移 (Offset):" Style="{StaticResource NodeParamHeaderLabel}"/>
-                        <TextBox Text="{Binding DynamicOffset, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+                        <TextBox Text="{Binding DynamicOffset, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 5"/>
+                        <TextBlock Text="极性 (检出亮/暗):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                        <ComboBox SelectedValue="{Binding Polarity}" Style="{StaticResource NodeParamComboBoxStyle}" Margin="0 0 0 10">
+                            <local:DynPolarity>Light</local:DynPolarity>
+                            <local:DynPolarity>Dark</local:DynPolarity>
+                        </ComboBox>
                     </StackPanel>
                 </StackPanel>
             </DataTemplate>

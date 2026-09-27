@@ -446,10 +446,50 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             });
         }
 
+        /// <summary>
+        /// 节点叠加层的"开始提交"入口（IFlowPreviewContext 通道）：**不清场**。
+        ///
+        /// ★ 2026-09-26 定案。现场：课堂案例 hdev 的"测量带（卡尺齿）"等价实现搬进来后，
+        ///   一张图上只看得见**最后一个 FitLine 节点**的卡尺齿；FitCircle 的整圈卡尺齿
+        ///   "闪一下就没"（拟合数据、XLD 生成都正常，日志里"测区 XLD 生成失败"0 条）。
+        ///
+        /// 根因（两处，第二处才是主因；证据留在 2026-09-25 / 09-26 的现场日志里）：
+        ///   ①【显式清场】能抹掉叠加层的清场调用有三处，其中 Display() 的两条分支都会在场景
+        ///     非空时打日志（"[Display] 收到清空 ⇒ 丢弃场景 N 条" / "[Display] 底图换帧 ⇒ 作废旧场景"），
+        ///     而日志里这两条**一次都没出现** ⇒ 清场只可能来自节点的 SceneBegin()
+        ///     （它清场景 + 清窗口，且不留痕）。链上 5 个节点、同一图像实例，
+        ///     于是每跑完一个节点就把上一个节点的标注抹掉。
+        ///   ②【隐式清场，主因】把 ① 去掉后，日志条目数已变成一帧 202 条（底图 1 + 节点叠加 201），
+        ///     但屏幕上**仍只看得见最后一个 FitLine**。因为底图条目是 fill 绘制的整窗画布，
+        ///     而每个测量节点开头都会 AddBorrowed(同一张图) ⇒ 后一个节点一开画就把前一个盖掉。
+        ///     修法见 SceneAddBorrowed：同一帧同一底图只保留一条底图条目。
+        ///   ⇒ 教训：判"叠加层为什么没上屏"时，**凡整窗重绘/清窗的调用都要算清场**，
+        ///     不能只数显式的 Clear 调用；而"条目数对得上"只证明内容进了场景，
+        ///     不证明它在屏幕上还剩着（后画的整窗底图会把它盖掉）。
+        ///
+        /// 为什么可以不清：节点叠加与标定向导对"新画面"的含义本就不同——
+        ///   · 节点链：**同一张图**上按执行顺序追加标注（hdev 的"匹配轮廓 + 测量带 + 拟合结果"
+        ///     同屏即此语义）；
+        ///   · 标定向导：每一步重画。此通道继续走 SceneBegin()，行为零变化。
+        /// 换帧判据已下沉到 SceneAddBorrowed（底图图像实例变化才作废旧场景），
+        /// 所以"新一张图"的清理照旧会发生，且比原来更准（原来靠每个节点各清一次来兜）。
+        /// </summary>
+        internal void SceneBeginAccumulate()
+        {
+            LogBus.Debug("HalconHost", "节点叠加开始（同帧累积，不清场；换帧由底图实例变化触发）");
+        }
+
         /// <summary>提交对象（托管）并立即上屏。窗口不可用时对象就地释放，调用方无需关心</summary>
         internal void SceneAddObject(HObject obj, string color, int lineWidth)
         {
             if (obj == null) return;
+            // ★ 颜色名守卫（2026-09-25）：非法色名（如 "lime"）会让 set_color 抛 #5105、
+            //   整条场景条目被丢弃 —— 现象是【画面上什么都看不见】，日志里每个点一条 Warn
+            //   （实测一帧 172 条、两帧 344 条），归因成本极高。在唯一入口拦一次：
+            //   回退成确定画得出来的颜色，并只响亮报一次。
+            //   null 原样保留 —— 调用方用 null 表达"不要动颜色、按 fill 画"（底图就是这条路），
+            //   绝不能替换成兜底色，否则底图会从 fill 变成 margin。
+            color = HalconColorNames.Normalize(color, "green");
             RunOnUiSync(() =>
             {
                 if (!SafeAddAndDraw(new ObjectItem { Obj = obj, Color = color, LineWidth = lineWidth, Owned = true }))
@@ -459,33 +499,100 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             });
         }
 
-        /// <summary>提交借用对象（底图，不负责释放）并立即上屏，同时登记为场景底图</summary>
+        /// <summary>提交借用对象（底图，不负责释放）并立即上屏，同时登记为场景底图。
+        /// **同一帧内同一底图实例只保留一条底图条目**（底图=画布，只画一次且在最低层）。</summary>
         internal void SceneAddBorrowed(HObject obj)
         {
             if (obj == null) return;
             RunOnUiSync(() =>
             {
+                // ★ 2026-09-26（第二次修正）：**同一帧同一个底图，场景里只允许存在一条底图条目**。
+                //
+                // 现场现象：上面那条"节点通道不清场"的修正上线后，日志条目数确实变成了一帧
+                //   202 条（底图 1 + 节点叠加 201），但屏幕上**仍然只看得见最后一个 FitLine 的
+                //   卡尺齿、圆的整圈卡尺齿还是不见** —— 即现象没变。
+                // 根因（绘制层，与清场无关）：底图条目 Color==null ⇒ ObjectItem.Draw 走
+                //   SetDraw("fill") + DispObj(image)，**整窗重绘**；而链上每个测量节点
+                //   （FitCircle / FitLine / CaliperMeasure…）执行开头都会 AddBorrowed(同一张图)，
+                //   于是后一个节点一开画，就把前一个节点已经画好的叠加层整片盖掉。
+                //   ⇒ 显式清场（SceneBegin）去掉了，这条**隐式清场**还在，画面依旧只剩最后一个节点。
+                //   RepaintScene（缩放/平移触发的整体重放）按添加顺序重画，最后那条底图同样盖前面。
+                //
+                // 修法：底图是"画布"，同一帧内**只画一次、且必须在最底层**。
+                //   · 换帧（底图图像实例变了）⇒ 照旧作废旧场景 + 追加新底图（原有语义不变）；
+                //   · 同帧同一实例 ⇒ 底图条目已在场景里就**跳过**（不再追加，因此不再盖）；
+                //     万一底图登记还在、条目却已不在（被 ClearAnnotations 之外的路径清过）⇒ 补一条，
+                //     保证画面上永远有底图。
+                bool sameInstance = _sceneBaseImage != null && ReferenceEquals(obj, _sceneBaseImage);
+                if (sameInstance)
+                {
+                    if (HasBaseItemInScene())
+                    {
+                        LogBus.Info("HalconHost",
+                            $"[{LogPrefix}] [SceneAddBorrowed] 同帧同一底图 ⇒ 跳过重复底图条目" +
+                            "（底图以 fill 整窗重绘，重复追加会盖掉已画好的叠加层）");
+                        return;
+                    }
+                    SafeAddAndDraw(new ObjectItem { Obj = obj, Color = null, Owned = false });
+                    return;
+                }
+
+                // 换帧（含"清场后首次借用"）：底图实例变了 ⇒ 作废旧场景（旧帧标注不能留到新图上）
+                {
+                    int n = _scene.Count;
+                    ClearScene();
+                    OnDisplayFrameChanged(); // 底图更换：作废基于旧帧绘制的 ROI
+                    if (n > 0)
+                        LogBus.Info("HalconHost",
+                            $"[{LogPrefix}] [SceneAddBorrowed] 底图换帧 ⇒ 作废旧场景 {n} 条" +
+                            "（节点通道同帧累积，换帧才清；若本帧仍看不到某节点的标注，看 [Display] 场景重放 的条目数）");
+                }
                 _sceneBaseImage = obj;
                 SafeAddAndDraw(new ObjectItem { Obj = obj, Color = null, Owned = false });
             });
         }
 
+        /// <summary>场景里底图条目的条数（Color==null 且非 Owned 的 ObjectItem）。
+        /// 底图在场景里**只允许一条**：它是 fill 绘制的整窗画布，多一条就会盖掉下层叠加层。
+        /// ★ 为什么要有这个方法：原来的日志写的是 `_sceneBaseImage != null ? 1 : 0`——
+        ///   那只是"登记过底图"，**数不出重复追加**（修复前真实存在 5 条底图，日志却写 1），
+        ///   于是"屏幕上只剩最后一个节点"这个现象在日志里完全看不出来。改成真数，
+        ///   日志的 [Display] 场景重放 / 收到清空 两行才配得上它宣称的"底图 N"。
+        /// </summary>
+        private int CountBaseItems()
+        {
+            int n = 0;
+            for (int i = 0; i < _scene.Count; i++)
+            {
+                if (_scene[i] is ObjectItem oi && oi.Obj != null && oi.Color == null && !oi.Owned)
+                    n++;
+            }
+            return n;
+        }
+
+        /// <summary>场景里是否已有底图条目。只在 SceneAddBorrowed 里调用
+        /// （每帧每节点一次），线性扫描的代价可忽略。</summary>
+        private bool HasBaseItemInScene() => CountBaseItems() > 0;
+
         /// <summary>提交文本（image 坐标系）并立即上屏</summary>
         internal void SceneAddText(string text, double row, double col, string color)
         {
             if (string.IsNullOrEmpty(text)) return;
+            color = HalconColorNames.Normalize(color, "white"); // 色名守卫，见 SceneAddObject
             RunOnUiSync(() => SafeAddAndDraw(new TextItem { Text = text, Row = row, Col = col, Color = color }));
         }
 
         /// <summary>提交十字标记并立即上屏</summary>
         internal void SceneAddCross(double row, double col, double size, string color)
         {
+            color = HalconColorNames.Normalize(color, "yellow"); // 色名守卫，见 SceneAddObject
             RunOnUiSync(() => SafeAddAndDraw(new CrossItem { Row = row, Col = col, Size = size, Color = color }));
         }
 
         /// <summary>提交圆并立即上屏</summary>
         internal void SceneAddCircle(double row, double col, double radius, string color)
         {
+            color = HalconColorNames.Normalize(color, "red"); // 色名守卫，见 SceneAddObject
             RunOnUiSync(() => SafeAddAndDraw(new CircleItem { Row = row, Col = col, Radius = radius, Color = color }));
         }
 
@@ -587,9 +694,22 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
         #endregion
 
+        /// <summary>场景条目硬上限：同帧累积后的保护闸（见 SafeAddAndDraw 注释）</summary>
+        private const int MaxSceneItems = 4096;
+
         /// <summary>追加条目并立即绘制（不清窗，叠加式）。返回 false 仅表示窗口不可用</summary>
         private bool SafeAddAndDraw(SceneItem item)
         {
+            // ★ 2026-09-26：同帧累积（节点通道不清场）带来一个旧行为没有的风险——
+            //   若同一张图上反复叠加（例如在同一帧里循环执行的节点、长跑的产线循环），
+            //   场景条目会无上限增长。给一条硬上限：超了就作废重来并留痕。
+            //   宁可丢旧标注（下一次换帧本来也会丢），也不能让显示层把内存/重放耗时吃穿。
+            if (_scene.Count >= MaxSceneItems)
+            {
+                LogBus.Warn("HalconHost",
+                    $"[{LogPrefix}] 场景条目达上限 {MaxSceneItems} ⇒ 作废重来（同帧累积保护闸）");
+                ClearScene();
+            }
             _scene.Add(item);
             if (_hWindow == null) return false;
             try { item.Draw(_hWindow); }
@@ -1040,7 +1160,8 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                         {
                             if (_scene[i].IsContextOverlay) ctxOverlayCount++;
                         }
-                        int baseCount = _sceneBaseImage != null ? 1 : 0;
+                        // ★ 真数底图条目（原为 _sceneBaseImage != null ? 1 : 0 —— 数不出重复追加）
+                        int baseCount = CountBaseItems();
                         int nodeItemCount = _scene.Count - ctxOverlayCount - baseCount;
                         if (_scene.Count > 0)
                         {
@@ -1098,7 +1219,26 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
                     {
                         // 首绘与重放统一走场景（flush_graphic 批量上屏，防闪烁）
                         RepaintScene();
-                        LogBus.Debug("HalconHost", $"[Display] 场景重放完成 (尺寸: {context.Image.Width}x{context.Image.Height})");
+                        // ★ 2026-09-26：把"这一帧画面上到底有哪些条目"打成 Info。
+                        //   背景：节点通道改为同帧累积后（多个节点的叠加层共存于一张图），
+                        //   "某个节点的标注没上屏"必须能从日志直接判——此前节点叠加层的清场
+                        //   不留痕（SceneBegin），只能靠"某类图形看不见"的现象反推是谁抹掉的。
+                        //   判据：一帧内节点叠加条目数应随节点数增长；若某帧只剩最后一个节点的
+                        //   量（几十条），说明中途发生了换帧清场（看 SceneAddBorrowed 那条日志）。
+                        int ctxCnt = 0;
+                        for (int i = 0; i < _scene.Count; i++)
+                        {
+                            if (_scene[i].IsContextOverlay) ctxCnt++;
+                        }
+                        // ★ 真数底图条目：修复前这里恒为 1（只是"登记过底图"），
+                        //   而场景里实际有 5 条重复底图 —— 日志看不出"屏幕只剩最后一个节点"。
+                        //   现在数出来的数就是"后画的 fill 底图盖掉前面叠加层"的直接指标：
+                        //   底图 > 1 ⇒ 一定有节点的标注被盖；= 1 ⇒ 一帧的叠加层都在同一层底图上。
+                        int baseCnt = CountBaseItems();
+                        LogBus.Info("HalconHost",
+                            $"[{LogPrefix}] [Display] 场景重放：条目 {_scene.Count}" +
+                            $"（底图 {baseCnt} + 节点叠加 {_scene.Count - ctxCnt - baseCnt} + 上下文叠加 {ctxCnt}）" +
+                            $"节点:[{context.NodeName}] 尺寸 {context.Image.Width}x{context.Image.Height}");
                     }
                     else
                     {
@@ -1229,6 +1369,11 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
             LogBus.Info("HalconHost", "SmartWindow 句柄 HInitWindow 初始化完成！");
 
+            // ★ 色表刷新（2026-09-25）：有窗口了，向 HALCON 现取一次权威色名名单灌进
+            //   HalconColorNames（它自己刻意不依赖 halcondotnet，只能在这一侧取）。
+            //   没有这一步，守卫就只剩内置的 64 名快照——能用，但版本一变就可能误判。
+            RefreshHalconColorTableFromHalcon();
+
             // 窗口就绪后，补发当前待渲染图像
             var currentContext = RenderContext ?? _boundVm?.ActiveImageContext;
             if (currentContext != null)
@@ -1247,6 +1392,33 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
             }
 
             RefreshToolbarAvailability();
+        }
+
+        /// <summary>
+        /// 用 query_color 向 HALCON 现取合法色名名单，灌给 <see cref="HalconColorNames"/>。
+        /// ★ 为什么放在显示宿主：HalconColorNames 在 HalconWrapper.Core，刻意不含 halcondotnet
+        ///   类型（Nodes 层没引 halcondotnet，签名里出现 HWindow 会让 Nodes 编译 CS0012），
+        ///   所以"取名单"这个需要窗口句柄的动作只能由持有 HWindow 的这一侧代劳。
+        /// 取不到不致命：HalconColorNames 会继续用内置 64 名快照，并在日志里标明来源。
+        /// </summary>
+        private void RefreshHalconColorTableFromHalcon()
+        {
+            if (_hWindow == null) return;
+            try
+            {
+                HOperatorSet.QueryColor(_hWindow, out HTuple names);
+                var list = new List<string>(names.Length);
+                for (int i = 0; i < names.Length; i++)
+                {
+                    string s = names[i].S;
+                    if (!string.IsNullOrWhiteSpace(s)) list.Add(s);
+                }
+                HalconColorNames.ReplaceTable(list, "query_color");
+            }
+            catch (Exception ex)
+            {
+                LogBus.Warn("HalconHost", "query_color 取 HALCON 色表失败，改用内置快照: " + ex.Message);
+            }
         }
 
         /// <summary>

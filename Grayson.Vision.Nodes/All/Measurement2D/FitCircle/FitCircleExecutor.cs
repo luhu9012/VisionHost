@@ -8,6 +8,7 @@
 //        所有 HALCON 算子经 HalconWrapper.Measure2D.CaliperNodeMeasure 执行（Node 零句柄引用）。
 //===================================================================================
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +16,8 @@ using Grayson.Vision.Contracts.Flow.Attributes;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.HalconWrapper;      // NodePreviewHelper：覆盖图形的显示副本 / 无预览时静默释放
+using Grayson.Vision.HalconWrapper.Core; // HalconColorNames：边缘点色名的单一真源
 using Grayson.Vision.HalconWrapper.ImageProc;
 using Grayson.Vision.HalconWrapper.Measure2D;
 using Grayson.Vision.Nodes.Common;
@@ -93,10 +96,12 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.FitCircle
             // 环形卡尺取样 + 圆拟合（HALCON 算子全部后台执行）
             double arcStart = param.ArcStartDeg * Math.PI / 180.0;
             double arcExtent = param.ArcExtentDeg * Math.PI / 180.0;
+            // 顺带收集"环形卡尺"的测区几何（N 个沿圆周排布的探针矩形）——仅用于上屏，不影响测量
+            var probeGeom = new List<double[]>();
             var res = await Task.Run(() => CaliperNodeMeasure.MeasureCircle(inputImage,
                 row, col, radius, arcStart, arcExtent, param.AnnulusHalf,
                 param.Sigma, param.Threshold, param.Transition, param.Select,
-                Math.Max(3, param.MinEdgePoints)));
+                Math.Max(3, param.MinEdgePoints), probeGeom));
 
             if (!res.Success)
             {
@@ -106,6 +111,18 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.FitCircle
             }
 
             var mo = res.Data;
+
+            // ★「原型卡尺」上屏：把本次【真正参与取样】的那些测量带画出来（N 个小矩形沿圆周排成梳状，
+            //   与 hdev `get_metrology_object_measures` 画出的"卡尺齿"同形）。
+            //   ★ 必须放在拟合成功/失败判定【之前】：拟合失败时更要能看见卡尺架在哪、覆盖到没覆盖到边缘，
+            //     否则调参数只能靠猜（此前节点只画种子十字+结果，画面上完全看不出"用了卡尺"）。
+            var regionXld = mo.MeasureRegionXld;
+            if (regionXld != null)
+            {
+                if (Preview != null) Preview.Add(regionXld, "cyan", 1);  // 提交即所有权转移给显示层
+                else NodePreviewHelper.DisposeQuietly(regionXld);        // 无预览窗口：释放，防 HALCON 句柄泄漏
+            }
+
             if (mo.CircleFit == null)
             {
                 string reason = mo.EdgeCount < Math.Max(3, param.MinEdgePoints)
@@ -124,12 +141,12 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.FitCircle
             context.SetOutputValue(node, PORT_OUT_CENTER_COL, fit.CenterCol);
             context.SetOutputValue(node, PORT_OUT_RADIUS, fit.Radius);
 
-            // 可视化：边缘点小十字（lime，限 200 个防重） + 拟合圆心大十字(green) + 结果文本
+            // 可视化：环形卡尺测区(cyan，见上) + 边缘点小十字(EdgePoint) + 拟合圆心大十字(green) + 结果文本
             int cap = Math.Min(mo.EdgeCount, 200);
             for (int i = 0; i < cap; i++)
             {
                 var p = mo.Points[i];
-                Preview?.AddCross(p.Row, p.Col, 5, "lime");
+                Preview?.AddCross(p.Row, p.Col, 5, HalconColorNames.EdgePoint);
             }
             Preview?.AddCross(fit.CenterRow, fit.CenterCol, 44, "green");
             Preview?.AddText($"⭕ 拟合: 圆心({fit.CenterRow:F2}, {fit.CenterCol:F2})  R={fit.Radius:F3}  " +

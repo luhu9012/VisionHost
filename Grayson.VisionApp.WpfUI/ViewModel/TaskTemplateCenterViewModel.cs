@@ -31,6 +31,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     case TaskKind.PositioningGuidance: return new SolidColorBrush(Color.FromRgb(0xE8, 0xA3, 0x3D));
                     case TaskKind.DeepLearningInference: return new SolidColorBrush(Color.FromRgb(0x8F, 0x7B, 0xF2));
                     case TaskKind.AppearanceMeasurement: return new SolidColorBrush(Color.FromRgb(0x43, 0xB7, 0x81));
+                    case TaskKind.FeatureIdentification: return new SolidColorBrush(Color.FromRgb(0xEA, 0x58, 0x0C));
                     default: return new SolidColorBrush(Color.FromRgb(0x8A, 0x94, 0xA6));
                 }
             }
@@ -60,6 +61,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     case TaskKind.AppearanceMeasurement:
                         return Tpl.MeasurementSpecs == null || Tpl.MeasurementSpecs.Count == 0
                             ? "未配置测量项" : $"测量项 ×{Tpl.MeasurementSpecs.Count}";
+                    case TaskKind.FeatureIdentification:
+                        // 识别族主资产=视觉链配方（颜色区间/码制等参数都在链上节点里，不在模板上重复配）
+                        return string.IsNullOrWhiteSpace(Tpl.BoundRecipeId) ? "未关联配方链" : $"配方 {Tpl.BoundRecipeId}";
                     default: return "";
                 }
             }
@@ -116,7 +120,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             new TaskKindFilterOption { Value = null, Text = "全部类型" },
             new TaskKindFilterOption { Value = TaskKind.PositioningGuidance, Text = "🧭 引导定位" },
             new TaskKindFilterOption { Value = TaskKind.DeepLearningInference, Text = "🧠 深度学习推理" },
-            new TaskKindFilterOption { Value = TaskKind.AppearanceMeasurement, Text = "📏 外观测量" }
+            new TaskKindFilterOption { Value = TaskKind.AppearanceMeasurement, Text = "📏 外观测量" },
+            new TaskKindFilterOption { Value = TaskKind.FeatureIdentification, Text = "🔎 特征识别读取" }
         };
 
         public TaskDepFilterOption[] DepFilterOptions { get; } =
@@ -148,11 +153,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public bool HasSelection => Selected != null;
 
         // —— 统计卡 ——
-        private int _totalCount, _guidanceCount, _dlCount, _measureCount, _publishedCount, _boundStationCount;
+        private int _totalCount, _guidanceCount, _dlCount, _measureCount, _identCount, _publishedCount, _boundStationCount;
         public int TotalCount { get => _totalCount; set => Set(ref _totalCount, value); }
         public int GuidanceCount { get => _guidanceCount; set => Set(ref _guidanceCount, value); }
         public int DlCount { get => _dlCount; set => Set(ref _dlCount, value); }
         public int MeasureCount { get => _measureCount; set => Set(ref _measureCount, value); }
+        public int IdentCount { get => _identCount; set => Set(ref _identCount, value); }
         public int PublishedCount { get => _publishedCount; set => Set(ref _publishedCount, value); }
         public int BoundStationCount { get => _boundStationCount; set => Set(ref _boundStationCount, value); }
 
@@ -212,6 +218,28 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] 测量演示包落地种子失败: {ex.Message}");
             }
 
+            // 🌟 2026-09-26 特征识别读取族首批（颜色识别与分拣）：内嵌颜色素材幂等落地，
+            // 生成 TPL-ID seed + ColorIdentify 配方（真 HSV 引擎）；幂等，已存在则跳过。
+            try
+            {
+                Service.ColorDemoTaskFactory.EnsureDemoTasks();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] 颜色识别演示包落地种子失败: {ex.Message}");
+            }
+
+            // 🌟 2026-09-26 外观测量族·梯队 B（Blob 计数/划痕）：内嵌 counting/scratch 素材幂等落地，
+            // 生成 ReadImageFile→ImageThreshold→BlobAnalysis 三节点配方（个数判据在节点参数）；幂等，已存在则跳过。
+            try
+            {
+                Service.BlobDemoTaskFactory.EnsureDemoTasks();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] Blob/划痕演示包落地种子失败: {ex.Message}");
+            }
+
             _all = new ObservableCollection<TaskTemplateInfo>(_library.LoadAll());
             // 绑定工位反查（唯一真源=StationConfigModel.TaskTemplateCode；模板库 Bindings 仅展示缓存）
             var stations = _stationConfig.LoadAllLines()
@@ -237,6 +265,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             GuidanceCount = _all.Count(t => t.Kind == TaskKind.PositioningGuidance);
             DlCount = _all.Count(t => t.Kind == TaskKind.DeepLearningInference);
             MeasureCount = _all.Count(t => t.Kind == TaskKind.AppearanceMeasurement);
+            IdentCount = _all.Count(t => t.Kind == TaskKind.FeatureIdentification);
             PublishedCount = _all.Count(t => t.Status == TaskTemplateStatus.Published);
             BoundStationCount = stations.Count;
 

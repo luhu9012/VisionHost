@@ -4,6 +4,7 @@ using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
 using Grayson.Vision.Contracts.Templates.Models;
 using Grayson.Vision.HalconWrapper;
+using Grayson.Vision.HalconWrapper.Core; // HalconColorNames：边缘点色名的单一真源
 using Grayson.Vision.HalconWrapper.ImageProc;
 using Grayson.Vision.HalconWrapper.Match2D;
 using Grayson.Vision.HalconWrapper.Templates;
@@ -168,7 +169,7 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.ShapeMatch
                         foreach (var p in m.Points)
                         {
                             if (shown++ >= 200) break;
-                            Preview?.AddCross(p.Row, p.Col, 5, "lime");
+                            Preview?.AddCross(p.Row, p.Col, 5, HalconColorNames.EdgePoint);
                         }
                         if (shown >= 200) break;
                     }

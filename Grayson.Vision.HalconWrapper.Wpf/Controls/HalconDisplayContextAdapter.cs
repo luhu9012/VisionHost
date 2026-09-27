@@ -107,7 +107,21 @@ namespace Grayson.Vision.HalconWrapper.Wpf.Controls
 
         bool IFlowPreviewContext.IsReady => IsReady;
 
-        void IFlowPreviewContext.BeginScene() => BeginScene();
+        /// <summary>
+        /// ★ 2026-09-26：节点通道的"开始提交"**不清场**（同帧内多节点叠加共存）。
+        ///
+        /// 现场问题：把课堂案例 hdev 的测量带（卡尺齿）等价实现搬进来后，画面上只看得见
+        /// 【最后一个 FitLine 节点】的卡尺齿，FitCircle 的整圈卡尺齿"闪一下就没"——
+        /// 因为节点每次执行开头都会调 BeginScene，而它与标定向导共用 SceneBegin()（清场景+清窗口），
+        /// 于是后跑的节点把先跑节点的叠加层连窗口一起抹掉。hdev 里"匹配轮廓 + 测量带 + 拟合结果"
+        /// 同屏的效果因此在本产品里做不出来。
+        ///
+        /// 拆分的依据：两条通道对"新画面"的含义不同——
+        ///   · 节点链（本方法）：**同一张图**上按执行顺序追加标注；清理只应由"换帧"触发；
+        ///   · 标定向导（BeginScene / SceneBegin）：每一步重画，语义与行为保持不变。
+        /// 换帧判据放在 SceneAddBorrowed（底图图像实例变了才作废旧场景）。
+        /// </summary>
+        void IFlowPreviewContext.BeginScene() => _host.SceneBeginAccumulate();
 
         void IFlowPreviewContext.Add(object obj, string color, int lineWidth)
         {

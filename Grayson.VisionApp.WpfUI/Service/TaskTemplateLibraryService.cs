@@ -22,6 +22,7 @@ namespace Grayson.Vision.WpfUI.Service
                 case TaskKind.PositioningGuidance: return "引导定位";
                 case TaskKind.DeepLearningInference: return "深度学习推理";
                 case TaskKind.AppearanceMeasurement: return "外观测量";
+                case TaskKind.FeatureIdentification: return "特征识别读取";
                 default: return "未分类";
             }
         }
@@ -33,6 +34,7 @@ namespace Grayson.Vision.WpfUI.Service
                 case TaskKind.PositioningGuidance: return "🧭";
                 case TaskKind.DeepLearningInference: return "🧠";
                 case TaskKind.AppearanceMeasurement: return "📏";
+                case TaskKind.FeatureIdentification: return "🔎";
                 default: return "🗂️";
             }
         }
@@ -45,6 +47,7 @@ namespace Grayson.Vision.WpfUI.Service
                 case TaskKind.PositioningGuidance: return "GD";
                 case TaskKind.DeepLearningInference: return "DL";
                 case TaskKind.AppearanceMeasurement: return "AM";
+                case TaskKind.FeatureIdentification: return "ID";
                 default: return "XX";
             }
         }
@@ -66,6 +69,8 @@ namespace Grayson.Vision.WpfUI.Service
                     return "本地图片源 + 训练模型（ONNX/DLTool）→ 检测框/掩膜/类别/异常（纯软件独立运行，无需相机/运控/PLC）";
                 case TaskKind.AppearanceMeasurement:
                     return "本地图片源 + 卡尺/找线/找圆等测量算子 → 尺寸数值 + OK/NG 判定（纯软件独立运行）";
+                case TaskKind.FeatureIdentification:
+                    return "本地图片源 + 颜色/条码/OCR 等识别算子 → 颜色区域与面积占比、码值、字符结果（纯软件独立运行，无需相机/运控/PLC）";
                 default: return "";
             }
         }

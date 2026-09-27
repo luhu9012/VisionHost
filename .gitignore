@@ -100,3 +100,8 @@ Archive/
 # README 界面截图例外（白名单）
 !docs/images/
 !docs/images/*.png
+
+# 留底/备份快照（anchored-doc-patch 纪律产物，本地保留不入库）
+*_bak_20*
+*.before-*
+*.before_*

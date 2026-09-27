@@ -7,6 +7,8 @@
 //   · 深度学习推理（检测/分割/分类/异常）—— 本引擎已可端到端跑通（经配方链）
 //   · 外观测量 —— stage9-3（2026-09-10）已落地同链承接：读 FitCircle.Radius / FitLine 端点算长度，
 //                  用模板 PixelPerMm 换算 mm，按 MeasurementSpecs 标称±公差判 OK/NG。
+//   · 识别读取 —— 2026-09-26（FeatureIdentification 首批=颜色）落地：读 ColorIdentify.AreaRatio(%)，
+//                  按模板 ConfidenceThreshold（识别读取族语义=面积占比下限%）判 OK/NG。
 //
 // 运行形态（与既有工位运行时零侵入）：
 //   工位绑定配方（ReadImageFile[文件夹批处理] → 视觉节点[DlInference 或 FitCircle/FitLine]） +
@@ -65,17 +67,28 @@ namespace Grayson.Vision.Core.Processes
             // 兼容两类推理节点：ONNX（DlInference）与 HALCON 原生 DL（HalconDlInference，端口/参数语义一致）
             var dlNode = FindNode(NodeType.DlInference) ?? FindNode(NodeType.HalconDlInference);
             // 测量节点（stage9-3：FitCircle 直接给 Radius；FitLine 给 Row1/Col1/Row2/Col2 端点，由引擎算长度）
-            var measureCircle = FindNode(NodeType.FitCircle);
-            var measureLine = FindNode(NodeType.FitLine);
+            // 2026-09-25 改多实例收集：模板匹配+几何变换案例一条链上同时有 1 个圆 + 2 条线，
+            // FindNode 只取第一个 ⇒ 第二条线会被静默丢掉（尺寸少一项，还看不出来）。
+            var measureCircles = FindNodes(NodeType.FitCircle);
+            var measureLines = FindNodes(NodeType.FitLine);
+            // 识别读取族（2026-09-26，FeatureIdentification 首批=颜色）：链上 ColorIdentify 输出 AreaRatio(%)，
+            // 引擎按模板 ConfidenceThreshold（识别读取族语义=面积占比下限%）判 OK/NG —— 见 ApplyIdentifyVerdict。
+            var colorNodes = FindNodes(NodeType.ColorIdentify);
+            // Blob 分析族（2026-09-26，梯队 B：计数/有无/异物/划痕）：链上 BlobAnalysis 输出 Count，
+            // 判据在节点参数 CountMin/CountMax（引擎反射读取，Nodes 程序集不被 Core 引用）。
+            var blobNodes = FindNodes(NodeType.BlobAnalysis);
             var readNode = FindNode(NodeType.ReadImageFile);
 
-            bool isMeasureTask = dlNode == null && (measureCircle != null || measureLine != null);
-            if (dlNode == null && !isMeasureTask)
+            bool isMeasureTask = dlNode == null && (measureCircles.Count > 0 || measureLines.Count > 0);
+            bool isIdentifyTask = dlNode == null && !isMeasureTask && colorNodes.Count > 0;
+            bool isBlobTask = dlNode == null && !isMeasureTask && !isIdentifyTask && blobNodes.Count > 0;
+            if (dlNode == null && !isMeasureTask && !isIdentifyTask && !isBlobTask)
             {
-                // 既无 DL 节点也无测量节点：给明确提示
+                // 四族节点都没有：给明确提示
                 throw new InvalidOperationException(
-                    "当前独立视觉任务找不到 深度学习推理节点（DlInference / HalconDlInference）" +
-                    "也找不到 外观测量节点（FitCircle / FitLine）。请配置配方链：深度学习族加 DL 节点，外观测量族加测量节点。");
+                    "当前独立视觉任务找不到 深度学习推理节点（DlInference / HalconDlInference）、" +
+                    "外观测量节点（FitCircle / FitLine）、识别读取节点（ColorIdentify）、也找不到 Blob 分析节点（BlobAnalysis）。" +
+                    "请配置配方链：深度学习族加 DL 节点，测量族加测量节点，识别族加颜色/条码/OCR 节点，计数/划痕族加 Blob 节点。");
             }
             if (readNode == null)
                 Log("⚠️ 配方链未找到 图像读取(ReadImageFile) 节点——独立任务请以 本地文件夹批处理 图像源起始；继续尝试按现有链执行。");
@@ -98,12 +111,80 @@ namespace Grayson.Vision.Core.Processes
 
             if (isMeasureTask)
             {
-                // 测量族：读 FitCircle.Radius / FitLine 端点 → 像素→mm → 按 MeasurementSpecs 第一项判 OK/NG
-                var (mSummary, mPort) = BuildMeasurementSummaryAndPort(measureCircle, measureLine);
-                summary = mSummary;
-                measurementPort = mPort;
-                ok = ApplyMeasurementVerdict(summary, effective);
+                // 测量族：读链上【全部】FitCircle / FitLine 的输出 → 像素→mm → 逐量按 MeasurementSpecs 判定
+                // （2026-09-25：由"单量 + 摘要首个数值"升级为"多量并列 + 派生几何量 + 按名匹配判据"）
+                var outcome = BuildMeasurementOutcome(measureCircles, measureLines);
+                summary = outcome.Summary;
+                measurementPort = outcome.PrimaryPortValue;
+                ok = ApplyMeasurementVerdict(outcome, effective);
                 Log($"[{_cfg.LogTag}] {progressText} → {(ok ? "✅ OK" : "❌ NG")} | 测量摘要: {summary}");
+            }
+            else if (isIdentifyTask)
+            {
+                // 识别读取族（颜色）：读链上【全部】ColorIdentify 的 AreaRatio(%)，
+                // 取最小占比（最弱一环）按模板占比阈值判 OK/NG（分拣语义：目标颜色足量 → OK）
+                double minRatio = double.PositiveInfinity;
+                bool anyValid = false;
+                var parts = new List<string>();
+                foreach (var cn in colorNodes)
+                {
+                    double ratio = GetOutValue<double>(cn, "AreaRatio");
+                    string name = string.IsNullOrWhiteSpace(cn.DisplayName) ? "颜色识别" : cn.DisplayName;
+                    if (double.IsNaN(ratio))
+                    {
+                        // 节点失败/未产出（判据纪律：算不出 ≠ 0，不静默当 0% 放行）
+                        parts.Add($"{name}=未产出");
+                        minRatio = double.NegativeInfinity;
+                    }
+                    else
+                    {
+                        parts.Add($"{name}={ratio.ToString("F2", CultureInfo.InvariantCulture)}%");
+                        if (ratio < minRatio) minRatio = ratio;
+                        anyValid = true;
+                    }
+                }
+                summary = "颜色识别 " + string.Join("；", parts);
+                ok = ApplyIdentifyVerdict(minRatio, anyValid, effective);
+                Log($"[{_cfg.LogTag}] {progressText} → {(ok ? "✅ OK" : "❌ NG")} | 摘要: {summary}");
+            }
+            else if (isBlobTask)
+            {
+                // Blob 计数族（计数/有无/异物/划痕，2026-09-26 梯队 B）：读链上【全部】BlobAnalysis 的 Count，
+                // 逐节点按其 CountMin/CountMax 判个数区间，全部节点达标 ⇒ OK。
+                // ⚠ 判据纪律：这里不走 GetOutValue<double>——节点没跑时端口缺值会被读成 default(0)，
+                //   而异物检测恰是 [0,0] 区间 ⇒ "没跑"会伪装成"检出 0 个=OK"静默放行。
+                //   改为直接查端口 DataValue：缺值 = 未产出 = 直接 NG。
+                var parts = new List<string>();
+                bool blobOk = true;
+                foreach (var bn in blobNodes)
+                {
+                    string name = string.IsNullOrWhiteSpace(bn.DisplayName) ? "Blob分析" : bn.DisplayName;
+                    var port = bn.OutputPorts?.FirstOrDefault(
+                        p => string.Equals(p.PortName, "Count", StringComparison.OrdinalIgnoreCase));
+                    double count = port?.DataValue is double d ? d : double.NaN;
+                    int minCount = TryGetNodeParamInt(bn, "CountMin") ?? 1;
+                    int maxCount = TryGetNodeParamInt(bn, "CountMax") ?? int.MaxValue;
+
+                    if (double.IsNaN(count))
+                    {
+                        // 节点失败/未运行/未产出：算不出 ≠ 检出 0 个，响亮 NG 不静默放行
+                        parts.Add($"{name}=未产出");
+                        blobOk = false;
+                    }
+                    else
+                    {
+                        bool inRange = count >= minCount && count <= maxCount;
+                        if (!inRange) blobOk = false;
+                        string rangeText = maxCount >= int.MaxValue
+                            ? $"≥{minCount.ToString(CultureInfo.InvariantCulture)}"
+                            : $"{minCount.ToString(CultureInfo.InvariantCulture)}~{maxCount.ToString(CultureInfo.InvariantCulture)}";
+                        parts.Add($"{name}={count.ToString("0", CultureInfo.InvariantCulture)}个(要求{rangeText})"
+                            + (inRange ? "" : " ←超差"));
+                    }
+                }
+                summary = "Blob计数 " + string.Join("；", parts);
+                ok = blobOk;
+                Log($"[{_cfg.LogTag}] {progressText} → {(ok ? "✅ OK" : "❌ NG")} | 摘要: {summary}");
             }
             else
             {
@@ -126,18 +207,183 @@ namespace Grayson.Vision.Core.Processes
 
         // ==================== 外观测量分支（stage9-3） ====================
 
-        /// <summary>
-        /// 构造测量摘要 + 返回首个数值端口值（用于 CSV/日志附加判据细节）
-        /// 读 FitCircle.Radius（亚像素，px）或 FitLine 端点对算长度 → 用模板 PixelPerMm 换 mm（null 则留像素口径）
-        /// 摘要形如 "圆 直径=xx.x mm RMS=x.xx px 点数=n" / "线段 长度=xx.x mm 端点(R1,C1)-(R2,C2) Score=x.xx"
-        /// </summary>
-        private (string summary, object primaryPortValue) BuildMeasurementSummaryAndPort(FlowNodeBase circle, FlowNodeBase line)
+        /// <summary>一条可判定的测量量（摘要里的一段 + 供 MeasurementSpecs 按名取用的键）。</summary>
+        private sealed class MeasuredQuantity
         {
-            double? pixelPerMm = null;
-            string unit = "px";
+            /// <summary>稳定名：既是摘要里的显示名，也是 MeasurementSpecItem.Name 的匹配键</summary>
+            public string Name = string.Empty;
+            /// <summary>数值（已按模板 PixelPerMm 换算；未配当量时=像素值，单位见 MeasurementOutcome.Unit）</summary>
+            public double Value;
+            /// <summary>false = 该量本次算不出来（拟合失败/几何退化）</summary>
+            public bool Valid = true;
+            /// <summary>摘要片段，形如 "圆孔直径=7.49mm"</summary>
+            public string Text = string.Empty;
+        }
+
+        /// <summary>一次测量的完整产出：摘要 + 主端口值 + 逐量清单。</summary>
+        private sealed class MeasurementOutcome
+        {
+            public string Summary = string.Empty;
+            public object PrimaryPortValue;
+            public string Unit = "px";
+            public List<MeasuredQuantity> Quantities = new List<MeasuredQuantity>();
+            /// <summary>有圆/线拟合失败（FitFailureNote 写明原因）⇒ 整单直接 NG，不进公差判定</summary>
+            public bool AnyFitFailed;
+            public string FitFailureNote = string.Empty;
+        }
+
+        /// <summary>
+        /// 构造测量产出：读链上【全部】FitCircle / FitLine 的输出，逐量换算并生成「多量并列 + 派生几何量」摘要。
+        ///
+        /// 量的清单（名字即 MeasurementSpecs 的匹配键，见 ResolveQuantityForSpec）：
+        ///   圆孔直径            = 2 × R（取第 1 个 FitCircle）
+        ///   线{j}长度           = 第 j 条拟合线的两端点距 —— ⚠ 受卡尺跨度(HalfSpanAlongEdge)限制，
+        ///                        这是"拟合段长"而非工件整边长，只作诊断量，别当产品尺寸用
+        ///   圆心到边{j}距离      = 圆心 → 第 j 条拟合【直线】的垂距 ← 等价 hdev distance_pl 的派生量
+        ///   边{j}到边{j+1}间距   = 相邻两条拟合直线的垂距（两条平行边的间距）
+        ///
+        /// 单位口径与旧版一致：模板配了 PixelPerMm → mm，否则保持 px（摘要里逐量带 unit，不混口径）。
+        /// </summary>
+        private MeasurementOutcome BuildMeasurementOutcome(List<FlowNodeBase> circles, List<FlowNodeBase> lines)
+        {
+            var outcome = new MeasurementOutcome();
+            circles = circles ?? new List<FlowNodeBase>();
+            lines = lines ?? new List<FlowNodeBase>();
+
+            double? pixelPerMm = TryLoadPixelPerMm(out string unit);
+            outcome.Unit = unit;
+
+            // ---- 圆：取第 1 个 FitCircle（外观测量族一条链通常只测 1 个圆）----
+            bool hasCircle = false;
+            double cRow = double.NaN, cCol = double.NaN, cRadiusPx = double.NaN;
+            if (circles.Count > 0)
+            {
+                cRadiusPx = GetOutValue<double>(circles[0], "Radius");
+                cRow = GetOutValue<double>(circles[0], "CenterRow");
+                cCol = GetOutValue<double>(circles[0], "CenterCol");
+                if (double.IsNaN(cRadiusPx) || cRadiusPx <= 0)
+                {
+                    outcome.AnyFitFailed = true;
+                    outcome.FitFailureNote = $"圆拟合失败（Radius={Fmt(cRadiusPx)}，种子偏离/阈值不当）";
+                }
+                else
+                {
+                    hasCircle = true;
+                    double dia = Px2Value(cRadiusPx * 2.0, pixelPerMm);
+                    outcome.Quantities.Add(new MeasuredQuantity
+                    {
+                        Name = "圆孔直径",
+                        Value = dia,
+                        Text = $"圆孔直径={Fmt(dia)}{unit}"
+                    });
+                }
+            }
+
+            // ---- 线：逐条读端点算"拟合段长"；合法的收进 segs 供派生量用 ----
+            var segs = new List<double[]>();   // [r1, c1, r2, c2]
+            for (int i = 0; i < lines.Count; i++)
+            {
+                int no = i + 1;
+                double r1 = GetOutValue<double>(lines[i], "Row1");
+                double c1 = GetOutValue<double>(lines[i], "Col1");
+                double r2 = GetOutValue<double>(lines[i], "Row2");
+                double c2 = GetOutValue<double>(lines[i], "Col2");
+                double lenPx = Math.Sqrt((r2 - r1) * (r2 - r1) + (c2 - c1) * (c2 - c1));
+                if (double.IsNaN(lenPx) || lenPx <= 1e-6)
+                {
+                    outcome.AnyFitFailed = true;
+                    outcome.FitFailureNote = $"线{no} 拟合失败（端点重合/异常）";
+                    continue;
+                }
+                segs.Add(new[] { r1, c1, r2, c2 });
+                double len = Px2Value(lenPx, pixelPerMm);
+                outcome.Quantities.Add(new MeasuredQuantity
+                {
+                    Name = $"线{no}长度",
+                    Value = len,
+                    Text = $"线{no}长度={Fmt(len)}{unit}"
+                });
+            }
+
+            // ---- 派生量①：圆心 → 各拟合直线（垂距）＝ hdev distance_pl ----
+            if (hasCircle)
+            {
+                for (int j = 0; j < segs.Count; j++)
+                {
+                    double dPx = PerpDistanceToLine(cRow, cCol, segs[j][0], segs[j][1], segs[j][2], segs[j][3]);
+                    var q = new MeasuredQuantity { Name = $"圆心到边{j + 1}距离" };
+                    if (double.IsNaN(dPx))
+                    {
+                        q.Valid = false;
+                        q.Text = q.Name + "=算不出（拟合直线退化）";
+                        outcome.AnyFitFailed = true;
+                        outcome.FitFailureNote = q.Name + "算不出（拟合直线退化）";
+                    }
+                    else
+                    {
+                        q.Value = Px2Value(dPx, pixelPerMm);
+                        q.Text = $"{q.Name}={Fmt(q.Value)}{unit}";
+                    }
+                    outcome.Quantities.Add(q);
+                }
+            }
+
+            // ---- 派生量②：相邻两条拟合直线的间距（把后一条线上一点投到前一条直线）----
+            for (int j = 0; j + 1 < segs.Count; j++)
+            {
+                double[] a = segs[j], b = segs[j + 1];
+                double dPx = PerpDistanceToLine(b[0], b[1], a[0], a[1], a[2], a[3]);
+                var q = new MeasuredQuantity { Name = $"边{j + 1}到边{j + 2}间距" };
+                if (double.IsNaN(dPx))
+                {
+                    q.Valid = false;
+                    q.Text = q.Name + "=算不出（拟合直线退化）";
+                    outcome.AnyFitFailed = true;
+                    outcome.FitFailureNote = q.Name + "算不出（拟合直线退化）";
+                }
+                else
+                {
+                    q.Value = Px2Value(dPx, pixelPerMm);
+                    q.Text = $"{q.Name}={Fmt(q.Value)}{unit}";
+                }
+                outcome.Quantities.Add(q);
+            }
+
+            if (outcome.Quantities.Count == 0)
+            {
+                outcome.Summary = "测量节点类型未识别";
+                return outcome;
+            }
+
+            outcome.Summary = string.Join(" | ", outcome.Quantities.Select(q => q.Text));
+            // 主端口值 = 首个有值的量（= 2026-09-25 之前的口径：圆孔直径当主量）
+            var primary = outcome.Quantities.FirstOrDefault(q => q.Valid);
+            outcome.PrimaryPortValue = primary == null ? null : (object)primary.Value;
+            return outcome;
+        }
+
+        /// <summary>像素 → 工程量（模板配了 PixelPerMm 才乘；否则原样返回像素值）。</summary>
+        private static double Px2Value(double px, double? pixelPerMm)
+            => pixelPerMm.HasValue && pixelPerMm.Value > 0 ? px * pixelPerMm.Value : px;
+
+        private static string Fmt(double v) => v.ToString("F2", CultureInfo.InvariantCulture);
+
+        /// <summary>点到【无限直线】的垂距（直线过 P1-P2）；两端点重合致直线退化时返回 NaN。</summary>
+        private static double PerpDistanceToLine(double row, double col,
+            double r1, double c1, double r2, double c2)
+        {
+            double dRow = r2 - r1, dCol = c2 - c1;
+            double len = Math.Sqrt(dRow * dRow + dCol * dCol);
+            if (len < 1e-9) return double.NaN;
+            return Math.Abs(dRow * (col - c1) - dCol * (row - r1)) / len;
+        }
+
+        /// <summary>读任务模板当量（mm/px）。读不到/未配 → (null, "px")，不影响跑通。</summary>
+        private double? TryLoadPixelPerMm(out string unit)
+        {
+            unit = "px";
             try
             {
-                var tplRule = TryLoadTemplateVerdict();
                 var tplFile = Worker?.TaskTemplateCode;
                 if (!string.IsNullOrWhiteSpace(tplFile))
                 {
@@ -145,97 +391,185 @@ namespace Grayson.Vision.Core.Processes
                     if (File.Exists(file))
                     {
                         var tpl = JsonConvert.DeserializeObject<TaskTemplateInfo>(File.ReadAllText(file));
-                        if (tpl?.PixelPerMm.HasValue == true) { pixelPerMm = tpl.PixelPerMm.Value; unit = "mm"; }
+                        if (tpl?.PixelPerMm.HasValue == true && tpl.PixelPerMm.Value > 0)
+                        {
+                            unit = "mm";
+                            return tpl.PixelPerMm.Value;
+                        }
                     }
                 }
             }
             catch { /* 模板读不到时维持 px 口径，不影响跑通 */ }
-
-            if (circle != null)
-            {
-                double radiusPx = GetOutValue<double>(circle, "Radius");
-                double centerRow = GetOutValue<double>(circle, "CenterRow");
-                double centerCol = GetOutValue<double>(circle, "CenterCol");
-                if (double.IsNaN(radiusPx) || radiusPx <= 0)
-                    return ($"圆 拟合失败（Radius={radiusPx}，种子偏离/阈值不当）", radiusPx);
-                double diameterPx = radiusPx * 2.0;
-                double measuredMm = pixelPerMm.HasValue && pixelPerMm.Value > 0 ? diameterPx * pixelPerMm.Value : diameterPx;
-                return ($"圆 直径={measuredMm.ToString("F2", CultureInfo.InvariantCulture)} {unit} " +
-                        $"圆心=({centerRow.ToString("F1", CultureInfo.InvariantCulture)},{centerCol.ToString("F1", CultureInfo.InvariantCulture)}) " +
-                        $"R={radiusPx.ToString("F2", CultureInfo.InvariantCulture)}px",
-                        measuredMm);
-            }
-
-            if (line != null)
-            {
-                double r1 = GetOutValue<double>(line, "Row1");
-                double c1 = GetOutValue<double>(line, "Col1");
-                double r2 = GetOutValue<double>(line, "Row2");
-                double c2 = GetOutValue<double>(line, "Col2");
-                double score = GetOutValue<double>(line, "Score");
-                double lenPx = Math.Sqrt((r2 - r1) * (r2 - r1) + (c2 - c1) * (c2 - c1));
-                if (double.IsNaN(lenPx) || lenPx <= 0)
-                    return ($"线段 拟合失败（端点重合/异常）", lenPx);
-                double measuredMm = pixelPerMm.HasValue && pixelPerMm.Value > 0 ? lenPx * pixelPerMm.Value : lenPx;
-                return ($"线段 长度={measuredMm.ToString("F2", CultureInfo.InvariantCulture)} {unit} " +
-                        $"端点=({r1.ToString("F1", CultureInfo.InvariantCulture)},{c1.ToString("F1", CultureInfo.InvariantCulture)})" +
-                        $"-({r2.ToString("F1", CultureInfo.InvariantCulture)},{c2.ToString("F1", CultureInfo.InvariantCulture)}) " +
-                        $"Score={score.ToString("F2", CultureInfo.InvariantCulture)}",
-                        measuredMm);
-            }
-
-            return ("测量节点类型未识别", null);
+            return null;
         }
 
         /// <summary>
-        /// 测量任务判据（复用 MeasurementSpecs 第一项 Enabled 的 NominalMm/ToleranceMm）：
-        ///   值在 [Nominal-Tol, Nominal+Tol] 内 → OK，否则 NG；
-        ///   摘要含 "失败/异常/重合/未识别" → NG（不依赖 MeasurementSpecs 也兜底拦截异常流）；
-        ///   未配 MeasurementSpecs → 按 EmptySummaryAsOk 放行（兜底，不阻塞新接入）。
+        /// 识别读取族判据（2026-09-26，颜色分拣语义）：
+        ///   1) 模板 ConfidenceThreshold（识别读取族语义=面积占比下限%）已配 → 占比 ≥ 阈值 → OK；
+        ///   2) 链上任一 ColorIdentify 未产出（NaN）→ 直接 NG（不静默放行）；
+        ///   3) 未配阈值 → 按 EmptySummaryAsOk 兜底（响亮提示去模板里配）。
+        /// 注：不走 ApplyVerdict 关键字路径 —— 识别读取族摘要「颜色识别 …=xx%」不构成检测/缺陷语义。
         /// </summary>
-        private bool ApplyMeasurementVerdict(string summary, EffectiveVerdict rule)
+        private bool ApplyIdentifyVerdict(double minRatio, bool anyValid, EffectiveVerdict rule)
         {
-            // 异常路径兜底：摘要里出现失败/异常字样即 NG（与 FitCircle 失败日志"拟合失败"对齐）
-            if (string.IsNullOrEmpty(summary) ||
-                IndexOfIgnoreCase(summary, "失败") >= 0 ||
-                IndexOfIgnoreCase(summary, "异常") >= 0 ||
-                IndexOfIgnoreCase(summary, "未识别") >= 0)
+            if (!anyValid)
             {
-                Log("⚠️ 测量任务摘要异常或链路失败 → NG（请检查 FitCircle/FitLine 种子与阈值）");
+                Log("⚠️ 识别读取链无任何 ColorIdentify 占比产出（节点失败/端口未输出）→ NG");
+                return false;
+            }
+
+            double? threshold = TryLoadIdentifyRatioThreshold();
+            if (!threshold.HasValue)
+            {
+                Log("ℹ️ 识别读取任务模板未配置 ConfidenceThreshold（识别读取族语义=面积占比下限%）" +
+                    "——按 EmptySummaryAsOk 兜底放行/拦截：" + (rule.EmptySummaryAsOk ? "OK" : "NG"));
+                return rule.EmptySummaryAsOk;
+            }
+
+            bool ok = minRatio >= threshold.Value;
+            Log($"🎨 颜色占比下限口径：最小占比={minRatio.ToString("F2", CultureInfo.InvariantCulture)}% " +
+                $"阈值={threshold.Value.ToString("F2", CultureInfo.InvariantCulture)}% → {(ok ? "✅ OK" : "❌ NG")}");
+            return ok;
+        }
+
+        /// <summary>读任务模板占比阈值（ConfidenceThreshold）。读不到/未配 → null（由调用方兜底）。</summary>
+        private double? TryLoadIdentifyRatioThreshold()
+        {
+            try
+            {
+                var tplFile = Worker?.TaskTemplateCode;
+                if (!string.IsNullOrWhiteSpace(tplFile))
+                {
+                    var file = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "TaskLibrary", tplFile.Trim() + ".json");
+                    if (File.Exists(file))
+                    {
+                        var tpl = JsonConvert.DeserializeObject<TaskTemplateInfo>(File.ReadAllText(file));
+                        if (tpl?.ConfidenceThreshold.HasValue == true && tpl.ConfidenceThreshold.Value > 0)
+                            return tpl.ConfidenceThreshold.Value;
+                    }
+                }
+            }
+            catch { /* 模板读不到时按未配阈值兜底 */ }
+            return null;
+        }
+
+        /// <summary>
+        /// 测量任务判据：把模板 MeasurementSpecs 里【每一条启用项】按名字匹配到本次实测的某个量，
+        /// 逐项判 [Nominal±Tol]；全部命中区间 → OK，任一项超出/取不到 → NG。
+        ///
+        /// 兜底口径（与旧版一致的部分）：
+        ///   · 拟合失败（outcome.AnyFitFailed）→ 直接 NG，不进公差（不依赖 MeasurementSpecs）；
+        ///   · 模板没有 MeasurementSpecs / 没有启用项 / 全都没配 NominalMm+ToleranceMm → 按 EmptySummaryAsOk；
+        ///   · 名字匹配不上的处理见 ResolveQuantityForSpec（单条启用项时退回"摘要首量"= 旧行为，多条时不猜、判 NG）。
+        /// </summary>
+        private bool ApplyMeasurementVerdict(MeasurementOutcome outcome, EffectiveVerdict rule)
+        {
+            if (outcome.AnyFitFailed)
+            {
+                Log("⚠️ 测量链路存在拟合失败 → NG：" + outcome.FitFailureNote);
                 return false;
             }
 
             // 读模板 MeasurementSpecs（缓存，生命周期内不变）
             var specs = TryLoadMeasurementSpecs();
-            if (specs == null || specs.Count == 0)
+            var enabled = specs == null ? new List<MeasurementSpecItem>() : specs.Where(s => s.Enabled).ToList();
+            if (enabled.Count == 0)
             {
-                Log("ℹ️ 测量任务模板未配置 MeasurementSpecs——按 EmptySummaryAsOk 兜底放行/拦截（演示态）：" + (rule.EmptySummaryAsOk ? "OK" : "NG"));
-                return rule.EmptySummaryAsOk;
-            }
-            var first = specs.FirstOrDefault(s => s.Enabled);
-            if (first == null)
-            {
-                Log("ℹ️ 测量任务模板 MeasurementSpecs 无 Enabled 项——按 EmptySummaryAsOk 兜底：" + (rule.EmptySummaryAsOk ? "OK" : "NG"));
-                return rule.EmptySummaryAsOk;
-            }
-            if (!first.NominalMm.HasValue || !first.ToleranceMm.HasValue)
-            {
-                Log($"ℹ️ 测量项 [{first.Name}] 未配 NominalMm/ToleranceMm——按 EmptySummaryAsOk 兜底：" + (rule.EmptySummaryAsOk ? "OK" : "NG"));
+                Log("ℹ️ 测量任务模板未配置启用的 MeasurementSpecs——按 EmptySummaryAsOk 兜底放行/拦截（演示态）：" + (rule.EmptySummaryAsOk ? "OK" : "NG"));
                 return rule.EmptySummaryAsOk;
             }
 
-            // 从摘要里解析数值（"圆 直径=12.34 mm ..." 或 "线段 长度=12.34 mm ..."），取首个 "数字+单位"
-            if (!TryParseMeasurementValue(summary, out double measured))
+            bool anyJudged = false;   // 是否至少有一项真正进了公差判定
+            bool allOk = true;
+            foreach (var spec in enabled)
             {
-                Log("⚠️ 测量任务摘要未能解析数值（预期形如 直径=12.34 mm）→ NG");
-                return false;
+                var q = ResolveQuantityForSpec(spec, outcome, enabled.Count == 1);
+                if (q == null)
+                {
+                    Log($"⚠️ 测量项[{spec.Name}]在本次摘要里找不到对应量 → NG。" +
+                        $"可选量名：{string.Join("、", outcome.Quantities.Select(x => x.Name))}。" +
+                        "请在任务模板 MeasurementSpecs 里把 Name 写成上面某个量名（或对齐 ToolKind 语义）。");
+                    allOk = false;
+                    continue;
+                }
+                if (!q.Valid)
+                {
+                    Log($"⚠️ 测量项[{spec.Name}]对应的量「{q.Name}」本次未算出（拟合失败/几何退化）→ NG");
+                    anyJudged = true;
+                    allOk = false;
+                    continue;
+                }
+                if (!spec.NominalMm.HasValue || !spec.ToleranceMm.HasValue)
+                {
+                    Log($"ℹ️ 测量项[{spec.Name}]未配 NominalMm/ToleranceMm——该项跳过判定（不参与 OK/NG）");
+                    continue;
+                }
+
+                double nominal = spec.NominalMm.Value;
+                double tol = spec.ToleranceMm.Value;
+                double lo = nominal - tol, hi = nominal + tol;
+                bool ok = q.Value >= lo && q.Value <= hi;
+                anyJudged = true;
+                allOk = allOk && ok;
+                Log($"📏 [{spec.Name}] 实测={q.Value.ToString("F3", CultureInfo.InvariantCulture)}{outcome.Unit} " +
+                    $"标称={nominal.ToString("F3", CultureInfo.InvariantCulture)}±{tol.ToString("F3", CultureInfo.InvariantCulture)} " +
+                    $"→ {(ok ? "✅ OK" : "❌ NG")}（区间 [{lo.ToString("F3", CultureInfo.InvariantCulture)}, {hi.ToString("F3", CultureInfo.InvariantCulture)}]）");
             }
-            double nominal = first.NominalMm.Value;
-            double tol = first.ToleranceMm.Value;
-            double lo = nominal - tol, hi = nominal + tol;
-            bool ok = measured >= lo && measured <= hi;
-            Log($"📏 测量项[{first.Name}] 实测={measured.ToString("F3", CultureInfo.InvariantCulture)} 标称={nominal.ToString("F3", CultureInfo.InvariantCulture)}±{tol.ToString("F3", CultureInfo.InvariantCulture)} → {(ok ? "✅ OK" : "❌ NG")}（区间 [{lo.ToString("F3", CultureInfo.InvariantCulture)}, {hi.ToString("F3", CultureInfo.InvariantCulture)}]）");
-            return ok;
+
+            // 一项都没真正判（全都没配 Nominal/Tol）→ 沿用旧版的兜底开关
+            if (!anyJudged && allOk)
+            {
+                Log("ℹ️ 测量任务 MeasurementSpecs 均未配 NominalMm/ToleranceMm——按 EmptySummaryAsOk 兜底：" + (rule.EmptySummaryAsOk ? "OK" : "NG"));
+                return rule.EmptySummaryAsOk;
+            }
+            return allOk;
+        }
+
+        /// <summary>
+        /// 把一条 MeasurementSpecItem 匹配到本次实测的某个量。匹配顺序（前者命中即返回）：
+        ///   ① 名字完全一致（trim + 忽略大小写）
+        ///   ② 名字互相包含（spec.Name ⊃ 量名，或 量名 ⊃ spec.Name）
+        ///   ③ ToolKind 语义提示（Diameter/FitCircle→直径；PointToLine/Distance→距离；Spacing→间距；FitLine→长度）
+        ///   ④ 仅当模板只启用 1 条 MeasurementSpecs 时，退化为「摘要首量」
+        ///      （= 2026-09-25 之前的旧行为，保单一尺寸模板的兼容）；
+        ///      多条启用项时【不猜】→ 返回 null，由调用方判 NG 并把可选量名写进日志。
+        ///      （判据纪律：宁愿响亮失败，也不能把 A 尺寸拿去判 B 的公差还报 OK。）
+        /// </summary>
+        private MeasuredQuantity ResolveQuantityForSpec(MeasurementSpecItem spec, MeasurementOutcome outcome, bool singleSpecCompat)
+        {
+            var qs = outcome.Quantities;
+            if (qs == null || qs.Count == 0) return null;
+
+            string key = (spec.Name ?? string.Empty).Trim();
+            if (key.Length > 0)
+            {
+                var exact = qs.FirstOrDefault(q => string.Equals(q.Name, key, StringComparison.OrdinalIgnoreCase));
+                if (exact != null) return exact;
+                var contains = qs.FirstOrDefault(q =>
+                    q.Name.IndexOf(key, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    key.IndexOf(q.Name, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (contains != null) return contains;
+            }
+
+            string kind = (spec.ToolKind ?? string.Empty).Trim();
+            if (kind.Length > 0)
+            {
+                string hint =
+                    kind.IndexOf("Diam", StringComparison.OrdinalIgnoreCase) >= 0 ? "直径" :
+                    kind.IndexOf("PointToLine", StringComparison.OrdinalIgnoreCase) >= 0 ? "距离" :
+                    kind.IndexOf("Spacing", StringComparison.OrdinalIgnoreCase) >= 0 ? "间距" :
+                    kind.IndexOf("Dist", StringComparison.OrdinalIgnoreCase) >= 0 ? "距离" :
+                    kind.IndexOf("FitCircle", StringComparison.OrdinalIgnoreCase) >= 0 ? "直径" :
+                    kind.IndexOf("FitLine", StringComparison.OrdinalIgnoreCase) >= 0 ? "长度" :
+                    null;
+                if (hint != null)
+                {
+                    var hit = qs.FirstOrDefault(q => q.Name.Contains(hint));
+                    if (hit != null) return hit;
+                }
+            }
+
+            return singleSpecCompat ? qs[0] : null;
         }
 
         private List<MeasurementSpecItem> _cachedSpecs;
@@ -257,20 +591,6 @@ namespace Grayson.Vision.Core.Processes
                 _cachedSpecs = new List<MeasurementSpecItem>();
             }
             return _cachedSpecs;
-        }
-
-        private static bool TryParseMeasurementValue(string summary, out double value)
-        {
-            value = 0;
-            // 形如 "直径=12.34 mm" / "长度=12.34 mm" —— 取首个 "数字" 段
-            int eq = summary.IndexOf('=');
-            if (eq < 0) return false;
-            int i = eq + 1;
-            while (i < summary.Length && (summary[i] == ' ' || summary[i] == ' ')) i++;
-            int start = i;
-            while (i < summary.Length && (char.IsDigit(summary[i]) || summary[i] == '.' || summary[i] == '-' || summary[i] == '+')) i++;
-            if (i <= start) return false;
-            return double.TryParse(summary.Substring(start, i - start), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
         }
 
         // ==================== 判据（v1 务实版；模板级 VerdictRule > 工位引擎配置 > 代码默认） ====================

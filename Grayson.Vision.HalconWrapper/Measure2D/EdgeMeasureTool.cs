@@ -52,12 +52,19 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
                     HTuple rows, cols, amps, dists;
                     HOperatorSet.MeasurePos(grayImg, mh, 1.0, 30, "all", "all",
                         out rows, out cols, out amps, out dists);
-                    if (dists.Length < 2)
-                        return Result<double>.Fail("未找到足够边缘点");
+                    // ★ 同 CaliperMeasureTool：本环境（HALCON 24.11 + halcondotnet）measure_pos 的
+                    //   Distance 可能为空元组，索引它会抛 HTupleAccessException。故以 Row/Column 为准
+                    //   （两者才是边缘位置的真源），缺 Distance 就自己沿扫描轴做带符号投影。
+                    int n = Math.Min(rows.Length, cols.Length);
+                    if (n < 2)
+                        return Result<double>.Fail($"未找到足够边缘点（实际 {n}/2）");
+                    double su = Math.Sin(scanPhi), cu = Math.Cos(scanPhi);
                     double dMin = double.MaxValue, dMax = double.MinValue;
-                    for (int i = 0; i < dists.Length; i++)
+                    for (int i = 0; i < n; i++)
                     {
-                        double d = dists[i].D;
+                        double d = i < dists.Length
+                            ? dists[i].D
+                            : ((rows[i].D - midRow) * su + (cols[i].D - midCol) * cu);
                         if (d < dMin) dMin = d;
                         if (d > dMax) dMax = d;
                     }

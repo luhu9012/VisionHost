@@ -46,7 +46,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
         #endregion
 
         #region 2. 阈值分割
-        public static Result<object> ApplyThreshold(object nativeImage, int method, int minGray, int maxGray, int maskSize, int offset)
+        public static Result<object> ApplyThreshold(object nativeImage, int method, int minGray, int maxGray, int maskSize, int offset, string polarity = "light")
         {
             var hImg = nativeImage as HObject;
             if (hImg == null || !hImg.IsInitialized())
@@ -59,7 +59,7 @@ namespace Grayson.Vision.HalconWrapper.ImageProc
                     res = ImageThresholdTool.FixedThreshold(hImg, minGray, maxGray);
                     break;
                 case 1: // Dynamic
-                    res = ImageThresholdTool.AutoThreshold(hImg, maskSize, offset);
+                    res = ImageThresholdTool.AutoThreshold(hImg, maskSize, offset, polarity);
                     break;
                 case 2: // Otsu
                     res = OtsuThresholdInternal(hImg);

@@ -9,6 +9,13 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
         Otsu        // Otsu 自动阈值
     }
 
+    /// <summary>动态阈值极性：检出比局部均值亮（Light，亮缺陷）还是暗（Dark，暗划痕/缺料）。</summary>
+    public enum DynPolarity
+    {
+        Light,      // 亮缺陷（默认，历史行为）
+        Dark        // 暗缺陷（划痕/脏污/缺料最常见）
+    }
+
     public class ImageThresholdParam : ParamBase
     {
         /// <summary>
@@ -50,6 +57,14 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
         {
             get => _dynamicOffset;
             set => Set(ref _dynamicOffset, value);
+        }
+
+        // 2026-09-26：原先算子层写死 "light"，暗划痕/暗缺陷永远提不出来——补成可配参数
+        private DynPolarity _polarity = DynPolarity.Light;
+        public DynPolarity Polarity
+        {
+            get => _polarity;
+            set => Set(ref _polarity, value);
         }
     }
 }

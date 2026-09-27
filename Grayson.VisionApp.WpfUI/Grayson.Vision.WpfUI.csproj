@@ -101,6 +101,8 @@
     <Compile Include="Service\TaskTypeIndustryCatalog.cs" />
     <Compile Include="Service\DlDemoTaskFactory.cs" />
     <Compile Include="Service\MeasurementDemoTaskFactory.cs" />
+    <Compile Include="Service\ColorDemoTaskFactory.cs" />
+    <Compile Include="Service\BlobDemoTaskFactory.cs" />
     <Compile Include="Service\StationStatisticsService.cs" />
     <Compile Include="Service\WpfDialogService.cs" />
     <!-- 内嵌 DL 演示资产（HTH 翻译成品：模型+精选图，随构建输出，运行时自动落地 Config） -->
@@ -109,6 +111,17 @@
     </Content>
     <!-- 内嵌 测量演示资产（stage9-3 外观测量族闭环：课堂素材+FitCircle 配方/模板/判据） -->
     <Content Include="Assets\MeasureDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 颜色识别演示资产（识别读取族首批：HALCON citrus_fruits 样例+ColorIdentify 配方/模板/阈值） -->
+    <Content Include="Assets\ColorDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 Blob 计数/划痕演示资产（外观测量族·梯队B：HALCON counting/scratch 样例+三节点配方/模板/个数判据） -->
+    <Content Include="Assets\BlobDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\ScratchDemo\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />

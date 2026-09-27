@@ -60,7 +60,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             new LabeledOption { Value = TaskKind.PositioningGuidance, Text = "🧭 引导定位（相机+标定+执行方案，工位联动）" },
             new LabeledOption { Value = TaskKind.DeepLearningInference, Text = "🧠 深度学习推理（本地图像源+模型，独立纯软件）" },
-            new LabeledOption { Value = TaskKind.AppearanceMeasurement, Text = "📏 外观测量（本地图像源+测量算子，独立纯软件）" }
+            new LabeledOption { Value = TaskKind.AppearanceMeasurement, Text = "📏 外观测量（本地图像源+测量算子，独立纯软件）" },
+            new LabeledOption { Value = TaskKind.FeatureIdentification, Text = "🔎 特征识别读取（本地图像源+颜色/条码/OCR 识别算子，独立纯软件）" }
         };
 
         private LabeledOption _selectedKindOption;
@@ -165,6 +166,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public bool IsGuidance => Tpl.Kind == TaskKind.PositioningGuidance;
         public bool IsDl => Tpl.Kind == TaskKind.DeepLearningInference;
         public bool IsAppearance => Tpl.Kind == TaskKind.AppearanceMeasurement;
+        public bool IsIdentification => Tpl.Kind == TaskKind.FeatureIdentification;
         public bool IsCameraSource => Tpl.ImageSource.Kind == TaskImageSourceKind.CameraSource;
         public bool IsLocalSource => Tpl.ImageSource.Kind != TaskImageSourceKind.CameraSource;
         public string KindHint => TaskKindCatalog.KindHint(Tpl.Kind);
@@ -215,6 +217,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(IsGuidance));
             OnPropertyChanged(nameof(IsDl));
             OnPropertyChanged(nameof(IsAppearance));
+            OnPropertyChanged(nameof(IsIdentification));
             OnPropertyChanged(nameof(KindHint));
         }
 

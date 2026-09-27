@@ -8,6 +8,7 @@ using Grayson.Vision.Contracts.Infrastructure.Logging;
 using Grayson.Vision.Contracts.Station.Processes;
 using Grayson.Vision.Contracts.Station.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -758,6 +759,35 @@ namespace Grayson.Vision.Core.Processes
                 if (node.Type == type && node.Enable) return node;
             }
             return null;
+        }
+
+        /// <summary>
+        /// 按节点类型收集【全部】启用节点（穿透 CompositeFlow 子流程，向下递归）。
+        ///
+        /// 为什么需要它：一条链上可以有多个同类型测量节点 —— 「模板匹配 + 几何变换 + 测量」
+        /// 案例就是 1 个 FitCircle（圆孔）+ 2 个 FitLine（两侧边）。用 FindNode 只返回第一个，
+        /// 第二条线会被【静默丢弃】：测量摘要少一项、尺寸表少一列，而且看不出来。
+        /// （判据纪律：宁可漏也要有；这里的"漏"是无声的，比报错更危险 ⇒ 补本方法。）
+        /// </summary>
+        protected List<FlowNodeBase> FindNodes(NodeType type)
+        {
+            var sink = new List<FlowNodeBase>();
+            CollectEnabledNodes(Worker.ActiveExecutionChain?.Nodes, type, sink, 0);
+            return sink;
+        }
+
+        /// <summary>FindNodes 的递归实现；depth 上限防子流程自引用造成的无限下钻。</summary>
+        private static void CollectEnabledNodes(IEnumerable<FlowNodeBase> nodes, NodeType type,
+            List<FlowNodeBase> sink, int depth)
+        {
+            if (nodes == null || depth > 8) return;
+            foreach (var node in nodes)
+            {
+                if (node == null) continue;
+                if (node.Type == type && node.Enable) sink.Add(node);
+                if (node is CompositeFlowNode composite && composite.SubProcess != null)
+                    CollectEnabledNodes(composite.SubProcess.Nodes, type, sink, depth + 1);
+            }
         }
 
         /// <summary>

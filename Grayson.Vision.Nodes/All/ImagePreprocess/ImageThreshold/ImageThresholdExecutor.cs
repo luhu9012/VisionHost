@@ -48,7 +48,8 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
                 param.MinGray,
                 param.MaxGray,
                 param.DynamicMaskSize,
-                param.DynamicOffset
+                param.DynamicOffset,
+                param.Polarity == DynPolarity.Dark ? "dark" : "light"
             );
 
             if (res.Success)
@@ -60,7 +61,7 @@ namespace Grayson.Vision.Nodes.All.ImagePreprocess.ImageThreshold
                 disp?.Add(NodePreviewHelper.CopyForDisplay(res.Data), "green", 2);
                 disp?.AddText(
                     $"[{param.Method}] Min={param.MinGray} Max={param.MaxGray}" +
-                    (param.Method == ThresholdMethod.Dynamic ? $" Mask={param.DynamicMaskSize} Offset={param.DynamicOffset}" : ""),
+                    (param.Method == ThresholdMethod.Dynamic ? $" Mask={param.DynamicMaskSize} Offset={param.DynamicOffset} Pol={param.Polarity}" : ""),
                     12, 12, "yellow");
             }
             else

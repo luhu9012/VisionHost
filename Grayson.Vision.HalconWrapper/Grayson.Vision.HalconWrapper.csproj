@@ -56,6 +56,7 @@
     <Compile Include="Calibration\ICalibrationService.cs" />
     <Compile Include="Calibration\PerpendicularityMeter.cs" />
     <Compile Include="Class1.cs" />
+    <Compile Include="Core\HalconColorNames.cs" />
     <Compile Include="Core\HalconGlobalHelper.cs" />
     <Compile Include="Core\HalconMemoryGuard.cs" />
     <Compile Include="Core\IHalconWindowSurface.cs" />
@@ -67,6 +68,7 @@
     <Compile Include="ImageProc\AffineImageTool.cs" />
     <Compile Include="ImageProc\ImageBasicTool.cs" />
     <Compile Include="ImageProc\ImageFilterTool.cs" />
+    <Compile Include="ImageProc\BlobTool.cs" />
     <Compile Include="ImageProc\ImagePreprocessTool.cs" />
     <Compile Include="ImageProc\ImageThresholdTool.cs" />
     <Compile Include="ImageProc\RoiOperationTool.cs" />

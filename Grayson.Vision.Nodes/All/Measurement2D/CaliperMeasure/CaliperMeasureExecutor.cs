@@ -7,6 +7,7 @@
 //        所有 HALCON 算子经 HalconWrapper.Measure2D.CaliperNodeMeasure 执行（Node 零句柄引用）。
 //===================================================================================
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,8 @@ using Grayson.Vision.Contracts.Flow.Attributes;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Flow.Enums;
 using Grayson.Vision.Contracts.Flow.Nodes;
+using Grayson.Vision.HalconWrapper;      // NodePreviewHelper：覆盖图形的显示副本 / 无预览时静默释放
+using Grayson.Vision.HalconWrapper.Core; // HalconColorNames：边缘点色名的单一真源
 using Grayson.Vision.HalconWrapper.ImageProc;
 using Grayson.Vision.HalconWrapper.Measure2D;
 using Grayson.Vision.Nodes.Common;
@@ -95,11 +98,13 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.CaliperMeasure
             context.SetOutputValue(node, PORT_OUT_IMAGE, inputImage);
 
             // 沿边多探针找边点（拟合在本节点被忽略，只取点集）
+            // probeGeom：顺带收集"卡尺齿"几何，仅用于上屏（"原型卡尺"可视化），不影响测量
+            var probeGeom = new List<double[]>();
             var res = await Task.Run(() => CaliperNodeMeasure.MeasureLine(inputImage,
                 midRow, midCol, phiRad,
                 param.HalfSpanAlongEdge, param.ScanHalf, param.ProbeAvgHalf,
                 param.NumPoints, param.Sigma, param.Threshold, param.Transition, param.Select,
-                0)); // minEdgePoints=0：本节点不需要拟合，一点也算成功
+                0, probeGeom)); // minEdgePoints=0：本节点不需要拟合，一点也算成功
 
             if (!res.Success)
             {
@@ -109,6 +114,15 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.CaliperMeasure
             }
 
             var mo = res.Data;
+
+            // 「原型卡尺」上屏：把本次真正参与取样的测量带画出来（放在命中数判定之前，漏边时更要看得见）
+            var regionXld = mo.MeasureRegionXld;
+            if (regionXld != null)
+            {
+                if (Preview != null) Preview.Add(regionXld, "cyan", 1);  // 提交即所有权转移给显示层
+                else NodePreviewHelper.DisposeQuietly(regionXld);        // 无预览窗口：释放，防句柄泄漏
+            }
+
             int n = mo.EdgeCount;
             sw.Stop();
 
@@ -128,7 +142,7 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.CaliperMeasure
             int cap = Math.Min(n, 200);
             for (int i = 0; i < cap; i++)
             {
-                Preview?.AddCross(mo.Points[i].Row, mo.Points[i].Col, 5, "lime");
+                Preview?.AddCross(mo.Points[i].Row, mo.Points[i].Col, 5, HalconColorNames.EdgePoint);
             }
             string sample = "";
             if (n > 0)
@@ -136,7 +150,7 @@ namespace Grayson.Vision.Nodes.All.Measurement2D.CaliperMeasure
                 sample = $"  例: ({mo.Points[0].Row:F1},{mo.Points[0].Col:F1})";
                 if (n > 1) sample += $" ... ({mo.Points[n - 1].Row:F1},{mo.Points[n - 1].Col:F1})";
             }
-            Preview?.AddText($"🔎 边缘点 {n}/{param.NumPoints}{sample}", 12, 40, "lime");
+            Preview?.AddText($"🔎 边缘点 {n}/{param.NumPoints}{sample}", 12, 40, HalconColorNames.EdgePoint);
 
             context.Log($"[" + node.DisplayName + $"] ✅ 卡尺找边完成：命中 {n}/{param.NumPoints} 点" +
                 (n > 0 ? $"  首({mo.Points[0].Row:F2},{mo.Points[0].Col:F2}) 末({mo.Points[n - 1].Row:F2},{mo.Points[n - 1].Col:F2})" : "") +

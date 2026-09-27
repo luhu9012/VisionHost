@@ -29,6 +29,14 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
         /// <summary>圆/弧拟合结果（MeasureCircle 成功且点数达标时非空）</summary>
         public CaliperCircleFit CircleFit { get; set; }
 
+        /// <summary>
+        /// 测区（卡尺齿）XLD —— **"原型卡尺"上屏用**：本次真正参与取样的那些测量带，画成小矩形轮廓。
+        /// 强类型故意留成 object：Nodes 层零 halcondotnet 引用，直接原样交给
+        /// IFlowPreviewContext.Add(obj, color, lineWidth) 即可（提交即所有权转移）。
+        /// 生成失败/无预览时为 null。
+        /// </summary>
+        public object MeasureRegionXld { get; set; }
+
         public int ImageWidth { get; set; }
         public int ImageHeight { get; set; }
     }
@@ -87,12 +95,14 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
         /// <summary>
         /// 直线卡尺测量 + 直线拟合（FitLine 节点用）：沿目标边缘散布 NumPoints 个探针，
         /// 每探针横跨边缘取样 → FitLineContourXld("tukey")。
+        /// probeGeom 非空时顺带产出测区 XLD（见 <see cref="CaliperNodeMeasureResult.MeasureRegionXld"/>）。
         /// </summary>
         public static Result<CaliperNodeMeasureResult> MeasureLine(object image,
             double midRow, double midCol, double edgePhiRad,
             double halfSpanAlongEdge, double scanHalf, double probeAvgHalf,
             int numPoints, double sigma, double threshold,
-            CaliperTransition transition, CaliperEdgeSelect select, int minEdgePoints)
+            CaliperTransition transition, CaliperEdgeSelect select, int minEdgePoints,
+            List<double[]> probeGeom = null)
         {
             var grayRes = AsGray(image);
             if (!grayRes.Success) return Result<CaliperNodeMeasureResult>.Fail(grayRes.Message);
@@ -103,7 +113,7 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
             {
                 var ptsRes = CaliperMeasureTool.MeasureLine(gray, midRow, midCol, edgePhiRad,
                     halfSpanAlongEdge, scanHalf, probeAvgHalf,
-                    numPoints, sigma, threshold, transition, select, w, h);
+                    numPoints, sigma, threshold, transition, select, w, h, probeGeom);
                 if (!ptsRes.Success)
                     return Result<CaliperNodeMeasureResult>.Fail(ptsRes.Message, ptsRes.ErrorCode, ptsRes.Exception);
                 var pts = ptsRes.Data ?? new List<CaliperEdgePoint>();
@@ -112,7 +122,8 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
                     EdgeCount = pts.Count,
                     Points = pts,
                     ImageWidth = w,
-                    ImageHeight = h
+                    ImageHeight = h,
+                    MeasureRegionXld = CaliperMeasureTool.GenProbeRegionXld(probeGeom)
                 };
                 if (pts.Count >= System.Math.Max(2, minEdgePoints))
                 {
@@ -136,13 +147,15 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
             double row, double col, double scanPhiRad,
             double scanHalf, double avgHalf,
             double sigma, double threshold,
-            CaliperTransition transition, CaliperEdgeSelect select)
+            CaliperTransition transition, CaliperEdgeSelect select,
+            List<double[]> probeGeom = null)
         {
             var grayRes = AsGray(image);
             if (!grayRes.Success) return Result<CaliperNodeMeasureResult>.Fail(grayRes.Message);
             var gray = grayRes.Data;
             if (!TryGetSize(gray, out int w, out int h))
                 return Result<CaliperNodeMeasureResult>.Fail("无法获取图像尺寸");
+            probeGeom?.Add(new double[] { row, col, scanPhiRad, scanHalf, avgHalf });
             try
             {
                 var ptsRes = CaliperMeasureTool.MeasureRectProbe(gray, row, col, scanPhiRad,
@@ -155,7 +168,8 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
                     EdgeCount = pts.Count,
                     Points = pts,
                     ImageWidth = w,
-                    ImageHeight = h
+                    ImageHeight = h,
+                    MeasureRegionXld = CaliperMeasureTool.GenProbeRegionXld(probeGeom)
                 });
             }
             catch (Exception ex)
@@ -172,7 +186,8 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
             double centerRow, double centerCol, double radius,
             double arcStartRad, double arcExtentRad, double annulusHalf,
             double sigma, double threshold,
-            CaliperTransition transition, CaliperEdgeSelect select, int minEdgePoints)
+            CaliperTransition transition, CaliperEdgeSelect select, int minEdgePoints,
+            List<double[]> probeGeom = null)
         {
             var grayRes = AsGray(image);
             if (!grayRes.Success) return Result<CaliperNodeMeasureResult>.Fail(grayRes.Message);
@@ -182,7 +197,7 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
             try
             {
                 var ptsRes = CaliperMeasureTool.MeasureArc(gray, centerRow, centerCol, radius,
-                    arcStartRad, arcExtentRad, annulusHalf, sigma, threshold, transition, select, w, h);
+                    arcStartRad, arcExtentRad, annulusHalf, sigma, threshold, transition, select, w, h, probeGeom);
                 if (!ptsRes.Success)
                     return Result<CaliperNodeMeasureResult>.Fail(ptsRes.Message, ptsRes.ErrorCode, ptsRes.Exception);
                 var pts = ptsRes.Data ?? new List<CaliperEdgePoint>();
@@ -191,7 +206,8 @@ namespace Grayson.Vision.HalconWrapper.Measure2D
                     EdgeCount = pts.Count,
                     Points = pts,
                     ImageWidth = w,
-                    ImageHeight = h
+                    ImageHeight = h,
+                    MeasureRegionXld = CaliperMeasureTool.GenProbeRegionXld(probeGeom)
                 };
                 if (pts.Count >= System.Math.Max(3, minEdgePoints))
                 {

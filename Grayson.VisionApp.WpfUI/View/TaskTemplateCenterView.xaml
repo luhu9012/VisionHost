@@ -28,14 +28,14 @@
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="🗂️ 任务模板中心" FontSize="16" FontWeight="Bold"
                                Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="把“执行方案 + 视觉链 + 资产 + 输出契约”沉淀为可复用任务模板 —— 三类经典任务：引导定位（工位联动）／深度学习推理、外观测量（独立纯软件）"
+                    <TextBlock Text="把“执行方案 + 视觉链 + 资产 + 输出契约”沉淀为可复用任务模板 —— 四类经典任务：引导定位（工位联动）／深度学习推理、外观测量、特征识别读取（独立纯软件）"
                                FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
         <!-- ===== 统计卡 ===== -->
-        <UniformGrid DockPanel.Dock="Top" Columns="6" Margin="0,0,0,10">
+        <UniformGrid DockPanel.Dock="Top" Columns="7" Margin="0,0,0,10">
             <Border Style="{StaticResource CardBorderStyle}" Padding="10,6" Margin="0,0,8,0">
                 <StackPanel><TextBlock Text="模板总数" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock Text="{Binding TotalCount}" FontSize="20" FontWeight="Bold"/></StackPanel>
@@ -51,6 +51,10 @@
             <Border Style="{StaticResource CardBorderStyle}" Padding="10,6" Margin="0,0,8,0">
                 <StackPanel><TextBlock Text="📏 外观测量" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock Text="{Binding MeasureCount}" FontSize="20" FontWeight="Bold"/></StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBorderStyle}" Padding="10,6" Margin="0,0,8,0">
+                <StackPanel><TextBlock Text="🔎 特征识别读取" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding IdentCount}" FontSize="20" FontWeight="Bold"/></StackPanel>
             </Border>
             <Border Style="{StaticResource CardBorderStyle}" Padding="10,6" Margin="0,0,8,0">
                 <StackPanel><TextBlock Text="已发布" Style="{StaticResource CaptionTextStyle}" Foreground="{DynamicResource TextSecondaryBrush}"/>

@@ -90,6 +90,11 @@ namespace Grayson.Vision.WpfUI.View
             {
                 tpl.OutputContractText = "深度学习推理输出 目标框/掩膜/类别/异常 结果摘要（DetectionResults），判据随模板 VerdictRule 执行，周期结果写 CSV。";
             }
+            else if (kind == TaskKind.FeatureIdentification)
+            {
+                tpl.OutputContractText = "特征识别输出 颜色区域+面积占比（ColorIdentify）/ 码值（ReadBarcode）/ 字符结果（ReadOCR），" +
+                                         "汇总成结果摘要后按模板 VerdictRule 判 OK/NG，周期结果写 CSV。";
+            }
             else
             {
                 tpl.OutputContractText = "外观测量输出 数值 + OK/NG 判定（测量项在编辑页配置，判据随模板执行）。";

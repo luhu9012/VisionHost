@@ -208,6 +208,11 @@
     <Compile Include="All\ImagePreprocess\ROIOperation\ROIOperationTemplateView.xaml.cs">
       <DependentUpon>ROIOperationTemplateView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="All\Measurement2D\BlobAnalysis\BlobAnalysisExecutor.cs" />
+    <Compile Include="All\Measurement2D\BlobAnalysis\BlobAnalysisParam.cs" />
+    <Compile Include="All\Measurement2D\BlobAnalysis\BlobAnalysisTemplateView.xaml.cs">
+      <DependentUpon>BlobAnalysisTemplateView.xaml</DependentUpon>
+    </Compile>
     <Compile Include="All\Measurement2D\FitCircle\FitCircleExecutor.cs" />
     <Compile Include="All\Measurement2D\FitCircle\FitCircleParam.cs" />
     <Compile Include="All\Measurement2D\FitCircle\FitCircleTemplateView.xaml.cs">
@@ -384,6 +389,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="All\ImagePreprocess\ROIOperation\ROIOperationTemplateView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="All\Measurement2D\BlobAnalysis\BlobAnalysisTemplateView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

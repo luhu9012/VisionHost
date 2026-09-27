@@ -45,6 +45,15 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
         public string Method { get; set; }              // WalkNinePoint / PivotFit / ProbeHomography / WorldPlaneRectify...
         public int PointPairs { get; set; }             // 点对数（九点=9，12 点=12）
         public double RmsMm { get; set; }               // 拟合残差
+        /// <summary>
+        /// EIH 标定时的拍照 Z（法兰高度）。消费端校验判据：生产拍照 Z 必须等于该值，
+        /// 否则 EIH 平移分量随 Z 线性漂移 ⇒ 乘性过纠（范式1 血泪）。null = ETH 或不适用。
+        /// </summary>
+        public double? CalibZHeightMm { get; set; }
+        /// <summary>标定所用 Mark/工装标识（V2.1 CalibToolTag：残差可解释性的溯源锚点）。</summary>
+        public string CalibToolTag { get; set; }
+        /// <summary>链模型版本（结构演进时区分旧档案）。</summary>
+        public int Version { get; set; }                // 当前 = 1
         public string CapturedAt { get; set; }          // ISO 8601
         public string Operator { get; set; }
         public string Note { get; set; }

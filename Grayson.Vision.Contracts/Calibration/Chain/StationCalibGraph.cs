@@ -62,6 +62,11 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
         public string CapturedAt { get; set; }          // ISO 8601
         public string Operator { get; set; }
         public string Note { get; set; }
+        /// <summary>
+        /// 相机矩阵有效拍照 U（°，EIH 专属）。范式1 折叠导出的 H_Cam→F 只在 U=该值时等价；
+        /// NaN=无限制（向导原生标定的 H_Cam→F 对任意拍照 U 成立）。ChainHydrator 消费时硬校验。
+        /// </summary>
+        public double ValidPhotoUDeg { get; set; } = double.NaN;
     }
 
     /// <summary>相机节点。ETH 挂 T_Cam→Robot；EIH 挂 T_Cam→Flange（O 已折叠进平移分量）。</summary>

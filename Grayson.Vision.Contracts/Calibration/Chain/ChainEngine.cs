@@ -71,19 +71,13 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
                     errs.Add("G1 相机 " + c.CameraId + " 矩阵退化（行列式≈0）");
             }
 
-            // G2：工具节点完整 + 非零偏移必须已声明符号（09-16 教训的图化）
+            // G2：工具节点完整（结构检查）。原生范式2 的偏移量由向导实测产出（带符号矢量，
+            //     符号内蕴），不需要范式1 的"来源/符号声明"门禁——那是给来历不明的旧档案用的。
             foreach (var t in graph.Tools ?? new List<ChainTcpNode>())
             {
                 if (string.IsNullOrWhiteSpace(t.ToolId)) { errs.Add("G2 存在缺 ToolId 的工具节点"); continue; }
-                bool hasOffset = t.Offset != null && t.Offset.Length == 2
-                                 && (Math.Abs(t.Offset[0]) > 1e-9 || Math.Abs(t.Offset[1]) > 1e-9);
-                if (hasOffset)
-                {
-                    if (t.Meta == null || t.Meta.OffsetSource == ChainOffsetSource.Undeclared)
-                        errs.Add("G2 工具 " + t.ToolId + " 带非零偏移但 OffsetSource 未声明（禁止消费）");
-                    else if (!t.Meta.SignDeclared)
-                        errs.Add("G2 工具 " + t.ToolId + " 偏移符号未判定（SignDeclared=false，选错偏 264mm 教训）");
-                }
+                if (t.Offset != null && t.Offset.Length != 2)
+                    errs.Add("G2 工具 " + t.ToolId + " 偏移矢量非法（须 2 元素或 null）");
                 if (!t.IsMaster && string.IsNullOrWhiteSpace(t.BindMasterToolId))
                     errs.Add("G2 副工具 " + t.ToolId + " 未绑定主工具");
             }

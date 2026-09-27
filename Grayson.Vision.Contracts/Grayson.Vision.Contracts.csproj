@@ -85,7 +85,6 @@
     <Compile Include="Calibration\Services\HomMat2D.cs" />
     <Compile Include="Calibration\Chain\StationCalibGraph.cs" />
     <Compile Include="Calibration\Chain\ChainEngine.cs" />
-    <Compile Include="Calibration\Chain\ChainHydrator.cs" />
     <Compile Include="Templates\Models\TemplateModels.cs" />
     <Compile Include="TaskLibrary\Models\TaskTemplateModels.cs" />
     <Compile Include="Communication\CommunicationMessage.cs" />

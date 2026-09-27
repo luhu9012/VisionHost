@@ -36,37 +36,18 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
     }
 
     /// <summary>
-    /// ★ b（工具偏移）来源 Provenance——范式1 血泪的显式化：
-    ///   同一个 6 元组，"谁测的"决定可信级（选错 = 偏 264mm 那族的根因）。
+    /// ★ 标定元数据（留痕，不参与求值/门禁）。
+    ///   原生范式2 下链图只由向导产出：偏移量是向导实测的带符号矢量（符号内蕴），
+    ///   不需要范式1 的"来源分级/符号声明"复杂度——那套是给来历不明的旧档案当护栏用的。
     /// </summary>
-    public enum ChainOffsetSource
-    {
-        /// <summary>未声明（禁止消费带偏移的链）</summary>
-        Undeclared = 0,
-        /// <summary>对针直量（无残差，最高可信）</summary>
-        TouchedTip = 1,
-        /// <summary>残差反推（ToolEcc 类，1~3mm 量级）</summary>
-        ToolEccResidual = 2,
-        /// <summary>平台自测（≈8mm 是 O 的偏差不是 b，只能参考）</summary>
-        SelfTest = 3,
-    }
-
-    /// <summary>标定元数据（复用迁移设计 §3：结果可信级与留痕）</summary>
     public sealed class ChainCalibMeta
     {
         public string Method { get; set; }              // WalkNinePoint / PivotFit / ProbeHomography / WorldPlaneRectify...
         public int PointPairs { get; set; }             // 点对数（九点=9，12 点=12）
         public double RmsMm { get; set; }               // 拟合残差
-        public ChainOffsetSource OffsetSource { get; set; } = ChainOffsetSource.Undeclared;
-        public bool SignDeclared { get; set; }          // ★ 偏移符号已判定（09-16 教训：选错偏 264mm）
         public string CapturedAt { get; set; }          // ISO 8601
         public string Operator { get; set; }
         public string Note { get; set; }
-        /// <summary>
-        /// 相机矩阵有效拍照 U（°，EIH 专属）。范式1 折叠导出的 H_Cam→F 只在 U=该值时等价；
-        /// NaN=无限制（向导原生标定的 H_Cam→F 对任意拍照 U 成立）。ChainHydrator 消费时硬校验。
-        /// </summary>
-        public double ValidPhotoUDeg { get; set; } = double.NaN;
     }
 
     /// <summary>相机节点。ETH 挂 T_Cam→Robot；EIH 挂 T_Cam→Flange（O 已折叠进平移分量）。</summary>
@@ -76,6 +57,12 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
         public ChainCameraMount Mount { get; set; }
         /// <summary>ETH: T_Cam→Robot；EIH: T_Cam→Flange。6 元组 [a11,a12,tx,a21,a22,ty]</summary>
         public double[] Matrix { get; set; }
+        /// <summary>
+        /// 下相机差分基准像素 [col,row]（= 吸嘴 U 轴在该相机图像里的投影 R_cdown，向导实测）。
+        /// 消费：δ = Chain(卡片像素) − Chain(DeltaRefPixel)，同位姿两次链求值平移项相减消掉。
+        /// null = 不做差分消费（该相机没有下相机纠偏用途）。
+        /// </summary>
+        public double[] DeltaRefPixel { get; set; }
         public ChainCalibMeta Meta { get; set; }
     }
 

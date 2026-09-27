@@ -1,0 +1,166 @@
+<Window x:Class="Grayson.Vision.WpfUI.View.ChainWizardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding WindowTitle}" Height="760" Width="1180"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="Margin" Value="2,0"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="4">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 顶部：工位码 + 工具偏移 -->
+        <GroupBox Grid.Row="0" Header="工位与工具（范式2：偏移量=向导实测带符号矢量，法兰系，U=0 基准）">
+            <StackPanel Orientation="Vertical">
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <TextBlock Text="工位码：" VerticalAlignment="Center"/>
+                    <TextBox Width="120" Text="{Binding StationCode, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="    Nozzle1（主工具）Offset dx,dy [mm]：" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                    <TextBox Width="90" Text="{Binding Nozzle1Dx}"/>
+                    <TextBox Width="90" Text="{Binding Nozzle1Dy}"/>
+                    <CheckBox Content="启用 Nozzle2（副工具）" IsChecked="{Binding EnableNozzle2}" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                    <TextBlock Text="Δ dx,dy [mm]：" VerticalAlignment="Center"/>
+                    <TextBox Width="90" Text="{Binding Nozzle2Dx}" IsEnabled="{Binding EnableNozzle2}"/>
+                    <TextBox Width="90" Text="{Binding Nozzle2Dy}" IsEnabled="{Binding EnableNozzle2}"/>
+                </StackPanel>
+                <TextBlock Text="说明：主工具 Offset=对针直量的 T_TCP→Flange 矢量；副工具填相对主工具的 Δ（法兰系），U 旋转补偿由链图主公式统一承担。"
+                           Foreground="Gray" FontSize="11"/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- 中部：两个相机采集区 -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 吸点引导相机 -->
+            <GroupBox Grid.Column="0" Header="{Binding PickCamera.Title}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,2">
+                        <TextBlock Text="相机ID：" VerticalAlignment="Center"/>
+                        <TextBox Width="90" Text="{Binding PickCamera.CameraId}"/>
+                        <CheckBox Content="EIH（随动，矩阵=T_Cam→Flange）" IsChecked="{Binding PickCamera.IsEih}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        <Button Content="添加点" Click="AddPickPoint_Click"/>
+                        <Button Content="删除选中" Click="RemovePickPoint_Click"/>
+                        <Button Content="拟合" Click="FitPick_Click" FontWeight="Bold"/>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical">
+                        <TextBlock Text="{Binding PickCamera.FitResult}" TextWrapping="Wrap" Margin="0,2,0,2"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                            <Button Content="载入图像…" Click="LoadPickImage_Click"/>
+                            <TextBlock Text="左键点击图像 = 回填选中行像素" Foreground="Gray" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="3*"/>
+                            <RowDefinition Height="2*"/>
+                        </Grid.RowDefinitions>
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding PickCamera.Points}"
+                                  SelectedItem="{Binding PickCamera.SelectedRow}"
+                                  AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column"
+                                  Margin="0,2">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="备注" Binding="{Binding Note}" Width="50"/>
+                                <DataGridTextColumn Header="世界X[mm]" Binding="{Binding WorldX}" Width="*"/>
+                                <DataGridTextColumn Header="世界Y[mm]" Binding="{Binding WorldY}" Width="*"/>
+                                <DataGridTextColumn Header="像素Col" Binding="{Binding PixelCol}" Width="*"/>
+                                <DataGridTextColumn Header="像素Row" Binding="{Binding PixelRow}" Width="*"/>
+                                <DataGridTextColumn Header="拍照X(EIH)" Binding="{Binding PhotoX}" Width="*"/>
+                                <DataGridTextColumn Header="拍照Y(EIH)" Binding="{Binding PhotoY}" Width="*"/>
+                                <DataGridTextColumn Header="拍照U°(EIH)" Binding="{Binding PhotoU}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Background="#22000000">
+                            <Image x:Name="PickImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   MouseLeftButtonUp="PickImage_Click"/>
+                        </Border>
+                    </Grid>
+                </DockPanel>
+            </GroupBox>
+
+            <!-- 下相机 -->
+            <GroupBox Grid.Column="1" Header="{Binding DownCamera.Title}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,2">
+                        <CheckBox Content="启用（产出 DownCameraCorrect 边）" IsChecked="{Binding EnableDownCamera}" VerticalAlignment="Center"/>
+                        <TextBlock Text="相机ID：" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                        <TextBox Width="90" Text="{Binding DownCamera.CameraId}"/>
+                        <CheckBox Content="EIH（随动）" IsChecked="{Binding DownCamera.IsEih}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        <Button Content="添加点" Click="AddDownPoint_Click"/>
+                        <Button Content="删除选中" Click="RemoveDownPoint_Click"/>
+                        <Button Content="拟合" Click="FitDown_Click" FontWeight="Bold"/>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical">
+                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                            <TextBlock Text="DeltaRefPixel（吸嘴 U 轴图像投影 R_cdown）Col,Row：" VerticalAlignment="Center"/>
+                            <TextBox Width="100" Text="{Binding DownCamera.DeltaRefCol}"/>
+                            <TextBox Width="100" Text="{Binding DownCamera.DeltaRefRow}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding DownCamera.FitResult}" TextWrapping="Wrap" Margin="0,2,0,2"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                            <Button Content="载入图像…" Click="LoadDownImage_Click"/>
+                            <TextBlock Text="左键=回填选中行像素；右键=写入 DeltaRefPixel 基准" Foreground="Gray" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="3*"/>
+                            <RowDefinition Height="2*"/>
+                        </Grid.RowDefinitions>
+                        <DataGrid Grid.Row="0" ItemsSource="{Binding DownCamera.Points}"
+                                  SelectedItem="{Binding DownCamera.SelectedRow}"
+                                  AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column"
+                                  Margin="0,2">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="备注" Binding="{Binding Note}" Width="50"/>
+                                <DataGridTextColumn Header="世界X[mm]" Binding="{Binding WorldX}" Width="*"/>
+                                <DataGridTextColumn Header="世界Y[mm]" Binding="{Binding WorldY}" Width="*"/>
+                                <DataGridTextColumn Header="像素Col" Binding="{Binding PixelCol}" Width="*"/>
+                                <DataGridTextColumn Header="像素Row" Binding="{Binding PixelRow}" Width="*"/>
+                                <DataGridTextColumn Header="拍照X(EIH)" Binding="{Binding PhotoX}" Width="*"/>
+                                <DataGridTextColumn Header="拍照Y(EIH)" Binding="{Binding PhotoY}" Width="*"/>
+                                <DataGridTextColumn Header="拍照U°(EIH)" Binding="{Binding PhotoU}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Background="#22000000">
+                            <Image x:Name="DownImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   MouseLeftButtonUp="DownImage_Click" MouseRightButtonUp="DownImage_RightClick"/>
+                        </Border>
+                    </Grid>
+                </DockPanel>
+            </GroupBox>
+        </Grid>
+
+        <!-- 底部：校验 + 保存 -->
+        <GroupBox Grid.Row="2" Header="校验与落盘">
+            <StackPanel Orientation="Vertical">
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <Button Content="校验 G0~G4" Click="Validate_Click"/>
+                    <Button Content="保存 Chain.json" Click="Save_Click" FontWeight="Bold"/>
+                    <TextBlock Text="落盘路径 = Recipes\Workstations\{工位码}\Calib\Chain.json（生产端唯一真源）"
+                               Foreground="Gray" FontSize="11" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Text="{Binding ValidateResult}" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding SaveResult}" TextWrapping="Wrap" FontWeight="Bold"/>
+            </StackPanel>
+        </GroupBox>
+    </Grid>
+</Window>

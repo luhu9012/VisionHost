@@ -49,8 +49,14 @@
     <ErrorReport>prompt</ErrorReport>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="MathNet.Numerics, Version=5.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\MathNet.Numerics.5.0.0\lib\net461\MathNet.Numerics.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.ValueTuple, Version=4.0.2.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.ValueTuple.4.4.0\lib\net47\System.ValueTuple.dll</HintPath>
+    </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -59,6 +65,9 @@
     <Reference Include="System.Xml" />
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="MathNet.Numerics, Version=4.15.0.0, Culture=neutral, PublicKeyToken=c1135b1245c3854, processorArchitecture=MSIL">
+      <HintPath>..\packages\MathNet.Numerics.4.15.0\lib\net461\MathNet.Numerics.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -85,6 +94,7 @@
     <Compile Include="Calibration\Services\HomMat2D.cs" />
     <Compile Include="Calibration\Chain\StationCalibGraph.cs" />
     <Compile Include="Calibration\Chain\ChainEngine.cs" />
+    <Compile Include="Calibration\Chain\ChainFitter.cs" />
     <Compile Include="Templates\Models\TemplateModels.cs" />
     <Compile Include="TaskLibrary\Models\TaskTemplateModels.cs" />
     <Compile Include="Communication\CommunicationMessage.cs" />
@@ -202,6 +212,7 @@
     <Compile Include="Station\Triggers\ITriggerSource.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="packages.config" />
     <None Include="README_contracts.md" />
   </ItemGroup>
   <ItemGroup />

@@ -231,6 +231,8 @@
 				<StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
 					<Button Content="导入" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ImportCommand}" Width="auto" Height="auto"/>
 					<Button Content="导出" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ExportCommand}" Width="auto" Height="auto" Margin="6,0,0,0"/>
+					<Button Content="🔗 链向导" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainWizardCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
+					        ToolTip="范式2 链向导：采集点对 → 拟合（真奇异值形状硬拦） → 组装链图 → G0~G4 校验 → 写 Chain.json（生产端 fail-closed 唯一真源）。"/>
 				</StackPanel>
 			</Grid>
 		</Border>

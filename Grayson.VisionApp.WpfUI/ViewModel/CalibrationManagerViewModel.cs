@@ -1040,6 +1040,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand ImportCommand { get; }
         public ICommand ExportCommand { get; }
 
+        /// <summary>链向导（范式2 Chain.json）入口 —— 2026-09-27 R3</summary>
+        public ICommand OpenChainWizardCommand { get; }
+
         /// <summary>把当前方案的工具偏心(ToolEcc) 发布为工位业务配置（MahjongDualNozzle 进程按 U 自动补偿落点）</summary>
         public ICommand PublishEccCommand { get; }
 
@@ -1101,6 +1104,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             TestMapCommand = new RelayCommand(_ => ExecuteTestMap());
             ImportCommand = new RelayCommand(_ => ImportMatrixFile(), _ => SelectedCalibrationProfile != null);
             ExportCommand = new RelayCommand(_ => ExportMatrixFile(), _ => SelectedCalibrationProfile != null);
+            OpenChainWizardCommand = new RelayCommand(_ => OpenChainWizard());
             PublishEccCommand = new RelayCommand(_ => PublishEccToStation(), _ => CanPublishEcc());
             RunWizardForCardCommand = new RelayCommand(o => OpenWizardForCard(o as ArtifactTaskCardVm),
                 o => CanOpenWizardForCard(o as ArtifactTaskCardVm));
@@ -3031,6 +3035,29 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;
             int cut = s.IndexOf('；');
             return cut > 0 ? s.Substring(0, cut + 1) : s;
+        }
+
+        /// <summary>
+        /// 打开链向导（范式2，R3）：采集点对 → ChainFitter 拟合 → 组装 StationCalibGraph →
+        /// G0~G4 校验 → 写 Recipes\Workstations\{工位}\Calib\Chain.json。
+        /// 工位码取当前定位工位（未定位时回落 ST_002——原生范式2 首站）。
+        /// 独立窗口、模态：落盘前必须走完校验，避免半成品链图被生产端 fail-closed 拒收后无处排查。
+        /// </summary>
+        private void OpenChainWizard()
+        {
+            try
+            {
+                var win = new ChainWizardWindow(
+                    string.IsNullOrWhiteSpace(_scopeStationCode) ? "ST_002" : _scopeStationCode)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+                win.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开链向导失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void OpenWizard()

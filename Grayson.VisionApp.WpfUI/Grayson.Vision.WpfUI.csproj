@@ -132,6 +132,7 @@
     <Compile Include="ViewModel\Calibration\CalibrationToolOffsetViewModel.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationVerifierViewModel.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationWizardViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\ChainWizardViewModel.cs" />
     <Compile Include="ViewModel\Calibration\Steps\CheckerboardCalibrationStrategy.cs" />
     <Compile Include="ViewModel\Calibration\Steps\HandEyeWithRotationCalibrationStrategy.cs" />
     <Compile Include="ViewModel\Calibration\Steps\ICalibrationStepStrategy.cs" />
@@ -189,6 +190,9 @@
     </Compile>
     <Compile Include="View\Calibration\CalibrationWizardWindow.xaml.cs">
       <DependentUpon>CalibrationWizardWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\Calibration\ChainWizardWindow.xaml.cs">
+      <DependentUpon>ChainWizardWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\DataTraceView.xaml.cs">
       <DependentUpon>DataTraceView.xaml</DependentUpon>
@@ -341,6 +345,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\CalibrationWizardWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\ChainWizardWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\Templates\CheckerboardStepViews.xaml">

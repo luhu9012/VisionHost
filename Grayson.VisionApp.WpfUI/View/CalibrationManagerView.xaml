@@ -233,6 +233,8 @@
 					<Button Content="导出" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ExportCommand}" Width="auto" Height="auto" Margin="6,0,0,0"/>
 					<Button Content="🔗 链向导" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainWizardCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
 					        ToolTip="范式2 链向导：采集点对 → 拟合（真奇异值形状硬拦） → 组装链图 → G0~G4 校验 → 写 Chain.json（生产端 fail-closed 唯一真源）。"/>
+					<Button Content="✅ 链校验台" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainVerifyCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
+					        ToolTip="范式2 链校验台（只读）：L1 门禁可视 + L2 数学校验（形状/条件数/像素当量/CalibZ/DeltaRef 自洽）。"/>
 				</StackPanel>
 			</Grid>
 		</Border>

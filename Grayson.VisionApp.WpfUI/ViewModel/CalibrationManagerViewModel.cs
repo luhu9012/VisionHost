@@ -1042,6 +1042,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>链向导（范式2 Chain.json）入口 —— 2026-09-27 R3</summary>
         public ICommand OpenChainWizardCommand { get; }
+        public ICommand OpenChainVerifyCommand { get; }
 
         /// <summary>把当前方案的工具偏心(ToolEcc) 发布为工位业务配置（MahjongDualNozzle 进程按 U 自动补偿落点）</summary>
         public ICommand PublishEccCommand { get; }
@@ -1105,6 +1106,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             ImportCommand = new RelayCommand(_ => ImportMatrixFile(), _ => SelectedCalibrationProfile != null);
             ExportCommand = new RelayCommand(_ => ExportMatrixFile(), _ => SelectedCalibrationProfile != null);
             OpenChainWizardCommand = new RelayCommand(_ => OpenChainWizard());
+            OpenChainVerifyCommand = new RelayCommand(_ => OpenChainVerify());
             PublishEccCommand = new RelayCommand(_ => PublishEccToStation(), _ => CanPublishEcc());
             RunWizardForCardCommand = new RelayCommand(o => OpenWizardForCard(o as ArtifactTaskCardVm),
                 o => CanOpenWizardForCard(o as ArtifactTaskCardVm));
@@ -3057,6 +3059,28 @@ namespace Grayson.Vision.WpfUI.ViewModel
             catch (Exception ex)
             {
                 MessageBox.Show("打开链向导失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 打开链校验台（范式2 L1/L2，只读）：审计 Recipes\Workstations\{工位}\Calib\Chain.json——
+        /// 门禁可视（与生产端同尺）+ 数学校验（形状/条件数/像素当量/CalibZ/DeltaRef 自洽）。
+        /// 未落盘 ≠ 报错：明确提示"fail-closed 待补链"（指向链向导）。
+        /// </summary>
+        private void OpenChainVerify()
+        {
+            try
+            {
+                var win = new ChainVerifyWindow(
+                    string.IsNullOrWhiteSpace(_scopeStationCode) ? "ST_002" : _scopeStationCode)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+                win.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开链校验台失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

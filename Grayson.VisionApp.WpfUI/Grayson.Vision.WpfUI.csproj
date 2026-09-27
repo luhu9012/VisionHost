@@ -194,6 +194,9 @@
     <Compile Include="View\Calibration\ChainWizardWindow.xaml.cs">
       <DependentUpon>ChainWizardWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="View\Calibration\ChainVerifyWindow.xaml.cs">
+      <DependentUpon>ChainVerifyWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="View\DataTraceView.xaml.cs">
       <DependentUpon>DataTraceView.xaml</DependentUpon>
     </Compile>
@@ -348,6 +351,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\ChainWizardWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\ChainVerifyWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\Templates\CheckerboardStepViews.xaml">

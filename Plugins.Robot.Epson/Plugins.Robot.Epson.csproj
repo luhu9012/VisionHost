@@ -69,7 +69,6 @@
     <Compile Include="EpsonPlugin.cs" />
     <Compile Include="EpsonRobot.cs" />
     <Compile Include="EpsonSdkAdapters.cs" />
-    <Compile Include="SpeLNetAdapter.cs" />
     <Compile Include="RCAPINet7Adapter.cs" />
     <Compile Include="EpsonTcpScriptAdapter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

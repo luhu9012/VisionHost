@@ -69,6 +69,13 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
                     errs.Add("G1 相机 " + c.CameraId + " 矩阵缺失/非法（须 6 个有限数）");
                 else if (Math.Abs(new Mat6(c.Matrix).Determinant) < 1e-12)
                     errs.Add("G1 相机 " + c.CameraId + " 矩阵退化（行列式≈0）");
+                // ★2026-09-28 T6：EIH 求值含机位项 T_F→B(P_photo)，拍照基准位缺了就没有可复现口径
+                //   （范式1 血泪：P_photo 错位 ⇒ 整体平移，RMS 抓不到）。fail-closed 硬拦。
+                if (c.Mount == ChainCameraMount.EyeInHand
+                    && (c.PhotoPose == null || c.PhotoPose.Length != 2
+                        || !IsFinite(c.PhotoPose[0]) || !IsFinite(c.PhotoPose[1])))
+                    errs.Add("G1 EIH 相机 " + c.CameraId
+                             + " 缺拍照基准位 PhotoPose（[X,Y]，向导实测）——EIH 求值必须有可复现的拍照机位");
             }
 
             // G2：工具节点完整（结构检查）。原生范式2 的偏移量由向导实测产出（带符号矢量，
@@ -193,6 +200,8 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
             dx = tool.Offset[0];
             dy = tool.Offset[1];
         }
+
+        private static bool IsFinite(double d) { return !double.IsNaN(d) && !double.IsInfinity(d); }
 
         private static bool IsFinite6(double[] m)
         {

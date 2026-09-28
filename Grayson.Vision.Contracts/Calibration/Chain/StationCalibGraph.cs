@@ -67,6 +67,12 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
         /// <summary>ETH: T_Cam→Robot；EIH: T_Cam→Flange。6 元组 [a11,a12,tx,a21,a22,ty]</summary>
         public double[] Matrix { get; set; }
         /// <summary>
+        /// EIH 拍照基准位 [X,Y]（Robot Base 系；拍照 U 角由生产方承担，不存于此）。
+        /// EIH 求值 X_obj = T_F→B(P_photo) ∘ H_Cam→Flange(像素) 的 P_photo 必须可复现：
+        /// 向导实测录入，生产/示教消费 pose 从这里取。EIH 缺失 ⇒ 门禁 G1 硬拦。
+        /// </summary>
+        public double[] PhotoPose { get; set; }
+        /// <summary>
         /// 下相机差分基准像素 [col,row]（= 吸嘴 U 轴在该相机图像里的投影 R_cdown，向导实测）。
         /// 消费：δ = Chain(卡片像素) − Chain(DeltaRefPixel)，同位姿两次链求值平移项相减消掉。
         /// null = 不做差分消费（该相机没有下相机纠偏用途）。

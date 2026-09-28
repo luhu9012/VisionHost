@@ -44,6 +44,13 @@
                         <TextBox Width="100" Text="{Binding DeltaRefCol}"/>
                         <TextBox Width="100" Text="{Binding DeltaRefRow}"/>
                     </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2"
+                                Visibility="{Binding IsEih, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="拍照基准位 PhotoPose（EIH 生产/示教在此机位拍照）X,Y："
+                                   VerticalAlignment="Center"/>
+                        <TextBox Width="100" Text="{Binding PhotoPoseX}"/>
+                        <TextBox Width="100" Text="{Binding PhotoPoseY}"/>
+                    </StackPanel>
                 </StackPanel>
                 <Grid>
                     <Grid.RowDefinitions>

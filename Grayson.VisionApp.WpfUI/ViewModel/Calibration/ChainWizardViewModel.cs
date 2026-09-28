@@ -123,6 +123,36 @@ namespace Grayson.Vision.WpfUI.ViewModel
             private set { Set(ref _hasDeltaRef, value); }
         }
 
+        private double _photoPoseX;                 // EIH 专属：拍照基准位（生产在此机位拍照）
+        private double _photoPoseY;
+        private bool _hasPhotoPose;
+
+        /// <summary>EIH 专属：拍照基准位 X（Robot Base 系；落盘进 ChainCameraNode.PhotoPose）</summary>
+        public double PhotoPoseX
+        {
+            get { return _photoPoseX; }
+            set { Set(ref _photoPoseX, value); RefreshHasPhotoPose(); }
+        }
+
+        /// <summary>EIH 专属：拍照基准位 Y</summary>
+        public double PhotoPoseY
+        {
+            get { return _photoPoseY; }
+            set { Set(ref _photoPoseY, value); RefreshHasPhotoPose(); }
+        }
+
+        public bool HasPhotoPose
+        {
+            get { return _hasPhotoPose; }
+            private set { Set(ref _hasPhotoPose, value); }
+        }
+
+        private void RefreshHasPhotoPose()
+        {
+            HasPhotoPose = IsEih && (_photoPoseX != 0 || _photoPoseY != 0)
+                && !double.IsNaN(_photoPoseX) && !double.IsNaN(_photoPoseY);
+        }
+
         public double[] Matrix { get { return _matrix; } private set { Set(ref _matrix, value); } }
         public string FitResult { get { return _fitResult; } private set { Set(ref _fitResult, value); } }
         public bool FitOk { get { return _fitOk; } private set { Set(ref _fitOk, value); } }
@@ -205,6 +235,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
             Matrix = r.Matrix;
             FitOk = true;
+            // EIH：拍照基准位缺省取第一行实测拍照机位（可手改）——生产/示教必须回该位拍照
+            if (IsEih && !HasPhotoPose)
+            {
+                var src = Points.FirstOrDefault(p => Math.Abs(p.PhotoX) > 1e-9 || Math.Abs(p.PhotoY) > 1e-9);
+                if (src != null)
+                {
+                    PhotoPoseX = src.PhotoX;
+                    PhotoPoseY = src.PhotoY;
+                }
+            }
             FitResult = string.Format(CultureInfo.InvariantCulture,
                 "✓ 拟合成功：n={0}, RMS={1:F4}, σ1={2:F3}, σ2={3:F3}, 形状偏差={4:F4} ({5}), 矩阵=[{6:G9},{7:G9},{8:G9},{9:G9},{10:G9},{11:G9}]",
                 r.PointCount, r.RmsMm, r.Sigma1, r.Sigma2, r.ShapeDeviation,
@@ -245,6 +285,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             };
             if (HasDeltaRef)
                 node.DeltaRefPixel = new[] { DeltaRefCol, DeltaRefRow };
+            if (IsEih && HasPhotoPose)
+                node.PhotoPose = new[] { PhotoPoseX, PhotoPoseY };
             return node;
         }
     }
@@ -418,7 +460,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     StepNo = no++,
                     Target = s.CameraId,
                     Workflow = s.IsDownCorrect ? "WF-01 九点标定（下固定）" : (s.IsEih ? "WF-01 九点标定（EIH·随动）" : "WF-01 九点标定（ETH·固定）"),
-                    Hint = s.IsEih ? "物料：Mark/标定物＋每点记录拍照位姿（法兰系规范化后拟合）"
+                    Hint = s.IsEih ? "物料：Mark/标定物＋每点记录拍照位姿（法兰系规范化后拟合）＋填拍照基准位 PhotoPose"
                                    : "物料：Mark/标定物＋机器人走位读世界坐标",
                 });
             }
@@ -649,6 +691,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (bad != null)
             {
                 SaveResult = "❌ 相机 " + bad.CameraId + " 形状失真超门（|σ1/σ2−1|>0.03），禁止保存。请检查点对分布/重新采集。";
+                return;
+            }
+
+            // EIH 拍照基准位必填（与门禁 G1 同源的前置闸：报错给人看，指路可操作）
+            var noPose = Sections.FirstOrDefault(s => s.IsEih && s.FitOk && !s.HasPhotoPose);
+            if (noPose != null)
+            {
+                SaveResult = "❌ EIH 相机 " + noPose.CameraId
+                             + " 未填拍照基准位 PhotoPose（X/Y）——EIH 生产求值必须回该机位拍照，拒绝落盘。";
                 return;
             }
 

@@ -35,7 +35,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         private readonly StationConfigService _configService;
 
         private string _stationCode;
-        // 链求值位姿缓存（绑定时取自 cfg；PhotoBase 面板不编辑）
+        // 链求值位姿兜底缓存（绑定时取自 cfg；T6 后 EIH 真源 = 链图 PhotoPose，此处仅 ETH/占位）
         private double _bindPhotoBaseX;
         private double _bindPhotoBaseY;
         private double _bindWorkU;
@@ -501,10 +501,18 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 TeachChainLogOnce(_teachChainFailStation, "链图缺 PickAnchor 边 ⇒ 无吸点引导相机，示教世界坐标不可用。");
                 return null;
             }
-            // pose：拍照位（绑定时缓存）+ 拍照角（面板 WorkU 输入框，示教时以现场输入为准）
+            // pose：拍照位（★T6 真源 = 链图 PhotoPose；绑定时缓存的配置值仅作 ETH/占位）
+            //      + 拍照角（面板 WorkU 输入框，示教时以现场输入为准）
             double workU = ParseD(_workUText, _bindWorkU);
+            double px = _bindPhotoBaseX, py = _bindPhotoBaseY;
+            if (cam.Mount == ChainCameraMount.EyeInHand
+                && cam.PhotoPose != null && cam.PhotoPose.Length == 2)
+            {
+                px = cam.PhotoPose[0];
+                py = cam.PhotoPose[1];
+            }
             ChainEngine.ResolvePixelToWorld(graph, cam.CameraId, col, row,
-                new ChainRobotPose { X = _bindPhotoBaseX, Y = _bindPhotoBaseY, U = workU },
+                new ChainRobotPose { X = px, Y = py, U = workU },
                 out double wx, out double wy, _stationCode);
             return (wx, wy);
         }

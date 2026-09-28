@@ -91,12 +91,23 @@ namespace Grayson.Vision.Core.Processes
                 + "（" + path + "）");
         }
 
-        /// <summary>像素 → 工件物位 X_obj（链求值；pose = 拍照位 PhotoBase + 拍照角 WorkU）</summary>
+        /// <summary>
+        /// 拍照位姿（★2026-09-28 T6：真源 = 链图 PhotoPose，G1 硬拦保证 EIH 必有）：
+        /// EIH 用 PhotoPose[0..1] + 拍照角 WorkU；ETH 求值与机位无关，位姿仅占位。
+        /// </summary>
+        private ChainRobotPose PickPhotoPose()
+        {
+            if (_pickCamera1.Mount == ChainCameraMount.EyeInHand
+                && _pickCamera1.PhotoPose != null && _pickCamera1.PhotoPose.Length == 2)
+                return new ChainRobotPose { X = _pickCamera1.PhotoPose[0], Y = _pickCamera1.PhotoPose[1], U = _cfg.WorkU };
+            return new ChainRobotPose { X = _cfg.PhotoBaseX, Y = _cfg.PhotoBaseY, U = _cfg.WorkU };
+        }
+
+        /// <summary>像素 → 工件物位 X_obj（链求值；pose = 链图拍照基准位 + 拍照角 WorkU）</summary>
         private (double X, double Y) PickAnchor(double pixelCol, double pixelRow)
         {
             ChainEngine.ResolvePixelToWorld(_chain, _pickCamera1.CameraId, pixelCol, pixelRow,
-                new ChainRobotPose { X = _cfg.PhotoBaseX, Y = _cfg.PhotoBaseY, U = _cfg.WorkU },
-                out double ox, out double oy, Worker?.StationId);
+                PickPhotoPose(), out double ox, out double oy, Worker?.StationId);
             return (ox, oy);
         }
 
@@ -326,26 +337,18 @@ namespace Grayson.Vision.Core.Processes
         // ============================================================
 
         /// <summary>
-        /// 拍照前把 XY 回到【拍照基准位】（EIH 链求值的 P_photo 必须与标定时一致）：
-        ///   · EIH 判定来自链图（吸点引导相机 Mount=EyeInHand），不再读配置布尔；
-        ///   · ETH 固定相机：X_obj 与机位无关 → 不动，保持原流程；
-        ///   · EIH 已配置 PhotoBase（非 0,0）：先走到该位再拍，保证 P_photo 与配置一致；
-        ///   · EIH 但未配置 PhotoBase：只打 ⚠ 继续，此时 P_photo 取实际机位，可能整体偏移。
+        /// 拍照前把 XY 回到【拍照基准位】（范式2 EIH 链求值配套）：
+        ///   · EIH 判定来自链图（吸点引导相机 Mount=EyeInHand），基准位真源 = 链图 PhotoPose
+        ///     （门禁 G1 硬拦保证存在）：先走到该位再拍，保证 P_photo 可复现；
+        ///   · ETH 固定相机：X_obj 与机位无关 → 不动，保持原流程。
         /// 相机随 Z 的工位请注意：拍照还要求 Z 回到标定高度，否则像素当量失真（本流程 Z 已在安全高度）。
         /// </summary>
         private async Task EnsurePhotoBaseAsync(CancellationToken token)
         {
-            bool isEih = _pickCamera1 != null && _pickCamera1.Mount == ChainCameraMount.EyeInHand;
-            if (!isEih) return;
-            bool configured = Math.Abs(_cfg.PhotoBaseX) > 1e-6 || Math.Abs(_cfg.PhotoBaseY) > 1e-6;
-            if (!configured)
-            {
-                Log("⚠ [Phase1] EIH 眼在手，但工位未配置拍照基准位 PhotoBase —— EIH 链求值 X_obj=T_F→B(P_photo)∘H_Cam→Flange(像素)"
-                    + " 里的 P_photo 只能取当前实际机位，若与标定时不同会整体偏移。请在工位配置补拍照基准位，或在标定向导重测后重发 Chain.json。");
-                return;
-            }
-            Log($"[Phase1] EIH 眼在手：先回拍照基准位 ({_cfg.PhotoBaseX:F3},{_cfg.PhotoBaseY:F3}) 再触发视觉。");
-            await MoveXyAsync(_cfg.PhotoBaseX, _cfg.PhotoBaseY, token).ConfigureAwait(false);
+            if (_pickCamera1.Mount != ChainCameraMount.EyeInHand) return;
+            double px = _pickCamera1.PhotoPose[0], py = _pickCamera1.PhotoPose[1];
+            Log($"[Phase1] EIH 眼在手：先回拍照基准位 ({px:F3},{py:F3})（链图 PhotoPose）再触发视觉。");
+            await MoveXyAsync(px, py, token).ConfigureAwait(false);
         }
 
         /// <summary>

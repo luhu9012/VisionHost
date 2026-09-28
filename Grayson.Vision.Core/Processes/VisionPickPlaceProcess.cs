@@ -59,10 +59,7 @@ namespace Grayson.Vision.Core.Processes
         // ============================================================================
         private const string Nozzle1ToolId = "Nozzle1";
         private const string Nozzle2ToolId = "Nozzle2";
-        /// <summary>链边 Usage：上相机引导吸点（由向导按采集路径生成，禁止手填）</summary>
-        private const string PickAnchorUsage = "PickAnchor";
-        /// <summary>链边 Usage：下相机相对纠偏</summary>
-        private const string DownCorrectUsage = "DownCameraCorrect";
+        // 链边 Usage 常量与装载/形状解析统一收口 Contracts 的 ChainRuntime（本文件不再本地定义）
 
         private StationCalibGraph _chain;
         private ChainCameraNode _pickCamera1;       // 吸点引导相机（由 PickAnchor 边找到）
@@ -70,35 +67,19 @@ namespace Grayson.Vision.Core.Processes
 
         /// <summary>
         /// 加载并校验本工位链图（Phase -1 调用一次；失败即抛，绝不取默认值继续跑）。
-        /// 同时按链的形状解析消费入口：吸点引导相机 = 持 PickAnchor 边的相机；下相机 = 持 DownCameraCorrect 边的相机。
+        /// 装载/门禁/形状解析统一走 ChainRuntime（与示教面板同尺），本方法只做过程级补充检查。
         /// </summary>
         private void EnsureChainGraph()
         {
             string station = Worker?.StationId;
-            string path = System.IO.Path.Combine(
-                CalibrationMatrixStore.GetStationCalibDir(station), "Chain.json");
-            if (!StationCalibGraph.TryLoad(path, out _chain, out string lerr))
-                throw new ChainResolveException(
-                    "范式2 链图不可得，拒绝生产（fail-closed）：" + lerr
-                    + "。处方：运行标定向导为工位 " + (station ?? "(null)") + " 产出 Chain.json。");
+            string path = ChainRuntime.ChainPathFor(station);
+            _chain = ChainRuntime.LoadValidated(station);
 
-            var errs = ChainEngine.Validate(_chain, station);
-            if (errs.Count > 0)
-                throw new ChainResolveException("范式2 链图未过门禁，拒绝生产：" + string.Join("；", errs));
-
-            // 链的形状 = 消费入口的宣告（域不存储，由 Edges.Usage 表达）
-            _pickCamera1 = null;
-            _downCamera = null;
-            foreach (var e in _chain.Edges)
-            {
-                if (string.Equals(e.Usage, PickAnchorUsage, StringComparison.OrdinalIgnoreCase))
-                    _pickCamera1 = _chain.FindCamera(e.FromCameraId);
-                else if (string.Equals(e.Usage, DownCorrectUsage, StringComparison.OrdinalIgnoreCase))
-                    _downCamera = _chain.FindCamera(e.FromCameraId);
-            }
+            _pickCamera1 = ChainRuntime.FindPickCamera(_chain);
+            _downCamera = ChainRuntime.FindDownCamera(_chain);
             if (_pickCamera1 == null)
                 throw new ChainResolveException(
-                    "链图缺 " + PickAnchorUsage + " 边 ⇒ 无吸点引导相机，拒绝生产。请检查向导产出的链形状。");
+                    "链图缺 " + ChainRuntime.PickAnchorUsage + " 边 ⇒ 无吸点引导相机，拒绝生产。请检查向导产出的链形状。");
             if (_chain.FindTool(Nozzle1ToolId) == null)
                 throw new ChainResolveException("链图缺工具节点 " + Nozzle1ToolId + "，拒绝生产。");
             if (!_cfg.UseSingleNozzle && _chain.FindTool(Nozzle2ToolId) == null)

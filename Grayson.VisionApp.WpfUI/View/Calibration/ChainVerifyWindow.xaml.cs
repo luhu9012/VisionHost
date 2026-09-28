@@ -34,6 +34,10 @@ namespace Grayson.Vision.WpfUI.View
             if (code.Length == 0) return;
             _report = ChainAuditor.AuditStation(code);
 
+            // ★ 存储路径透明：审计的真源与落盘归宿都指给操作者（范式2 唯一路径，无旁路副本）
+            PathText.Text = "真源：" + ChainRuntime.ChainPathFor(code)
+                + "　（产出=链向导；物理事实 Mount/相机槽=工位档案；生产/示教=同尺装载）";
+
             RowGrid.ItemsSource = _report.Rows;
             EdgeText.Text = _report.Loaded
                 ? "边（形状=消费入口宣告）：" + string.Join("；", _report.EdgeLines)

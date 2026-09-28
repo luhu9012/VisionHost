@@ -15,6 +15,7 @@
 // （示教/角度/位点/IO/偏心…），其余参数以 VisionPickPlaceConfig.cs 代码默认为准。
 // ⚠ 迁移规则（2026-09-06 修复）：旧版全量快照只剪掉「与代码默认等价」的冗余字段，
 //   非默认值的字段一律保留（含本面板未拥有字段，如 TilePitch）——绝不丢现场参数。
+using Grayson.Vision.Contracts.Calibration.Chain;
 using Grayson.Vision.Contracts.Flow.Contexts;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Models;
@@ -34,6 +35,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         private readonly StationConfigService _configService;
 
         private string _stationCode;
+        // 链求值位姿缓存（绑定时取自 cfg；PhotoBase 面板不编辑）
+        private double _bindPhotoBaseX;
+        private double _bindPhotoBaseY;
+        private double _bindWorkU;
         private Grayson.Vision.Core.StationWorker _worker;
 
         // ---- 最近一次视觉流输出的世界坐标 wx/wy 与实测角度 ----
@@ -382,6 +387,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 if (cfg != null)
                 {
                     LoadCfgFields(cfg);
+                    // 链求值位姿缓存：拍照位（面板不编辑，绑定时取一次）+ 拍照角兜底
+                    _bindPhotoBaseX = cfg.PhotoBaseX;
+                    _bindPhotoBaseY = cfg.PhotoBaseY;
+                    _bindWorkU = cfg.WorkU;
                     // 按工位档案 + 任务模板收敛面板字段范围（只显示本工位用得上的分组）
                     RefreshFieldRelevance(boundStation, cfg);
                 }
@@ -406,6 +415,9 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 _worker = null;
             }
             _stationCode = null;
+            _teachChain = null;
+            _teachChainFailStation = null;
+            _teachChainFailReason = null;
         }
 
         private void RefreshCommandStates()
@@ -429,8 +441,9 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             }
         }
 
-        /// <summary>捕获执行节点最新输出：CalibrationApply.OutputX/Y = 世界坐标 wx/wy；
-        /// ShapeMatch.MatchAngle = 实测角度（°）。不解析日志文本，直接取端口值。</summary>
+        /// <summary>捕获执行节点最新输出：ShapeMatch.MatchCol/MatchRow = 原始像素（链求值输入）、
+        /// MatchAngle = 实测角度（°）。世界坐标 = 链求值（与生产端 ChainRuntime 同尺），
+        /// 不再消费旧口径 CalibrationApply.OutputX/Y。不解析日志文本，直接取端口值。</summary>
         private void Worker_OnNodeExecuted(object sender, NodeEventArgs e)
         {
             try
@@ -438,17 +451,22 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 var ports = e.Node?.OutputPorts;
                 if (ports == null) return;
 
-                var px = ports.FirstOrDefault(p => p.PortName == "OutputX")?.DataValue;
-                var py = ports.FirstOrDefault(p => p.PortName == "OutputY")?.DataValue;
-                if (px is double wx && py is double wy)
+                double? mCol = ports.FirstOrDefault(p => p.PortName == "MatchCol")?.DataValue as double?;
+                double? mRow = ports.FirstOrDefault(p => p.PortName == "MatchRow")?.DataValue as double?;
+
+                if (mCol.HasValue && mRow.HasValue)
                 {
-                    _teachWx = wx;
-                    _teachWy = wy;
-                    Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                    var world = ResolveTeachWorld(mCol.Value, mRow.Value);
+                    if (world.HasValue)
                     {
-                        OnPropertyChanged(nameof(TeachWxText));
-                        OnPropertyChanged(nameof(TeachWyText));
-                    }));
+                        _teachWx = world.Value.X;
+                        _teachWy = world.Value.Y;
+                        Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                        {
+                            OnPropertyChanged(nameof(TeachWxText));
+                            OnPropertyChanged(nameof(TeachWyText));
+                        }));
+                    }
                 }
 
                 var pa = ports.FirstOrDefault(p => p.PortName == "MatchAngle")?.DataValue;
@@ -460,6 +478,70 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 }
             }
             catch { /* 捕获失败不影响正常流程 */ }
+        }
+
+        // ============================================================================
+        // 示教侧链求值（范式2）：像素 → 工件物位，pose = 拍照位 PhotoBase + 拍照角 WorkU。
+        // 链图装载与生产端共用 ChainRuntime（同一路径、同一门禁、同一求值）——
+        // 链不可得 ⇒ 世界坐标置空＋一次性日志指路（校验台/向导），绝不拿旧口径兜底。
+        // ============================================================================
+        private StationCalibGraph _teachChain;              // 按工位缓存（装载失败=null，不重试刷屏）
+        private string _teachChainFailReason;
+        private string _teachChainFailStation;
+
+        /// <summary>链求值：成功返回世界坐标；链不可得返回 null（原因已记日志）。</summary>
+        private (double X, double Y)? ResolveTeachWorld(double col, double row)
+        {
+            var graph = EnsureTeachChain();
+            if (graph == null) return null;
+
+            var cam = ChainRuntime.FindPickCamera(graph);
+            if (cam == null)
+            {
+                TeachChainLogOnce(_teachChainFailStation, "链图缺 PickAnchor 边 ⇒ 无吸点引导相机，示教世界坐标不可用。");
+                return null;
+            }
+            // pose：拍照位（绑定时缓存）+ 拍照角（面板 WorkU 输入框，示教时以现场输入为准）
+            double workU = ParseD(_workUText, _bindWorkU);
+            ChainEngine.ResolvePixelToWorld(graph, cam.CameraId, col, row,
+                new ChainRobotPose { X = _bindPhotoBaseX, Y = _bindPhotoBaseY, U = workU },
+                out double wx, out double wy, _stationCode);
+            return (wx, wy);
+        }
+
+        private static double ParseD(string text, double fallback)
+        {
+            return double.TryParse(text, out double v) ? v : fallback;
+        }
+
+        private StationCalibGraph EnsureTeachChain()
+        {
+            if (_teachChain != null
+                && string.Equals(_teachChain.StationCode, _stationCode, StringComparison.OrdinalIgnoreCase))
+                return _teachChain;
+
+            if (string.Equals(_teachChainFailStation, _stationCode, StringComparison.Ordinal)
+                && _teachChain == null && _teachChainFailReason != null)
+                return null;    // 同工位已失败过：不重复刷屏
+
+            if (!ChainRuntime.TryLoadValidated(_stationCode, out var g, out string err))
+            {
+                _teachChain = null;
+                _teachChainFailStation = _stationCode;
+                _teachChainFailReason = err;
+                TeachChainLogOnce(_stationCode, err);
+                return null;
+            }
+            _teachChain = g;
+            _teachChainFailStation = null;
+            _teachChainFailReason = null;
+            AddLog("INFO", "[链] 示教面板已装载范式2 链图：" + ChainRuntime.ChainPathFor(_stationCode));
+            return g;
+        }
+
+        private void TeachChainLogOnce(string station, string reason)
+        {
+            AddLog("WARN", "[链] 示教世界坐标不可用（工位 " + (station ?? "(null)") + "）：" + reason);
         }
 
         #region 配置读写（VisionPickPlaceConfig ⇄ ProcessConfigJson 字段级补丁 + 热更新）

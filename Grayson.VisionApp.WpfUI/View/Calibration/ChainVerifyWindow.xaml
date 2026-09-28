@@ -24,12 +24,16 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <GroupBox Grid.Row="0" Header="审计对象（Recipes\Workstations\{工位码}\Calib\Chain.json；与生产端同一把尺，只读不改）">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="工位码：" VerticalAlignment="Center"/>
-                <TextBox Width="120" x:Name="StationBox" KeyDown="StationBox_KeyDown"/>
-                <Button Content="审计" Click="Audit_Click" FontWeight="Bold"/>
-                <TextBlock x:Name="VerdictText" FontWeight="Bold" VerticalAlignment="Center" Margin="20,0,0,0"/>
+        <GroupBox Grid.Row="0" Header="审计对象（与生产端同一把尺，只读不改）">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="工位码：" VerticalAlignment="Center"/>
+                    <TextBox Width="120" x:Name="StationBox" KeyDown="StationBox_KeyDown"/>
+                    <Button Content="审计" Click="Audit_Click" FontWeight="Bold"/>
+                    <TextBlock x:Name="VerdictText" FontWeight="Bold" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="PathText" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                           Foreground="#666666"/>
             </StackPanel>
         </GroupBox>
 

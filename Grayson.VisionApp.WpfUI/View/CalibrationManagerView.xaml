@@ -52,6 +52,27 @@
             </Grid>
         </Border>
 
+        <!-- ★2026-09-28 范式2 主线：链标定路径（链形状由工位档案事实推导，产物唯一 = Chain.json） -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="10,10,10,0">
+            <StackPanel>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="▶ 开始链标定" Style="{StaticResource PrimaryButtonStyle}"
+                            Padding="14,6" VerticalAlignment="Center" Command="{Binding OpenChainWizardCommand}"
+                            ToolTip="链标定向导：按工位档案推导坐标系传导链 → 逐相机采集点对 → 拟合 → 填物理事实量 → G0~G4 → 写 Chain.json"/>
+                    <Button DockPanel.Dock="Right" Content="✅ 链校验台" Style="{StaticResource SecondaryButtonStyle}"
+                            Padding="12,6" Margin="0,0,8,0" VerticalAlignment="Center" Command="{Binding OpenChainVerifyCommand}"
+                            ToolTip="只读核查：L1 摊开生产同尺门禁 G0~G4；L2 从落盘矩阵复验形状/条件数/像素当量，并核标定高度与下相机差分基准"/>
+                    <TextBlock Text="🔗 范式2 标定主线（新流程走这条）" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
+                </DockPanel>
+                <TextBlock Margin="0,6,0,0" FontSize="11.5" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="① 工位档案填【相机槽事实】——安装方式/用途/轴跟随/是否启用，双吸嘴则工具头数填 2（链的形状完全由这些事实推导）；② 链向导逐相机采集点对并拟合（九点 / 延伸杆 / 针尖 / Mark 旋转 / 底拍，按工位实际条件），再填标定高度 Z、拍照基准位（眼在手上）、下相机差分基准；③ 链校验台核查（与生产端同一把尺）；生产与示教自动消费，无需再发布。"/>
+                <TextBlock Margin="0,4,0,0" FontSize="11.5" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDisabledBrush}"
+                           Text="人工只需两处裁决：指派【主工具】、相机取舍。所有标定量的落盘出口只有一个 —— 工位目录下的 Calib\Chain.json（生产/示教/校验同源装载，缺链即 fail-closed 拒绝求值）。"/>
+            </StackPanel>
+        </Border>
+
         <!-- 档案标定计划任务卡（2026-09-05 P3：从档案推导"该做哪些标定"，H/e 拆分按槽×吸嘴实例化） -->
         <Border DockPanel.Dock="Top" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="10,10,10,0"
                 Visibility="{Binding CandidatesVisible, Converter={StaticResource BoolToVis}}">
@@ -60,7 +81,7 @@
                     <Button DockPanel.Dock="Right" Content="✕ 稍后处理" Style="{StaticResource SecondaryButtonStyle}"
                             Padding="10,4" VerticalAlignment="Center" Command="{Binding DismissCandidatesCommand}"
                             ToolTip="暂不批量创建；可稍后手工新建单个方案"/>
-                    <TextBlock Text="📋 档案标定计划 —— 按需求推导本工位应做的标定" FontSize="13" FontWeight="Bold"
+                    <TextBlock Text="📋 档案标定计划（范式1 遗留：批量创建旧标定方案；新流程请用上方链标定主线）" FontSize="13" FontWeight="Bold"
                                VerticalAlignment="Center"/>
                 </DockPanel>
                 <TextBlock Text="相机 H 按槽共享一条；工具偏心/旋转按吸嘴各一条（双吸嘴不必重复九点）。勾选主线任务 → 「按计划创建」，再逐个进向导绑定相机/轴。"

@@ -705,6 +705,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (defs == null) return list;
                 foreach (var s in defs)
                 {
+                    if (s != null && s.IsDisabled) continue; // ★2026-09-28：停用槽不进候选
                     string k = s?.SlotKey?.Trim();
                     if (string.IsNullOrWhiteSpace(k)) continue;
                     string kind = (s.InstallKind ?? string.Empty).Trim();
@@ -746,6 +747,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     foreach (var s in defs)
                     {
+                        if (s != null && s.IsDisabled) continue; // ★2026-09-28：停用槽不进下拉/提示
                         string k = s?.SlotKey?.Trim();
                         if (string.IsNullOrWhiteSpace(k)) continue;
                         if (!slots.Contains(k)) slots.Add(k);
@@ -1526,7 +1528,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (req == null) return EyeMode.EyeInHand;
                 if (string.Equals(req.CameraMount, "眼在手外", StringComparison.Ordinal)) return EyeMode.EyeToHand;
                 if (string.Equals(req.CameraMount, "眼在手上", StringComparison.Ordinal)) return EyeMode.EyeInHand;
-                var slot = req.CameraSlots?.FirstOrDefault();
+                // ★2026-09-28：停用槽不参与眼模式判定（它不进链）
+                var slot = req.CameraSlots?.FirstOrDefault(x => x != null && !x.IsDisabled);
                 if (slot != null)
                 {
                     var kind = slot.InstallKind ?? string.Empty;
@@ -1554,7 +1557,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 var archive = ResolveStationArchive(_scopeStationCode);
                 var req = archive?.Requirement;
                 if (req == null) return null;
-                var slot = req.CameraSlots?.FirstOrDefault();
+                // ★2026-09-28：停用槽不参与"是否随 Z"判定
+                var slot = req.CameraSlots?.FirstOrDefault(x => x != null && !x.IsDisabled);
                 var axisFollows = slot?.AxisFollows?.Trim();
                 if (string.IsNullOrWhiteSpace(axisFollows)) return null;
                 // 含 "Z"（如 跟随XYZU / 跟随XYZ / 跟随XZU）→ 随 Z；否则（固定/跟随XY/跟随X）→ 不随 Z

@@ -358,12 +358,22 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string Workflow { get; set; }
         /// <summary>物料与前置条件（V2.1 物料层 UI 化：缺什么一目了然）</summary>
         public string Hint { get; set; }
+        /// <summary>操作区分类（2026-09-28）：Camera=相机采集页 / Tool=工具偏移页 / Gate=门禁落盘页</summary>
+        public StepZone Zone { get; set; }
+        /// <summary>跳转提示（点击该行时显示"已切换到…"）</summary>
+        public string JumpHint { get; set; }
+        private bool _isSelected;
+        /// <summary>当前选中行（步骤清单高亮 + 右侧操作区跟随）</summary>
+        public bool IsSelected { get { return _isSelected; } set { Set(ref _isSelected, value); } }
         public string Status
         {
             get { return _status; }
             set { Set(ref _status, value); }
         }
     }
+
+    /// <summary>步骤对应的操作区（用于"点步骤 → 切区域"）</summary>
+    public enum StepZone { Camera, Tool, Gate }
 
     /// <summary>
     /// 链向导 v2 主 VM：档案→推导器→骨架→步骤清单→采集回填→校验→落盘。
@@ -469,6 +479,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     StepNo = no++,
                     Target = s.CameraId,
+                    Zone = StepZone.Camera,
                     Workflow = s.IsDownCorrect ? "WF-01 九点标定（下固定）" : (s.IsEih ? "WF-01 九点标定（EIH·随动）" : "WF-01 九点标定（ETH·固定）"),
                     Hint = s.IsEih ? "物料：Mark/标定物＋每点记录拍照位姿（法兰系规范化后拟合）＋填拍照基准位 PhotoPose"
                                    : "物料：Mark/标定物＋机器人走位读世界坐标",
@@ -480,6 +491,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     StepNo = no++,
                     Target = s.CameraId,
+                    Zone = StepZone.Camera,
                     Workflow = "WF-12 DeltaRefPixel 实测（本仓新增）",
                     Hint = "吸嘴停拍照位 → 右键点选 U 轴图像投影中心；缺失将拒绝落盘",
                 });
@@ -490,6 +502,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     StepNo = no++,
                     Target = t.ToolId,
+                    Zone = StepZone.Tool,
                     Workflow = "WF-03 主工具 TCP 偏移（对针直量）",
                     Hint = "物料：固定基准针尖；Offset=对针直量的 T_TCP→Flange 矢量（U=0 基准）",
                 });
@@ -500,6 +513,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     StepNo = no++,
                     Target = t.ToolId,
+                    Zone = StepZone.Tool,
                     Workflow = "WF-04 副工具 Δ（底拍批量/手输）",
                     Hint = "所有吸嘴伸到下相机上方一拍取各嘴中心两两差；同轴工具实测=(0,0)",
                 });
@@ -508,10 +522,81 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 StepNo = no,
                 Target = "整链",
+                Zone = StepZone.Gate,
                 Workflow = "门禁总检 G0~G4 + 形状门 → 落盘 Chain.json",
                 Hint = "任一门不过即拒绝保存（fail-closed 与生产端同一把尺）",
             });
+            // 默认选中第一步（打开即是"从哪开始"）
+            var first = Steps.FirstOrDefault();
+            if (first != null) SelectStep(first);
             RefreshSteps();
+        }
+
+        //---------------------------------------------------------------------
+        // 步骤 ↔ 操作区 联动（2026-09-28）：点步骤清单 → 右侧切到对应区域
+        //---------------------------------------------------------------------
+
+        private ChainStepRow _selectedStep;
+        /// <summary>当前选中的步骤（界面高亮 + 驱动右侧操作区切换）</summary>
+        public ChainStepRow SelectedStep
+        {
+            get { return _selectedStep; }
+            set
+            {
+                if (Set(ref _selectedStep, value))
+                {
+                    foreach (var s in Steps) s.IsSelected = ReferenceEquals(s, value);
+                    OnPropertyChanged(nameof(FocusZone));
+                    OnPropertyChanged(nameof(FocusCameraId));
+                    OnPropertyChanged(nameof(StepGuide));
+                    OnPropertyChanged(nameof(IsToolStepSelected));
+                    OnPropertyChanged(nameof(IsCameraStepSelected));
+                }
+            }
+        }
+
+        /// <summary>选中步骤所在区域（界面据此切 Tab / 展开对应组）</summary>
+        public StepZone FocusZone { get { return _selectedStep == null ? StepZone.Camera : _selectedStep.Zone; } }
+        /// <summary>选中步对应相机 Id（空=不切相机 Tab / 非相机步）</summary>
+        public string FocusCameraId
+        {
+            get { return _selectedStep != null && _selectedStep.Zone == StepZone.Camera ? _selectedStep.Target : null; }
+        }
+        public bool IsToolStepSelected { get { return FocusZone == StepZone.Tool; } }
+        public bool IsCameraStepSelected { get { return FocusZone == StepZone.Camera; } }
+
+        /// <summary>选中步骤的操作指引（左侧"当前该做什么"栏）</summary>
+        public string StepGuide
+        {
+            get
+            {
+                if (_selectedStep == null) return "请在上方步骤清单点选一步开始。";
+                return "第 " + _selectedStep.StepNo + " 步 · " + _selectedStep.Workflow
+                       + "\n目标：" + _selectedStep.Target + "　状态：" + _selectedStep.Status
+                       + "\n" + _selectedStep.Hint;
+            }
+        }
+
+        /// <summary>点选一步（界面点击行时调用；返回是否可聚焦到操作区）</summary>
+        public void SelectStep(ChainStepRow step)
+        {
+            SelectedStep = step;
+            // 相机步：同步把 Tab 切到对应相机（"点一步即到位"）
+            if (step != null && step.Zone == StepZone.Camera)
+            {
+                var sec = Sections.FirstOrDefault(x => x.CameraId == step.Target);
+                if (sec != null) SelectedSection = sec;
+            }
+            RefreshSteps();
+            OnPropertyChanged(nameof(StepGuide));
+        }
+
+        private ChainCameraSectionViewModel _selectedSection;
+        /// <summary>当前相机 Tab（点步骤相机步时自动切换）</summary>
+        public ChainCameraSectionViewModel SelectedSection
+        {
+            get { return _selectedSection; }
+            set { Set(ref _selectedSection, value); }
         }
 
         /// <summary>按当前采集完成度刷新步骤状态</summary>
@@ -539,6 +624,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     st.Status = _draft != null && BuildGraph() != null ? "可落盘" : "待前置完成";
                 }
             }
+            OnPropertyChanged(nameof(StepGuide));
         }
 
         public string WindowTitle { get { return "链向导 v2（工位驱动）—— " + _stationCode; } }

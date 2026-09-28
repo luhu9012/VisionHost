@@ -72,6 +72,17 @@ namespace Grayson.Vision.WpfUI.View
             return fe == null ? null : fe.DataContext as ChainCameraSectionViewModel;
         }
 
+        //---------------------------------------------------------------------
+        // 步骤清单 ↔ 操作区联动（2026-09-28）：点某一步 → 右侧切到该步区域
+        //---------------------------------------------------------------------
+
+        private void StepRow_Click(object sender, MouseButtonEventArgs e)
+        {
+            var fe = sender as FrameworkElement;
+            var row = fe == null ? null : fe.DataContext as ChainStepRow;
+            if (row != null) _vm.SelectStep(row);
+        }
+
         private void LoadImage_Click(object sender, RoutedEventArgs e)
         {
             var sec = SectionOf(sender);

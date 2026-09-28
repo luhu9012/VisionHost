@@ -115,6 +115,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="2*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -163,32 +164,50 @@
             </Grid>
         </GroupBox>
 
-        <!-- 步骤清单（依赖排序，状态随采集进度刷新） -->
-        <GroupBox Grid.Row="2" Header="步骤清单（Workflow 编号对齐《框架设计文档 V2.1》；WF-12=本仓 DeltaRefPixel）">
+        <!-- 步骤清单（★可点击：点一步 → 右侧操作区切到该步对应区域） -->
+        <GroupBox Grid.Row="2" Header="步骤清单（点击某一步 → 下方操作区自动切到该步；点一次即到位）">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Steps}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="0,1">
-                            <TextBlock Text="{Binding StepLabel}" Width="26" FontWeight="Bold"/>
-                            <TextBlock Text="{Binding Status}" Width="64" FontWeight="Bold"/>
-                            <TextBlock Text="{Binding Target}" Width="80" Foreground="{DynamicResource InfoBrush}"/>
-                            <TextBlock Text="{Binding Workflow}" Width="270"/>
-                            <TextBlock Text="{Binding Hint}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
-                        </StackPanel>
+                        <Border x:Name="StepRowBorder" Background="Transparent" CornerRadius="3"
+                                Padding="2,1" Margin="0,1" MouseLeftButtonUp="StepRow_Click"
+                                Cursor="Hand">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding StepLabel}" Width="26" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding Status}" Width="64" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding Target}" Width="80" Foreground="{DynamicResource InfoBrush}"/>
+                                <TextBlock Text="{Binding Workflow}" Width="270"/>
+                                <TextBlock Text="{Binding Hint}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"/>
+                            </StackPanel>
+                        </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter TargetName="StepRowBorder" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
             </ScrollViewer>
         </GroupBox>
 
+        <!-- ★当前步骤引导栏（随步骤清单点选实时更新） -->
+        <Border Grid.Row="3" Background="{DynamicResource BackgroundLightBrush}"
+                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1,0,0,0"
+                Padding="8,4" Margin="4,3,4,0">
+            <TextBlock Text="{Binding StepGuide}" TextWrapping="Wrap" FontSize="12"
+                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+        </Border>
+
         <!-- 中部：相机采集 Tab（动态） + 工具偏移表 -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <TabControl Grid.Row="0" ItemsSource="{Binding Sections}"
+            <TabControl Grid.Row="0" x:Name="CameraTabs" ItemsSource="{Binding Sections}"
+                        SelectedItem="{Binding SelectedSection, Mode=TwoWay}"
                         ContentTemplate="{StaticResource CameraSectionTemplate}"
                         Margin="2,4">
                 <TabControl.ItemTemplate>
@@ -220,7 +239,7 @@
         </Grid>
 
         <!-- 底部：校验 + 保存 -->
-        <GroupBox Grid.Row="4" Header="校验与落盘">
+        <GroupBox Grid.Row="5" Header="校验与落盘">
             <StackPanel Orientation="Vertical">
                 <StackPanel Orientation="Horizontal" Margin="0,2">
                     <Button Content="校验 G0~G4" Click="Validate_Click"/>

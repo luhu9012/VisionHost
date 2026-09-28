@@ -544,20 +544,6 @@
 							<TextBlock Text="{Binding ScopeTargetHint}" Foreground="{StaticResource TextSecondaryBrush}"
                                        FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
-							<!-- 旋转标定结果 → 业务落点补偿（VisionPickPlace / MahjongDualNozzle 偏心公式，替代旧 NozzleToolOffset 手工示教） -->
-							<StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-								<TextBlock Text="旋转标定几何 → 工位业务落点补偿:" Foreground="{DynamicResource TextPrimaryBrush}"
-                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
-								<Button Content="📤 发布偏心到业务配置"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        Command="{Binding PublishEccCommand}"
-                                        Padding="12,0" Height="28"/>
-								<TextBlock Text="（方案已绑工位、吸嘴号 1/2，且已完成旋转中心标定(e) 或物理对针后可用；写入 Ecc / U0(ToolAlignU) / O / 相机安装方式并热更新）"
-                                           Foreground="{DynamicResource TextDisabledBrush}" FontSize="10"
-                                           VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" MaxWidth="300"/>
-							</StackPanel>
-							<TextBlock Text="{Binding PublishEccStatusText, FallbackValue=''}"
-                                       Foreground="#FF107C41" FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"/>
 						</StackPanel>
 					</GroupBox>
 

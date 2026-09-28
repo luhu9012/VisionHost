@@ -337,22 +337,6 @@
     <Page Include="View\Calibration\ChainVerifyWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="View\Calibration\Templates\CheckerboardStepViews.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="View\Calibration\Templates\HandEyeWithRotationStepViews.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="View\Calibration\Templates\NinePointStepViews.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="View\Calibration\Templates\PixelScaleStepViews.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
     <Page Include="View\DataTraceView.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>

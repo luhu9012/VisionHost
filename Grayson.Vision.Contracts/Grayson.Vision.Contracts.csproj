@@ -75,7 +75,6 @@
     <Compile Include="Ai\Interfaces\IInferenceProvider.cs" />
     <Compile Include="Ai\Models\InferenceModels.cs" />
     <Compile Include="Ai\InferenceProviderRegistry.cs" />
-    <Compile Include="Calibration\CalibrationGeometry.cs" />
     <Compile Include="Calibration\Models\CalibrationModels.cs" />
     <Compile Include="Calibration\Models\CalibrationVerificationModels.cs" />
     <Compile Include="Calibration\Models\CalibrationCardModels.cs" />
@@ -84,8 +83,6 @@
     <Compile Include="Calibration\Services\CalibrationLegacyMapper.cs" />
     <Compile Include="Calibration\Services\CalibrationProfileSessionPlanner.cs" />
     <Compile Include="Calibration\Services\CalibrationCardDeriver.cs" />
-    <Compile Include="Calibration\Services\CameraCalibrationBundle.cs" />
-    <Compile Include="Calibration\Services\CalibrationConsumptionContract.cs" />
     <Compile Include="Calibration\Services\RotationEccentricity.cs" />
     <Compile Include="Calibration\Services\CalibrationBindingWriter.cs" />
     <Compile Include="Calibration\Services\CalibrationMatrixStore.cs" />

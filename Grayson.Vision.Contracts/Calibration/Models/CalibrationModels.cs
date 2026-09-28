@@ -109,7 +109,7 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         ///   一处）⇒ "勾了旋转类型但没转出结果"被当"有旋转证据"，e 卡从 Draft 被提升为已完成（假绿）。
         ///   已全部删除该 OR 项；要判"旋转是否真跑过"，只认**数值**：CalibU0 / ToolCenterW(x,y) /
         ///   ToolCenterP(x,y) / ToolEccW(x,y) / ToolOffsetPureW(x,y) 非零。
-        ///   要判"t 对针是否真做了"，用 <c>IsToolOffsetCalibrated</c> + 非零（见 CameraCalibrationBundle.HasToolOffset）。
+        ///   要判"t 对针是否真做了"，用 <c>IsToolOffsetCalibrated</c> + 非零（范式2 的工具偏移真源 = 链图工具节点 Offset）。
         /// </summary>
         public bool HasToolOffset
         {
@@ -147,7 +147,7 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         public double ToolCenterWy { get => _toolCenterWy; set => Set(ref _toolCenterWy, value); }
 
         // ===== 2026-09-08 定案语义（数值仿真验证：任意拍照位/特征/U角 误差 0.000000mm）=====
-        // 完整推导与唯一真源实现见 Grayson.Vision.Contracts.Calibration.CalibrationGeometry。
+        // 完整推导见《标定语义_人话版》；★范式2 下唯一真源 = 链图（Chain.json），旧几何类已随 R6c 退役。
         //   命令位 P 时：回转中心真位 = P + r；相机光心真位 = P + c（r、c 都不随 U 转，只随 XY 平移）
         //   九点 H   ：H(u) = "使特征成像在 u 的命令位" = F0 − c − g(u)，F0=九点标定特征的世界位
         //               ⟹ V(u) ≡ 命令点→像素 u 所成像世界点的向量 = F0 − H(u)
@@ -224,7 +224,7 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         private double _toolOffsetPureWx;
         /// <summary>
         /// ★ 真吸嘴偏心 e_x（mm，U=U0 参考，Base 向量）= 吸嘴尖相对 U 轴回转中心的偏移。
-        /// 求法：e = O − H(p_tip)（O=ToolCenterW，p_tip=对针像素），由 CalibrationGeometry.SolveNozzleEcc 统一计算。
+        /// 求法：e = O − H(p_tip)（O=ToolCenterW，p_tip=对针像素），由链图工具节点（URotationCenter / Offset）承载（旧几何类已随 R6c 退役）。
         /// 与延伸杆长度/偏心【无关】；偏心延伸杆得到的 ToolEccW(=−m) 不是这个量。
         /// </summary>
         public double ToolOffsetPureWx { get => _toolOffsetPureWx; set => Set(ref _toolOffsetPureWx, value); }
@@ -378,7 +378,7 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         /// <summary>
         /// ★下相机像素旋转中心 Row（像素；DownCameraPixelRotCenter 路径产出，2026-09-12）。
         /// 吸嘴旋转轴在下相机图像里的投影行坐标 R_cdown。消费端相对纠偏
-        /// δ = H_down(R_img) − H_down(R_cdown)（见 CalibrationGeometry.DownCameraOffset），
+        /// δ = Chain(卡片像素) − Chain(DeltaRefPixel)（链图下相机节点差分，R6c 后为唯一口径），
         /// 与上相机绝对定位语义正交；null=未标定（下相机无法做二次纠偏）。
         /// </summary>
         public double? DownRotCenterRow

@@ -45,7 +45,7 @@ namespace Grayson.Vision.Nodes.All.CalibrationLocation.CalibrationApply
             // ★职责边界（2026-09-12 明确）：本节点只做【纯 H 映射】——像素 ↔ 机械坐标（命令位域 H(u)）。
             //   输出是「机械手该停哪」的 H(u)，不是工件真位。偏心 e / 对针 t / 旋转中心 O 的补偿
             //   不在这里叠加：那需要拍照机位 P_photo 与作业 U 角，属于流程编排层/生产引擎的职责
-            //   （唯一真源 CalibrationGeometry；生产引擎 VisionPickPlaceProcess / MahjongDualNozzleProcess
+            //   （范式2 唯一真源 = 链图 Chain.json；生产引擎 VisionPickPlaceProcess / MahjongDualNozzleProcess
             //   在拿到本节点输出的 H(u) 后按 X_obj=P_photo+O−H(u)、C=X_obj−R(U−U0)·e 叠加）。
             //   请勿把 e/t 塞进本节点——历史上校验台/引擎各抄一份公式反复调不准的根源就在此。
 

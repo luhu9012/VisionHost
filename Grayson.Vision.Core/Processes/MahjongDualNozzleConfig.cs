@@ -7,7 +7,7 @@ namespace Grayson.Vision.Core.Processes
     ///   0 = X（SCARA 大臂，mm） 1 = Y（小臂，mm）
     ///   2 = Z（吸嘴上下，mm，向下为负） 3 = U（末端旋转，deg）
     ///
-    /// 双吸嘴几何约定（2026-09-08 定案，唯一真源 = CalibrationGeometry，人话版见 标定语义_人话版_2026-09-08.md）：
+    /// 双吸嘴几何约定（2026-09-08 定案，历史几何口径已随 R6 退役；现唯一真源 = 链图 Chain.json（范式2））：
     ///   - 每吸嘴只认【一个】几何量：Ecc（Nozzle1Ecc/Nozzle2Ecc，世界 mm，U0=ToolAlignU 参考）
     ///     = 真吸嘴偏心 e = O − H(p_tip)。O 来自三点定圆旋转标定（半径=杆长，扔掉，故杆长/偏心无影响），
     ///     p_tip 来自一次物理对针。★ 不需要同心短杆；★ 偏心延伸杆测出的 ToolEccW 是杆末端偏心，不是 e。
@@ -89,7 +89,7 @@ namespace Grayson.Vision.Core.Processes
         //   · O  = 三点定圆旋转标定的【圆心】（半径=杆长，丢弃 → 杆长/杆偏心不影响）
         //   · p_tip = 一次物理对针：U=U0 时吸嘴尖压住特征，抬 Z 拍到它
         //   ★ 不需要同心短杆；★ 偏心延伸杆测出的 Profile.ToolEccWx/Wy 是【杆末端】偏心，不是 e。
-        // 消费（2026-09-08 定案，唯一真源 CalibrationGeometry，与校验台同一口径）：
+        // 消费（历史定案式；R6 后唯一真源 = 链图 Chain.json，下列 Ecc/O/p_tip 字段仅为旧档留档）：
         //   X_obj = P_photo + O − H(u)   （EIH 眼在手）
         //   X_obj = H(u)                 （ETH 固定相机）
         //   C     = X_obj − R(姿态U − U0)·Ecc   （吸取 WorkU；放料 U_place，同一式）
@@ -193,7 +193,7 @@ namespace Grayson.Vision.Core.Processes
 
         /// <summary>
         /// ★★2026-09-15：发布时那份口径判定的**标签**（口径漂移对账用）。
-        /// 形态 = "&lt;档号&gt;|&lt;档名&gt;|b=&lt;符号或n/a&gt;"，由发布链用 CalibrationConsumptionContract 生成。
+        /// 形态 = "&lt;档号&gt;|&lt;档名&gt;|b=&lt;符号或n/a&gt;"，范式1 遗留字段，R6 后生产端不再读取。
         /// 生产端启动时用**同一个反读函数**再算一遍并比对：不一致 ⇒ 打 ERROR。
         /// 为什么需要：本配置是**一套扁平字段**（没有"哪台相机"这一维），复合工位多相机发布会互相覆盖，
         /// 覆盖后口径可能仍是"合法值"却不代表本槽 ⇒ 只有留下发布时的判定结果才能发现漂移。

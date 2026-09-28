@@ -98,7 +98,7 @@ namespace Grayson.Vision.Core.Processes
         //     e = O − H(p_tip)：O 来自三点定圆旋转标定，p_tip 来自一次物理对针；
         //     ★ 不需要同心短杆；★ 偏心延伸杆测出的 ToolEccW 是杆末端偏心，不是 e，别混用。
         //   ⚠ 下面的 TCO 字段已废弃（发布时清零），仅为兼容旧档保留，不得参与计算。
-        // 消费（唯一真源 CalibrationGeometry，与校验台同口径）：
+        // 消费（历史定案式；R6 后唯一真源 = 链图 Chain.json，下列 Ecc/O/p_tip 字段仅为旧档留档）：
         //   X_obj = P_photo + O − H(u)   （EIH 眼在手）
         //   X_obj = H(u)                 （ETH 固定相机）
         //   C     = X_obj − R(姿态U − U0)·Ecc   （吸取 armU=WorkU，放料 armU=U_place）
@@ -231,7 +231,7 @@ namespace Grayson.Vision.Core.Processes
         //   与之对账 —— 不一致即 ERROR（口径漂移不许静默）。
 
         /// <summary>
-        /// 发布链写下的口径标签（格式 "分型号|分型名|b=+0"，见 CalibrationConsumptionContract.Decision.Tag）。
+        /// 发布链写下的口径标签（格式 "分型号|分型名|b=+0"。范式1 遗留字段，R6 后生产端不再读取。
         /// 空 = **从未按口径契约发布过**。
         ///
         /// ★★2026-09-16 语义修正：空**不再**表示"不做对账 / 放行"。

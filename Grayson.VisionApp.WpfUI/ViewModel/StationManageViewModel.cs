@@ -1317,7 +1317,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
             var slots = profile?.Requirement?.CameraSlots;
             if (slots != null && slots.Count > 0)
             {
-                var items = slots.Where(x => x != null).Select(x =>
+                // ★2026-09-28：停用槽不派生标定待办（否则旅程上会挂一条永远做不掉的假待办）
+                int disabledSlots = slots.Count(x => x != null && x.IsDisabled);
+                var liveSlots = slots.Where(x => x != null && !x.IsDisabled).ToList();
+                if (liveSlots.Count == 0)
+                {
+                    return disabledSlots > 0
+                        ? $"档案 {disabledSlots} 个相机槽均已停用 ⇒ 无标定待办（需要时在工位档案里勾回『启用』）"
+                        : "按需（需要出坐标/引导时做标定）—— 点击直达标定中心";
+                }
+                var items = liveSlots.Select(x =>
                 {
                     string tag = string.IsNullOrWhiteSpace(x.SlotKey) ? "相机槽" : x.SlotKey;
                     string inst = ShortenInstallKind(x.InstallKind);
@@ -1328,7 +1337,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 string prefix = items.Count > 2
                     ? string.Join("；", items.Take(2)) + $"…共 {items.Count} 槽"
                     : string.Join("；", items);
-                return $"档案相机槽 ×{items.Count}：{prefix}—— 点击直达标定中心";
+                string tail = disabledSlots > 0 ? $"（另有 {disabledSlots} 槽已停用）" : string.Empty;
+                return $"档案相机槽 ×{items.Count}：{prefix}—— 点击直达标定中心{tail}";
             }
             return profile != null && !string.IsNullOrWhiteSpace(profile.CalibrationSuggestion)
                 ? "向导建议：" + profile.CalibrationSuggestion

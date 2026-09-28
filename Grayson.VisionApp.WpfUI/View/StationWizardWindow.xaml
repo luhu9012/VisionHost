@@ -2,10 +2,16 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:svc="clr-namespace:Grayson.Vision.WpfUI.Service"
+        xmlns:conv="clr-namespace:Grayson.Vision.WpfUI.Common.Converters"
         Title="{Binding WindowTitle, FallbackValue=新建工位向导（需求驱动）}" Height="780" Width="1200"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
+
+    <Window.Resources>
+        <!-- ★2026-09-28：槽【启用】勾选是 IsDisabled 的反相显示（勾掉=停用=不进链） -->
+        <conv:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
+    </Window.Resources>
 
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -304,6 +310,7 @@
                                                             <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
                                                         <TextBlock Grid.Column="0" Text="标定板" FontSize="11" VerticalAlignment="Center"
                                                                    Foreground="{DynamicResource TextDisabledBrush}"/>
@@ -319,8 +326,13 @@
                                                                   SelectedItem="{Binding AxisFollows}"
                                                                   SelectionChanged="SlotField_Changed"
                                                                   ToolTip="相机随执行机构哪些轴联动：固定=不随动；跟随XY=随水平面但Z/U独立；跟随XYZU=全随动(真眼在手上)"/>
-                                                        <Button Grid.Column="5" Content="✕" Style="{StaticResource SecondaryButtonStyle}"
-                                                                Width="26" Height="26" Padding="0" FontSize="11" Margin="10,0,0,0"
+                                                        <CheckBox Grid.Column="5" Margin="16,0,0,0" VerticalAlignment="Center" FontSize="11"
+                                                                  Content="启用"
+                                                                  IsChecked="{Binding IsDisabled, Converter={StaticResource InverseBooleanConverter}, Mode=TwoWay}"
+                                                                  Checked="SlotField_Changed" Unchecked="SlotField_Changed"
+                                                                  ToolTip="勾掉=停用本槽：保留定义但【不进坐标系传导链、不派生标定任务】（相机未接/暂不用时用）"/>
+                                                        <Button Grid.Column="6" Content="✕" Style="{StaticResource SecondaryButtonStyle}"
+                                                                Width="26" Height="26" Padding="0" FontSize="11" Margin="8,0,0,0"
                                                                 Click="BtnRemoveSlot_Click" Tag="{Binding}" ToolTip="移除该相机槽"/>
                                                     </Grid>
                                                 </StackPanel>

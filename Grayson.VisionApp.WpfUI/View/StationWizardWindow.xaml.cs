@@ -84,8 +84,10 @@ namespace Grayson.Vision.WpfUI.View
             }
         }
 
-        /// <summary>槽行任一字段变化 → 重算右侧推导预览</summary>
-        private void SlotField_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        /// <summary>槽行任一字段变化（含【启用】勾选）→ 重算右侧推导预览。</summary>
+        /// 参数放宽为 RoutedEventArgs：ComboBox 的 SelectionChanged(SelectionChangedEventArgs 派生)
+        /// 与 CheckBox 的 Checked/Unchecked(RoutedEventArgs) 共用同一处理（参数逆变合法）。
+        private void SlotField_Changed(object sender, System.Windows.RoutedEventArgs e)
         {
             _vm.NotifySlotEdited();
         }

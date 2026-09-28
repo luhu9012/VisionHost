@@ -260,9 +260,12 @@ namespace Grayson.Vision.WpfUI.Service
             {
                 var slotLines = new List<string>();
                 var slotAssets = new List<string>();
+                int disabledSlots = 0;
                 foreach (var slot in req.CameraSlots)
                 {
                     if (slot == null) continue;
+                    // ★2026-09-28：停用槽不进建议清单/资产清单（它不进坐标系传导链）
+                    if (slot.IsDisabled) { disabledSlots++; continue; }
                     string tag = string.IsNullOrWhiteSpace(slot.SlotKey) ? "相机槽" : slot.SlotKey;
                     string install = string.IsNullOrWhiteSpace(slot.InstallKind) ? "安装待定" : slot.InstallKind;
                     string purpose = string.IsNullOrWhiteSpace(slot.Purpose) ? "用途待定" : slot.Purpose;
@@ -273,7 +276,20 @@ namespace Grayson.Vision.WpfUI.Service
                 }
                 p.Assets.RemoveAll(a => a.Contains("CalibrationProfile")); // 基线单条占位由槽级清单替代
                 p.Assets.AddRange(slotAssets);
-                calib = slotLines.Count > 0 ? string.Join("\n", slotLines) : calib;
+                // ★2026-09-28：全槽停用时给明确结论，不静默回落"单相机口径"（那会让人以为还有待办）
+                int liveSlots = 0;
+                foreach (var s in req.CameraSlots) if (s != null && !s.IsDisabled) liveSlots++;
+                if (slotLines.Count > 0)
+                {
+                    calib = string.Join("\n", slotLines)
+                          + (disabledSlots > 0
+                             ? "\n（另有 " + disabledSlots + " 个相机槽已停用 ⇒ 不进链、不派生标定）"
+                             : string.Empty);
+                }
+                else if (liveSlots == 0)
+                {
+                    calib = "全部相机槽已停用 ⇒ 不派生标定（需要时在工位档案槽里勾回『启用』）";
+                }
             }
             else if (string.IsNullOrWhiteSpace(calib))
             {

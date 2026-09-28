@@ -2,19 +2,42 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="链校验台（范式2 · L1 门禁可视 + L2 数学校验）" Height="720" Width="1280"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
     <Window.Resources>
-        <Style TargetType="GroupBox">
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="Padding" Value="4"/>
-        </Style>
-        <Style TargetType="Button">
+        <!-- ★2026-09-28 主题适配：原先这里的裸隐式样式（无 BasedOn）会顶掉应用级主题，
+             使按钮/输入框/表格回落到系统亮色。现一律 BasedOn 主题样式；
+             GroupBox 全局无隐式样式，此处补一个基于主题色的模板。 -->
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Padding" Value="10,3"/>
             <Setter Property="Margin" Value="2,0"/>
         </Style>
-        <Style TargetType="TextBox">
+        <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBoxStyle}">
             <Setter Property="Margin" Value="2,0"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="DataGrid" BasedOn="{StaticResource ModernDataGridStyle}"/>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupBox">
+                        <Border Background="{DynamicResource BackgroundLightBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="{TemplateBinding Header}"
+                                           FontWeight="SemiBold" Margin="0,0,0,6"
+                                           Foreground="{DynamicResource AccentLightBrush}"/>
+                                <ContentPresenter/>
+                            </DockPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
     <Grid Margin="4">
@@ -33,7 +56,7 @@
                     <TextBlock x:Name="VerdictText" FontWeight="Bold" VerticalAlignment="Center" Margin="20,0,0,0"/>
                 </StackPanel>
                 <TextBlock x:Name="PathText" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
-                           Foreground="#666666"/>
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
             </StackPanel>
         </GroupBox>
 
@@ -61,11 +84,11 @@
             </DataGrid>
             <TextBox Grid.Row="1" x:Name="DetailBox" IsReadOnly="True" TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto" FontSize="11" Margin="0,2"/>
-            <TextBlock Grid.Row="2" x:Name="EdgeText" TextWrapping="Wrap" Foreground="DarkCyan" FontSize="11"/>
+            <TextBlock Grid.Row="2" x:Name="EdgeText" TextWrapping="Wrap" Foreground="{DynamicResource InfoBrush}" FontSize="11"/>
         </Grid>
 
         <GroupBox Grid.Row="2" Header="说明">
-            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="Gray"
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
                        Text="L1=门禁可视（G0~G4 与生产端同源 fail-closed）；L2=数学校验（形状门复验/条件数/像素当量量级/EIH 平移量级/DeltaRef 自洽提示）。RMS 重算复验（重喂点对）与指哪打哪属 L3 真机页——需重新采集，不在本台。"/>
         </GroupBox>
     </Grid>

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using Grayson.Vision.Contracts.Calibration.Chain;
 
@@ -61,6 +62,9 @@ namespace Grayson.Vision.WpfUI.View
 
             VerdictText.Text = !_report.Loaded ? "✗ 未落盘（fail-closed 待补链）"
                 : (_report.AllOk ? "✓ 审计通过" : "✗ 审计有问题（见问题列）");
+            // ★2026-09-28：结论按主题色着色（动态引用，跟随深浅主题）
+            VerdictText.SetResourceReference(TextBlock.ForegroundProperty,
+                !_report.Loaded ? "WarningBrush" : (_report.AllOk ? "SuccessBrush" : "ErrorBrush"));
         }
     }
 }

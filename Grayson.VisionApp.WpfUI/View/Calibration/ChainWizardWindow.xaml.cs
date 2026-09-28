@@ -194,5 +194,30 @@ namespace Grayson.Vision.WpfUI.View
         private void Validate_Click(object sender, RoutedEventArgs e) { _vm.Validate(); }
         private void Save_Click(object sender, RoutedEventArgs e) { _vm.Save(); }
         private void RefreshSteps_Click(object sender, RoutedEventArgs e) { _vm.RefreshSteps(); }
+
+        //---------------------------------------------------------------------
+        // 轴操控（T18）：连接 / 点动 / 回读 / 回填
+        //   布局：右区独立一栏，先"走到位"再"取图点选"，最后把位姿回填进点对表。
+        //---------------------------------------------------------------------
+
+        private void RefreshMotion_Click(object sender, RoutedEventArgs e) { _vm.LoadMotionDevices(); }
+
+        private void ConnectMotion_Click(object sender, RoutedEventArgs e) { _vm.ConnectMotion(); }
+
+        private void JogXp_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisX, +1); }
+        private void JogXm_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisX, -1); }
+        private void JogYp_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisY, +1); }
+        private void JogYm_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisY, -1); }
+
+        private void ReadPose_Click(object sender, RoutedEventArgs e) { _vm.ReadPose(); }
+
+        /// <summary>把刚回读的位姿写入当前相机【选中点行】的 WorldX/WorldY</summary>
+        private void FillPose_Click(object sender, RoutedEventArgs e)
+        {
+            string msg = _vm.FillPoseIntoSelectedRow(_vm.SelectedSection);
+            _vm.RefreshSteps();
+            MessageBox.Show(this, msg, "链向导·回填位姿", MessageBoxButton.OK,
+                msg.StartsWith("⚠") ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
     }
 }

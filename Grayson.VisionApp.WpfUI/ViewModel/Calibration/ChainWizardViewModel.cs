@@ -418,6 +418,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             ToolRows = new ObservableCollection<ChainToolRowViewModel>();
             Steps = new ObservableCollection<ChainStepRow>();
             LoadCameraDevices();
+            LoadMotionDevices();
             if (_draft != null)
                 BuildUiFromDraft();
         }
@@ -585,6 +586,176 @@ namespace Grayson.Vision.WpfUI.ViewModel
             return bmp;
         }
 
+        //---------------------------------------------------------------------
+        // 轴操控（T18，2026-09-28）：运动设备连接 / 点动 / 回读位姿
+        //   标定必须能"走位"，否则无从采集；位姿回填同一入口（板卡编码器级）
+        //---------------------------------------------------------------------
+
+        /// <summary>设备池中的运动设备（IMotionCard）</summary>
+        public ObservableCollection<IMotionCard> MotionDeviceList { get; } = new ObservableCollection<IMotionCard>();
+
+        private IMotionCard _selectedMotionDevice;
+        public IMotionCard SelectedMotionDevice
+        {
+            get { return _selectedMotionDevice; }
+            set
+            {
+                if (Set(ref _selectedMotionDevice, value))
+                {
+                    OnPropertyChanged(nameof(MotionConnectedText));
+                    OnPropertyChanged(nameof(IsMotionConnected));
+                    OnPropertyChanged(nameof(MotionAccessHint));
+                }
+            }
+        }
+
+        public bool IsMotionConnected
+        {
+            get { return _selectedMotionDevice != null && _selectedMotionDevice.State == DeviceState.Connected; }
+        }
+
+        public string MotionConnectedText
+        {
+            get
+            {
+                if (_selectedMotionDevice == null) return "未选择运动设备";
+                return _selectedMotionDevice.DeviceName + "　" + (IsMotionConnected ? "● 已连接" : "○ 未连接");
+            }
+        }
+
+        public string MotionAccessHint
+        {
+            get
+            {
+                if (_devicePool == null) return "设备池未初始化——轴操控不可用（可用示教器走位后手抄位姿）。";
+                if (MotionDeviceList.Count == 0) return "设备池中未发现运动设备/机器人——请到硬件设备页连接；此处仍可手抄示教器位姿。";
+                if (_selectedMotionDevice == null) return "请先选择运动设备。";
+                return IsMotionConnected ? "已连接。可用方向键点动，或点『回读位姿』把当前坐标填入点对表。" : "点『连接运动设备』后可用轴操控。";
+            }
+        }
+
+        private string _motionLog = "运动设备未接入。";
+        public string MotionLog { get { return _motionLog; } private set { Set(ref _motionLog, value); } }
+
+        /// <summary>点动步长（mm）</summary>
+        private double _jogStep = 1.0;
+        public double JogStep { get { return _jogStep; } set { Set(ref _jogStep, value); } }
+
+        private double _jogSpeed = 30.0;
+        public double JogSpeed { get { return _jogSpeed; } set { Set(ref _jogSpeed, value); } }
+
+        /// <summary>轴映射：X=0,Y=1,U=2（默认；EPSON 经示教器手抄时不用）</summary>
+        public int AxisX { get { return _axisX; } set { Set(ref _axisX, value); } }
+        public int AxisY { get { return _axisY; } set { Set(ref _axisY, value); } }
+        private int _axisX = 0, _axisY = 1;
+
+        /// <summary>回读的当前位姿（板卡编码器）</summary>
+        private string _currentPoseText = "—";
+        public string CurrentPoseText { get { return _currentPoseText; } private set { Set(ref _currentPoseText, value); } }
+
+        /// <summary>最近一次成功回读的位姿（供『回填当前点到选中行』使用）。
+        /// ★ 保存的是原始数值而不是显示字符串——回填是落盘数据源，不能靠解析 UI 文本。</summary>
+        private double _lastPoseX = double.NaN;
+        private double _lastPoseY = double.NaN;
+        public bool HasLastPose
+        {
+            get { return !double.IsNaN(_lastPoseX) && !double.IsNaN(_lastPoseY); }
+        }
+
+        /// <summary>取最近一次回读位姿；无有效回读返回 false</summary>
+        public bool TryGetLastPose(out double x, out double y)
+        {
+            x = _lastPoseX;
+            y = _lastPoseY;
+            return HasLastPose;
+        }
+
+        /// <summary>手工录入位姿（示教器手抄场景）——与回读同一落点，供回填使用</summary>
+        public void SetPose(double x, double y)
+        {
+            _lastPoseX = x;
+            _lastPoseY = y;
+            CurrentPoseText = string.Format(CultureInfo.InvariantCulture, "X={0:F3}  Y={1:F3}", x, y);
+            OnPropertyChanged(nameof(HasLastPose));
+            OnPropertyChanged(nameof(CurrentPoseText));
+        }
+
+        public void LoadMotionDevices()
+        {
+            MotionDeviceList.Clear();
+            try
+            {
+                var all = _devicePool?.GetAllDevices();
+                if (all != null)
+                    foreach (var m in all.OfType<IMotionCard>()) MotionDeviceList.Add(m);
+            }
+            catch (Exception ex) { MotionLog = "枚举运动设备异常：" + ex.Message; }
+            SelectedMotionDevice = MotionDeviceList.FirstOrDefault();
+            OnPropertyChanged(nameof(MotionAccessHint));
+        }
+
+        public void ConnectMotion()
+        {
+            var m = _selectedMotionDevice;
+            if (m == null) { MotionLog = "⚠ 未选择运动设备。"; return; }
+            if (m.State == DeviceState.Connected) { MotionLog = "运动设备已连接：" + m.DeviceName; return; }
+            var r = m.Connect();
+            MotionLog = (r == null || !r.Success) ? "⚠ 连接失败：" + (r?.Message ?? "无应答") : "运动设备已连接：" + m.DeviceName;
+            OnPropertyChanged(nameof(IsMotionConnected));
+            OnPropertyChanged(nameof(MotionConnectedText));
+            OnPropertyChanged(nameof(MotionAccessHint));
+        }
+
+        /// <summary>点动一轴（相对移动）</summary>
+        public void Jog(int axis, int dir)
+        {
+            var m = _selectedMotionDevice;
+            if (m == null) { MotionLog = "⚠ 未选择运动设备。"; return; }
+            double step = JogStep * dir;
+            var r = m.MoveRelative(axis, (float)step, (float)JogSpeed);
+            MotionLog = (r != null && r.Success)
+                ? string.Format(CultureInfo.InvariantCulture, "轴{0} {1}{2:F3}mm 已下发", axis, dir > 0 ? "+" : "-", Math.Abs(step))
+                : "轴" + axis + " 移动失败：" + (r?.Message ?? "无应答");
+        }
+
+        /// <summary>回读位姿（X/Y[/U]）并缓存，供后续回填点对表</summary>
+        public void ReadPose()
+        {
+            var m = _selectedMotionDevice;
+            if (m == null) { MotionLog = "⚠ 未选择运动设备。"; return; }
+            try
+            {
+                var xr = m.GetFeedbackPosition(AxisX);
+                var yr = m.GetFeedbackPosition(AxisY);
+                double x = (xr != null && xr.Success) ? xr.Data : double.NaN;
+                double y = (yr != null && yr.Success) ? yr.Data : double.NaN;
+                if (double.IsNaN(x) || double.IsNaN(y))
+                {
+                    MotionLog = "⚠ 回读未取得有效值——该轴无编码器反馈？可用示教器手抄后手工录入位姿。";
+                    return;
+                }
+                SetPose(x, y);
+                MotionLog = "位姿已回读并缓存（编码器反馈）。可点『回填当前点到选中行』。";
+            }
+            catch (Exception ex) { MotionLog = "回读失败：" + ex.Message; }
+        }
+
+        /// <summary>把缓存的当前位姿写入某相机的【选中点行】的世界坐标（X/Y）。
+        /// 返回提示文本；失败时不抛。</summary>
+        public string FillPoseIntoSelectedRow(ChainCameraSectionViewModel sec)
+        {
+            if (sec == null) return "⚠ 当前不在相机采集页——请先在左侧步骤里选中一个相机采集步。";
+            if (!HasLastPose) return "⚠ 尚无位姿可回填——请先『回读位姿』或手工录入。";
+            var row = sec.SelectedRow;
+            if (row == null) return "⚠ 该点对表未选中行——请先在表格里点一行。";
+            double x, y;
+            TryGetLastPose(out x, out y);
+            row.WorldX = x;
+            row.WorldY = y;
+            return string.Format(CultureInfo.InvariantCulture,
+                "已回填到 {0} 第 {1} 行：X={2:F3}  Y={3:F3}", sec.CameraId, sec.Points.IndexOf(row) + 1, x, y);
+        }
+
         /// <summary>从工位档案（Config\StationProfiles\*.json）推导链骨架。读不到档案 ⇒ 空骨架+错误说明。</summary>
         private static ChainPlanResult PlanFromProfile(string stationCode)
         {
@@ -746,14 +917,17 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public bool IsToolStepSelected { get { return FocusZone == StepZone.Tool; } }
         public bool IsCameraStepSelected { get { return FocusZone == StepZone.Camera; } }
 
-        /// <summary>选中步骤的操作指引（左侧"当前该做什么"栏）</summary>
+        /// <summary>选中步骤的操作指引（中区顶部"当前该做什么"栏）</summary>
         public string StepGuide
         {
             get
             {
                 if (_selectedStep == null) return "请在上方步骤清单点选一步开始。";
+                string where = _selectedStep.Zone == StepZone.Tool
+                    ? "操作面：右栏『工具偏移』"
+                    : "操作面：中间相机区（Tab=" + _selectedStep.Target + "）";
                 return "第 " + _selectedStep.StepNo + " 步 · " + _selectedStep.Workflow
-                       + "\n目标：" + _selectedStep.Target + "　状态：" + _selectedStep.Status
+                       + "\n" + where + "　目标：" + _selectedStep.Target + "　状态：" + _selectedStep.Status
                        + "\n" + _selectedStep.Hint;
             }
         }

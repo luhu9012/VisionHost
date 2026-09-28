@@ -703,26 +703,27 @@ namespace Grayson.Vision.Core.Processes
                     + "处方：重跑标定向导补测基准像素后重发 Chain.json。");
             }
 
-            if (Math.Abs(_cfg.DownCameraCalibZ) > 1e-6 && Math.Abs(_cfg.DownCameraZ) > 1e-6)
+            // ★★2026-09-28 R6e：『标定高度』真源改链图（下相机节点 Meta.CalibZHeightMm，向导实测录入）。
+            //   历史：该值由范式1 发布链写进工位配置（发布链已退役 ⇒ 配置值永为 0 = 判据形同没有）。
+            double? calibZ = _downCamera?.Meta?.CalibZHeightMm;
+            if (calibZ.HasValue && Math.Abs(calibZ.Value) > 1e-6 && Math.Abs(_cfg.DownCameraZ) > 1e-6)
             {
-                double dz = _cfg.DownCameraZ - _cfg.DownCameraCalibZ;
+                double dz = _cfg.DownCameraZ - calibZ.Value;
                 if (Math.Abs(dz) > 1.0)
                 {
-                    Log($"⚠ [预检] 下相机拍照高度 DownCameraZ={_cfg.DownCameraZ:F3} 与【标定高度】CalibZ={_cfg.DownCameraCalibZ:F3} "
+                    Log($"⚠ [预检] 下相机拍照高度 DownCameraZ={_cfg.DownCameraZ:F3} 与【链图标定高度】CalibZ={calibZ.Value:F3} "
                         + $"相差 {dz:F3}mm（>1mm）——下相机拍的是吸嘴上的悬空工件，工件 Z 变了物距就变，"
                         + $"像素当量按 1/物距 被系统性缩放 ⇒ δ 会整体被缩放，表现为『纠偏开了还是偏、且偏量与 δ 不成比例』。"
-                        + $"处方（二选一）：① 把 DownCameraZ 改成 {_cfg.DownCameraCalibZ:F3}；② 在实际作业高度重标下相机九点。");
+                        + $"处方（二选一）：① 把 DownCameraZ 改成 {calibZ.Value:F3}；② 在实际作业高度重标下相机九点后重发 Chain.json。");
                 }
             }
             else if (Math.Abs(_cfg.DownCameraZ) > 1e-6)
             {
-                // ★★2026-09-16：以前这条判据在 CalibZ=0 时【静默跳过】—— 现场看到"预检全过"，
-                //   其实"拍照高度对不对"这件事根本没被判定过（判据失效被当成了通过）。
-                //   判据不可得必须明说，不许沉默。
-                Log($"⚠ [预检] 缺『标定高度』DownCameraCalibZ（当前 0/未设）⇒ **本次无法核对**拍照高度 "
+                // ★★判据不可得必须明说，不许沉默（历史血泪：CalibZ=0 时静默跳过，现场看到"预检全过"）。
+                Log($"⚠ [预检] 链图未记录『下相机标定高度 Z』（下相机节点 Meta.CalibZHeightMm）⇒ **本次无法核对**拍照高度 "
                     + $"DownCameraZ={_cfg.DownCameraZ:F3} 是否与标定时的 Z 一致（该判据本轮失效，不等于通过）。"
                     + $"下相机是在别的 Z 上标的九点的话，工件 Z 一变物距就变、像素当量按 1/物距 缩放 ⇒ δ 被整体缩放。"
-                    + $"处方：把标定当时机械手的 Z 填进 DownCameraCalibZ（多数机型=Z 域顶/0）。");
+                    + $"处方：链标定向导里把下相机九点的标定 Z 填上（相机段『标定高度 Z』）并重发 Chain.json。");
             }
 
             Log($"✅ [预检] 下相机段就绪（第 {downSegIndex} 段；机位 ({_cfg.DownCameraX:F3},{_cfg.DownCameraY:F3},{_cfg.DownCameraZ:F3})，MinScore={_cfg.DownCameraMinScore:F2}，角度符号={_cfg.DownCameraAngleSign:F0}）。");

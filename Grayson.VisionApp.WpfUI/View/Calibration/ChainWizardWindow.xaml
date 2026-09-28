@@ -44,6 +44,11 @@
                         <TextBox Width="100" Text="{Binding DeltaRefCol}"/>
                         <TextBox Width="100" Text="{Binding DeltaRefRow}"/>
                     </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <TextBlock Text="标定高度 Z(mm)（九点标定时机械手的 Z；生产拍照 Z 必须与之一致）："
+                                   VerticalAlignment="Center"/>
+                        <TextBox Width="100" Text="{Binding CalibZText}"/>
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,2"
                                 Visibility="{Binding IsEih, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="拍照基准位 PhotoPose（EIH 生产/示教在此机位拍照）X,Y："

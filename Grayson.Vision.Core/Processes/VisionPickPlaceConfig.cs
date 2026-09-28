@@ -151,14 +151,8 @@ namespace Grayson.Vision.Core.Processes
         //   由发布链算好落盘，生产端做 δ = H_down(R_img) − (AxisWx,AxisWy)。
         //   现在：δ = Chain(卡片像素) − Chain(DeltaRefPixel)，差分基准像素由链标定向导实测写入
         //   链图下相机节点（ChainCameraNode 的差分基准像素字段）⇒ 本类不再存这两个量。
-        //   ★『下相机标定高度 Z』仍保留：开工前预检拿它比对『拍照高度 vs 标定高度』。
-        /// <summary>
-        /// ★下相机九点标定时的 Z 高度（档案 CalibZ，mm）。
-        /// 只用于"开工前预检"：与 <see cref="DownCameraZ"/> 相差过大即报警（像素当量失真），
-        /// 不再靠现场试出来。0 = 未设置（不参与比较；范式2 下由链标定向导/工位档案填入）。
-        /// </summary>
-        public float DownCameraCalibZ { get; set; } = 0f;
-
+        //   ★『下相机标定高度 Z』也已退役（R6e）：它改由链图下相机节点 Meta.CalibZHeightMm 承载——
+        //     范式1 的发布链删除后，本类里的这个值已无写入者（恒 0 = 判据形同没有）。
         /// <summary>
         /// 下相机段匹配分数下限（低于此值判纠偏 NG，本次跳过放置/回待机）。
         /// </summary>

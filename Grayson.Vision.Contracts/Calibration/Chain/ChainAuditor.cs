@@ -166,6 +166,11 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
                     && !row.HasDeltaRef)
                     row.Issues.Add("有 DownCameraCorrect 边但缺 DeltaRefPixel——生产端 δ 将显式降级（纠偏不生效）");
 
+                // ★2026-09-28 R6e：下相机纠偏用途必须有『标定高度 Z』，否则生产端无法核对拍照 Z（像素当量 1/物距 缩放）。
+                if (row.HasDeltaRef && row.CalibZMm == null)
+                    row.Issues.Add("有 DeltaRefPixel（下相机差分消费）却缺 CalibZHeightMm——生产端无法核对『拍照 Z = 标定 Z』，" +
+                        "工件 Z 一变像素当量即按 1/物距 缩放（向导相机段『标定高度 Z』补填）");
+
                 if (row.HasDeltaRef && cam.Matrix != null)
                 {
                     // DeltaRef 映射到世界，与主工具 Offset 的距离 = 拍照位到法兰原点距离（人工核对项）

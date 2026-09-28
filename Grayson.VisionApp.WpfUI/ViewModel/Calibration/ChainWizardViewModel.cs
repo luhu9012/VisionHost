@@ -141,6 +141,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             set { Set(ref _photoPoseY, value); RefreshHasPhotoPose(); }
         }
 
+        private string _calibZText = "";
+        /// <summary>★标定高度 Z（mm）= 本次九点标定时的机械手 Z。写进链图 Meta.CalibZHeightMm：
+        ///   · EIH：相机↔法兰的平移分量与 Z 线性相关（生产拍照 Z≠标定 Z ⇒ 乘性过纠，RMS 抓不到）；
+        ///   · 下相机段：生产预检拿它比对拍照 Z（工件 Z 一变物距就变，像素当量按 1/物距缩放）。
+        /// 留空 = 链图不记该值 ⇒ 审计列条目、生产预检明说『本轮无法核对』（不静默放行）。</summary>
+        public string CalibZText { get { return _calibZText; } set { Set(ref _calibZText, value); } }
+
         public bool HasPhotoPose
         {
             get { return _hasPhotoPose; }
@@ -283,6 +290,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         "σ1={0:F3} σ2={1:F3} shapeDev={2:F4}", _sigma1, _sigma2, _shapeDev),
                 },
             };
+            if (double.TryParse((CalibZText ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double cz))
+                node.Meta.CalibZHeightMm = cz;
             if (HasDeltaRef)
                 node.DeltaRefPixel = new[] { DeltaRefCol, DeltaRefRow };
             if (IsEih && HasPhotoPose)

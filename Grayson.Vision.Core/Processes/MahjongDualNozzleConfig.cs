@@ -7,17 +7,9 @@ namespace Grayson.Vision.Core.Processes
     ///   0 = X（SCARA 大臂，mm） 1 = Y（小臂，mm）
     ///   2 = Z（吸嘴上下，mm，向下为负） 3 = U（末端旋转，deg）
     ///
-    /// 双吸嘴几何约定（2026-09-08 定案，历史几何口径已随 R6 退役；现唯一真源 = 链图 Chain.json（范式2））：
-    ///   - 每吸嘴只认【一个】几何量：Ecc（Nozzle1Ecc/Nozzle2Ecc，世界 mm，U0=ToolAlignU 参考）
-    ///     = 真吸嘴偏心 e = O − H(p_tip)。O 来自三点定圆旋转标定（半径=杆长，扔掉，故杆长/偏心无影响），
-    ///     p_tip 来自一次物理对针。★ 不需要同心短杆；★ 偏心延伸杆测出的 ToolEccW 是杆末端偏心，不是 e。
-    ///   - ⚠ Nozzle1Tco/Nozzle2Tco（旧 TCO）已废弃，发布链一律清零，不得参与计算（v5 消费式仿真误差 451mm）。
-    ///   - 视觉输出 w = H(像素)，口径是「机械手该停哪」，不是工件真位：
-    ///       眼在手 EIH：工件真位 X_obj = P_photo + O − H(u)
-    ///       固定相机 ETH：X_obj = H(u)
-    ///     吸取回转中心 C = X_obj − R(WorkU − U0)·Ecc1（U 不转时旋转项就是 Ecc 本身）。
-    ///   - 放料：工件被吸持后其中心随 U 绕回转中心转 = C + R(姿态U)·Ecc →
-    ///     落点 C = 放料位 − R(U_place − U0)·Ecc（同一式，换姿态角即可）。
+    /// 几何约定：★几何类字段已随 R6d 全部退役。唯一真源 = 链图 Chain.json（范式2，链标定向导产出）：
+    ///   工件真位 / 吸点命令位一律由链求值给出（ResolvePixelToWorld / ResolveFlangeTarget）；
+    ///   双吸嘴 = 链图 Nozzle1/Nozzle2 两个工具节点（偏移带符号内蕴；同轴 = 偏心为 0 的特例）。
     ///
     /// 双牌定位策略：
     ///   视觉流中 ShapeMatch 每次输出一个最佳匹配（工件牌在料盘中按阵列摆放），
@@ -82,135 +74,14 @@ namespace Grayson.Vision.Core.Processes
         public float AngleCorrectionSign { get; set; } = 1f;
 
         // ============================================================
-        // 吸嘴几何（唯一来源=标定管理页「📤 发布偏心到业务配置」）
-        // 2026-09-03 重构：旧 NozzleToolOffsetX/Y（固定U人工示教）与 Nozzle2OffsetX/Y（吸嘴间距）
-        // 已退役删除；2026-09-08 定案：每吸嘴只认【一个】几何量 Ecc = 真吸嘴偏心 e：
-        //   Ecc = e = O − H(p_tip)，U0=ToolAlignU 参考。
-        //   · O  = 三点定圆旋转标定的【圆心】（半径=杆长，丢弃 → 杆长/杆偏心不影响）
-        //   · p_tip = 一次物理对针：U=U0 时吸嘴尖压住特征，抬 Z 拍到它
-        //   ★ 不需要同心短杆；★ 偏心延伸杆测出的 Profile.ToolEccWx/Wy 是【杆末端】偏心，不是 e。
-        // 消费（历史定案式；R6 后唯一真源 = 链图 Chain.json，下列 Ecc/O/p_tip 字段仅为旧档留档）：
-        //   X_obj = P_photo + O − H(u)   （EIH 眼在手）
-        //   X_obj = H(u)                 （ETH 固定相机）
-        //   C     = X_obj − R(姿态U − U0)·Ecc   （吸取 WorkU；放料 U_place，同一式）
-        // 双吸嘴：吸嘴1/2 各一套 Ecc，共用同一 U 轴回转中心。
         // ============================================================
-
-        /// <summary>吸嘴1 真吸嘴偏心 e 世界 X（mm，U0=ToolAlignU 参考；★偏心延伸杆测得 ToolEccW 是杆末端偏心，不是 e）</summary>
-        public float Nozzle1EccX { get; set; } = 0f;
-        /// <summary>吸嘴1 真吸嘴偏心 e 世界 Y（mm，U0 参考）</summary>
-        public float Nozzle1EccY { get; set; } = 0f;
-        /// <summary>吸嘴2 真吸嘴偏心 e 世界 X（mm，U0 参考）</summary>
-        public float Nozzle2EccX { get; set; } = 0f;
-        /// <summary>吸嘴2 真吸嘴偏心 e 世界 Y（mm，U0 参考）</summary>
-        public float Nozzle2EccY { get; set; } = 0f;
-
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，发布时一律清零，仅兼容旧档读取，禁止参与计算</summary>
-        public float Nozzle1TcoX { get; set; } = 0f;
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，禁止参与计算</summary>
-        public float Nozzle1TcoY { get; set; } = 0f;
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，禁止参与计算</summary>
-        public float Nozzle2TcoX { get; set; } = 0f;
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，禁止参与计算</summary>
-        public float Nozzle2TcoY { get; set; } = 0f;
-
-        /// <summary>
-        /// 偏心 e 的基准角 U0（°）= 物理对针时机械手的 U 角（默认 0）。
-        /// 走位按 C = X_obj − R(姿态U − U0)·e：U 不转时旋转项就是 e 本身；U≠U0 必须转，否则差十几 mm。
-        /// </summary>
-        public float ToolAlignU { get; set; } = 0f;
-
-        /// <summary>
-        /// 吸放式标定放料基准角（°）= 向导「初始吸取位 U」(PickBaseU) 快照（旧语义参考角，保留兼容，不参与计算）。
-        /// </summary>
-        public float CalibPlaceU { get; set; } = 0f;
-
-        // ===== 2026-09-08 定案：相机安装方式 + 拍照基准位 + 旋转中心 O（决定 X_obj 怎么算）=====
-        /// <summary>
-        /// 相机安装方式：true=眼在手 EIH（相机随机械手 XY 动，H 输出是"命令位域"）→
-        /// X_obj = P_photo + O − H(u)；false=固定相机 ETH（相机固定于料盘上方）→ X_obj = H(u)。
-        /// ⚠ 填错会导致"看起来标定都对、走位系统性偏移"。麻将工位默认 false（相机固定于料盘上方）。
-        /// </summary>
-        public bool CameraMountEih { get; set; } = false;
-
-        /// <summary>拍照基准位 X（mm，命令位）——仅 EIH 需要：视觉触发瞬间机械手所在 XY。若为 0 且 EIH=true，请在日志中核对是否已正确填写。</summary>
-        public float PhotoBaseX { get; set; } = 0f;
-        /// <summary>拍照基准位 Y（mm，命令位）——仅 EIH 需要</summary>
-        public float PhotoBaseY { get; set; } = 0f;
-
-        /// <summary>旋转中心 O 的 X（命令位域）= 三点定圆圆心经 H 映射（标定档案 ToolCenterWx）。需 O 补偿时使用。</summary>
-        public float RotCenterWx { get; set; } = 0f;
-        /// <summary>旋转中心 O 的 Y（命令位域）= 标定档案 ToolCenterWy。需 O 补偿时使用。</summary>
-        public float RotCenterWy { get; set; } = 0f;
-
-        /// <summary>
-        /// ★2026-09-12：X_obj 是否需叠旋转中心 O + 偏心 e 补偿（决定消费式，与 VisionPickPlaceConfig.NeedsOCompensation 同源）。
-        ///   ① EIH 眼在手 → true；② ETH 固定相机（直接拍工件 / 延伸杆辅助）→ **false**。
-        /// ★2026-09-15 二修：固定相机【不再叠 O】（O 补偿式含 P_photo，只对"相机随机械手走"成立）
-        ///   ⇒ 固定相机若 H 标的是杆端 mark，靠 <see cref="HasRodOffset"/> 补 b。
-        /// 默认 false（向后兼容）；仅 EIH 由发布链写 true。
-        /// </summary>
-        public bool NeedsOCompensation { get; set; } = false;
-
-        // ===== 2026-09-15：固定相机 + 延伸杆标定的『杆端→吸嘴偏移 b』通路（与 VisionPickPlaceConfig 同源同名）=====
-        /// <summary>
-        /// ★2026-09-15：是否启用『杆端→吸嘴偏移 b』（固定相机 + 延伸杆辅助标定专用）。
-        /// H 的域是【杆端 mark】⇒ 同心吸嘴送尖要补一个与 U 无关的常量位移：**吸点 = H(u) + b**。
-        /// ⚠ 三者互斥：HandEyeInNozzleDomain（已消杆）/ NeedsOCompensation（EIH）/ 本字段（固定相机杆端域）。
-        /// 默认 false = 与改动前一致（零回归）。符号见 <see cref="RodOffsetSign"/>。
-        /// </summary>
-        public bool HasRodOffset { get; set; } = false;
-
-        /// <summary>杆端→吸嘴偏移 b 的 X（mm，命令位域；档案 ToolEccWx）。仅 HasRodOffset 时生效。</summary>
-        public float RodOffsetWx { get; set; } = 0f;
-        /// <summary>杆端→吸嘴偏移 b 的 Y（mm，命令位域；档案 ToolEccWy）。仅 HasRodOffset 时生效。</summary>
-        public float RodOffsetWy { get; set; } = 0f;
-        /// <summary>b 的符号（+1/−1）。默认 +1（推导结论：吸点 = H(u) + b）；现场 A/B 若发现应取反改这里即可。</summary>
-        public float RodOffsetSign { get; set; } = 1f;
-
-        /// <summary>
-        /// ★★2026-09-16：现场**是否真的判定过** <see cref="RodOffsetSign"/>。
-        /// 与 <see cref="VisionPickPlaceConfig.RodOffsetSignDeclared"/> 同义同判据：
-        /// ① 符号默认就是 +1f ⇒ 键缺席时"取默认"与"判定过 +1"在数值上无法区分；
-        /// ② 发布链 SetFields 的**同值剪枝**会把现场选的 +1 静默剪掉 ⇒ 显式选择从来没落过盘。
-        /// 默认 false（写 true 永远 ≠ 默认 ⇒ 永不被剪枝）；false 时消费端硬拦（选错偏 2|b|，比不补更危险）。
-        /// </summary>
-        public bool RodOffsetSignDeclared { get; set; } = false;
-
-        /// <summary>
-        /// ★2026-09-15：九点矩阵 H 是否已在【吸嘴域】（延伸杆偏心已在标定阶段扣掉）。
-        /// true = 消费直接 X_obj = H(u)，**不叠 O、不用 P_photo**（优先于 NeedsOCompensation / CameraMountEih）。
-        /// false = 默认未声明，行为与改动前一致。
-        /// ⚠ 与 NeedsOCompensation 同时为 true 即【双重补偿】（H 已消杆又被补一遍 O/e）。
-        /// </summary>
-        public bool HandEyeInNozzleDomain { get; set; } = false;
-
-        /// <summary>
-        /// ★2026-09-15：吸嘴是否与 U 回转轴同轴。true ⇒ 消费免掉 R(U−U0)·Ecc 项（U 只定姿态）。
-        /// false = 默认（未声明 / 偏心吸嘴）→ 保留该项，与改动前一致。
-        /// </summary>
-        public bool NozzleAxisCoaxial { get; set; } = false;
-
-        /// <summary>
-        /// ★★2026-09-15：发布时那份口径判定的**标签**（口径漂移对账用）。
-        /// 形态 = "&lt;档号&gt;|&lt;档名&gt;|b=&lt;符号或n/a&gt;"，范式1 遗留字段，R6 后生产端不再读取。
-        /// 生产端启动时用**同一个反读函数**再算一遍并比对：不一致 ⇒ 打 ERROR。
-        /// 为什么需要：本配置是**一套扁平字段**（没有"哪台相机"这一维），复合工位多相机发布会互相覆盖，
-        /// 覆盖后口径可能仍是"合法值"却不代表本槽 ⇒ 只有留下发布时的判定结果才能发现漂移。
-        /// 默认空串 = **从未按口径契约发布过**。
-        /// ★★2026-09-16 语义修正：空串**不再**等于「不做对账」。
-        ///   原先这里写的是「尚未发布过（此时不做对账，避免把"没发过"误报成"漂移"）」——
-        ///   那条判断把最危险的状态（从没对过账）当成了安全状态：ST_002 就是这样在无声明状态下
-        ///   静默退到 ②直吸 H(u)，少补 |b|=132mm 撞机。现在空串 = TagReconcileStatus.NoTag，
-        ///   由 StationProcessBase.EnforceConsumptionGate 与标定档案交叉核对，冲突即拦下不许运动。
-        /// </summary>
-        public string ConsumptionTag { get; set; } = "";
-
-        /// <summary>★2026-09-15：发布时那份口径的算式文字（人话），用于生产端启动横幅与二次对账。</summary>
-        public string ConsumptionFormula { get; set; } = "";
-
+        // 吸嘴几何：★已随 R6d 整体退役（范式1 发布链删除）
         // ============================================================
-        // 视觉与双牌定位
+        //   历史：Ecc(e)/O/b 符号/拍照基准位/口径标签由标定页发布写入，生产端按四开关挑一档算式。
+        //   现在：几何唯一真源 = 链图 recipes\Workstations...\Calib\Chain.json（链标定向导产出），
+        //   生产端只做链求值（双吸嘴 = 链图 Nozzle1/Nozzle2 工具节点，偏移带符号内蕴）。
+        //   存量工位 JSON 里的旧键已无字段载体 ⇒ 自动失效（不报错、不参与计算）。
+        // 视觉与双牌定位：
         // ============================================================
 
         /// <summary>第二块工件牌相对第一块的 X 节距（料盘阵列间距，mm）</summary>

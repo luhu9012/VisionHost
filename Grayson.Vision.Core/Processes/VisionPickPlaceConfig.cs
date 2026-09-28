@@ -92,161 +92,17 @@ namespace Grayson.Vision.Core.Processes
         public float AngleCorrectionSign { get; set; } = 1f;
 
         // ============================================================
-        // 吸嘴几何（2026-09-08 定案，同 MahjongDualNozzleConfig）
+        // 吸嘴几何：★已随 R6d 整体退役（范式1 发布链删除）
         // ============================================================
-        //   只认【一个】几何量：Ecc = 真吸嘴偏心 e（U0=ToolAlignU 参考）
-        //     e = O − H(p_tip)：O 来自三点定圆旋转标定，p_tip 来自一次物理对针；
-        //     ★ 不需要同心短杆；★ 偏心延伸杆测出的 ToolEccW 是杆末端偏心，不是 e，别混用。
-        //   ⚠ 下面的 TCO 字段已废弃（发布时清零），仅为兼容旧档保留，不得参与计算。
-        // 消费（历史定案式；R6 后唯一真源 = 链图 Chain.json，下列 Ecc/O/p_tip 字段仅为旧档留档）：
-        //   X_obj = P_photo + O − H(u)   （EIH 眼在手）
-        //   X_obj = H(u)                 （ETH 固定相机）
-        //   C     = X_obj − R(姿态U − U0)·Ecc   （吸取 armU=WorkU，放料 armU=U_place）
-
-        /// <summary>吸嘴1 真吸嘴偏心 e 世界 X（mm，U0=ToolAlignU 参考；同心吸嘴=0；★偏心延伸杆测得 ToolEccW 是杆末端偏心，不是 e）</summary>
-        public float Nozzle1EccX { get; set; } = 0f;
-        /// <summary>吸嘴1 真吸嘴偏心 e 世界 Y（mm，U0 参考）</summary>
-        public float Nozzle1EccY { get; set; } = 0f;
-        /// <summary>吸嘴2 真吸嘴偏心 e 世界 X（mm，U0 参考）</summary>
-        public float Nozzle2EccX { get; set; } = 0f;
-        /// <summary>吸嘴2 真吸嘴偏心 e 世界 Y（mm，U0 参考）</summary>
-        public float Nozzle2EccY { get; set; } = 0f;
-
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，发布时一律清零，仅兼容旧档读取，禁止参与计算</summary>
-        public float Nozzle1TcoX { get; set; } = 0f;
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，禁止参与计算</summary>
-        public float Nozzle1TcoY { get; set; } = 0f;
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，禁止参与计算</summary>
-        public float Nozzle2TcoX { get; set; } = 0f;
-        /// <summary>【已废弃 2026-09-08】旧 TCO 字段，禁止参与计算</summary>
-        public float Nozzle2TcoY { get; set; } = 0f;
-
-        /// <summary>
-        /// 偏心 e 的基准角 U0（°）= 物理对针时机械手的 U 角（默认 0）。
-        /// 走位按 C = X_obj − R(姿态U − U0)·e，U 不转时旋转项就是 e 本身。
-        /// </summary>
-        public float ToolAlignU { get; set; } = 0f;
-
-        /// <summary>
-        /// 放料/旋转标定基准角（°）记录位；定案式下不再参与吸取计算，仅供旧档与记录参考。
-        /// </summary>
-        public float CalibPlaceU { get; set; } = 0f;
-
-        // ===== 2026-09-08 定案：相机安装方式 + 拍照基准位 + 旋转中心 O（决定 X_obj 怎么算）=====
-        /// <summary>相机安装方式：true=眼在手 EIH（相机随机械手 XY 动）；false=固定相机 ETH。控制拍照基准位回位（EnsurePhotoBaseAsync）。</summary>
-        public bool CameraMountEih { get; set; } = false;
-        /// <summary>拍照基准位 X（mm，命令位）——仅 EIH 需要</summary>
-        public float PhotoBaseX { get; set; } = 0f;
-        /// <summary>拍照基准位 Y（mm，命令位）——仅 EIH 需要</summary>
-        public float PhotoBaseY { get; set; } = 0f;
-        /// <summary>旋转中心 O 的 X（命令位域）= 三点定圆圆心经 H 映射（档案 ToolCenterWx）。需 O 补偿时使用。</summary>
-        public float RotCenterWx { get; set; } = 0f;
-        /// <summary>旋转中心 O 的 Y（命令位域）= 档案 ToolCenterWy。需 O 补偿时使用。</summary>
-        public float RotCenterWy { get; set; } = 0f;
-
-        /// <summary>
-        /// ★2026-09-12：X_obj 是否需叠旋转中心 O + 偏心 e 补偿（决定消费式）。
-        /// 两种场景（与 CameraCalibrationBundle.NeedsOCompensation 同源同果）：
-        ///   ① EIH 眼在手（相机随机械手走）        → true（X_obj = P_photo + O − H(u)）
-        ///   ② ETH 固定相机（直接拍工件 / 延伸杆辅助）→ **false**（X_obj = H(u) 或 H(u)+b，见下）
-        /// ★2026-09-15 二修：固定相机【不再叠 O】。理由（可证伪）：O 补偿式里含【拍照机位 P_photo】，
-        ///   只有"相机随机械手走"(EIH) 时才成立；固定相机下工件在台面上不动，把 P_photo 混进物位在物理上
-        ///   说不通（实测反证：X_obj Y 比工作区低约 120mm，飞出可达域）。
-        ///   ⇒ 固定相机若 H 标的是【杆端 mark】，靠 <see cref="HasRodOffset"/> 补 b，不是靠 O。
-        /// 默认 false；发布链按档案声明写（仅 EIH 写 true）。
-        /// </summary>
-        public bool NeedsOCompensation { get; set; } = false;
-
-        // ===== 2026-09-15：固定相机 + 延伸杆标定的『杆端→吸嘴偏移 b』通路 =====
-        /// <summary>
-        /// ★2026-09-15：是否启用『杆端→吸嘴偏移 b』补偿（固定相机 + 延伸杆辅助标定专用）。
-        ///
-        /// 背景：延伸杆辅助标定时，九点矩阵 H 的域是【杆端 mark】——命令到 H(u) 时落在特征上的是杆端，
-        ///   不是吸嘴尖。同心吸嘴坐在 U 回转轴上 ⇒ 送吸嘴尖要补一个**与 U 无关**的常量位移 b：
-        ///       **吸点 = H(u) + b**
-        ///   b 的来源：① 对针（EyeToHandImage）直量 t = M_tool − H(A')；② 旋转标定顺带产出的
-        ///   ToolEccW（= 映射域定圆的偏心矢，见档案 ToolEccWx/Wy）。
-        ///
-        /// ⚠ 与 NeedsOCompensation / HandEyeInNozzleDomain 的互斥关系（三者只能命中一个）：
-        ///   · HandEyeInNozzleDomain=true（H 已消杆）→ 直吸 H(u)，**不要再补 b**（否则双重补偿）
-        ///   · NeedsOCompensation=true（EIH）        → P_photo + O − H(u)，与 b 无关
-        ///   · 本字段=true（固定相机 + 杆端域）      → H(u) + Sign·b
-        /// 默认 false = 与本次改动前完全一致（零回归）。发布链按档案声明写。
-        /// ⚠ 符号默认 +1（由 ToolEccW 定义 + 旋转采样只转 U 的几何反推得出）；若现场 A/B 发现应取反，
-        ///   改 <see cref="RodOffsetSign"/> 即可，不必改代码。
-        /// </summary>
-        public bool HasRodOffset { get; set; } = false;
-
-        /// <summary>杆端→吸嘴偏移 b 的 X（mm，命令位域；档案 ToolEccWx）。仅在 <see cref="HasRodOffset"/> 时生效。</summary>
-        public float RodOffsetWx { get; set; } = 0f;
-        /// <summary>杆端→吸嘴偏移 b 的 Y（mm，命令位域；档案 ToolEccWy）。仅在 <see cref="HasRodOffset"/> 时生效。</summary>
-        public float RodOffsetWy { get; set; } = 0f;
-        /// <summary>
-        /// b 的符号（+1 / −1）。默认 +1（推导结论：吸点 = H(u) + b）。
-        /// 现场 A/B 判定法：用同一像素各走一次 ±b，只有一个是"吸嘴正好落在点上"；选错会偏 2|b|（不会安静通过）。
-        /// </summary>
-        public float RodOffsetSign { get; set; } = 1f;
-
-        /// <summary>
-        /// ★★2026-09-16：现场**是否真的判定过** <see cref="RodOffsetSign"/>。
-        ///
-        /// 【为什么必须单独有这个标志】两个原因叠加，缺一个都会骗人：
-        ///   ① <see cref="RodOffsetSign"/> 的代码默认就是 <c>1f</c> ⇒ 键缺席时取默认，
-        ///      日志打「符号 = +1」看起来像已确认，实际是**从来没人判定过**（同 ConsumptionTag 缺席的病）。
-        ///   ② 发布链写字段时走 <c>ProcessConfigOverlay.SetFields(..., codeDefaults)</c> 的**同值剪枝**：
-        ///      现场选「+1」写进去的值**与代码默认相同 ⇒ 被静默剪掉、键根本落不了盘**；
-        ///      而选「−1」能落盘 ⇒ 症状是**不对称的**（同值剪枝把"显式选择"和"默认"抹平了）。
-        ///      ⇒ 用这个默认 <c>false</c> 的布尔做标志：写 <c>true</c> 永远 ≠ 默认 ⇒ **永不被剪枝**。
-        ///
-        /// 判据：<c>false</c> = 没判定过（消费端硬拦，因为选错偏 2|b|，比不补更危险）；
-        ///       <c>true</c>  = 现场用校验台口径 ④/⑤ 做过 A/B 并选定。
-        /// 默认 false ⇒ 未声明的老配置不会被误判成"已判定"。
-        /// </summary>
-        public bool RodOffsetSignDeclared { get; set; } = false;
-
-        /// <summary>
-        /// ★2026-09-15：九点矩阵 H 是否已在【吸嘴域】（延伸杆偏心已在标定阶段扣掉）。
-        /// 三种场景（与 CameraCalibrationBundle.IsNozzleDomainH 同源同果）：
-        ///   true  = H 已消杆：命令到 H(u) 即让吸嘴对准像素 u ⇒ 消费直接 X_obj = H(u)，
-        ///           **不叠 O、不用 P_photo**（本条优先于 NeedsOCompensation / CameraMountEih）。
-        ///   false = 默认，未声明 → 行为与本次改动前完全一致（旧档不受影响）。
-        /// ⚠ 与 NeedsOCompensation 的分工：后者描述"H 在杆端域、需叠 O 把杆消掉"；
-        ///   本字段描述"H 已经在吸嘴域、那一步早在标定里做完了"。两者同时 true 就是【双重补偿】。
-        /// </summary>
-        public bool HandEyeInNozzleDomain { get; set; } = false;
-
-        /// <summary>
-        /// ★2026-09-15：吸嘴是否与 U 回转轴同轴。true = 转 U 时吸嘴尖在 XY 上原地不动
-        /// ⇒ 消费**免掉** R(U−U0)·Ecc 这一项（U 只决定姿态）。
-        /// false = 默认（未声明 / 偏心吸嘴）→ 保留该项，行为与改动前一致。
-        /// 判据：绕 U 转 30° 前后各测同一不动特征，吸嘴尖偏差 d0、d30 都 ≈0 且 d30−d0 ≈0。
-        /// </summary>
-        public bool NozzleAxisCoaxial { get; set; } = false;
-
-        // ===== ★2026-09-15：口径对齐用的留痕字段（发布链写、生产端对账）=====
-        // 动机：上面这几个开关（HandEyeInNozzleDomain / NeedsOCompensation / CameraMountEih /
-        //   HasRodOffset / NozzleAxisCoaxial）**必须同时成立**才代表一个正确的口径；
-        //   而工位配置是【一套扁平字段】，任何一个漏发/被覆盖，生产端就会安静地走另一档。
-        //   所以发布链把"判定出来的口径"写成一行标签留在这里，生产端启动时把"实读出来的口径"
-        //   与之对账 —— 不一致即 ERROR（口径漂移不许静默）。
-
-        /// <summary>
-        /// 发布链写下的口径标签（格式 "分型号|分型名|b=+0"。范式1 遗留字段，R6 后生产端不再读取。
-        /// 空 = **从未按口径契约发布过**。
-        ///
-        /// ★★2026-09-16 语义修正：空**不再**表示"不做对账 / 放行"。
-        ///   旧注释写的是「老配置（未发布过），生产端不做对账」——而"从未发布"恰恰是最危险的状态：
-        ///   本工位 H 是杆端域（|b|≈132mm），没有声明 ⇒ 生产端静默退 ②直吸 H(u) ⇒ 少补一个杆长 ⇒ 撞机。
-        ///   现在空标签 = TagReconcileStatus.NoTag（与「一致」分开），并交给
-        ///   StationProcessBase.EnforceConsumptionGate 处置：与标定档案交叉核对，冲突即拦下不许运动。
-        /// </summary>
-        public string ConsumptionTag { get; set; } = "";
-
-        /// <summary>口径的一句话算式（发布链写，供生产端日志原样打印）</summary>
-        public string ConsumptionFormula { get; set; } = "";
-
-        // ============================================================
-        // 视觉与双目标定位
+        //   历史：本类曾承载『吸嘴偏心 e / 旋转中心 O / 杆端偏移 b / b 符号 / 基准角 U0 / 拍照基准位』
+        //   与『口径标签』，由标定页「发布偏心到业务配置」写入，生产端按
+        //   四个互斥开关（O 补偿 / 杆端偏移 / H 已吸嘴域 / 同轴）自行挑一档算式
+        //   四个开关自行挑一档算式消费 ⇒ 病根 = 一套扁平字段 + 复合工位多相机互相覆盖，
+        //   口径漂移无异常可察觉（ST_002 少补 |b|=132mm 撞机）。
+        //   现在：几何唯一真源 = 链图 Recipes\Workstations\{工位}\Calib\Chain.json
+        //   （链标定向导产出），生产端只做链求值 ResolvePixelToWorld / ResolveFlangeTarget。
+        //   存量工位 JSON 里的旧键已无字段载体 ⇒ 自动失效（不报错、不参与计算）。
+        // 视觉与双目标定位（2026-09-08 语义）：
         // ============================================================
 
         /// <summary>第 2 目标相对第 1 目标的 X 节距（料盘阵列间距 mm；双目标形态）</summary>
@@ -290,40 +146,16 @@ namespace Grayson.Vision.Core.Processes
         /// </summary>
         public float DownCameraZ { get; set; } = 0f;
 
-        // ===== ★2026-09-15：下相机相对纠偏的使能常量（让"标定好了能用起来"）=====
-        // 背景（本轮定位的结构性问题）：生产端原先算 δ = H_down(R_img) − 拍照机位。
-        //   但 H_down 的定义就是"机器人停在哪、卡片 mark 就在哪个像素"，工件刚性吸在吸嘴上、
-        //   机器人一动它跟着动 ⇒ H_down(R_img) 恒等于当时机位 ⇒ **δ 恒 ≈0**，
-        //   位置纠偏"看起来执行了、实际从不动"。真正有意义的只有相对【吸嘴旋转轴投影】的差分：
-        //       δ = H_down(R_img) − H_down(R_cdown)
-        //   这正是校验台/门面一直在用的算式，但生产端连 R_cdown 都没有 ⇒ 无法同口径。
-        //   下面三个字段把该常量在【发布时】算好（矩阵没变它就是常量），生产端只做减法。
-
-        /// <summary>
-        /// 下相机像素旋转中心 R_cdown 的列坐标（像素）。吸嘴旋转轴在下相机图像里的投影，
-        /// 由 DownCameraPixelRotCenter 会话在像素平面拟合圆求得（档案 DownRotCenterCol）。
-        /// 仅供发布链换算 <see cref="DownCameraAxisWx"/> 用；生产端消费的是下面那对机械位常量。
-        /// </summary>
-        public float DownCameraRotCenterCol { get; set; } = 0f;
-
-        /// <summary>下相机像素旋转中心 R_cdown 的行坐标（像素），语义见 <see cref="DownCameraRotCenterCol"/></summary>
-        public float DownCameraRotCenterRow { get; set; } = 0f;
-
-        /// <summary>
-        /// ★像素旋转中心经下相机矩阵映射后的机械位 X（= H_down(R_cdown).X，mm）。
-        /// 与 <see cref="DownCameraAxisWx"/> 一起构成相对纠偏的基准点：
-        ///   δ = (标定转换节点输出 H_down(R_img)) − (本值, DownCameraAxisWy)
-        /// ★发布时算好、矩阵不变即为常量；生产端**不再**用拍照机位当基准。
-        /// </summary>
-        public float DownCameraAxisWx { get; set; } = 0f;
-
-        /// <summary>像素旋转中心经下相机矩阵映射后的机械位 Y（= H_down(R_cdown).Y，mm）</summary>
-        public float DownCameraAxisWy { get; set; } = 0f;
-
+        // ===== ★2026-09-28 R6d：下相机像素基准字段退役 =====
+        //   历史：『下相机像素旋转中心 R_cdown』+『R_cdown 映射后的机械位』两个量
+        //   由发布链算好落盘，生产端做 δ = H_down(R_img) − (AxisWx,AxisWy)。
+        //   现在：δ = Chain(卡片像素) − Chain(DeltaRefPixel)，差分基准像素由链标定向导实测写入
+        //   链图下相机节点（ChainCameraNode 的差分基准像素字段）⇒ 本类不再存这两个量。
+        //   ★『下相机标定高度 Z』仍保留：开工前预检拿它比对『拍照高度 vs 标定高度』。
         /// <summary>
         /// ★下相机九点标定时的 Z 高度（档案 CalibZ，mm）。
         /// 只用于"开工前预检"：与 <see cref="DownCameraZ"/> 相差过大即报警（像素当量失真），
-        /// 不再靠现场试出来。0 = 未发布（不参与比较）。
+        /// 不再靠现场试出来。0 = 未设置（不参与比较；范式2 下由链标定向导/工位档案填入）。
         /// </summary>
         public float DownCameraCalibZ { get; set; } = 0f;
 

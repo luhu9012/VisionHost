@@ -316,63 +316,14 @@ namespace Grayson.Vision.Contracts.Calibration.Models
         //   （命令到 H(u) 就让吸嘴对准 u）。但平台按 PrimaryPath==CameraTruthWalk 一刀切判
         //   "H 是杆端域、需叠 O/e"，于是对一份【已经消过杆】的 H 又补一遍 O 和 R(U−U0)·e
         //   —— 双重补偿，还把 P_photo 混进物位 ⇒ 校验必然不对。
-        //   所以"H 落在哪个域"和"吸嘴是否与 U 同轴"必须能声明出来，不能靠猜。
-
-        private bool? _handEyeInNozzleDomain;
-        /// <summary>
-        /// ★ 九点矩阵 H 是否已在【吸嘴域】（2026-09-15，消费口径声明）。
-        ///   true  = H 已消杆：命令到 H(u) 即让【吸嘴】对准像素 u（延伸杆的偏心 b 已在标定阶段
-        ///           从矩阵平移列里扣掉）⇒ 消费直接 X_obj = H(u)，**不叠 O、不用 P_photo**。
-        ///   false = 明确声明 H 在"杆端 / 相机中心域"（等价旧行为）。
-        ///   null  = 未声明（旧档案）⇒ 按 PrimaryPath 旧口径保守判定，行为与本次改动前完全一致。
-        /// ⚠ 与 PrimaryPath 的分工：PrimaryPath 描述【怎么采】，本字段描述【采完落在哪个域】。
-        ///   同一条采集路径（如 CameraTruthWalk）既可能发布未消杆的 H（需 O/e），也可能发布
-        ///   已消杆的 H（直吸）—— 单看 PrimaryPath 分辨不出来，这正是 09-14/15 现场踩的坑。
-        /// </summary>
-        public bool? HandEyeInNozzleDomain
-        {
-            get => _handEyeInNozzleDomain;
-            set => Set(ref _handEyeInNozzleDomain, value);
-        }
-
-        private bool? _nozzleAxisCoaxial;
-        /// <summary>
-        /// ★ 吸嘴是否与 U 回转轴同轴（2026-09-15，消费口径声明）。
-        ///   true  = 同轴：转 U 时吸嘴尖在 XY 上【原地不动】⇒ 消费**不做** R(U−U0)·e 补偿，
-        ///           U 只决定姿态（targetU = 当前U + ΔU）。本工位（复合工位 Cam_A）属此。
-        ///   false = 吸嘴偏在轴外（经典偏心吸嘴）：转 U 时吸嘴尖画圆，必须减 R(U−U0)·e。
-        ///   null  = 未声明（旧档案）⇒ 保守按"偏心"处理（保留 R 项），行为与改动前一致。
-        /// ⚠ 判据：绕 U 转 30° 前后各测一次同一不动特征，吸嘴尖偏差 d0、d30 都 ≈0 且 d30−d0 ≈0
-        ///   ⇒ 同轴成立。见《复合工位Cam_A_上机验证单》。
-        /// </summary>
-        public bool? NozzleAxisCoaxial
-        {
-            get => _nozzleAxisCoaxial;
-            set => Set(ref _nozzleAxisCoaxial, value);
-        }
-
-        private bool? _rodOffsetInProduction;
-        /// <summary>
-        /// ★ 是否把『杆端→吸嘴偏移 b』带进生产（2026-09-15，消费口径声明）。
-        ///
-        /// 背景：固定相机 + 延伸杆辅助标定时，九点 H 的域是【杆端 mark】——命令到 H(u) 时落在特征上
-        ///   的是杆端，不是吸嘴尖。同心吸嘴坐在 U 回转轴上 ⇒ 送吸嘴尖要补一个**与 U 无关**的常量位移 b：
-        ///       **吸点 = H(u) + b**
-        ///   ★ 校验台一直按这个口径算 ⇒ **校验台"压中了"不等于生产"压中了"**（两者口径不同，差一个 |b|）。
-        ///   true  = 生产端 X_obj = H(u) + b（生产 PickAnchor 第②条路径，b 取档案 ToolEccWx/Wy
-        ///           或对针 t，符号默认 +1）。
-        ///   false/null = 不补（默认）。生产端走 X_obj = H(u)，比正确落点**少一个 |b|**
-        ///           （本工位实测 |b| = 106.39mm）⇒ 用现成配置直接生产必然偏这么多。
-        ///
-        /// ⚠ 为什么不默认 true：b 的**符号**要靠现场 A/B 判定（选错会偏 2|b| ≈ 213mm，比不补更糟）。
-        ///   流程：① 校验台反复验到吸嘴压中（⇒ b 的量级与方向都对）→ ② 把本字段置 true 并重新发布。
-        /// ⚠ 与 HandEyeInNozzleDomain 互斥：H 已消杆（true）时本字段必须 false，否则双重补偿。
-        /// </summary>
-        public bool? RodOffsetInProduction
-        {
-            get => _rodOffsetInProduction;
-            set => Set(ref _rodOffsetInProduction, value);
-        }
+        // ============================================================
+        // ★2026-09-28 R6d：范式1『消费口径声明』三字段退役
+        // ============================================================
+        //   原有的三个声明属性（H 是否已吸嘴域 / 吸嘴是否与 U 同轴 / 是否把杆端偏移带进生产）
+        //   曾用于在选择消费算式（直吸 / 叠 O / 补 b）时消除不确定性。
+        //   现在：算式不存在了——生产端一律链求值，"H 落在哪个域"由【链图形状】宣告
+        //   （节点组合方式 + 相机节点 Mount + 工具节点 Offset），不再靠档案字段声明。
+        //   旧档案里这三个键已无字段载体 ⇒ 自动失效（不报错、不参与计算）。
 
         private double? _downRotCenterRow;
         /// <summary>

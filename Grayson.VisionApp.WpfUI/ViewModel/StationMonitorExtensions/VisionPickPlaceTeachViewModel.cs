@@ -5,14 +5,14 @@
 //
 // 功能：
 //   ① 显示最近一次视觉流输出（wx/wy = CalibrationApply.OutputX/Y，Angle = ShapeMatch.MatchAngle）；
-//   ② 示教模式开关（TeachMode=true 时只定位不走位，用于偏心/公式现场验证）；
+//   ② 示教模式开关（TeachMode=true 时只定位不走位，用于公式/落点现场验证）；
 //   ③ 角度策略参数写回（固定角归正 ↔ 视觉实测角归正：EnableVisionAngleCorrection /
 //      RefAngleDeg / AngleCorrectionSign / WorkU / PlaceU）——随机姿态来料按参考姿态落盘；
-//   ④ 执行参数表单写回（位点/安全Z/速度/真空IO/吸嘴偏心/单双吸嘴），S3 新机灌点入口；
+//   ④ 执行参数表单写回（位点/安全Z/速度/真空IO/单双吸嘴），S3 新机灌点入口；
 //   ⑤ 参数覆盖管理（字段级补丁清单 + 一键清除恢复代码默认）。
 //
 // 配置语义（2026-09-01 定稿）＝「字段级覆盖补丁」：只持久化本面板拥有字段
-// （示教/角度/位点/IO/偏心…），其余参数以 VisionPickPlaceConfig.cs 代码默认为准。
+// （示教/角度/位点/IO/单双吸嘴…），其余参数以 VisionPickPlaceConfig.cs 代码默认为准。
 // ⚠ 迁移规则（2026-09-06 修复）：旧版全量快照只剪掉「与代码默认等价」的冗余字段，
 //   非默认值的字段一律保留（含本面板未拥有字段，如 TilePitch）——绝不丢现场参数。
 using Grayson.Vision.Contracts.Calibration.Chain;
@@ -35,9 +35,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         private readonly StationConfigService _configService;
 
         private string _stationCode;
-        // 链求值位姿兜底缓存（绑定时取自 cfg；T6 后 EIH 真源 = 链图 PhotoPose，此处仅 ETH/占位）
-        private double _bindPhotoBaseX;
-        private double _bindPhotoBaseY;
+        // 链求值位姿缓存（绑定时取自 cfg）
         private double _bindWorkU;
         private Grayson.Vision.Core.StationWorker _worker;
 
@@ -112,10 +110,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         private string _vacuumOffDelayText = "150";
         private string _settleMsText = "150";
         private string _useSingleNozzleText = "True";
-        private string _nozzle1EccXText = "0";
-        private string _nozzle1EccYText = "0";
-        private string _nozzle2EccXText = "0";
-        private string _nozzle2EccYText = "0";
 
         public string SafeZText { get => _safeZText; set => Set(ref _safeZText, value); }
         public string PickZText { get => _pickZText; set => Set(ref _pickZText, value); }
@@ -135,10 +129,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         public string SettleMsText { get => _settleMsText; set => Set(ref _settleMsText, value); }
         /// <summary>单吸嘴形态开关（True/False；false=双吸嘴，Place2/VacuumIo2/Nozzle2 参与节拍）</summary>
         public string UseSingleNozzleText { get => _useSingleNozzleText; set => Set(ref _useSingleNozzleText, value); }
-        public string Nozzle1EccXText { get => _nozzle1EccXText; set => Set(ref _nozzle1EccXText, value); }
-        public string Nozzle1EccYText { get => _nozzle1EccYText; set => Set(ref _nozzle1EccYText, value); }
-        public string Nozzle2EccXText { get => _nozzle2EccXText; set => Set(ref _nozzle2EccXText, value); }
-        public string Nozzle2EccYText { get => _nozzle2EccYText; set => Set(ref _nozzle2EccYText, value); }
 
         // ---- 下相机二次校准段（2026-09-11 新增：复合工位"上相机抓 → 下相机校 → 放"三段节拍）----
         // 仅当【工位档案声明了下固定相机槽】时才在面板显示（见 RefreshFieldRelevance）。
@@ -196,10 +186,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             VacuumOffDelayText = cfg.VacuumOffDelayMs.ToString();
             SettleMsText = cfg.SettleMs.ToString();
             UseSingleNozzleText = cfg.UseSingleNozzle ? "True" : "False";
-            Nozzle1EccXText = cfg.Nozzle1EccX.ToString("F2");
-            Nozzle1EccYText = cfg.Nozzle1EccY.ToString("F2");
-            Nozzle2EccXText = cfg.Nozzle2EccX.ToString("F2");
-            Nozzle2EccYText = cfg.Nozzle2EccY.ToString("F2");
 
             EnableDownCameraText = cfg.EnableDownCameraCorrection ? "True" : "False";
             DownCameraXText = cfg.DownCameraX.ToString("F3");
@@ -229,8 +215,8 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
             // 速度 / 真空 / 节拍
             "XySpeed", "ZSpeed", "VacuumIo1", "VacuumIo2",
             "VacuumOnDelayMs", "VacuumOffDelayMs", "SettleMs",
-            // 吸嘴形态与偏心
-            "UseSingleNozzle", "Nozzle1EccX", "Nozzle1EccY", "Nozzle2EccX", "Nozzle2EccY",
+            // 吸嘴形态
+            "UseSingleNozzle",
             // 下相机二次校准段（2026-09-11：复合工位三段节拍参数）
             "EnableDownCameraCorrection", "DownCameraX", "DownCameraY", "DownCameraZ",
             "DownCameraMinScore", "DownCameraAngleSign",
@@ -264,7 +250,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
         /// <summary>是否显示「下相机二次校准」分组（工位档案声明了下固定相机槽才显示）</summary>
         public bool ShowDownCameraGroup { get => _showDownCameraGroup; private set => Set(ref _showDownCameraGroup, value); }
 
-        /// <summary>是否显示双吸嘴相关行（放料2 / 真空2 / 嘴2 偏心）</summary>
+        /// <summary>是否显示双吸嘴相关行（放料2 / 真空2）</summary>
         public bool ShowDualNozzleRows { get => _showDualNozzleRows; private set => Set(ref _showDualNozzleRows, value); }
 
         /// <summary>面板顶部"字段范围依据"提示：工位/档案/模板/相机槽一句话说清。</summary>
@@ -387,9 +373,7 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 if (cfg != null)
                 {
                     LoadCfgFields(cfg);
-                    // 链求值位姿缓存：拍照位（面板不编辑，绑定时取一次）+ 拍照角兜底
-                    _bindPhotoBaseX = cfg.PhotoBaseX;
-                    _bindPhotoBaseY = cfg.PhotoBaseY;
+                    // 链求值位姿缓存：拍照角兜底（拍照基准位真源 = 链图 PhotoPose，不再走配置）
                     _bindWorkU = cfg.WorkU;
                     // 按工位档案 + 任务模板收敛面板字段范围（只显示本工位用得上的分组）
                     RefreshFieldRelevance(boundStation, cfg);
@@ -501,10 +485,10 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 TeachChainLogOnce(_teachChainFailStation, "链图缺 PickAnchor 边 ⇒ 无吸点引导相机，示教世界坐标不可用。");
                 return null;
             }
-            // pose：拍照位（★T6 真源 = 链图 PhotoPose；绑定时缓存的配置值仅作 ETH/占位）
+            // pose：拍照位真源 = 链图 PhotoPose（EIH 由 G1 门禁保证必有）；ETH 求值与位姿无关 ⇒ 0 占位。
             //      + 拍照角（面板 WorkU 输入框，示教时以现场输入为准）
             double workU = ParseD(_workUText, _bindWorkU);
-            double px = _bindPhotoBaseX, py = _bindPhotoBaseY;
+            double px = 0, py = 0;
             if (cam.Mount == ChainCameraMount.EyeInHand
                 && cam.PhotoPose != null && cam.PhotoPose.Length == 2)
             {
@@ -821,8 +805,6 @@ namespace Grayson.Vision.WpfUI.ViewModel.StationMonitorExtensions
                 { "Place1X", Place1XText }, { "Place1Y", Place1YText },
                 { "Place2X", Place2XText }, { "Place2Y", Place2YText },
                 { "XySpeed", XySpeedText }, { "ZSpeed", ZSpeedText },
-                { "Nozzle1EccX", Nozzle1EccXText }, { "Nozzle1EccY", Nozzle1EccYText },
-                { "Nozzle2EccX", Nozzle2EccXText }, { "Nozzle2EccY", Nozzle2EccYText },
                 // 下相机段（机位与阈值）；总开关/两个纠偏开关走 CollectBoolFields
                 { "DownCameraX", DownCameraXText }, { "DownCameraY", DownCameraYText },
                 { "DownCameraZ", DownCameraZText },

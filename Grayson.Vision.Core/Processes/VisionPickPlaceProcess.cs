@@ -101,7 +101,8 @@ namespace Grayson.Vision.Core.Processes
             if (_pickCamera1.Mount == ChainCameraMount.EyeInHand
                 && _pickCamera1.PhotoPose != null && _pickCamera1.PhotoPose.Length == 2)
                 return new ChainRobotPose { X = _pickCamera1.PhotoPose[0], Y = _pickCamera1.PhotoPose[1], U = _cfg.WorkU };
-            return new ChainRobotPose { X = _cfg.PhotoBaseX, Y = _cfg.PhotoBaseY, U = _cfg.WorkU };
+            // ETH：链求值 X_obj = H(u) 与拍照位姿无关 ⇒ 0 占位（不再回落到可能陈旧的配置值）。
+            return new ChainRobotPose { X = 0, Y = 0, U = _cfg.WorkU };
         }
 
         /// <summary>像素 → 工件物位 X_obj（链求值；pose = 链图拍照基准位 + 拍照角 WorkU）</summary>
@@ -258,7 +259,8 @@ namespace Grayson.Vision.Core.Processes
                     Log("[示教模式] 视觉定位完成，不执行走位/吸取。请手动移动机械手让吸嘴1 正对目标中心，");
                     Log($"[示教模式]  工件真位 X_obj = ({ax:F3},{ay:F3})（链求值：{_pickCamera1.CameraId} 像素 ({matchCol1:F1},{matchRow1:F1})）");
                     Log($"[示教模式]  理论回转中心 C* = ({cx:F3},{cy:F3})（吸嘴对准目标中心时机械手应停在此处）");
-                    Log($"[示教记录] Pixel=({matchCol1:F1},{matchRow1:F1}), Angle={matchAngle:F2}°, P_photo=({_cfg.PhotoBaseX:F3},{_cfg.PhotoBaseY:F3}), " +
+                    var pp = PickPhotoPose();
+                    Log($"[示教记录] Pixel=({matchCol1:F1},{matchRow1:F1}), Angle={matchAngle:F2}°, P_photo=({pp.X:F3},{pp.Y:F3}), " +
                         $"WorkU={_cfg.WorkU:F1}, 理论C*=({cx:F3},{cy:F3}), 实测X*/Y*=____");
                     await BackToStandbyAsync(token).ConfigureAwait(false);
                     return true;

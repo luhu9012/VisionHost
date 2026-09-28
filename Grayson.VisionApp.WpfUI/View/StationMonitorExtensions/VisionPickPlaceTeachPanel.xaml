@@ -108,12 +108,12 @@
                 <Separator Margin="0,8,0,6" Background="#220078D4"/>
             </StackPanel>
 
-            <!-- 执行参数：位点/姿态/吸嘴（2026-09-06：S3 灌点入口；同心吸嘴 Ecc 全 0） -->
+            <!-- 执行参数：位点/姿态/吸嘴（2026-09-06：S3 灌点入口；★R6d：几何量归链图，本面板不再填偏心） -->
             <TextBlock Text="🎯 执行参数（单位：mm / ms / mm·s⁻¹）"
                        FontWeight="Bold" FontSize="11" Foreground="#FF0078D4" Margin="0,2,0,2"/>
             <TextBlock FontSize="10.5" TextWrapping="Wrap" Margin="0,0,0,3"
                        Foreground="{StaticResource TextDisabledBrush}"
-                       Text="位点放料位 / 待机位 / 安全Z 为机械坐标（Epson 世界系）；同心吸嘴 = 嘴1 偏心全 0；单吸嘴时 放料2/真空2/嘴2 不参与节拍。"/>
+                       Text="位点放料位 / 待机位 / 安全Z 为机械坐标（Epson 世界系）；单吸嘴时 放料2/真空2/嘴2 不参与节拍。"/>
 
             <TextBlock Text="位点与姿态" FontWeight="SemiBold" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"/>
             <Grid>
@@ -154,14 +154,14 @@
                 <TextBox Grid.Row="4" Grid.Column="4" Text="{Binding ZSpeedText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="ZSpeed：Z 轴升降速度（0=用引擎默认）"/>
             </Grid>
 
-            <TextBlock Text="吸嘴 · 真空 · 偏心" FontWeight="SemiBold" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0"/>
+            <TextBlock Text="吸嘴 · 真空" FontWeight="SemiBold" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0"/>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="6"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
-                    <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                    <RowDefinition/><RowDefinition/>
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="单吸嘴形态" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding UseSingleNozzleText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="UseSingleNozzle：True=单吸嘴（放料2/真空2/嘴2 不参与）；False=双吸嘴"/>
@@ -181,18 +181,6 @@
                 </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="3" Text="到位稳定(ms)" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
                 <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding SettleMsText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="SettleMs：轴到位后的稳定等待（ms）"/>
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="嘴1 偏心X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Nozzle1EccXText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle1EccX：吸嘴1 相对 U 回转中心的偏心 X（同心=0；标定旋转中心后按发布值）"/>
-                <TextBlock Grid.Row="2" Grid.Column="3" Text="嘴1 偏心Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"/>
-                <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding Nozzle1EccYText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle1EccY：吸嘴1 偏心 Y"/>
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="嘴2 偏心X" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"
-                           Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Nozzle2EccXText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle2EccX：吸嘴2 偏心 X（双吸嘴）"
-                         Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                <TextBlock Grid.Row="3" Grid.Column="3" Text="嘴2 偏心Y" FontSize="10.5" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,1,4,1"
-                           Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding Nozzle2EccYText, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Padding="2" VerticalContentAlignment="Center" ToolTip="Nozzle2EccY：吸嘴2 偏心 Y（双吸嘴）"
-                         Visibility="{Binding ShowDualNozzleRows, Converter={StaticResource BoolToVisibilityConverter}}"/>
             </Grid>
             <Button Content="💾 保存执行参数（写回配置并热更新）" Style="{StaticResource SuccessButtonStyle}"
                     FontSize="11" Margin="1,6,1,0" Padding="0,6" Command="{Binding SaveMotionConfigCommand}"/>
@@ -216,7 +204,7 @@
                     FontSize="11" Margin="1,6,1,0" Padding="0,5" Command="{Binding ResetToDefaultsCommand}"/>
             <TextBlock FontSize="10" TextWrapping="Wrap" Margin="0,4,0,0"
                        Foreground="{StaticResource TextDisabledBrush}"
-                       Text="说明：本面板持久化 角度策略/TeachMode/位点/姿态/速度/真空 IO/偏心/单双吸嘴/下相机段 等字段级覆盖；未列参数（轴号、CardAlias、TilePitch 节距、MinScore 等）以 VisionPickPlaceConfig.cs 代码默认为准。偏心也可由旋转中心标定发布写入，二者同源时以最后一次保存为准。"/>
+                       Text="说明：本面板持久化 角度策略/TeachMode/位点/姿态/速度/真空 IO/单双吸嘴/下相机段 等字段级覆盖；未列参数（轴号、CardAlias、TilePitch 节距、MinScore 等）以 VisionPickPlaceConfig.cs 代码默认为准。★吸嘴偏心/旋转中心等几何量唯一出口 = 链标定向导（Chain.json），本面板不承载。"/>
         </StackPanel>
     </Border>
 </UserControl>

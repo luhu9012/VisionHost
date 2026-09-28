@@ -13,6 +13,7 @@
 //   · 落盘 = 骨架回填完毕 + G0~G4 全过 ⇒ Chain.json（生产端唯一真源）。
 //===================================================================================
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
@@ -41,6 +42,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private double _photoY;         // EIH：拍照时法兰/机位 Y
         private double _photoU;         // EIH：拍照时 U 角（度）
         private string _note;
+        private double _residualMm = double.NaN;   // 拟合后回填的逐点残差（mm）；NaN=未拟合
+        private bool _residualHigh;
 
         public double WorldX { get { return _worldX; } set { Set(ref _worldX, value); } }
         public double WorldY { get { return _worldY; } set { Set(ref _worldY, value); } }
@@ -50,6 +53,60 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public double PhotoY { get { return _photoY; } set { Set(ref _photoY, value); } }
         public double PhotoU { get { return _photoU; } set { Set(ref _photoU, value); } }
         public string Note { get { return _note; } set { Set(ref _note, value); } }
+
+        /// <summary>本点重投影残差（mm）；NaN=未拟合（表格显示空）</summary>
+        public double ResidualMm
+        {
+            get { return _residualMm; }
+            set
+            {
+                if (Set(ref _residualMm, value))
+                    OnPropertyChanged(nameof(ResidualText));
+            }
+        }
+        /// <summary>残差显示（NaN→空串）</summary>
+        public string ResidualText
+        {
+            get { return double.IsNaN(_residualMm) ? "" : _residualMm.ToString("F4", CultureInfo.InvariantCulture); }
+        }
+        /// <summary>离群点（残差 > max(2.5×RMS, 0.1mm)）⇒ 行标红，提示重采该点</summary>
+        public bool ResidualHigh
+        {
+            get { return _residualHigh; }
+            set { Set(ref _residualHigh, value); }
+        }
+    }
+
+    /// <summary>pivoting（针尖对点法）采集一行：法兰转到某 U 角扎针后的读数</summary>
+    public class ChainPivotRow : ViewModelBase
+    {
+        private double _uDeg;
+        private double _flangeX;
+        private double _flangeY;
+        private double _residualMm = double.NaN;
+        private bool _residualHigh;
+        private string _note;
+
+        public ChainPivotRow(string note) { _note = note; }
+        public string Note { get { return _note; } }
+        /// <summary>扎针时的法兰 U 角（度）——必须散开 ≥30°，推荐覆盖 ≥90°</summary>
+        public double UDeg { get { return _uDeg; } set { Set(ref _uDeg, value); } }
+        public double FlangeX { get { return _flangeX; } set { Set(ref _flangeX, value); } }
+        public double FlangeY { get { return _flangeY; } set { Set(ref _flangeY, value); } }
+        public double ResidualMm
+        {
+            get { return _residualMm; }
+            set { if (Set(ref _residualMm, value)) OnPropertyChanged(nameof(ResidualText)); }
+        }
+        public string ResidualText
+        {
+            get { return double.IsNaN(_residualMm) ? "" : _residualMm.ToString("F4", CultureInfo.InvariantCulture); }
+        }
+        public bool ResidualHigh
+        {
+            get { return _residualHigh; }
+            set { Set(ref _residualHigh, value); }
+        }
     }
 
     /// <summary>一个相机节点的采集与拟合（数量/挂链由骨架决定，向导动态生成）</summary>
@@ -210,20 +267,37 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// <summary>
         /// 执行拟合。EIH：先用各点拍照位姿把世界点规范到法兰系 p_f = R(−U)·(w − t)，
         /// 再统一做像素→法兰系的最小二乘仿射（产物=T_Cam→Flange）。
+        /// ★ 只取「已填」行（像素与目标坐标不全零）——空行是占位不是观测，混入=在原点加假点。
+        /// ★ 拟合成功后逐点残差回填表格并点名最差点（行业标准反馈：哪点没采好当场可见）。
         /// </summary>
         public void Fit()
         {
-            var px = Points.Select(p => p.PixelCol).ToArray();
-            var py = Points.Select(p => p.PixelRow).ToArray();
+            // 重置残差显示（重新拟合前旧残差必须清掉，防误读）
+            foreach (var row in Points) { row.ResidualMm = double.NaN; row.ResidualHigh = false; }
+
+            var filled = Points.Where(p =>
+                (p.PixelCol != 0 || p.PixelRow != 0) &&
+                (p.WorldX != 0 || p.WorldY != 0 ||
+                 (IsEih && (p.PhotoX != 0 || p.PhotoY != 0 || p.PhotoU != 0)))).ToList();
+            if (filled.Count < 4)
+            {
+                FitOk = false;
+                Matrix = null;
+                FitResult = "❌ 有效点对不足（≥4 可解，推荐 9 点；当前已填 " + filled.Count + " 行，空行不计）";
+                return;
+            }
+
+            var px = filled.Select(p => p.PixelCol).ToArray();
+            var py = filled.Select(p => p.PixelRow).ToArray();
             double[] tx, ty;
             if (!IsEih)
             {
-                tx = Points.Select(p => p.WorldX).ToArray();
-                ty = Points.Select(p => p.WorldY).ToArray();
+                tx = filled.Select(p => p.WorldX).ToArray();
+                ty = filled.Select(p => p.WorldY).ToArray();
             }
             else
             {
-                var norm = Points.Select(p => ToFlangeFrame(p)).ToArray();
+                var norm = filled.Select(p => ToFlangeFrame(p)).ToArray();
                 tx = norm.Select(v => v.Item1).ToArray();
                 ty = norm.Select(v => v.Item2).ToArray();
             }
@@ -244,12 +318,25 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 return;
             }
 
+            // 逐点残差（‖H·pᵢ − qᵢ‖）回填到对应行；离群行标红（>max(2.5×RMS, 0.1mm)）
+            double worst = 0; int worstIdx = -1;
+            double hiGate = Math.Max(r.RmsMm * 2.5, 0.1);
+            for (int i = 0; i < filled.Count; i++)
+            {
+                double exd = r.Matrix[0] * px[i] + r.Matrix[1] * py[i] + r.Matrix[2] - tx[i];
+                double eyd = r.Matrix[3] * px[i] + r.Matrix[4] * py[i] + r.Matrix[5] - ty[i];
+                double d = Math.Sqrt(exd * exd + eyd * eyd);
+                filled[i].ResidualMm = d;
+                filled[i].ResidualHigh = d > hiGate;
+                if (d > worst) { worst = d; worstIdx = i; }
+            }
+
             Matrix = r.Matrix;
             FitOk = true;
             // EIH：拍照基准位缺省取第一行实测拍照机位（可手改）——生产/示教必须回该位拍照
             if (IsEih && !HasPhotoPose)
             {
-                var src = Points.FirstOrDefault(p => Math.Abs(p.PhotoX) > 1e-9 || Math.Abs(p.PhotoY) > 1e-9);
+                var src = filled.FirstOrDefault(p => Math.Abs(p.PhotoX) > 1e-9 || Math.Abs(p.PhotoY) > 1e-9);
                 if (src != null)
                 {
                     PhotoPoseX = src.PhotoX;
@@ -257,9 +344,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
             }
             FitResult = string.Format(CultureInfo.InvariantCulture,
-                "✓ 拟合成功：n={0}, RMS={1:F4}, σ1={2:F3}, σ2={3:F3}, 形状偏差={4:F4} ({5}), 矩阵=[{6:G9},{7:G9},{8:G9},{9:G9},{10:G9},{11:G9}]",
+                "✓ 拟合成功：n={0}, RMS={1:F4}, σ1={2:F3}, σ2={3:F3}, 形状偏差={4:F4} ({5})，最大残差 {6}={7:F4}mm{8}，矩阵=[{9:G9},{10:G9},{11:G9},{12:G9},{13:G9},{14:G9}]",
                 r.PointCount, r.RmsMm, r.Sigma1, r.Sigma2, r.ShapeDeviation,
                 ShapeGateFailed ? "⚠超门0.03禁止保存" : "≤0.03 ✓",
+                worstIdx >= 0 ? filled[worstIdx].Note : "-",
+                worst,
+                ShapeGateFailed ? "" : (worst > hiGate ? " ⚠存在离群行（表格标红，建议重采）" : ""),
                 r.Matrix[0], r.Matrix[1], r.Matrix[2], r.Matrix[3], r.Matrix[4], r.Matrix[5]);
         }
 
@@ -310,6 +400,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private double _offsetDx;
         private double _offsetDy;
         private bool _isMaster;
+        private bool _isConcentric;     // ★ 三态之一：已测同心 ⇒ 显式落 (0,0) 放行（修复§6.4：值反推会把同心判成未测）
         private string _ready = "待测";
 
         public string ToolId { get; set; }
@@ -324,6 +415,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// <summary>主=对针直量 T_TCP→Flange；副=相对主工具的 Δ（法兰系，U=0 基准，带符号）</summary>
         public double OffsetDx { get { return _offsetDx; } set { Set(ref _offsetDx, value); NotifyReady(); } }
         public double OffsetDy { get { return _offsetDy; } set { Set(ref _offsetDy, value); NotifyReady(); } }
+
+        /// <summary>已测同心：pivoting/直量确认无偏心 ⇒ 显式 (0,0)，不再靠「值非零」反推（§6.4）</summary>
+        public bool IsConcentric
+        {
+            get { return _isConcentric; }
+            set { if (Set(ref _isConcentric, value)) NotifyReady(); }
+        }
+
+        /// <summary>三态口径：勾同心 或 填了非零偏移 ⇒ 已测可落盘；否则视为未测（fail-closed）</summary>
+        public bool OffsetFilled { get { return _isConcentric || _offsetDx != 0 || _offsetDy != 0; } }
 
         public string Ready
         {
@@ -342,10 +443,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         private void NotifyReady()
         {
-            Ready = OffsetFilled ? "✓ 已填" : "待测";
+            Ready = _isConcentric ? "✓ 已测(同心)"
+                  : (_offsetDx != 0 || _offsetDy != 0) ? "✓ 已填" : "待测";
         }
-
-        public bool OffsetFilled { get { return !(OffsetDx == 0 && OffsetDy == 0); } }
     }
 
     /// <summary>步骤清单一行（=骨架节点×Workflow；依赖排序在生成时确定）</summary>
@@ -647,7 +747,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// <summary>轴映射：X=0,Y=1,U=2（默认；EPSON 经示教器手抄时不用）</summary>
         public int AxisX { get { return _axisX; } set { Set(ref _axisX, value); } }
         public int AxisY { get { return _axisY; } set { Set(ref _axisY, value); } }
-        private int _axisX = 0, _axisY = 1;
+        public int AxisU { get { return _axisU; } set { Set(ref _axisU, value); } }
+        private int _axisX = 0, _axisY = 1, _axisU = 2;
 
         /// <summary>回读的当前位姿（板卡编码器）</summary>
         private string _currentPoseText = "—";
@@ -657,9 +758,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// ★ 保存的是原始数值而不是显示字符串——回填是落盘数据源，不能靠解析 UI 文本。</summary>
         private double _lastPoseX = double.NaN;
         private double _lastPoseY = double.NaN;
+        private double _lastPoseU = double.NaN;
         public bool HasLastPose
         {
             get { return !double.IsNaN(_lastPoseX) && !double.IsNaN(_lastPoseY); }
+        }
+        public bool HasLastPoseU
+        {
+            get { return HasLastPose && !double.IsNaN(_lastPoseU); }
         }
 
         /// <summary>取最近一次回读位姿；无有效回读返回 false</summary>
@@ -670,13 +776,32 @@ namespace Grayson.Vision.WpfUI.ViewModel
             return HasLastPose;
         }
 
+        /// <summary>取最近一次回读位姿（含 U）；U 未回读成功返回 false</summary>
+        public bool TryGetLastPoseU(out double x, out double y, out double u)
+        {
+            x = _lastPoseX;
+            y = _lastPoseY;
+            u = _lastPoseU;
+            return HasLastPoseU;
+        }
+
         /// <summary>手工录入位姿（示教器手抄场景）——与回读同一落点，供回填使用</summary>
         public void SetPose(double x, double y)
         {
+            SetPose(x, y, double.NaN);
+        }
+
+        /// <summary>手工录入位姿（含 U 角，pivoting 场景需要）</summary>
+        public void SetPose(double x, double y, double u)
+        {
             _lastPoseX = x;
             _lastPoseY = y;
-            CurrentPoseText = string.Format(CultureInfo.InvariantCulture, "X={0:F3}  Y={1:F3}", x, y);
+            _lastPoseU = u;
+            CurrentPoseText = double.IsNaN(u)
+                ? string.Format(CultureInfo.InvariantCulture, "X={0:F3}  Y={1:F3}", x, y)
+                : string.Format(CultureInfo.InvariantCulture, "X={0:F3}  Y={1:F3}  U={2:F2}°", x, y, u);
             OnPropertyChanged(nameof(HasLastPose));
+            OnPropertyChanged(nameof(HasLastPoseU));
             OnPropertyChanged(nameof(CurrentPoseText));
         }
 
@@ -718,7 +843,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 : "轴" + axis + " 移动失败：" + (r?.Message ?? "无应答");
         }
 
-        /// <summary>回读位姿（X/Y[/U]）并缓存，供后续回填点对表</summary>
+        /// <summary>回读位姿（X/Y[/U]）并缓存，供后续回填点对表/pivoting</summary>
         public void ReadPose()
         {
             var m = _selectedMotionDevice;
@@ -734,10 +859,206 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     MotionLog = "⚠ 回读未取得有效值——该轴无编码器反馈？可用示教器手抄后手工录入位姿。";
                     return;
                 }
-                SetPose(x, y);
-                MotionLog = "位姿已回读并缓存（编码器反馈）。可点『回填当前点到选中行』。";
+                // U 轴尽力读（pivoting 需要；读不到不阻塞 X/Y 回填）
+                double u = double.NaN;
+                try
+                {
+                    var ur = m.GetFeedbackPosition(AxisU);
+                    if (ur != null && ur.Success) u = ur.Data;
+                }
+                catch { /* U 轴读不到就算了 */ }
+                SetPose(x, y, u);
+                MotionLog = double.IsNaN(u)
+                    ? "位姿已回读（X/Y；U 轴读不到——pivoting 请手抄 U 角后点『回填对针点』）。"
+                    : "位姿已回读并缓存（X/Y/U）。";
             }
             catch (Exception ex) { MotionLog = "回读失败：" + ex.Message; }
+        }
+
+        //---------------------------------------------------------------------
+        // 工具 TCP 采集（T14，2026-09-28）：针尖对点 pivoting——多角度扎点 → 最小二乘 → 残差门禁 → 写入
+        //   行业标准工作面：每工具一组对针点（U 散开 ≥90°），解出 e=(ex,ey) 与残差，
+        //   残差=对针重复精度即验收门；解出 |e|≈0 ⇒ 引导勾『同心』显式落 (0,0)（§6.4 三态）。
+        //---------------------------------------------------------------------
+
+        private readonly Dictionary<string, ObservableCollection<ChainPivotRow>> _pivotStore
+            = new Dictionary<string, ObservableCollection<ChainPivotRow>>(StringComparer.OrdinalIgnoreCase);
+
+        private ObservableCollection<ChainPivotRow> _pivotRows = new ObservableCollection<ChainPivotRow>();
+        /// <summary>当前工具的对针点表（切工具自动换表，数据按 ToolId 保留）</summary>
+        public ObservableCollection<ChainPivotRow> PivotRows
+        {
+            get { return _pivotRows; }
+            private set { Set(ref _pivotRows, value); }
+        }
+
+        private ChainToolRowViewModel _pivotTool;
+        /// <summary>pivoting 面板当前操作的工具</summary>
+        public ChainToolRowViewModel PivotTool
+        {
+            get { return _pivotTool; }
+            set
+            {
+                if (Set(ref _pivotTool, value))
+                {
+                    var t = _pivotTool;
+                    if (t != null)
+                    {
+                        ObservableCollection<ChainPivotRow> list;
+                        if (!_pivotStore.TryGetValue(t.ToolId, out list))
+                        {
+                            list = new ObservableCollection<ChainPivotRow>();
+                            for (int i = 0; i < 4; i++) list.Add(new ChainPivotRow("A" + (i + 1)));
+                            _pivotStore[t.ToolId] = list;
+                        }
+                        PivotRows = list;
+                        PivotResultText = "工具 " + t.ToolId + "：" + t.Ready
+                            + (t.IsConcentric ? "（已勾同心，无需再对针）" : "——把法兰转到不同 U 角扎同一针尖，每角回填一次读数");
+                    }
+                    OnPropertyChanged(nameof(PivotReadyText));
+                }
+            }
+        }
+
+        private ChainPivotRow _selectedPivotRow;
+        /// <summary>对针点表选中行（『回填对针点』写入目标）</summary>
+        public ChainPivotRow SelectedPivotRow
+        {
+            get { return _selectedPivotRow; }
+            set { Set(ref _selectedPivotRow, value); }
+        }
+
+        public string PivotReadyText
+        {
+            get { return _pivotTool == null ? "" : _pivotTool.Ready; }
+        }
+
+        private string _pivotResultText = "选工具 → 转 U 角扎针 → 回读回填 → 求解";
+        public string PivotResultText { get { return _pivotResultText; } private set { Set(ref _pivotResultText, value); } }
+
+        /// <summary>最近一次 pivoting 解出的偏移（供『写入工具偏移』）</summary>
+        public bool PivotHasResult { get; private set; }
+        private double _pivotEx, _pivotEy;
+
+        public void AddPivotPoint()
+        {
+            PivotRows.Add(new ChainPivotRow("A" + (PivotRows.Count + 1)));
+        }
+
+        public void RemovePivotPoint(ChainPivotRow row)
+        {
+            if (row != null) PivotRows.Remove(row);
+        }
+
+        /// <summary>把缓存位姿（X/Y/U）写入对针点表选中行；提示文本同步进结果栏</summary>
+        public void FillPivotIntoSelectedRow()
+        {
+            if (_pivotTool == null) { PivotResultText = "⚠ 请先选择要标定的工具。"; return; }
+            double x, y, u;
+            if (!TryGetLastPoseU(out x, out y, out u))
+            {
+                PivotResultText = "⚠ 尚无含 U 角的位姿——请『回读位姿』（U 轴须可读）或手抄后直接改表。";
+                return;
+            }
+            var row = _selectedPivotRow;
+            if (row == null) { PivotResultText = "⚠ 请先在对针点表里选中一行。"; return; }
+            row.UDeg = u;
+            row.FlangeX = x;
+            row.FlangeY = y;
+            PivotResultText = string.Format(CultureInfo.InvariantCulture,
+                "已回填 {0} 第 {1} 行：U={2:F2}°  X={3:F3}  Y={4:F3}——转到下一角度继续扎点，凑够 4 个以上后『求解 pivoting』",
+                _pivotTool.ToolId, PivotRows.IndexOf(row) + 1, u, x, y);
+        }
+
+        /// <summary>求解 pivoting：解出 e 与 P_ref，残差回填行内并给出验收判定</summary>
+        public void SolvePivoting()
+        {
+            PivotHasResult = false;
+            if (_pivotTool == null) { PivotResultText = "⚠ 请先选择工具。"; return; }
+            if (_pivotTool.IsConcentric) { PivotResultText = "该工具已勾『同心』，无需对针求解。"; return; }
+
+            var filled = PivotRows.Where(p => p.UDeg != 0 || p.FlangeX != 0 || p.FlangeY != 0).ToList();
+            foreach (var p in PivotRows) { p.ResidualMm = double.NaN; p.ResidualHigh = false; }
+            if (filled.Count < 3)
+            {
+                PivotResultText = "❌ 有效对针点不足（≥3 可解，推荐 4~8 个角度；当前 " + filled.Count + "）。";
+                return;
+            }
+            // U=0° 是合法起始角；「角度未散开」由 FitPivoting 的跨度门（<30° 硬拦）统一判定
+
+            var r = ChainFitter.FitPivoting(
+                filled.Select(p => p.UDeg).ToArray(),
+                filled.Select(p => p.FlangeX).ToArray(),
+                filled.Select(p => p.FlangeY).ToArray());
+            if (!r.Ok)
+            {
+                PivotResultText = "❌ " + r.Error;
+                return;
+            }
+
+            // 残差回填 + 离群标红
+            double hiGate = Math.Max(r.RmsMm * 2.5, 0.1);
+            double worst = 0; int worstIdx = -1;
+            for (int i = 0; i < filled.Count; i++)
+            {
+                filled[i].ResidualMm = r.PerPointResidual[i];
+                filled[i].ResidualHigh = r.PerPointResidual[i] > hiGate;
+                if (r.PerPointResidual[i] > worst) { worst = r.PerPointResidual[i]; worstIdx = i; }
+            }
+
+            _pivotEx = r.Ex;
+            _pivotEy = r.Ey;
+            PivotHasResult = true;
+            string gate = r.RmsMm <= ChainFitter.PivotRmsGateMm ? "≤门0.5mm ✓" : "⚠超门0.5mm";
+            string concentricHint = Math.Sqrt(r.Ex * r.Ex + r.Ey * r.Ey) < 0.05
+                ? "｜★|e|<0.05mm≈同心：确认后可直接勾『同心』显式落 (0,0)"
+                : "";
+            PivotResultText = string.Format(CultureInfo.InvariantCulture,
+                "{0}求解成功：e=({1:F4}, {2:F4})mm，P_ref=({3:F3}, {4:F3})，U跨度={5:F1}°，残差RMS={6:F4}mm（{7}）{8}，最差点 {9}={10:F4}mm{11}",
+                r.Warning == null ? "" : "⚠" + r.Warning + "｜",
+                r.Ex, r.Ey, r.RefX, r.RefY, r.USpanDeg, r.RmsMm, gate,
+                r.RmsMm <= ChainFitter.PivotRmsGateMm ? "" : "——超对针重复精度门，禁止采用，请重新扎点",
+                worstIdx >= 0 ? filled[worstIdx].Note : "-",
+                worst,
+                concentricHint);
+        }
+
+        /// <summary>把解出的 e 写入当前工具（OffsetDx/Dy），完成 WF-03</summary>
+        public string ApplyPivotToTool()
+        {
+            if (_pivotTool == null) return "⚠ 请先选择工具。";
+            if (!PivotHasResult) return "⚠ 尚无有效求解结果——请先『求解 pivoting』且门禁通过。";
+            _pivotTool.OffsetDx = _pivotEx;
+            _pivotTool.OffsetDy = _pivotEy;
+            RefreshSteps();
+            OnPropertyChanged(nameof(PivotReadyText));
+            return string.Format(CultureInfo.InvariantCulture,
+                "已写入 {0}：dx={1:F4}, dy={2:F4}（主=对针直量；副=相对主 Δ）", _pivotTool.ToolId, _pivotEx, _pivotEy);
+        }
+
+        /// <summary>完成即推进：选中第一个待办步骤（行业向导惯例——做完一步自动带到位）</summary>
+        public void AdvanceToNextPendingStep()
+        {
+            var next = Steps.FirstOrDefault(s => s.Status == "待办");
+            if (next != null && next != _selectedStep) SelectStep(next);
+        }
+
+        /// <summary>前置缺口逐条点名（fail-closed 但要「说得出缺什么」）</summary>
+        public System.Collections.Generic.List<string> MissingPrereqs()
+        {
+            var miss = new System.Collections.Generic.List<string>();
+            foreach (var s in Sections)
+            {
+                if (!s.FitOk) miss.Add("相机 " + s.CameraId + " 未拟合");
+                else if (s.ShapeGateFailed) miss.Add("相机 " + s.CameraId + " 形状门未过（|σ1/σ2−1|>0.03）");
+                else if (s.IsEih && !s.HasPhotoPose) miss.Add("相机 " + s.CameraId + " 缺拍照基准位 PhotoPose");
+                else if (s.IsDownCorrect && !s.HasDeltaRef) miss.Add("下相机 " + s.CameraId + " 缺 DeltaRefPixel");
+            }
+            foreach (var t in ToolRows.Where(x => x.IsMaster && !x.OffsetFilled))
+                miss.Add("主工具 " + t.ToolId + " 未测偏移（对针 pivoting 或勾同心）");
+            foreach (var t in ToolRows.Where(x => !x.IsMaster && !x.OffsetFilled))
+                miss.Add("副工具 " + t.ToolId + " 未填 Δ（底拍批量或勾同心）");
+            return miss;
         }
 
         /// <summary>把缓存的当前位姿写入某相机的【选中点行】的世界坐标（X/Y）。
@@ -855,8 +1176,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     StepNo = no++,
                     Target = t.ToolId,
                     Zone = StepZone.Tool,
-                    Workflow = "WF-03 主工具 TCP 偏移（对针直量）",
-                    Hint = "物料：固定基准针尖；Offset=对针直量的 T_TCP→Flange 矢量（U=0 基准）",
+                    Workflow = "WF-03 主工具 TCP（针尖对点 pivoting）",
+                    Hint = "物料：固定基准针尖；法兰转过 ≥90°（推荐 0/90/180/270）分点扎同一针尖；中区面板采集→求解→写入",
                 });
             }
             foreach (var t in ToolRows.Where(x => !x.IsMaster))
@@ -867,7 +1188,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     Target = t.ToolId,
                     Zone = StepZone.Tool,
                     Workflow = "WF-04 副工具 Δ（底拍批量/手输）",
-                    Hint = "所有吸嘴伸到下相机上方一拍取各嘴中心两两差；同轴工具实测=(0,0)",
+                    Hint = "所有吸嘴伸到下相机上方一拍取各嘴中心两两差；同轴工具实测=(0,0)——中区面板填数或勾『同心』",
                 });
             }
             Steps.Add(new ChainStepRow
@@ -1119,11 +1440,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     Offset = row.OffsetFilled ? new[] { row.OffsetDx, row.OffsetDy } : null,
                     Meta = new ChainCalibMeta
                     {
-                        Method = row.IsMaster ? "ChainWizard-对针直量" : "ChainWizard-刚性阵列Δ",
+                        Method = row.IsConcentric ? "ChainWizard-已测同心"
+                               : row.IsMaster ? "ChainWizard-对针直量" : "ChainWizard-刚性阵列Δ",
                         Version = 1,
                         CapturedAt = DateTime.Now.ToString("o", CultureInfo.InvariantCulture),
                         Operator = "ChainWizardV2",
-                        Note = row.IsMaster ? "Offset=对针直量 T_TCP→Flange（U=0 基准，符号内蕴）"
+                        Note = row.IsConcentric ? "已测同心：显式 (0,0)（§6.4 三态口径，非『未测』）"
+                             : row.IsMaster ? "Offset=对针直量 T_TCP→Flange（U=0 基准，符号内蕴）"
                                             : "相对主工具的 Δ（法兰系）；同轴工具=(0,0) 特例",
                     },
                 });
@@ -1212,6 +1535,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public void Validate()
         {
+            var miss = MissingPrereqs();
+            if (miss.Count > 0)
+            {
+                ValidateResult = "❌ 前置不齐（" + miss.Count + " 项）：" + string.Join("；", miss) + "——整链不产（fail-closed）";
+                return;
+            }
             var graph = BuildGraph();
             if (graph == null)
             {
@@ -1243,6 +1572,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 SaveResult = "❌ EIH 相机 " + noPose.CameraId
                              + " 未填拍照基准位 PhotoPose（X/Y）——EIH 生产求值必须回该机位拍照，拒绝落盘。";
+                return;
+            }
+
+            var miss = MissingPrereqs();
+            if (miss.Count > 0)
+            {
+                SaveResult = "❌ 前置不齐（" + miss.Count + " 项）：" + string.Join("；", miss) + "——整链不产（fail-closed）";
                 return;
             }
 

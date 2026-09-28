@@ -170,6 +170,8 @@ namespace Grayson.Vision.WpfUI.View
             if (sec == null) return;
             sec.Fit();
             _vm.RefreshSteps();
+            // 完成即推进：拟合过门 ⇒ 自动带到下一个待办步（行业向导惯例）
+            if (sec.FitOk && !sec.ShapeGateFailed) _vm.AdvanceToNextPendingStep();
         }
 
         private void SwitchMaster_Click(object sender, RoutedEventArgs e)
@@ -218,6 +220,38 @@ namespace Grayson.Vision.WpfUI.View
             _vm.RefreshSteps();
             MessageBox.Show(this, msg, "链向导·回填位姿", MessageBoxButton.OK,
                 msg.StartsWith("⚠") ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
+
+        //---------------------------------------------------------------------
+        // 工具 TCP 采集（T14 pivoting）：中区面板——扎点表/求解/写入
+        //---------------------------------------------------------------------
+
+        private void AddPivotPoint_Click(object sender, RoutedEventArgs e) { _vm.AddPivotPoint(); }
+
+        private void RemovePivotPoint_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.RemovePivotPoint(_vm.SelectedPivotRow);
+        }
+
+        private void FillPivotPose_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.FillPivotIntoSelectedRow();
+        }
+
+        private void SolvePivoting_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.SolvePivoting();
+            _vm.RefreshSteps();
+        }
+
+        private void ApplyPivot_Click(object sender, RoutedEventArgs e)
+        {
+            string msg = _vm.ApplyPivotToTool();
+            _vm.RefreshSteps();
+            MessageBox.Show(this, msg, "链向导·写入工具偏移", MessageBoxButton.OK,
+                msg.StartsWith("⚠") ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            // 写入成功即完成本步 → 推进
+            if (!msg.StartsWith("⚠")) _vm.AdvanceToNextPendingStep();
         }
     }
 }

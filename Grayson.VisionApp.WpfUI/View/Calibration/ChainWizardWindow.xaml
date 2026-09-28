@@ -163,16 +163,18 @@
                     <StackPanel>
                         <TextBlock Text="{Binding StepGuide}" TextWrapping="Wrap" FontSize="12"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        <!-- 工具步提示：本步在右栏做，中间相机区不是它的操作面 -->
-                        <TextBlock Text="▶ 本步属『工具/TCP』标定——请用右侧『工具偏移』栏填 dx/dy 并设主工具（相机区不参与本步）。"
+                        <!-- 工具步提示：中区自动切换为 TCP 采集面板 -->
+                        <TextBlock Text="▶ 本步属『工具/TCP』标定——中区已切换为『针尖对点 pivoting』采集面板（转 U 角扎同一针尖→回读回填→求解→写入）。"
                                    TextWrapping="Wrap" FontSize="11" Margin="0,3,0,0"
                                    Foreground="{DynamicResource WarningBrush}"
                                    Visibility="{Binding IsToolStepSelected, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </Border>
 
-                <!-- 相机视图 -->
-                <GroupBox Grid.Row="1" Header="相机视图（Tab=链上相机）">
+                <!-- 相机视图（相机步） / pivoting 采集面板（工具步）——互斥显示 -->
+                <Grid Grid.Row="1">
+                    <GroupBox Header="相机视图（Tab=链上相机）"
+                              Visibility="{Binding IsCameraStepSelected, Converter={StaticResource BoolToVis}}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -232,10 +234,77 @@
                             </TabControl.ContentTemplate>
                         </TabControl>
                     </Grid>
-                </GroupBox>
+                    </GroupBox>
 
-                <!-- 采集参数行 -->
-                <WrapPanel Grid.Row="2" Margin="0,4,0,4">
+                    <!-- 工具 TCP 采集面板（pivoting，T14）：工具步的中区工作面 -->
+                    <GroupBox Header="工具 TCP 标定（针尖对点 Pivoting）——法兰转 U 角扎同一针尖，每角回读一次"
+                              Visibility="{Binding IsToolStepSelected, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- 工具选择 + 同心 -->
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="工具：" VerticalAlignment="Center"/>
+                                <ComboBox Width="140" ItemsSource="{Binding ToolRows}"
+                                          SelectedItem="{Binding PivotTool, Mode=TwoWay}"
+                                          DisplayMemberPath="ToolId"/>
+                                <CheckBox Content="同心（已测，显式落 0,0）" Margin="10,0,0,0"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding PivotTool.IsConcentric, Mode=TwoWay}"/>
+                                <TextBlock Text="{Binding PivotReadyText}" FontWeight="Bold" Margin="10,0,0,0"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource InfoBrush}"/>
+                            </StackPanel>
+
+                            <!-- 对针点表 -->
+                            <DataGrid Grid.Row="1" ItemsSource="{Binding PivotRows}"
+                                      SelectedItem="{Binding SelectedPivotRow, Mode=TwoWay}"
+                                      AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column"
+                                      MaxHeight="150">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="#" Binding="{Binding Note}" Width="44" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="U°" Binding="{Binding UDeg}" Width="*"/>
+                                    <DataGridTextColumn Header="法兰X" Binding="{Binding FlangeX}" Width="*"/>
+                                    <DataGridTextColumn Header="法兰Y" Binding="{Binding FlangeY}" Width="*"/>
+                                    <DataGridTextColumn Header="残差mm" Binding="{Binding ResidualText}" Width="*" IsReadOnly="True"/>
+                                </DataGrid.Columns>
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ResidualHigh}" Value="True">
+                                                <Setter Property="Background" Value="#26D03A3A"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.RowStyle>
+                            </DataGrid>
+
+                            <!-- 操作按钮 -->
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                                <Button Content="添加点" Click="AddPivotPoint_Click"/>
+                                <Button Content="删除选中" Click="RemovePivotPoint_Click"/>
+                                <Button Content="回填对针点(U,X,Y)" Click="FillPivotPose_Click" FontWeight="Bold"/>
+                                <Button Content="求解 pivoting" Click="SolvePivoting_Click" FontWeight="Bold"/>
+                                <Button Content="写入工具偏移" Click="ApplyPivot_Click"/>
+                                <TextBlock Text="　提示：先在右栏『回读位姿』（须读到 U），或示教器手抄后直接改表" FontSize="10"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </StackPanel>
+
+                            <!-- 求解结果 -->
+                            <TextBlock Grid.Row="3" Text="{Binding PivotResultText}" TextWrapping="Wrap"
+                                       FontSize="11" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </Grid>
+                    </GroupBox>
+                </Grid>
+
+                <!-- 采集参数行（相机步） -->
+                <WrapPanel Grid.Row="2" Margin="0,4,0,4"
+                           Visibility="{Binding IsCameraStepSelected, Converter={StaticResource BoolToVis}}">
                     <Button Content="添加点" Click="AddPoint_Click"/>
                     <Button Content="删除选中" Click="RemovePoint_Click"/>
                     <Button Content="拟合" Click="FitSection_Click" FontWeight="Bold"/>
@@ -255,13 +324,14 @@
                              Visibility="{Binding SelectedSection.IsEih, Converter={StaticResource BoolToVis}}"/>
                 </WrapPanel>
 
-                <!-- 点对表 -->
-                <GroupBox Grid.Row="3" Header="点对表（选中行 = 图像点选回填目标）">
+                <!-- 点对表（相机步；残差列=拟合后逐点反馈，标红=离群建议重采） -->
+                <GroupBox Grid.Row="3" Header="点对表（选中行 = 图像点选回填目标）"
+                          Visibility="{Binding IsCameraStepSelected, Converter={StaticResource BoolToVis}}">
                     <DataGrid ItemsSource="{Binding SelectedSection.Points}"
                               SelectedItem="{Binding SelectedSection.SelectedRow, Mode=TwoWay}"
                               AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="#" Binding="{Binding Note}" Width="40"/>
+                            <DataGridTextColumn Header="#" Binding="{Binding Note}" Width="40" IsReadOnly="True"/>
                             <DataGridTextColumn Header="世界X" Binding="{Binding WorldX}" Width="*"/>
                             <DataGridTextColumn Header="世界Y" Binding="{Binding WorldY}" Width="*"/>
                             <DataGridTextColumn Header="像素Col" Binding="{Binding PixelCol}" Width="*"/>
@@ -269,7 +339,17 @@
                             <DataGridTextColumn Header="拍照X(EIH)" Binding="{Binding PhotoX}" Width="*"/>
                             <DataGridTextColumn Header="拍照Y(EIH)" Binding="{Binding PhotoY}" Width="*"/>
                             <DataGridTextColumn Header="拍照U°(EIH)" Binding="{Binding PhotoU}" Width="*"/>
+                            <DataGridTextColumn Header="残差mm" Binding="{Binding ResidualText}" Width="*" IsReadOnly="True"/>
                         </DataGrid.Columns>
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ResidualHigh}" Value="True">
+                                        <Setter Property="Background" Value="#26D03A3A"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
                     </DataGrid>
                 </GroupBox>
             </Grid>
@@ -326,9 +406,10 @@
                             </Grid>
 
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                <TextBlock Text="轴映射 X/Y：" VerticalAlignment="Center"/>
+                                <TextBlock Text="轴映射 X/Y/U：" VerticalAlignment="Center"/>
                                 <TextBox Width="34" Text="{Binding AxisX}"/>
                                 <TextBox Width="34" Text="{Binding AxisY}"/>
+                                <TextBox Width="34" Text="{Binding AxisU}"/>
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
@@ -353,6 +434,7 @@
                                     <DataGridTextColumn Header="工具" Binding="{Binding ToolId}" IsReadOnly="True" Width="70"/>
                                     <DataGridTextColumn Header="dx" Binding="{Binding OffsetDx}" Width="70"/>
                                     <DataGridTextColumn Header="dy" Binding="{Binding OffsetDy}" Width="70"/>
+                                    <DataGridCheckBoxColumn Header="同心" Binding="{Binding IsConcentric, Mode=TwoWay}" Width="46"/>
                                     <DataGridTemplateColumn Header="裁决" Width="90">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>

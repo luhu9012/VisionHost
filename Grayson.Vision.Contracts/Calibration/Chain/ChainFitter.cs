@@ -41,7 +41,7 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
         public int PointCount { get; set; }
     }
 
-    public static class ChainFitter
+    public static partial class ChainFitter
     {
         /// <summary>形状失真硬拦门（血泪定案：拟合半径可被各向异性拉伸骗过 RMS）</summary>
         public const double ShapeGateRatio = 0.03;
@@ -147,6 +147,130 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
             {
                 r.Ok = false;
                 r.Error = "拟合异常: " + ex.Message;
+                return r;
+            }
+        }
+    }
+
+    /// <summary>pivoting（针尖对点法）求解结果。Ok=false 时 Error 说明原因。</summary>
+    public sealed class ChainPivotResult
+    {
+        public bool Ok { get; set; }
+        public string Error { get; set; }
+        /// <summary>解出的工具偏移 e（T_TCP→Flange 平移，法兰系）</summary>
+        public double Ex { get; set; }
+        public double Ey { get; set; }
+        /// <summary>针尖物理点 P_ref（Base 系，诊断用）</summary>
+        public double RefX { get; set; }
+        public double RefY { get; set; }
+        /// <summary>逐点残差 RMS（mm）＝ 对针重复精度——pivoting 的验收门</summary>
+        public double RmsMm { get; set; }
+        /// <summary>逐点残差（mm，与输入同序）；异常点排查用</summary>
+        public double[] PerPointResidual { get; set; }
+        /// <summary>U 角跨度（度）——e 与 P_ref 可分性判据</summary>
+        public double USpanDeg { get; set; }
+        public int PointCount { get; set; }
+        /// <summary>可解但建议改善的提示（如角度跨度不足 90°）</summary>
+        public string Warning { get; set; }
+    }
+
+    public static partial class ChainFitter
+    {
+        /// <summary>对针重复精度验收门（mm）。超门 ⇒ 针尖没扎稳/机器人重复精度不足，禁止采用。</summary>
+        public const double PivotRmsGateMm = 0.5;
+
+        /// <summary>
+        /// 针尖对点法（pivoting）求工具偏移 e 与参考点 P_ref。
+        /// 模型：tᵢ + R(Uᵢ)·e = P_ref（针尖物理点在 Base 系不动，法兰绕针尖转）。
+        /// 线性化：[R(Uᵢ) | −I₂]·[e ; P_ref] = −tᵢ（2n×4，SVD 最小二乘）。
+        /// 门禁：n≥3；U 跨度 &lt;30° 硬拦（e 与 P_ref 不可分）；&lt;90° 警示（条件数放大）；
+        ///       残差 RMS &gt; PivotRmsGateMm ⇒ Ok=true 但调用方必须把 RmsMm 当验收门呈现给用户。
+        /// </summary>
+        public static ChainPivotResult FitPivoting(double[] uDeg, double[] fx, double[] fy)
+        {
+            var r = new ChainPivotResult();
+            if (uDeg == null || fx == null || fy == null || uDeg.Length != fx.Length || fx.Length != fy.Length)
+            {
+                r.Error = "输入数组为空或长度不一致"; return r;
+            }
+            int n = uDeg.Length;
+            if (n < 3)
+            {
+                r.Error = "对针点不足（≥3 可解，推荐 4~8 个角度；当前 " + n + "）"; return r;
+            }
+
+            double uMin = uDeg[0], uMax = uDeg[0];
+            for (int i = 1; i < n; i++)
+            {
+                if (uDeg[i] < uMin) uMin = uDeg[i];
+                if (uDeg[i] > uMax) uMax = uDeg[i];
+            }
+            r.USpanDeg = uMax - uMin;
+            if (r.USpanDeg < 30.0)
+            {
+                r.Error = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "U 角跨度仅 {0:F1}°（<30°）——角度未散开时 e 与 P_ref 不可分，请把法兰转过更大范围再扎点", r.USpanDeg);
+                return r;
+            }
+            if (r.USpanDeg < 90.0)
+                r.Warning = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "U 角跨度 {0:F1}° < 90°：可解但 e/P_ref 相关性偏高，建议覆盖 ≥90°（行业惯例 0/90/180/270 四点）", r.USpanDeg);
+
+            try
+            {
+                // 设计矩阵 A（2n×4）：行 x = [cosU, −sinU, −1, 0]，行 y = [sinU, cosU, 0, −1]；b = −t
+                double[][] rows = new double[2 * n][];
+                double[] b = new double[2 * n];
+                for (int i = 0; i < n; i++)
+                {
+                    double rad = uDeg[i] * Math.PI / 180.0;
+                    double c = Math.Cos(rad), s = Math.Sin(rad);
+                    rows[2 * i]     = new double[] { c, -s, -1.0, 0.0 };
+                    rows[2 * i + 1] = new double[] { s,  c,  0.0, -1.0 };
+                    b[2 * i]     = -fx[i];
+                    b[2 * i + 1] = -fy[i];
+                }
+                var A = DenseMatrix.OfRowArrays(rows);
+                var bv = DenseVector.OfArray(b);
+                var sol = A.Svd(true).Solve(bv);       // [ex, ey, PrefX, PrefY]
+
+                r.Ex = sol[0]; r.Ey = sol[1];
+                r.RefX = sol[2]; r.RefY = sol[3];
+                r.PointCount = n;
+
+                double sum = 0;
+                r.PerPointResidual = new double[n];
+                for (int i = 0; i < n; i++)
+                {
+                    double rad = uDeg[i] * Math.PI / 180.0;
+                    double c = Math.Cos(rad), s = Math.Sin(rad);
+                    // 预测针尖位置：tᵢ + R(Uᵢ)·e，与 P_ref 的偏差即残差
+                    double px = fx[i] + c * r.Ex - s * r.Ey;
+                    double py = fy[i] + s * r.Ex + c * r.Ey;
+                    double dx = px - r.RefX, dy = py - r.RefY;
+                    double d = Math.Sqrt(dx * dx + dy * dy);
+                    r.PerPointResidual[i] = d;
+                    sum += d * d;
+                }
+                r.RmsMm = Math.Sqrt(sum / n);
+
+                if (double.IsNaN(r.RmsMm) || double.IsInfinity(r.RmsMm))
+                {
+                    r.Ok = false;
+                    r.Error = "求解结果含非有限值（输入数据非法？）";
+                    return r;
+                }
+                if (r.RmsMm > PivotRmsGateMm)
+                    r.Warning = (r.Warning == null ? "" : r.Warning + "；")
+                        + string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                            "残差 RMS {0:F3}mm 超对针重复精度门 {1:F1}mm——检查针尖是否松动/每次是否扎入同一物理点", r.RmsMm, PivotRmsGateMm);
+                r.Ok = true;
+                return r;
+            }
+            catch (Exception ex)
+            {
+                r.Ok = false;
+                r.Error = "pivoting 求解异常: " + ex.Message;
                 return r;
             }
         }

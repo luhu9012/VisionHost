@@ -80,10 +80,8 @@
     <Compile Include="Calibration\Models\CalibrationVerificationModels.cs" />
     <Compile Include="Calibration\Models\CalibrationCardModels.cs" />
     <Compile Include="Calibration\Models\CalibrationDomainV2.cs" />
-    <Compile Include="Calibration\Models\CalibrationWizardModels.cs" />
     <Compile Include="Calibration\Services\CalibrationPlanEngineV2.cs" />
     <Compile Include="Calibration\Services\CalibrationLegacyMapper.cs" />
-    <Compile Include="Calibration\Services\CalibrationWizardTemplates.cs" />
     <Compile Include="Calibration\Services\CalibrationProfileSessionPlanner.cs" />
     <Compile Include="Calibration\Services\CalibrationCardDeriver.cs" />
     <Compile Include="Calibration\Services\CameraCalibrationBundle.cs" />

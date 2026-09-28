@@ -273,11 +273,7 @@
                             Visibility="{Binding HasDerivedCards, Converter={StaticResource BoolToVis}}">
 						<StackPanel>
 							<DockPanel>
-								<Button DockPanel.Dock="Right" Content="⚡ 一键顺序标定 H→e→t" Height="22" Padding="10,0" FontSize="11"
-                                        Style="{StaticResource SecondaryButtonStyle}" Margin="8,0,0,0"
-                                        Visibility="{Binding CanAutoChain, Converter={StaticResource BoolToVis}}"
-                                        Command="{Binding AutoChainCommand}"
-                                        ToolTip="按依赖序连做本方案未发布的必做任务：每段独立向导，段间弹窗确认（选“否”即中止）。"/>
+								
 								<TextBlock Text="{Binding CardWorkbenchTitle}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
 							</DockPanel>
 							<ItemsControl ItemsSource="{Binding DerivedCards}" Margin="0,6,0,0">
@@ -319,14 +315,8 @@
 												</StackPanel>
 
 												<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
-													<Button Content="🚀 引导 / 重标" Style="{StaticResource PrimaryButtonStyle}" Height="24" Padding="10,0"
-                                                            Command="{Binding DataContext.RunWizardForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}"
-                                                            Visibility="{Binding ShowWizardAction, Converter={StaticResource BoolToVis}}"/>
-													<Button Content="🔍 校验" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0"
-                                                            Command="{Binding DataContext.RunVerifierForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}"
-                                                            Visibility="{Binding ShowVerifyAction, Converter={StaticResource BoolToVis}}"/>
+													
+													
 													<Button Content="🎯 对针" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0"
                                                             Command="{Binding DataContext.RunToolOffsetForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"

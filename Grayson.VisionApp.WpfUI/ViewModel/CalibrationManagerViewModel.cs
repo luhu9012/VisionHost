@@ -54,14 +54,12 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// 非模态窗口不再阻塞主界面，若不加单例，用户可重复点开多个向导共享同一相机/轴卡；
         /// 已有向导打开时新入口只 Activate 已开窗口。窗口 Closed 时置 null。
         /// </summary>
-        private CalibrationWizardWindow _activeWizardWindow;
 
         /// <summary>
         /// 当前打开的标定校验台窗口引用（2026-09-06 非模态化防重入，同向导样板）。
         /// 校验台原 ShowDialog 模态打开会禁掉主窗与机械臂调试等并行窗口；改 Show() 后
         /// 与主界面并行操作，故同样以单例防重复点开共享同一相机/轴卡。窗口 Closed 时置 null。
         /// </summary>
-        private CalibrationVerifierWindow _activeVerifierWindow;
 
         /// <summary>
         /// 对针补偿窗口单例（2026-09-10 非模态化后与校验台同款防重入；共享同一相机/轴卡）。
@@ -225,8 +223,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             /// <summary>t 卡是否 EyeInHand 布局（间接对针）——2026-09-08 起 EIH t 走向导六步模板</summary>
             public bool IsEihT => IsT && Card.Layout == EyeMode.EyeInHand;
             /// <summary>「🚀 引导/重标」按钮：H/e/s + EIH t（间接对针走向导）；ETH t 走独立对针窗（🎯）</summary>
-            public bool ShowWizardAction => IsH || IsE || IsS || IsEihT;
-            public bool ShowVerifyAction => IsH;
             /// <summary>「🎯 对针」按钮：仅 EyeToHand t（图像对针独立窗）；EIH t 改走向导（🚀）</summary>
             public bool ShowAlignAction => IsT && !IsEihT;
             public bool ShowPublishAction => IsH || IsE || IsS || IsT;
@@ -300,12 +296,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(CardWorkbenchHint));
             // 卡命令 CanExecute 依赖派生卡状态（含依赖/过期放宽判定）——重建后必须刷新按钮可用态，
             // 否则"Expired 卡已放行重标"等新判定不会反映到已渲染按钮（IsEnabled 停留在上次缓存）。
-            (RunWizardForCardCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (RunVerifierForCardCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (RunToolOffsetForCardCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (PublishCardCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            OnPropertyChanged(nameof(CanAutoChain));
-            (AutoChainCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         #endregion
@@ -389,7 +381,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     OnPropertyChanged(nameof(ProfileSlotKey));
                     ExecuteTestMap();
                     (PublishEccCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                    (OpenVerifierCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     (OpenToolOffsetCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     RebuildDerivedCards();
                 }
@@ -1033,8 +1024,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         public ICommand NewProfileCommand { get; }
         public ICommand DeleteProfileCommand { get; }
-        public ICommand OpenWizardCommand { get; }
-        public ICommand OpenVerifierCommand { get; }
         public ICommand OpenToolOffsetCommand { get; }
         public ICommand SaveMatrixCommand { get; }
         public ICommand TestMapCommand { get; }
@@ -1050,13 +1039,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         // ---- P3 任务卡动作（卡内命令；CommandParameter = ArtifactTaskCardVm）----
         /// <summary>引导/重新标定（H/e/s 卡）</summary>
-        public ICommand RunWizardForCardCommand { get; private set; }
         /// <summary>校验台（仅 H 卡、数据在）</summary>
-        public ICommand RunVerifierForCardCommand { get; private set; }
         /// <summary>对针（仅 t 卡、EyeToHand；复用对针窗，首标/重标同入口）</summary>
         public ICommand RunToolOffsetForCardCommand { get; private set; }
         /// <summary>一键顺序标定：H→e→t 链式自动推进（2026-09-08；每段独立向导，段间弹窗确认可中止）</summary>
-        public ICommand AutoChainCommand { get; private set; }
         /// <summary>发布/旁路发布（发布门禁 + 留痕，拍板④）</summary>
         public ICommand PublishCardCommand { get; private set; }
 
@@ -1099,8 +1085,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             });
 
             DeleteProfileCommand = new RelayCommand(_ => DeleteSelectedProfile(), _ => SelectedCalibrationProfile != null);
-            OpenWizardCommand = new RelayCommand(_ => OpenWizard());
-            OpenVerifierCommand = new RelayCommand(_ => OpenVerifier(), _ => CanOpenVerifier());
             OpenToolOffsetCommand = new RelayCommand(_ => OpenToolOffset(), _ => CanOpenVerifier());
             SaveMatrixCommand = new RelayCommand(_ => SaveMatrix());
             TestMapCommand = new RelayCommand(_ => ExecuteTestMap());
@@ -1109,15 +1093,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OpenChainWizardCommand = new RelayCommand(_ => OpenChainWizard());
             OpenChainVerifyCommand = new RelayCommand(_ => OpenChainVerify());
             PublishEccCommand = new RelayCommand(_ => PublishEccToStation(), _ => CanPublishEcc());
-            RunWizardForCardCommand = new RelayCommand(o => OpenWizardForCard(o as ArtifactTaskCardVm),
-                o => CanOpenWizardForCard(o as ArtifactTaskCardVm));
-            RunVerifierForCardCommand = new RelayCommand(o => RunVerifierForCard(o as ArtifactTaskCardVm),
-                o => CanRunVerifierForCard(o as ArtifactTaskCardVm));
+
             RunToolOffsetForCardCommand = new RelayCommand(o => RunToolOffsetForCard(o as ArtifactTaskCardVm),
                 o => CanRunToolOffsetForCard(o as ArtifactTaskCardVm));
             PublishCardCommand = new RelayCommand(o => PublishCard(o as ArtifactTaskCardVm),
                 o => CanPublishCard(o as ArtifactTaskCardVm));
-            AutoChainCommand = new RelayCommand(_ => StartAutoChain(), _ => CanAutoChain);
             BackToGlobalCommand = new RelayCommand(_ => EnterGlobalScope());
             CreateCandidatesCommand = new RelayCommand(_ => CreateSelectedCandidates(), _ => HasCheckedCandidates);
             DismissCandidatesCommand = new RelayCommand(_ =>
@@ -2817,7 +2797,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             return p != null && p.IsCalibrated && p.Quantity != CalibrationQuantity.PixelScale;
         }
 
-        /// <summary>打开 P3 标定校验台（在线打点验收）。关闭后把校验记录写入 profile 并落库。</summary>
         /// <summary>
         /// 打开 P4 对针补偿窗口。
         /// ★ 2026-09-10 非模态化（同校验台/标定向导样板）：Show() 打开 + Owner=主窗，
@@ -2869,198 +2848,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
-        /// <summary>
-        /// 打开 P3 标定校验台（在线打点验收）。
-        /// ★ 2026-09-06 非模态化（同标定向导样板）：Show() 打开 + Owner=主窗，
-        ///   校验台与主界面（机械臂调试等页面/窗口）并行独立操作、互不阻塞；
-        ///   窗口单例防重入（同一时间只允许一个校验台，避免重复点开共享同一相机/轴卡）。
-        /// 关窗提交语义：VM 在关闭兜底自动生成待提交记录（存在已判定点未点保存时）→
-        ///   窗口 Closed 事件统一执行提交链 CommitVerifierOnClosed（校验记录/吸嘴锚点落库）。
-        /// 取消/右上角 X 直接关闭 → 无记录/锚点变更 → 提交链空转不落库。
-        /// </summary>
-        private void OpenVerifier()
-        {
-            var profile = SelectedCalibrationProfile;
-            if (profile == null) return;
-            try
-            {
-                // 非模态单例：已有一个校验台窗口 → 仅激活，不再新开（相机取流/运动轴被该窗口独占）
-                if (_activeVerifierWindow != null)
-                {
-                    if (_activeVerifierWindow.IsVisible)
-                    {
-                        _activeVerifierWindow.Activate();
-                    }
-                    return;
-                }
-
-                var win = new CalibrationVerifierWindow(profile)
-                {
-                    Owner = Application.Current.MainWindow
-                };
-                _activeVerifierWindow = win;
-                // 关窗即释放单例引用，并执行提交链（校验记录/吸嘴锚点 → profile → 落库）
-                win.Closed += (s, e) =>
-                {
-                    _activeVerifierWindow = null;
-                    CommitVerifierOnClosed(win, profile);
-                };
-                win.Show(); // 非模态：不阻塞主界面（机械臂调试等窗口可并行使用）
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("打开标定校验台失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        /// <summary>
-        /// 校验台窗口关闭后的提交链（由 OpenVerifier 的 Closed 事件调用）。
-        /// 关窗会话变更收集：①校验记录 ②吸嘴对准锚点(NozzleAlign,2026-09-06 起校验台可现场示教)——
-        /// 任一存在即落库。无任何变更（纯取消/浏览后关闭）则空转，不落库不弹窗。
-        /// 提交链会读写页面状态并落库弹窗，故 marshal 回 UI 线程执行（与 CommitWizardSessionOnClosed 同款防线）。
-        /// </summary>
-        private void CommitVerifierOnClosed(CalibrationVerifierWindow win, CalibrationProfile profile)
-        {
-            var dispatcher = Application.Current?.Dispatcher;
-            if (dispatcher != null && !dispatcher.CheckAccess())
-            {
-                dispatcher.Invoke(() => CommitVerifierOnClosed(win, profile));
-                return;
-            }
-
-            try
-            {
-                var vm = win.VerifierVm;
-                // 关窗会话变更收集：①校验记录 ②相机安装特性（2026-09-10 起对针职责已剥离，校验台不再记 R_n/p_tip/TCO）
-                if (vm.CameraMountDirty)
-                {
-                    profile.CameraMovesWithZ = vm.CameraMovesWithZ; // 相机安装特性（随 Z / 固定），独立提交
-                    // 同一台物理相机 → 同工位所有未声明的方案都同步成同一口径（2026-09-09）
-                    var sync = BroadcastCameraMovesWithZ(profile, vm.CameraMovesWithZ);
-                    if (sync.Synced > 0)
-                    {
-                        PublishEccStatusText = $"📡『相机{(vm.CameraMovesWithZ == true ? "随 Z 升降" : "固定不随 Z")}』"
-                            + $" 已同步到同工位 {sync.Synced} 个未声明的方案（统一 CalibZ 守护口径）。";
-                    }
-                    if (sync.Conflicts.Count > 0)
-                    {
-                        MessageBox.Show(
-                            "同工位里有方案显式声明了【相反】的相机安装特性，本次没有覆盖它们：\n\n"
-                            + string.Join("\n", sync.Conflicts.Select(n => " · " + n))
-                            + $"\n\n现已声明：相机{(vm.CameraMovesWithZ == true ? "随 Z 升降（拍照须回 CalibZ）" : "固定不随 Z（成像与 Z 无关）")}"
-                            + "\n\n同一台相机只能有一种口径，请把上面这些方案改成一致，否则 Z 守护结论会互相打架。",
-                            "相机安装特性冲突", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-                // ★2026-09-15：消费口径声明落库（决定生产端要不要叠 O / 要不要减 U 旋转项）。
-                //   这是"H 到底在哪个域"的唯一可写入口——不写它，生产端就只能猜 PrimaryPath，
-                //   而"已消杆的 H + 按杆端域补 O/e"正是本工位校验结果不对的直接原因。
-                if (vm.SolveDeclDirty)
-                {
-                    profile.HandEyeInNozzleDomain = vm.HandEyeInNozzleDomain;
-                    profile.NozzleAxisCoaxial = vm.NozzleAxisCoaxial;
-                    // ★2026-09-15：'把 b 带进生产'的开关也在这里落库。
-                    //   它是"校验台验收 → 生产同口径"闭环的最后一步：不开它，发布链就不会写 HasRodOffset，
-                    //   生产端永远走 H(u)，永远少一个 |b| —— 而原先这个字段**没有任何界面**，用户无从打开。
-                    profile.RodOffsetInProduction = vm.RodOffsetInProduction;
-                    PublishEccStatusText = "💾 已保存消费口径声明：H="
-                        + (vm.HandEyeInNozzleDomain == true ? "吸嘴域（直吸 H(u)，不叠 O）"
-                            : vm.HandEyeInNozzleDomain == false ? "杆端域（固定相机→吸点=H(u)+b；EIH 才叠 O 补偿）" : "未声明")
-                        + "；吸嘴="
-                        + (vm.NozzleAxisCoaxial == true ? "与 U 同轴（免 U 旋转项）"
-                            : vm.NozzleAxisCoaxial == false ? "偏心（保留 R(U−U0)·e）" : "未声明")
-                        + "；b 进生产="
-                        + (vm.RodOffsetInProduction == true ? "开（发布后生产端走 H(u)+b）"
-                            : vm.RodOffsetInProduction == false ? "关（生产端走 H(u)，会少一个 |b|）" : "未声明")
-                        + "。发布到工位时按此写 NeedsOCompensation / 是否免 U 项 / HasRodOffset。";
-                }
-                if (vm.HasPendingRecord)
-                {
-                    if (profile.VerificationRecords == null)
-                    {
-                        profile.VerificationRecords = new System.Collections.Generic.List<CalibrationVerificationRecord>();
-                    }
-                    profile.VerificationRecords.Add(vm.PendingRecord);
-                }
-                if (vm.CameraMountDirty || vm.SolveDeclDirty || vm.HasPendingRecord)
-                {
-                    SaveProfileToRepository(profile);
-                    RebuildVisibleProfiles();
-                    // ★ 2026-09-06 非模态化：原模态下"卡重建"由调用点（发布门禁引导等）在 OpenVerifier
-                    //   返回后执行；改 Show() 后 OpenVerifier 立即返回，重建时序断裂 → 统一挪到关窗提交链，
-                    //   保证任意入口（独立按钮/任务卡/门禁引导）开校验台、关窗后任务卡 State/按钮可用态同步刷新
-                    //   （RebuildDerivedCards 内部含 RaiseCanExecuteChanged×4）。
-                    RebuildDerivedCards();
-                }
-                if (vm.HasPendingRecord)
-                {
-                    var rec = vm.PendingRecord;
-                    string verdict = rec.PassRate >= 100
-                        ? "全部通过 —— 该矩阵可放心发布使用。"
-                        : rec.PassRate >= 80
-                            ? "通过率良好，可发布；若追求更高精度建议重标或检查偏差最大点。"
-                            : "通过率偏低 —— 建议回到标定向导重新标定（矩阵几何/采样可能有问题）。";
-                    MessageBox.Show(
-                        $"标定校验记录已保存：判定 {rec.Points.Count(p => p.IsVerdicted)} 点 / 通过 {rec.PassedCount} 点" +
-                        $"(通过率 {rec.PassRate:F0}%)。\n\n{verdict}",
-                        "校验记录已保存", MessageBoxButton.OK,
-                        rec.PassRate >= 80 ? MessageBoxImage.Information : MessageBoxImage.Warning);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("标定校验台提交失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        /// <summary>
-        /// P2：profile → 本次向导会话 spec（旧"单量直判"泛化为段解析器）。
-        /// 旋转混合档案（HandEyeWithRotation / PickPlaceHandEye 一窗含 H+e 两产物）v2 起分段独立标定：
-        /// 多条会话时先弹"本次标哪段"（H 段矩阵 / e 段旋转偏心），消除一窗混合执行。
-        /// 仅剩一条（九点 H / 像素当量 s / 吸放 H）时不打扰直接进入。
-        /// 返回 null = 无可执行段（调用方维持原行为/提示）。
-        /// </summary>
-        private CalibrationTaskSpec SelectSessionFromPlans(CalibrationProfile profile)
-        {
-            var plans = CalibrationProfileSessionPlanner.PlanSessions(profile);
-            if (plans == null || plans.Count == 0)
-            {
-                return null;
-            }
-            if (plans.Count == 1)
-            {
-                return plans[0];
-            }
-
-            // 多条（旋转混合 H+e；或 H+e+可选 t）→ 段选择。惯例排序：H 在前、e 次之、t 末位（可选）。
-            // t(对针) 为可选项且保留旧"对针"按钮入口 → 不参与段选择弹窗（避免 YesNoCancel 表达不下第三项）
-            var main = plans.Where(s => s.IsRequired).ToList();
-            if (main.Count < 2)
-            {
-                return main.Count == 1 ? main[0] : null;
-            }
-            string list = string.Join("\n", main.Select((s, i) =>
-                $"  {(i == 0 ? "①" : i == 1 ? "②" : "③")} {s.DisplayName} —— {FirstLineOf(s.Reason)}"));
-            string hint = plans.Any(s => !s.IsRequired)
-                ? "\n\n注：t(对针) 为可选项——若 H 采用吸放式(真值已吸收偏距)则无需执行；重标 t 请关闭本窗后使用『对针』入口。"
-                : string.Empty;
-            var pick = MessageBox.Show(
-                "该方案为「旋转混合」档案（一窗含 H 矩阵与旋转偏心 e 两段产物），v2 起分段独立标定，不再一窗混合执行。\n\n" +
-                "本次请选择要标定的段（需要两段都重标请分两次进入）：\n" + list + hint + "\n\n" +
-                "[是] = 第①段（H 段）    [否] = 第②段（e 段）    [取消] = 返回",
-                "选择本次标定段（StepDef 会话）",
-                MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (pick == MessageBoxResult.Yes) return main[0];
-            if (pick == MessageBoxResult.No && main.Count >= 2) return main[1];
-            return null;
-        }
-
-        private static string FirstLineOf(string s)
-        {
-            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
-            int cut = s.IndexOf('；');
-            return cut > 0 ? s.Substring(0, cut + 1) : s;
-        }
 
         /// <summary>
         /// 打开链向导（范式2，R3）：采集点对 → ChainFitter 拟合 → 组装 StationCalibGraph →
@@ -3107,413 +2894,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
         }
 
-        private void OpenWizard()
-        {
-            if (SelectedCalibrationProfile == null) return;
-
-            // ⚠ 2026-09-12 未实现物理量入口拦截：镜头畸变尚无真实标定板角点检测，拦截并引导改物理量。
-            if (SelectedCalibrationProfile.Quantity == CalibrationQuantity.LensDistortion)
-            {
-                MessageBox.Show(
-                    "「镜头畸变」标定尚未实现（缺少真实标定板角点检测），已阻止打开向导，避免产出无效标定数据。\n\n" +
-                    "请在上方『标定物理量』下拉中把该方案切换为：手眼 H / 旋转中心 e / 像素当量 s，再重新执行标定。",
-                    "类型未实现", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            try
-            {
-                var spec = SelectSessionFromPlans(SelectedCalibrationProfile);
-                if (spec == null)
-                {
-                    // 无可用段（Planner 空=占位类型兜底；棋盘/畸变已被上方拦截，理论不可达）
-                    return;
-                }
-                LaunchWizardSession(spec);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("打开标定向导失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        /// <summary>
-        /// 以指定任务 spec 启动向导会话（旧引导入口与 P3 任务卡入口共用）。
-        /// ★ 2026-09-06 非模态化：Show() 打开 + Owner=主窗，向导窗口与主界面（机械臂调试等页面/窗口）
-        ///   并行独立操作、互不阻塞；窗口单例防重入（同一时间只允许一个向导，避免重复点开共享同一相机/轴卡）。
-        /// 关窗保存语义（P2 分叉）：H 段落盘矩阵+IsCalibrated；s 只标 IsCalibrated；
-        /// e/t 只写旋转/偏距字段（matrix 属 H 段），不污染"已标定"整条标志。
-        /// 提交触发：VM 保存完成会先置 IsSessionCompleted 再 Close → 窗口 Closed 事件里执行落盘/回写；
-        /// 取消/右上角 X 直接关闭 → IsSessionCompleted=false → 不提交（与旧 ShowDialog()!=true 语义一致）。
-        /// </summary>
-        private void LaunchWizardSession(CalibrationTaskSpec spec)
-        {
-            if (SelectedCalibrationProfile == null || spec == null) return;
-            try
-            {
-                // 非模态单例：已有一个向导窗口 → 仅激活，不再新开（相机取流/运动轴被该窗口独占）
-                if (_activeWizardWindow != null)
-                {
-                    if (_activeWizardWindow.IsVisible)
-                    {
-                        _activeWizardWindow.Activate();
-                    }
-                    return;
-                }
-
-                var win = new CalibrationWizardWindow(SelectedCalibrationProfile, spec)
-                {
-                    Owner = Application.Current.MainWindow
-                };
-                _activeWizardWindow = win;
-                // 关窗即释放单例引用，并依据"是否完成保存"执行提交链（提交内容见 CommitWizardSessionOnClosed）
-                win.Closed += (s, e) =>
-                {
-                    _activeWizardWindow = null;
-                    CommitWizardSessionOnClosed(win, spec);
-                };
-                win.Show(); // 非模态：不阻塞主界面
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("打开标定向导失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        // ==================== 链式自动推进 H→e→t（2026-09-08；可选·一键顺序） ====================
-        // 语义：任务卡工作台「⚡ 一键顺序标定」→ 依依赖序(H→e→t/吸嘴序) 收集"必做+未发布+可开向导"的卡，
-        // 第 1 段立即开窗，其余排队；每段在上一段「完成并保存」提交后弹窗确认再开下一段（选"否"=清队中止）。
-        // 队列默认空 → 既有单卡点选行为零变化。
-        private readonly Queue<CalibrationTaskSpec> _chainQueue = new Queue<CalibrationTaskSpec>();
-        /// <summary>链启动时方案 Id：段间校验档案未切换，切换即清队中止</summary>
-        private string _chainProfileId;
-
-        /// <summary>一键顺序可用性：≥2 张可开向导、必做、未发布卡（H/e/t 组合）</summary>
-        public bool CanAutoChain => BuildAutoChainSpecs().Count >= 2;
-
-        /// <summary>依依赖序构建链（HandEye→ToolRotation→ToolOffset；同量按 NozzleKey 升序）</summary>
-        private List<CalibrationTaskSpec> BuildAutoChainSpecs()
-        {
-            var list = new List<CalibrationTaskSpec>();
-            if (SelectedCalibrationProfile == null || DerivedCards == null || DerivedCards.Count == 0) return list;
-            var pool = DerivedCards
-                .Where(c => c != null && c.IsRequired && c.State != CalibrationArtifactState.Published
-                            && CanOpenWizardForCard(c))
-                .ToList();
-            if (pool.Count < 2) return list;
-            int Rank(ArtifactTaskCardVm c)
-            {
-                switch (c.Card.Quantity)
-                {
-                    case CalibrationQuantity.HandEye: return 0;
-                    case CalibrationQuantity.ToolRotation: return 1;
-                    default: return 2; // ToolOffset（LensDistortion 已被 CanOpenWizardForCard 排除）
-                }
-            }
-            foreach (var c in pool.OrderBy(Rank).ThenBy(c => c.Card.NozzleKey ?? "1", StringComparer.Ordinal))
-            {
-                var spec = ResolveSpecForCard(c);
-                if (spec != null) list.Add(spec);
-            }
-            return list.Count >= 2 ? list : new List<CalibrationTaskSpec>();
-        }
-
-        /// <summary>一键顺序标定：清队→排队(除首段)→确认→启动第 1 段</summary>
-        private void StartAutoChain()
-        {
-            var specs = BuildAutoChainSpecs();
-            if (specs.Count < 2)
-            {
-                MessageBox.Show("当前方案没有可连做的必做任务（至少需 2 张 H/e/t 组合卡），或依赖未就绪。\n\n单段任务请直接用卡上按钮。",
-                    "一键顺序标定", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-            _chainQueue.Clear();
-            foreach (var s in specs.Skip(1)) _chainQueue.Enqueue(s);
-            _chainProfileId = SelectedCalibrationProfile?.Id;
-            string first = ChainSessionLabel(specs[0]);
-            string rest = string.Join(" → ", specs.Skip(1).Select(ChainSessionLabel));
-            var ask = MessageBox.Show(
-                $"按序完成：{first} → {rest}\n\n即将开始第 1 段【{first}】。每段完成后会弹窗确认是否继续下一段（选“否”即中止，可稍后从任务卡手动进入）。\n\n现在开始吗？",
-                "一键顺序标定", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
-            if (ask != MessageBoxResult.Yes)
-            {
-                _chainQueue.Clear();
-                return;
-            }
-            LaunchWizardSession(specs[0]);
-        }
-
-        /// <summary>段序人读标签（H/e/t + 吸嘴号）</summary>
-        private static string ChainSessionLabel(CalibrationTaskSpec s)
-        {
-            string q = s.Quantity == CalibrationQuantity.HandEye ? "手眼 H"
-                : s.Quantity == CalibrationQuantity.ToolRotation ? "回转偏心 e"
-                : s.Quantity == CalibrationQuantity.ToolOffset ? "对针 t"
-                : s.Quantity == CalibrationQuantity.PixelScale ? "像素当量 s" : "段";
-            string nz = string.IsNullOrWhiteSpace(s.NozzleKey) || s.NozzleKey == "1" ? "" : $"·吸嘴{s.NozzleKey}";
-            return q + nz;
-        }
-
-        /// <summary>段间推进：提交成功后在队列非空时（Background 优先级，避开关窗级联）弹窗确认下一段</summary>
-        private void TryAdvanceChain()
-        {
-            if (_chainQueue.Count == 0) return;
-            // 档案一致性守卫：链启动后若切换了标定方案 → 清队中止，防下一段 spec 打到别的档案上
-            if (SelectedCalibrationProfile == null || !string.Equals(SelectedCalibrationProfile.Id, _chainProfileId, StringComparison.Ordinal))
-            {
-                _chainQueue.Clear();
-                _chainProfileId = null;
-                return;
-            }
-            var next = _chainQueue.Dequeue();
-            string nextLabel = ChainSessionLabel(next);
-            string rest = _chainQueue.Count > 0
-                ? "\n后续：" + string.Join(" → ", _chainQueue.Select(ChainSessionLabel))
-                : string.Empty;
-            var ask = MessageBox.Show(
-                $"上一段已完成并保存。\n\n下一段【{nextLabel}】是否现在开始？{rest}\n\n[是] 立即打开下一段向导　[否] 中止（后续可从任务卡手动进入）",
-                "顺序标定 · 下一段", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
-            if (ask != MessageBoxResult.Yes)
-            {
-                _chainQueue.Clear();
-                return;
-            }
-            LaunchWizardSession(next);
-        }
-
-        /// <summary>
-        /// 向导窗口关闭后的提交链（由 LaunchWizardSession 的 Closed 事件调用）。
-        /// 仅当 VM 已"✔ 完成并保存"（IsSessionCompleted）才执行——取消/右上角 X 关闭不提交，与旧模态语义等价。
-        /// </summary>
-        private void CommitWizardSessionOnClosed(CalibrationWizardWindow win, CalibrationTaskSpec spec)
-        {
-            // ★ 2026-09-06 提交链加固：无论向导窗口由哪个线程触发关闭，整个提交/分发链
-            //   一律 marshal 回 UI 线程执行。提交链会读写页面发布域状态（SelectedScopeIndex/
-            //   SelectedPublishRecipe）、落盘、弹窗并可能调用 SaveMatrix——若从后台线程执行，
-            //   会与 UI 线程上的配方列表刷新/页面重建产生 check-then-use 竞态（曾表现为
-            //   SaveMatrix 内部守卫通过后 SelectedPublishRecipe 中途被置空 → NullReferenceException，
-            //   栈: CommitWizardSessionOnClosed→SaveMatrix 第 1920 行）。
-            var dispatcher = Application.Current?.Dispatcher;
-            if (dispatcher != null && !dispatcher.CheckAccess())
-            {
-                dispatcher.Invoke(() => CommitWizardSessionOnClosed(win, spec));
-                return;
-            }
-
-            if (!(win.DataContext is CalibrationWizardViewModel wizardVm) || !wizardVm.IsSessionCompleted)
-            {
-                return; // 未完成保存（取消/直接关窗）→ 不提交
-            }
-
-            try
-            {
-                SelectedCalibrationProfile = wizardVm.TargetProfile;
-                SelectedCalibrationProfile.RmsError = wizardVm.CalculatedRms;
-
-                // ★ P2 保存语义分叉：仅 H 段产出矩阵（落盘工位级目录 + IsCalibrated）；
-                //   e（旋转偏心）/ t（对针）段只写旋转/偏距字段，不碰矩阵与"已标定"整条标志，
-                //   避免"e 会话关窗把没矩阵的 profile 标成已标定"的误导（矩阵仍属 H 段）。
-                bool hSession = spec.Quantity == CalibrationQuantity.HandEye;
-                bool sSession = spec.Quantity == CalibrationQuantity.PixelScale;
-                if (sSession)
-                {
-                    // 像素当量标定无矩阵文件
-                    SelectedCalibrationProfile.IsCalibrated = true;
-                }
-                else if (hSession)
-                {
-                    // ★ 2026-09-04 向导关闭即把矩阵落盘"工位级"持久目录（Recipes\Workstations\{工位}\Calib），
-                    //   不再只停留在 %TEMP%\hommat_*.tup——杜绝"重启/清临时目录后矩阵文件丢失、
-                    //   profile 却仍显示已标定"的空窗。工位级为该工位所有配方共享的归宿；
-                    //   用户后续仍可按需点"保存并应用"发布到工位/特定配方目录。
-                    //   2026-09-05：落盘目录由旧"设备级"(Recipes\Devices) 改为工位级——标定矩阵
-                    //   不属于轴卡/相机等设备实例，发布目标是消费它的配方/工位。
-                    string durable = PersistMatrixToStationScope(SelectedCalibrationProfile);
-                    SelectedCalibrationProfile.HomMatFilePath = durable ?? wizardVm.OutputHomMatPath;
-                    SelectedCalibrationProfile.IsCalibrated = true;
-                    if (durable == null && !string.IsNullOrWhiteSpace(wizardVm.OutputHomMatPath))
-                    {
-                        MessageBox.Show(
-                            "警告：标定矩阵自动落盘工位目录失败，当前仅保存于系统临时目录（重启后可能丢失）。\n" +
-                            "请点击下方『保存并应用』按钮，把矩阵发布到 工位/特定配方 目录。",
-                            "矩阵未持久化", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-
-                    // P4 快照对齐：向导自动发布标记的快照记录的是向导内落盘路径；若此处工位级
-                    //   持久路径与之不同，需刷新 H 发布快照到最终路径，否则任务卡会误判"数据变更→Expired"。
-                    if (HasPublishMarkerFor(SelectedCalibrationProfile, "H"))
-                    {
-                        string finalPath = durable ?? wizardVm.OutputHomMatPath;
-                        if (!string.IsNullOrWhiteSpace(finalPath))
-                        {
-                            string cur = CalibrationCardDeriver.BuildSnapshotKey(SelectedCalibrationProfile, CalibrationQuantity.HandEye);
-                            string finalSnap = "H|" + finalPath;
-                            if (!string.Equals(cur, finalSnap, StringComparison.Ordinal))
-                            {
-                                CalibrationCardDeriver.AppendPublishMarker(SelectedCalibrationProfile,
-                                    CalibrationQuantity.HandEye, false, "向导完成后刷新发布快照到工位级矩阵路径");
-                            }
-                        }
-                    }
-                }
-
-                SaveProfileToRepository(SelectedCalibrationProfile);
-                OnPropertyChanged(nameof(SelectedCalibrationProfile));
-                RebuildDerivedCards();
-                if (hSession)
-                {
-                    // 仅 H 段会话重标矩阵后做在线打点自检；e/t 段不动矩阵，跳过以免弹窗干扰
-                    ExecuteTestMap();
-                    // P4 分发追问：H 会话向导末步已自动发布（AppendPublishMarker）→ 询问是否立即分发矩阵
-                    //   （分发会同步刷新 H 发布快照；若否，稍后可用『应用标定矩阵』/卡上发布动作再发）
-                    var ask = MessageBox.Show(
-                        "H 标定会话完成并已自动发布（留痕）。\n\n是否立即把矩阵分发到当前发布域（工位级共享 / 特定配方）？\n[是] = 按当前发布域分发  [否] = 稍后用『应用标定矩阵』",
-                        "发布完成 · 分发矩阵", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                    if (ask == MessageBoxResult.Yes)
-                    {
-                        SaveMatrix();
-                    }
-                }
-
-                // —— 链式自动推进（2026-09-08）：本段完成提交后，队列非空则出队弹窗确认下一段 ——
-                // 注：取消/右上角 X 关闭的会话 IsSessionCompleted=false → 上方已 return，链随之中止。
-                if (_chainQueue.Count > 0)
-                {
-                    Application.Current?.Dispatcher.BeginInvoke(new Action(TryAdvanceChain),
-                        System.Windows.Threading.DispatcherPriority.Background);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("向导结果提交失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        // ==================== P3 任务卡动作 ====================
-
-        /// <summary>解析卡对应会话 spec：优先 Planner（H/e/s/t 均覆盖）。
-        /// t 卡分流（2026-09-08）：EyeInHand → 向导六步模板（间接对针）；EyeToHand → 对针窗不进向导。</summary>
-        private CalibrationTaskSpec ResolveSpecForCard(ArtifactTaskCardVm vm)
-        {
-            var profile = SelectedCalibrationProfile;
-            if (profile == null || vm == null) return null;
-            if (vm.Card.Quantity == CalibrationQuantity.ToolOffset && vm.Card.Layout != EyeMode.EyeInHand)
-            {
-                return null; // EyeToHand t → 对针窗（图像对针，工具落点需固定相机直接观测）
-            }
-
-            var plans = CalibrationProfileSessionPlanner.PlanSessions(profile);
-            if (plans != null)
-            {
-                foreach (var s in plans)
-                {
-                    if (s.Quantity != vm.Card.Quantity) continue;
-                    bool slotMatch = s.SlotKey == null || vm.Card.SlotKey == null
-                        || string.Equals(s.SlotKey, vm.Card.SlotKey, StringComparison.OrdinalIgnoreCase);
-                    bool nzMatch = string.Equals(s.NozzleKey ?? "1", vm.Card.NozzleKey ?? "1", StringComparison.OrdinalIgnoreCase);
-                    if (slotMatch && nzMatch) return s;
-                }
-            }
-            // Planner 未命中（如单量 profile 的补标场景）→ 按卡语义现拼
-            return new CalibrationTaskSpec
-            {
-                SpecId = vm.Card.ArtifactId,
-                StationCode = profile.BoundStationCode,
-                Quantity = vm.Card.Quantity,
-                SlotKey = vm.Card.SlotKey,
-                NozzleKey = vm.Card.NozzleKey ?? "1",
-                Layout = vm.Card.Layout,
-                PrimaryPath = vm.Card.PrimaryPath,
-                DependentArtifactRef = vm.Card.DependentArtifactId,
-                IsRequired = true,
-                DisplayName = profile.Name,
-                Reason = "从任务卡进入（" + vm.Card.QuantityText + "）"
-            };
-        }
-
-        /// <summary>
-        /// 可开卡向导：非畸变 且 依赖可配合重标。
-        /// ★ 2026-09-06 修正两处误禁（"H 重标 → e 过期 → e 重标禁用"死锁）：
-        ///   ① 移除 IsExpired 一刀切——Expired = 发布后数据变更（快照不一致），唯一出路就是
-        ///      重标（或重发布），重标入口必须可用；② 依赖闸从"依赖卡非 Expired"放宽为
-        ///      "依赖 H 矩阵数据在位"——H 卡 Expired(发布快照过期)只代表数据已变更待重发布，
-        ///      矩阵文件仍在，此时正是让 e 用新 H 重标的最佳时机（详见 IsDependencyReadyForRerun）。
-        /// ★ 2026-09-08：EyeInHand t 卡放行走向导（六步模板间接对针）；EyeToHand t 仍走对针窗(🎯)。
-        /// </summary>
-        private bool CanOpenWizardForCard(ArtifactTaskCardVm vm)
-        {
-            if (vm == null || SelectedCalibrationProfile == null) return false;
-            if (vm.Card.Quantity == CalibrationQuantity.ToolOffset
-                && vm.Card.Layout != EyeMode.EyeInHand) return false;
-            if (vm.Card.Quantity == CalibrationQuantity.LensDistortion) return false;
-            if (!string.IsNullOrWhiteSpace(vm.Card.DependentArtifactId) && !IsDependencyReadyForRerun(vm))
-            {
-                return false;
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// 该卡重标所需依赖是否可用（2026-09-06：发布态 ≠ 可标定态，二者分离）：
-        ///   依赖 H  Draft/未完成/矩阵被清 → 不可用（先完成 H 段）；
-        ///   依赖 H  SampleComplete/Verified/Published → 可用；
-        ///   依赖 H  Expired → 矩阵文件在位即视为可用（发布快照过期≠数据缺失；H 刚重标未重发布
-        ///      正是需要 e 配合重标的时机），矩阵不在位才拦；
-        ///   跨档案依赖（Derive 经 allProfiles 解析、本卡列表无对应卡）→ 沿用 Derive 的 DepOk 结论。
-        /// </summary>
-        private bool IsDependencyReadyForRerun(ArtifactTaskCardVm vm)
-        {
-            if (vm == null || string.IsNullOrWhiteSpace(vm.Card.DependentArtifactId)) return true;
-            var dep = DerivedCards.FirstOrDefault(c => c != null
-                && string.Equals(c.ArtifactId, vm.Card.DependentArtifactId, StringComparison.OrdinalIgnoreCase));
-            if (dep == null)
-            {
-                return vm.Card.DepOk; // 跨档案依赖：Derive 已解析
-            }
-            switch (dep.State)
-            {
-                case CalibrationArtifactState.SampleComplete:
-                case CalibrationArtifactState.Verified:
-                case CalibrationArtifactState.Published:
-                    return true;
-                case CalibrationArtifactState.Expired:
-                    // 依赖 H 过期 = 发布快照不一致（数据刚变更待重发布）；矩阵在位即可配合重标
-                    var p = SelectedCalibrationProfile;
-                    return p != null && !string.IsNullOrWhiteSpace(p.HomMatFilePath);
-                default:
-                    return false; // Draft / 其它：依赖 H 未完成
-            }
-        }
-
-        private void OpenWizardForCard(ArtifactTaskCardVm vm)
-        {
-            if (!CanOpenWizardForCard(vm)) return;
-            var spec = ResolveSpecForCard(vm);
-            if (spec == null)
-            {
-                MessageBox.Show("未能解析该任务的可执行会话定义。", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            LaunchWizardSession(spec);
-        }
-
-        private bool CanRunVerifierForCard(ArtifactTaskCardVm vm)
-        {
-            // 校验台 = H 卡 + 矩阵数据在（IsCalibrated + 有矩阵文件）
-            var p = SelectedCalibrationProfile;
-            return vm != null && p != null
-                   && vm.Card.Quantity == CalibrationQuantity.HandEye
-                   && vm.Card.HasData
-                   && !string.IsNullOrWhiteSpace(p.HomMatFilePath);
-        }
-
-        private void RunVerifierForCard(ArtifactTaskCardVm vm)
-        {
-            if (!CanRunVerifierForCard(vm)) return;
-            OpenVerifier(); // 校验记录写入 SelectedCalibrationProfile.VerificationRecords 并落库
-            RebuildDerivedCards();
-        }
 
         private bool CanRunToolOffsetForCard(ArtifactTaskCardVm vm)
         {
@@ -3608,7 +2988,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 if (pick == MessageBoxResult.Cancel) return;
                 if (pick == MessageBoxResult.No)
                 {
-                    OpenVerifier();
+                    // 旧口径校验台已退役（R4）：验收口径 = 链校验台（与生产同尺审计 Chain.json）
+                    OpenChainVerify();
                     RebuildDerivedCards();
                     return;
                 }

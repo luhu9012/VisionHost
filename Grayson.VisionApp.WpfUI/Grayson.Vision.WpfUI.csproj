@@ -130,15 +130,7 @@
     <Compile Include="Model\ReachMapData.cs" />
     <Compile Include="ViewModel\CalibrationManagerViewModel.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationToolOffsetViewModel.cs" />
-    <Compile Include="ViewModel\Calibration\CalibrationVerifierViewModel.cs" />
-    <Compile Include="ViewModel\Calibration\CalibrationWizardViewModel.cs" />
     <Compile Include="ViewModel\Calibration\ChainWizardViewModel.cs" />
-    <Compile Include="ViewModel\Calibration\Steps\CheckerboardCalibrationStrategy.cs" />
-    <Compile Include="ViewModel\Calibration\Steps\HandEyeWithRotationCalibrationStrategy.cs" />
-    <Compile Include="ViewModel\Calibration\Steps\ICalibrationStepStrategy.cs" />
-    <Compile Include="ViewModel\Calibration\Steps\NinePointCalibrationStrategy.cs" />
-    <Compile Include="ViewModel\Calibration\Steps\PixelScaleCalibrationStrategy.cs" />
-    <Compile Include="ViewModel\Calibration\Steps\PickPlaceCalibrationStrategy.cs" />
     <Compile Include="ViewModel\DataTraceViewModel.cs" />
     <Compile Include="ViewModel\DevicePoolViewModel.cs" />
     <Compile Include="ViewModel\HardwareAllocationViewModel.cs" />
@@ -184,12 +176,6 @@
     </Compile>
     <Compile Include="View\Calibration\CalibrationToolOffsetWindow.xaml.cs">
       <DependentUpon>CalibrationToolOffsetWindow.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="View\Calibration\CalibrationVerifierWindow.xaml.cs">
-      <DependentUpon>CalibrationVerifierWindow.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="View\Calibration\CalibrationWizardWindow.xaml.cs">
-      <DependentUpon>CalibrationWizardWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\Calibration\ChainWizardWindow.xaml.cs">
       <DependentUpon>ChainWizardWindow.xaml</DependentUpon>
@@ -313,6 +299,7 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Common\NinePointTraverseOrder.cs" />
     <Compile Include="Common\ReachMapGeometry.cs" />
     <Compile Include="Common\Converters.cs" />
     <Compile Include="Common\Enums.cs" />
@@ -342,12 +329,6 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\CalibrationToolOffsetWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="View\Calibration\CalibrationVerifierWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="View\Calibration\CalibrationWizardWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\ChainWizardWindow.xaml">

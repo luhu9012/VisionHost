@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using Grayson.Vision.Contracts.Devices;
 using Grayson.Vision.WpfUI.ViewModel;
 
 namespace Grayson.Vision.WpfUI.View
@@ -89,6 +90,35 @@ namespace Grayson.Vision.WpfUI.View
             if (sec == null) return;
             string path = PickImageFile();
             if (path != null) sec.Image = LoadBitmap(path);
+        }
+
+        /// <summary>连接设备池中的当前相机（T10）</summary>
+        private void ConnectCamera_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.ConnectCamera();
+        }
+
+        /// <summary>单帧取图（软触发）：把相机当前帧送入该相机 Section 的图像区（T10）</summary>
+        private void SnapFromCamera_Click(object sender, RoutedEventArgs e)
+        {
+            var sec = SectionOf(sender);
+            FrameEventArgs frame = _vm.CaptureOnce();
+            if (frame == null) return;
+            var bmp = ChainWizardViewModel.FrameToBitmap(frame);
+            if (bmp == null)
+            {
+                MessageBox.Show(this,
+                    "帧格式暂不支持显示（PixelFormat=" + (frame.PixelFormat ?? "?") + "）。\n" +
+                    "当前仅支持 Mono8 / RGB8；请改用『载入图像…』离线选图。",
+                    "链向导", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            if (sec != null) sec.Image = bmp;
+        }
+
+        private void RefreshCameras_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.LoadCameraDevices();
         }
 
         private void CameraImage_Click(object sender, MouseButtonEventArgs e)

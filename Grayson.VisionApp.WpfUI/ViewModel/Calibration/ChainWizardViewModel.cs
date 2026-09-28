@@ -20,8 +20,12 @@ using System.Linq;
 using System.Windows.Media;
 using Grayson.Vision.Contracts.Calibration.Chain;
 using Grayson.Vision.Contracts.Calibration.Services;
+using Grayson.Vision.Contracts.Devices;
+using Grayson.Vision.Contracts.Devices.Enums;
+using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Models;
+using Grayson.Vision.HalconWrapper.Wpf.Imaging;
 using Grayson.Vision.WpfUI.Service;
 
 namespace Grayson.Vision.WpfUI.ViewModel
@@ -387,6 +391,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private string _validateResult = "未校验";
         private string _saveResult = "未保存";
 
+        //---------------------------------------------------------------------
+        // 相机接入（T10，2026-09-28）：设备池取图替代 OpenFileDialog
+        //---------------------------------------------------------------------
+        private readonly IDevicePool _devicePool;
+        private readonly HalconImageRenderService _renderService = new HalconImageRenderService();
+        private readonly System.Threading.AutoResetEvent _frameArrivedEvent = new System.Threading.AutoResetEvent(false);
+        private volatile FrameEventArgs _latestFrame;
+        private volatile bool _captureWaitActive;
+        private int _triggerMode = -1;
+
         public ChainWizardViewModel(string stationCode)
         {
             _stationCode = stationCode;
@@ -397,11 +411,178 @@ namespace Grayson.Vision.WpfUI.ViewModel
                   + (plan.OpenQuestions.Count > 0 ? " ｜【请人工确认】" + string.Join("；", plan.OpenQuestions) : "")
                 : "❌ 拓扑推导失败：" + string.Join("；", plan.Errors);
 
+            try { _devicePool = App.StationHostRuntime?.DevicePool; }
+            catch { _devicePool = null; }
+
             Sections = new ObservableCollection<ChainCameraSectionViewModel>();
             ToolRows = new ObservableCollection<ChainToolRowViewModel>();
             Steps = new ObservableCollection<ChainStepRow>();
+            LoadCameraDevices();
             if (_draft != null)
                 BuildUiFromDraft();
+        }
+
+        //---------------------------------------------------------------------
+        // 相机接入：枚举 / 连接 / 单帧采集（照抄 CameraTune 成熟模式）
+        //---------------------------------------------------------------------
+
+        /// <summary>设备池中的相机列表（ICamera）</summary>
+        public ObservableCollection<ICamera> CameraDeviceList { get; } = new ObservableCollection<ICamera>();
+
+        private ICamera _selectedCameraDevice;
+        /// <summary>当前选择的相机（各相机 Tab 共用同一个选择；如需分别绑定可后续扩展为每 Section 一选择）</summary>
+        public ICamera SelectedCameraDevice
+        {
+            get { return _selectedCameraDevice; }
+            set
+            {
+                if (Set(ref _selectedCameraDevice, value))
+                {
+                    OnPropertyChanged(nameof(CameraConnectedText));
+                    OnPropertyChanged(nameof(IsCameraConnected));
+                    OnPropertyChanged(nameof(CameraAccessHint));
+                }
+            }
+        }
+
+        /// <summary>相机是否已连接（据 State 判断）</summary>
+        public bool IsCameraConnected
+        {
+            get { return _selectedCameraDevice != null && _selectedCameraDevice.State == DeviceState.Connected; }
+        }
+
+        public string CameraConnectedText
+        {
+            get
+            {
+                if (_selectedCameraDevice == null) return "未选择相机";
+                return _selectedCameraDevice.DeviceName + "　" + (IsCameraConnected ? "● 已连接" : "○ 未连接");
+            }
+        }
+
+        /// <summary>相机接入区提示（无相机/未选/已连）</summary>
+        public string CameraAccessHint
+        {
+            get
+            {
+                if (_devicePool == null) return "设备池未初始化（请在主程序运行时使用本向导取图）；仍可用『载入图像…』离线选图。";
+                if (CameraDeviceList.Count == 0) return "设备池中未发现相机——请到硬件设备页扫描/连接相机；仍可用『载入图像…』离线选图。";
+                if (_selectedCameraDevice == null) return "请先选择相机。";
+                return IsCameraConnected
+                    ? "已连接。点『单帧取图』把当前相机画面送入本机位图像区（走位 → 取图 → 点选）。"
+                    : "点『连接相机』建立连接后再取图。";
+            }
+        }
+
+        private string _cameraLog = "相机未接入。";
+        public string CameraLog { get { return _cameraLog; } private set { Set(ref _cameraLog, value); } }
+
+        /// <summary>重新从设备池枚举相机</summary>
+        public void LoadCameraDevices()
+        {
+            CameraDeviceList.Clear();
+            try
+            {
+                var all = _devicePool?.GetAllDevices();
+                if (all != null)
+                    foreach (var cam in all.OfType<ICamera>()) CameraDeviceList.Add(cam);
+            }
+            catch (Exception ex) { CameraLog = "枚举相机异常：" + ex.Message; }
+            SelectedCameraDevice = CameraDeviceList.FirstOrDefault();
+            OnPropertyChanged(nameof(CameraAccessHint));
+        }
+
+        /// <summary>连接当前相机（已连则直接成功）</summary>
+        public void ConnectCamera()
+        {
+            var cam = _selectedCameraDevice;
+            if (cam == null) { CameraLog = "⚠ 未选择相机。"; return; }
+            if (cam.State == DeviceState.Connected) { CameraLog = "相机已连接：" + cam.DeviceName; return; }
+            var r = cam.Connect();
+            if (r == null || !r.Success) { CameraLog = "⚠ 连接失败：" + (r?.Message ?? "无应答"); }
+            else { CameraLog = "相机已连接：" + cam.DeviceName; }
+            OnPropertyChanged(nameof(IsCameraConnected));
+            OnPropertyChanged(nameof(CameraConnectedText));
+            OnPropertyChanged(nameof(CameraAccessHint));
+        }
+
+        /// <summary>切软触发（标定采样纪律：走位 → 软触发 → 本点新帧）</summary>
+        private void EnsureTriggered(ICamera cam)
+        {
+            if (_triggerMode == 1) return;
+            var r = cam.ConfigureSoftwareTrigger();
+            if (r == null || !r.Success) cam.SetTriggerMode(1);
+            _triggerMode = 1;
+        }
+
+        /// <summary>
+        /// 单帧采集（软触发：武装 → 起流 → 触发 → 等新帧，最多 5 次；失败返回 null 绝不沿用旧帧）。
+        /// 照抄 CameraTune 的 CaptureOnce 纪律：走位后旧帧 = 上一位置的坐标。
+        /// </summary>
+        public FrameEventArgs CaptureOnce()
+        {
+            var cam = _selectedCameraDevice;
+            if (cam == null) { CameraLog = "⚠ 未选择相机。"; return null; }
+            if (cam.State != DeviceState.Connected)
+            {
+                var cr = cam.Connect();
+                if (cr == null || !cr.Success) { CameraLog = "⚠ 相机连接失败：" + (cr?.Message ?? "无应答"); return null; }
+            }
+            EnsureTriggered(cam);
+            var sr = cam.StartGrabbing();
+            if (sr == null || !sr.Success) { CameraLog = "⚠ 启动采集流失败：" + (sr?.Message ?? "无应答"); return null; }
+
+            _latestFrame = null;
+            cam.FrameReceived -= OnCameraFrameReceived;
+            cam.FrameReceived += OnCameraFrameReceived;
+            const int maxAttempts = 5, firstWaitMs = 2500, retryWaitMs = 800;
+            _captureWaitActive = true;
+            try
+            {
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    _frameArrivedEvent.Reset();
+                    _latestFrame = null;
+                    var trig = cam.SoftTrigger();
+                    if (trig == null || !trig.Success) trig = cam.SoftwareTrigger();
+                    if (trig == null || !trig.Success)
+                    {
+                        System.Threading.Thread.Sleep(150);
+                        continue;
+                    }
+                    int waitMs = attempt == 1 ? firstWaitMs : retryWaitMs;
+                    if (_frameArrivedEvent.WaitOne(waitMs) && _latestFrame != null) return _latestFrame;
+                    if (attempt < maxAttempts) System.Threading.Thread.Sleep(80);
+                }
+            }
+            finally { _captureWaitActive = false; }
+            CameraLog = "⚠ 软触发 " + maxAttempts + " 次均未等到新帧——本次采图放弃（不沿用旧图）。";
+            return null;
+        }
+
+        private void OnCameraFrameReceived(object sender, FrameEventArgs e)
+        {
+            if (!_captureWaitActive) return;
+            _latestFrame = e;
+            _frameArrivedEvent.Set();
+        }
+
+        /// <summary>帧 → BitmapSource（Mono8 灰度 / RGB8，紧致缓冲直拷；其它格式返回 null 并提示）</summary>
+        public static System.Windows.Media.Imaging.BitmapSource FrameToBitmap(FrameEventArgs f)
+        {
+            if (f == null || f.Buffer == null || f.Width <= 0 || f.Height <= 0) return null;
+            var fmt = (f.PixelFormat ?? "Mono8").ToUpperInvariant();
+            System.Windows.Media.PixelFormat pf;
+            int channels;
+            if (fmt.Contains("MONO8") || fmt == "MONO" || fmt == "GRAY8") { pf = System.Windows.Media.PixelFormats.Gray8; channels = 1; }
+            else if (fmt.Contains("RGB8") || fmt.Contains("BGR8")) { pf = System.Windows.Media.PixelFormats.Bgr24; channels = 3; }
+            else return null;
+
+            int stride = f.Width * channels;
+            var bmp = System.Windows.Media.Imaging.BitmapSource.Create(
+                f.Width, f.Height, 96, 96, pf, null, f.Buffer, stride);
+            bmp.Freeze();
+            return bmp;
         }
 
         /// <summary>从工位档案（Config\StationProfiles\*.json）推导链骨架。读不到档案 ⇒ 空骨架+错误说明。</summary>

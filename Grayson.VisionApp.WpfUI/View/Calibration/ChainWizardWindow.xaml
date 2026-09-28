@@ -52,8 +52,30 @@
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical">
                     <TextBlock Text="{Binding FitResult}" TextWrapping="Wrap" Margin="0,2,0,2"/>
+                    <!-- ★相机接入（T10）：设备池取图，替代离线选图 -->
+                    <Border Background="#14000000" CornerRadius="3" Padding="6,4" Margin="0,2">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="相机：" VerticalAlignment="Center"/>
+                                <ComboBox Width="180" ItemsSource="{Binding DataContext.CameraDeviceList, RelativeSource={RelativeSource AncestorType=Window}}"
+                                          SelectedItem="{Binding DataContext.SelectedCameraDevice, RelativeSource={RelativeSource AncestorType=Window}, Mode=TwoWay}"
+                                          DisplayMemberPath="DeviceName"/>
+                                <Button Content="刷新" Click="RefreshCameras_Click"/>
+                                <Button Content="连接相机" Click="ConnectCamera_Click"/>
+                                <Button Content="单帧取图" Click="SnapFromCamera_Click" FontWeight="Bold"/>
+                                <Button Content="载入图像…" Click="LoadImage_Click"/>
+                                <TextBlock Text="{Binding DataContext.CameraConnectedText, RelativeSource={RelativeSource AncestorType=Window}}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" FontWeight="Bold"
+                                           Foreground="{DynamicResource InfoBrush}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding DataContext.CameraAccessHint, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       TextWrapping="Wrap" FontSize="11" Margin="0,3,0,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <TextBlock Text="{Binding DataContext.CameraLog, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource WarningBrush}"/>
+                        </StackPanel>
+                    </Border>
                     <StackPanel Orientation="Horizontal" Margin="0,2">
-                        <Button Content="载入图像…" Click="LoadImage_Click"/>
                         <TextBlock Text="左键点击图像 = 回填选中行像素"
                                    Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center"/>
                         <TextBlock Text="；右键 = 写入 DeltaRefPixel（下相机纠偏必测）"

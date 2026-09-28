@@ -451,6 +451,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 });
             }
             GenerateSteps();
+            BuildVisualization();
         }
 
         /// <summary>
@@ -543,6 +544,97 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public string WindowTitle { get { return "链向导 v2（工位驱动）—— " + _stationCode; } }
 
         public string StationCode { get { return _stationCode; } }
+
+        //---------------------------------------------------------------------
+        // 传导链可视化（2026-09-28）：把"这个工位怎么标、怎么用"用拓扑图+矩阵式直接画在界面上
+        //---------------------------------------------------------------------
+
+        /// <summary>坐标系传导拓扑（ASCII/Unicode 图，随工位事实动态生成）</summary>
+        public string TopologyDiagram { get { return _topology; } private set { Set(ref _topology, value); } }
+        private string _topology = "";
+
+        /// <summary>标定阶段：每台相机/工具各解出什么矩阵（含公式）</summary>
+        public string CalibMath { get { return _calibMath; } private set { Set(ref _calibMath, value); } }
+        private string _calibMath = "";
+
+        /// <summary>生产消费：像素→世界→法兰（含矩阵式）</summary>
+        public string ConsumeMath { get { return _consumeMath; } private set { Set(ref _consumeMath, value); } }
+        private string _consumeMath = "";
+
+        /// <summary>按当前骨架（工位事实）生成三块可视化文本</summary>
+        private void BuildVisualization()
+        {
+            if (_draft == null)
+            {
+                TopologyDiagram = "（未能从工位档案推导出链骨架，无法生成传导图）";
+                CalibMath = "";
+                ConsumeMath = "";
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            var tools = _draft.Tools.Select(t => t.ToolId + (t.IsMaster ? "(主)" : "(副)")).ToList();
+            sb.AppendLine("坐标系传导链（★=需标定量，→=变换方向，⊕=差分）");
+            sb.AppendLine();
+            sb.AppendLine("  世界系 B ──┬── [法兰/滑台系 F] ── T_FT=<e> ──▶ [工具 TCP] " + string.Join(",", tools));
+            sb.AppendLine("             │        ▲");
+            sb.AppendLine("             │        │ T_BF(X,Y,U)  机器/板卡实时位姿（读数）");
+            sb.AppendLine("             └── [相机系 C] ── H_FC / H_CB ──▶ 像素 (u,v)");
+            sb.AppendLine();
+            sb.Append("  说明：H 解出「像素↔链上某系」，e 解出「法兰↔工具尖」，两者同在 B 系表达，缺一不可。");
+            TopologyDiagram = sb.ToString().TrimEnd();
+
+            var cm = new System.Text.StringBuilder();
+            cm.AppendLine("【标定阶段】逐节点解什么（观测方程 → 拟合/求解）");
+            foreach (var cam in _draft.Cameras)
+            {
+                bool down = _draft.Edges.Any(e => e.FromCameraId == cam.CameraId && e.Usage == ChainUsage.DownCameraCorrect);
+                bool eih = cam.Mount == ChainCameraMount.EyeInHand;
+                cm.AppendLine();
+                cm.AppendLine("  ● 相机 " + cam.CameraId + (eih ? "（EIH·随动）" : "（ETH·固定）") + (down ? " ［下相机纠偏］" : ""));
+                if (eih)
+                    cm.AppendLine("      H_FC :  p_f = H_FC · [u,v,1]ᵀ      （像素 → 法兰系）");
+                else
+                    cm.AppendLine("      H_CB :  p_B = H_CB · [u,v,1]ᵀ      （像素 → 世界系）");
+                cm.AppendLine("      拟合：  min Σ‖ H·pᵢ − qᵢ ‖²  （n≥4，推荐九点；SVD 最小二乘）");
+                cm.AppendLine("      门禁：  |σ1/σ2 − 1| ≤ 0.03（真奇异值形状门）  +  RMS 报告");
+                if (eih && !down)
+                    cm.AppendLine("      规范化：qᵢ = R(−Uᵢ)·(m − tᵢ)  逐点用法兰位姿规范到法兰系");
+                if (down)
+                    cm.AppendLine("      差分：  δ = H·p_now − H·R_cdown   同位姿两次求值，机位项相消");
+            }
+            foreach (var t in _draft.Tools)
+            {
+                cm.AppendLine();
+                cm.AppendLine("  ● 工具 " + t.ToolId + (t.IsMaster ? "（主）" : "（副·绑 " + t.BindMasterToolId + "）"));
+                cm.AppendLine("      pivoting：  tᵢ + R(Uᵢ)·e = P_ref        （针尖扎住不动）");
+                cm.AppendLine("      线性化：    [ R(Uᵢ) | −I₂ ]·[e ; P_ref] = −tᵢ   ⇒ 最小二乘（MathNet QR）");
+                cm.AppendLine("      产物：      e=(ex,ey) 落 ChainTcpNode.Offset；残差=对针重复精度（门禁）");
+                cm.AppendLine("      同心特例：  |e|<阈值 且 残差小 ⇒ 显式落 (0,0) 并标『已测(同心)』");
+                if (!t.IsMaster)
+                    cm.AppendLine("      副工具：    oᵢ = o_master + δᵢ （刚性阵列；旋转由主公式统一承担）");
+            }
+            CalibMath = cm.ToString().TrimEnd();
+
+            var pm = new System.Text.StringBuilder();
+            pm.AppendLine("【生产消费】像素 → 世界 → 法兰（逆解）");
+            pm.AppendLine();
+            pm.AppendLine("  正解：");
+            bool anyEih = _draft.Cameras.Any(c => c.Mount == ChainCameraMount.EyeInHand);
+            if (_draft.Cameras.Any(c => c.Mount == ChainCameraMount.EyeToHand))
+                pm.AppendLine("    ETH：  p_B = H_CB · [u,v,1]ᵀ");
+            if (anyEih)
+                pm.AppendLine("    EIH：  p_B = T_BF(X,Y,U) · H_FC · [u,v,1]ᵀ");
+            if (_draft.Cameras.Any(c => _draft.Edges.Any(e => e.FromCameraId == c.CameraId && e.Usage == ChainUsage.DownCameraCorrect)))
+                pm.AppendLine("    纠偏：  δ = H_down·p_now − H_down·R_cdown（差分）");
+            pm.AppendLine();
+            pm.AppendLine("  逆解（目标 → 法兰）：");
+            pm.AppendLine("    t_flange = p_B − R(U_go)·e        （e=工具偏心，随 U 旋转）");
+            pm.AppendLine("    展开：  fx = wx − (ex·cosU − ey·sinU)");
+            pm.AppendLine("            fy = wy − (ex·sinU + ey·cosU)      ← 与 ChainEngine 逐字一致");
+            pm.AppendLine("    同心时：e=(0,0) ⇒ t_flange = p_B（法兰读数直接开到工件点）");
+            ConsumeMath = pm.ToString().TrimEnd();
+        }
 
         /// <summary>推导结果说明（自动裁决+人工确认项，拓扑确认页内容）</summary>
         public string PlanNotes { get { return _planNotes; } private set { Set(ref _planNotes, value); } }
@@ -643,6 +735,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
             PlanNotes = _planNotesDirty;
             GenerateSteps();
+            BuildVisualization();
         }
 
         private string _planNotesDirty;

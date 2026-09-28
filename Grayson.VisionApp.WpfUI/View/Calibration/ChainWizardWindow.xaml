@@ -1,7 +1,7 @@
 <Window x:Class="Grayson.Vision.WpfUI.View.ChainWizardWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="{Binding WindowTitle}" Height="820" Width="1280"
+        Title="{Binding WindowTitle}" Height="940" Width="1320"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource BackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
@@ -114,6 +114,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="2*"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -123,8 +124,48 @@
             <TextBlock Text="{Binding PlanNotes}" TextWrapping="Wrap" FontSize="11"/>
         </GroupBox>
 
+        <!-- ★坐标系传导链可视化（2026-09-28）：拓扑图 + 标定阶段的矩阵式 + 生产消费公式 -->
+        <GroupBox Grid.Row="1" Header="坐标系传导链（本工位怎么标、怎么用 —— 全矩阵表达）">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.05*"/>
+                    <ColumnDefinition Width="1.35*"/>
+                    <ColumnDefinition Width="1.35*"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="#14000000" CornerRadius="3" Padding="6" Margin="0,0,3,0">
+                    <StackPanel>
+                        <TextBlock Text="① 拓扑" FontWeight="Bold" Margin="0,0,0,3"
+                                   Foreground="{DynamicResource AccentLightBrush}"/>
+                        <TextBlock Text="{Binding TopologyDiagram}" FontFamily="Consolas" FontSize="11"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#14000000" CornerRadius="3" Padding="6" Margin="3,0,3,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="200">
+                        <StackPanel>
+                            <TextBlock Text="② 标定阶段：逐节点解什么" FontWeight="Bold" Margin="0,0,0,3"
+                                       Foreground="{DynamicResource AccentLightBrush}"/>
+                            <TextBlock Text="{Binding CalibMath}" FontFamily="Consolas" FontSize="11"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+                <Border Grid.Column="2" Background="#14000000" CornerRadius="3" Padding="6" Margin="3,0,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="200">
+                        <StackPanel>
+                            <TextBlock Text="③ 生产消费：像素→世界→法兰" FontWeight="Bold" Margin="0,0,0,3"
+                                       Foreground="{DynamicResource AccentLightBrush}"/>
+                            <TextBlock Text="{Binding ConsumeMath}" FontFamily="Consolas" FontSize="11"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </GroupBox>
+
         <!-- 步骤清单（依赖排序，状态随采集进度刷新） -->
-        <GroupBox Grid.Row="1" Header="步骤清单（Workflow 编号对齐《框架设计文档 V2.1》；WF-12=本仓 DeltaRefPixel）">
+        <GroupBox Grid.Row="2" Header="步骤清单（Workflow 编号对齐《框架设计文档 V2.1》；WF-12=本仓 DeltaRefPixel）">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Steps}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
@@ -138,10 +179,11 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </ScrollViewer>
         </GroupBox>
 
         <!-- 中部：相机采集 Tab（动态） + 工具偏移表 -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -178,7 +220,7 @@
         </Grid>
 
         <!-- 底部：校验 + 保存 -->
-        <GroupBox Grid.Row="3" Header="校验与落盘">
+        <GroupBox Grid.Row="4" Header="校验与落盘">
             <StackPanel Orientation="Vertical">
                 <StackPanel Orientation="Horizontal" Margin="0,2">
                     <Button Content="校验 G0~G4" Click="Validate_Click"/>

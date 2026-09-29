@@ -83,14 +83,5 @@ namespace Grayson.Vision.WpfUI.View
                 vm.PersistProfileName();
             }
         }
-
-        /// <summary>候选清单勾选变化 → VM 刷新统计与创建命令可用性</summary>
-        private void CandidateCheck_Changed(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is ViewModel.CalibrationManagerViewModel vm)
-            {
-                vm.NotifyCandidateCheckChanged();
-            }
-        }
     }
 }

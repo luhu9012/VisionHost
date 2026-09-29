@@ -93,6 +93,7 @@
     <Compile Include="Calibration\Chain\ChainTopologyPlanner.cs" />
     <Compile Include="Calibration\Chain\ChainRuntime.cs" />
     <Compile Include="Calibration\Chain\ChainAuditor.cs" />
+    <Compile Include="Calibration\Chain\ChainLiveVerifier.cs" />
     <Compile Include="Templates\Models\TemplateModels.cs" />
     <Compile Include="TaskLibrary\Models\TaskTemplateModels.cs" />
     <Compile Include="Communication\CommunicationMessage.cs" />

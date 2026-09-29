@@ -59,6 +59,9 @@
                     <Button DockPanel.Dock="Right" Content="▶ 开始链标定" Style="{StaticResource PrimaryButtonStyle}"
                             Padding="14,6" VerticalAlignment="Center" Command="{Binding OpenChainWizardCommand}"
                             ToolTip="链标定向导：按工位档案推导坐标系传导链 → 逐相机采集点对 → 拟合 → 填物理事实量 → G0~G4 → 写 Chain.json"/>
+                    <Button DockPanel.Dock="Right" Content="🎯 真机验证" Style="{StaticResource SecondaryButtonStyle}"
+                            Padding="12,6" Margin="0,0,8,0" VerticalAlignment="Center" Command="{Binding OpenChainLiveVerifyCommand}"
+                            ToolTip="L3 真机「指哪打哪」：相机看点 → 链求值 → 逆解 → 机械手真机到位 → 复测，在世界域量偏差，回答『标定完能不能投产』"/>
                     <Button DockPanel.Dock="Right" Content="✅ 链校验台" Style="{StaticResource SecondaryButtonStyle}"
                             Padding="12,6" Margin="0,0,8,0" VerticalAlignment="Center" Command="{Binding OpenChainVerifyCommand}"
                             ToolTip="只读核查：L1 摊开生产同尺门禁 G0~G4；L2 从落盘矩阵复验形状/条件数/像素当量，并核标定高度与下相机差分基准"/>
@@ -66,63 +69,10 @@
                 </DockPanel>
                 <TextBlock Margin="0,6,0,0" FontSize="11.5" TextWrapping="Wrap"
                            Foreground="{DynamicResource TextSecondaryBrush}"
-                           Text="① 工位档案填【相机槽事实】——安装方式/用途/轴跟随/是否启用，双吸嘴则工具头数填 2（链的形状完全由这些事实推导）；② 链向导逐相机采集点对并拟合（九点 / 延伸杆 / 针尖 / Mark 旋转 / 底拍，按工位实际条件），再填标定高度 Z、拍照基准位（眼在手上）、下相机差分基准；③ 链校验台核查（与生产端同一把尺）；生产与示教自动消费，无需再发布。"/>
+                           Text="① 工位档案填【相机槽事实】——安装方式/用途/轴跟随/是否启用，双吸嘴则工具头数填 2（链的形状完全由这些事实推导）；② 链向导逐相机采集点对并拟合（九点 / 延伸杆 / 针尖 / Mark 旋转 / 底拍，按工位实际条件），再填标定高度 Z、拍照基准位（眼在手上）、下相机差分基准；③ 链校验台核查（与生产端同一把尺）；④ 真机验证（指哪打哪）确认能投产；生产与示教自动消费，无需再发布。"/>
                 <TextBlock Margin="0,4,0,0" FontSize="11.5" TextWrapping="Wrap"
                            Foreground="{DynamicResource TextDisabledBrush}"
                            Text="人工只需两处裁决：指派【主工具】、相机取舍。所有标定量的落盘出口只有一个 —— 工位目录下的 Calib\Chain.json（生产/示教/校验同源装载，缺链即 fail-closed 拒绝求值）。"/>
-            </StackPanel>
-        </Border>
-
-        <!-- 档案标定计划任务卡（2026-09-05 P3：从档案推导"该做哪些标定"，H/e 拆分按槽×吸嘴实例化） -->
-        <Border DockPanel.Dock="Top" Style="{StaticResource CardBorderStyle}" Padding="12,10" Margin="10,10,10,0"
-                Visibility="{Binding CandidatesVisible, Converter={StaticResource BoolToVis}}">
-            <StackPanel>
-                <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="✕ 稍后处理" Style="{StaticResource SecondaryButtonStyle}"
-                            Padding="10,4" VerticalAlignment="Center" Command="{Binding DismissCandidatesCommand}"
-                            ToolTip="暂不批量创建；可稍后手工新建单个方案"/>
-                    <TextBlock Text="📋 档案标定计划（范式1 遗留：批量创建旧标定方案；新流程请用上方链标定主线）" FontSize="13" FontWeight="Bold"
-                               VerticalAlignment="Center"/>
-                </DockPanel>
-                <TextBlock Text="相机 H 按槽共享一条；工具偏心/旋转按吸嘴各一条（双吸嘴不必重复九点）。勾选主线任务 → 「按计划创建」，再逐个进向导绑定相机/轴。"
-                           FontSize="11.5" Foreground="{StaticResource TextDisabledBrush}" TextWrapping="Wrap" Margin="0,3,0,8"/>
-
-                <ItemsControl ItemsSource="{Binding Candidates}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="4" Padding="8,6" Margin="0,0,0,6">
-                                <StackPanel>
-                                    <DockPanel>
-                                        <CheckBox IsChecked="{Binding IsSelected}" VerticalAlignment="Center"
-                                                  Checked="CandidateCheck_Changed" Unchecked="CandidateCheck_Changed"/>
-                                        <Border Background="#22378ADD" CornerRadius="9" Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding ChipText}" FontSize="11" FontWeight="Bold"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                        </Border>
-                                        <Border Background="#1E107C41" CornerRadius="9" Padding="7,1" Margin="4,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding KindBadge}" FontSize="11" FontWeight="SemiBold"
-                                                       Foreground="#FF107C41"/>
-                                        </Border>
-                                        <TextBlock Text="{Binding TagText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock HorizontalAlignment="Right" FontSize="12" FontWeight="SemiBold"
-                                                   Foreground="#FF107C41" VerticalAlignment="Center" Text="{Binding TypeDisplay}"/>
-                                    </DockPanel>
-                                    <TextBlock Text="{Binding Suggestion}" FontSize="11"
-                                               Foreground="{StaticResource TextDisabledBrush}" Margin="28,3,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <DockPanel Margin="0,4,0,0">
-                    <TextBlock Text="{Binding CandidatesSummary}" FontSize="11.5"
-                               Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                    <Button DockPanel.Dock="Right" Content="✔ 按计划创建标定方案" Style="{StaticResource SuccessButtonStyle}"
-                            Padding="16,6" Command="{Binding CreateCandidatesCommand}"
-                            ToolTip="按勾选任务创建 CalibrationProfile（相机H 与 工具偏心e 自动按槽/吸嘴预填）"/>
-                </DockPanel>
             </StackPanel>
         </Border>
 
@@ -259,6 +209,8 @@
 					        ToolTip="范式2 链向导：采集点对 → 拟合（真奇异值形状硬拦） → 组装链图 → G0~G4 校验 → 写 Chain.json（生产端 fail-closed 唯一真源）。"/>
 					<Button Content="✅ 链校验台" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainVerifyCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
 					        ToolTip="范式2 链校验台（只读）：L1 门禁可视 + L2 数学校验（形状/条件数/像素当量/CalibZ/DeltaRef 自洽）。"/>
+					<Button Content="🎯 真机验证" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainLiveVerifyCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
+					        ToolTip="L3 真机「指哪打哪」：相机看点 → 链求值 → 逆解 → 真机到位 → 复测，在世界域量偏差，回答『能不能投产』。"/>
 				</StackPanel>
 			</Grid>
 		</Border>
@@ -286,7 +238,7 @@
                                  ToolTip="方案名称可直接编辑（失焦自动保存）"/>
 						<TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{StaticResource TextDisabledBrush}"
-                                   Text="引导/校验/对针/发布均以任务卡为准"/>
+                                   Text="上/下相机标定请用上方「▶ 开始链标定」；此处仅保留历史方案查看"/>
 					</Grid>
 
 					<!-- P3：本方案 → 0..N 张任务卡（H/e/t/s 按量拆分），动作直接挂在卡上 -->

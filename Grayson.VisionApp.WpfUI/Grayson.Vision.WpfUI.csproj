@@ -103,6 +103,8 @@
     <Compile Include="Service\MeasurementDemoTaskFactory.cs" />
     <Compile Include="Service\ColorDemoTaskFactory.cs" />
     <Compile Include="Service\BlobDemoTaskFactory.cs" />
+    <Compile Include="Service\BarcodeDemoTaskFactory.cs" />
+    <Compile Include="Service\OcrDemoTaskFactory.cs" />
     <Compile Include="Service\StationStatisticsService.cs" />
     <Compile Include="Service\WpfDialogService.cs" />
     <!-- 内嵌 DL 演示资产（HTH 翻译成品：模型+精选图，随构建输出，运行时自动落地 Config） -->
@@ -124,6 +126,17 @@
     <Content Include="Assets\ScratchDemo\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- 内嵌 条码/二维码读取演示资产（特征识别读取族·HTH 课堂 6一维码/6二维码案例素材） -->
+    <Content Include="Assets\BarcodeDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\QrDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 OCR 字符识别演示资产（特征识别读取族·HTH 课堂 6OCR 案例素材+分类器） -->
+    <Content Include="Assets\OcrDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />
     <Compile Include="ViewModel\AlarmViewModel.cs" />
     <Compile Include="Model\CommonModel.cs" />
@@ -131,6 +144,7 @@
     <Compile Include="ViewModel\CalibrationManagerViewModel.cs" />
     <Compile Include="ViewModel\Calibration\CalibrationToolOffsetViewModel.cs" />
     <Compile Include="ViewModel\Calibration\ChainWizardViewModel.cs" />
+    <Compile Include="ViewModel\Calibration\ChainLiveVerifyViewModel.cs" />
     <Compile Include="ViewModel\DataTraceViewModel.cs" />
     <Compile Include="ViewModel\DevicePoolViewModel.cs" />
     <Compile Include="ViewModel\HardwareAllocationViewModel.cs" />
@@ -182,6 +196,9 @@
     </Compile>
     <Compile Include="View\Calibration\ChainVerifyWindow.xaml.cs">
       <DependentUpon>ChainVerifyWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="View\Calibration\ChainLiveVerifyWindow.xaml.cs">
+      <DependentUpon>ChainLiveVerifyWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="View\DataTraceView.xaml.cs">
       <DependentUpon>DataTraceView.xaml</DependentUpon>
@@ -335,6 +352,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\Calibration\ChainVerifyWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="View\Calibration\ChainLiveVerifyWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="View\DataTraceView.xaml">

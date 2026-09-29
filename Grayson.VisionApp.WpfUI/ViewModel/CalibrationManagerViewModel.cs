@@ -108,76 +108,11 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         #endregion
 
-        #region 相机槽候选清单（2026-09-05 L2：档案含多相机槽 → 逐槽候选，勾选确认后批量创建，不自动落库）
+        #region 相机槽候选清单
 
-        /// <summary>单槽标定候选（勾选=创建一条该类型的 CalibrationProfile）</summary>
-        public class CalibrationCandidate : ViewModelBase
-        {
-            private bool _isSelected = true;
-            /// <summary>是否勾选创建（主线必做默认勾选；可选任务默认不勾）</summary>
-            public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
-
-            /// <summary>来源计划任务（v2 引擎 CalibrationPlanEngineV2 产出的 CalibrationTaskSpec）</summary>
-            public CalibrationTaskSpec Task { get; set; }
-            /// <summary>物理量徽标短词（相机H / 旋转偏心e / 下相机H / 下相机像素旋转中心…）</summary>
-            public string KindBadge { get; set; }
-            /// <summary>相机槽键或吸嘴号（chip 展示文本）</summary>
-            public string ChipText { get; set; }
-            /// <summary>相机槽键（创建 profile CameraId 用）</summary>
-            public string SlotKey { get; set; }
-            /// <summary>吸嘴通道键（工具任务 1/2…；相机任务 1）</summary>
-            public string NozzleKey { get; set; }
-            /// <summary>工具级任务？（旋转e/对针按吸嘴独立）</summary>
-            public bool IsToolLevel { get; set; }
-            /// <summary>安装 · 用途 / 吸嘴 · 目的 摘要</summary>
-            public string TagText { get; set; }
-            public string TypeDisplay { get; set; }
-            public string Suggestion { get; set; }
-            /// <summary>推导备注（现场确认点等）</summary>
-            public string Note { get; set; }
-            public EyeMode EyeMode { get; set; }
-            /// <summary>★v2 物理量（创建 profile 时写入 Quantity）</summary>
-            public CalibrationQuantity Quantity { get; set; }
-            /// <summary>★v2 采集路径（创建 profile 时写入 PrimaryPath）</summary>
-            public CalibrationAcquirePath PrimaryPath { get; set; }
-        }
-
-        private bool _candidatesVisible;
-        /// <summary>候选面板可见（工位定位态 + 档案有相机槽 + 该工位尚无任何方案）</summary>
-        public bool CandidatesVisible
-        {
-            get => _candidatesVisible;
-            private set
-            {
-                if (Set(ref _candidatesVisible, value))
-                {
-                    OnPropertyChanged(nameof(CandidatesSummary));
-                }
-            }
-        }
-
-        public ObservableCollection<CalibrationCandidate> Candidates { get; } = new ObservableCollection<CalibrationCandidate>();
-
-        /// <summary>勾选统计文案（候选行勾选变化时由 NotifyCandidateCheckChanged 刷新；相机级/工具级分列）</summary>
-        public string CandidatesSummary => CandidatesVisible && Candidates.Count > 0
-            ? $"将创建 {Candidates.Count(c => c.IsSelected)} / {Candidates.Count} 条标定方案"
-              + $"（相机H×{Candidates.Count(c => !c.IsToolLevel)} · 工具偏心e×{Candidates.Count(c => c.IsToolLevel)}）"
-            : string.Empty;
-
-        /// <summary>是否至少勾选一项（创建命令可用性）</summary>
-        public bool HasCheckedCandidates => Candidates.Any(c => c.IsSelected);
-
-        public RelayCommand CreateCandidatesCommand { get; private set; }
-
-        /// <summary>收起候选面板（暂不批量创建，手动逐个新建亦可）</summary>
-        public RelayCommand DismissCandidatesCommand { get; private set; }
-
-        /// <summary>候选行 CheckBox 勾选变化由 code-behind 回调：刷新统计/命令可用性</summary>
-        public void NotifyCandidateCheckChanged()
-        {
-            OnPropertyChanged(nameof(CandidatesSummary));
-            CreateCandidatesCommand?.RaiseCanExecuteChanged();
-        }
+        /// <summary>★2026-09-29：范式1「档案标定计划 → 候选勾选 → 批量创建 CalibrationProfile」已整体退役
+        /// （含 CalibrationCandidate / Candidates / CreateCandidatesCommand / DismissCandidatesCommand）。
+        /// 范式2 唯一入口 = 链向导，产物唯一 = Calib\Chain.json。本 region 暂留作占位以便检索。</summary>
 
             #endregion
 
@@ -185,7 +120,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>
         /// 任务卡行 VM：包一张派生卡（CalibrationCardModel）并为行模板暴露展示/状态刷子。
-        /// 动作由卡主命令（RunWizardForCardCommand 等）以 CommandParameter=本行执行。
+        /// 动作由卡主命令（RunToolOffsetForCardCommand / PublishCardCommand）以 CommandParameter=本行执行。
         /// </summary>
         public class ArtifactTaskCardVm
         {
@@ -1035,6 +970,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ICommand OpenChainWizardCommand { get; }
         public ICommand OpenChainVerifyCommand { get; }
 
+        /// <summary>★L3 真机「指哪打哪」验证台入口 —— 2026-09-29（回答"标定完能不能投产"）</summary>
+        public ICommand OpenChainLiveVerifyCommand { get; }
+
         // ---- P3 任务卡动作（卡内命令；CommandParameter = ArtifactTaskCardVm）----
         /// <summary>引导/重新标定（H/e/s 卡）</summary>
         /// <summary>校验台（仅 H 卡、数据在）</summary>
@@ -1082,18 +1020,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             ExportCommand = new RelayCommand(_ => ExportMatrixFile(), _ => SelectedCalibrationProfile != null);
             OpenChainWizardCommand = new RelayCommand(_ => OpenChainWizard());
             OpenChainVerifyCommand = new RelayCommand(_ => OpenChainVerify());
+            OpenChainLiveVerifyCommand = new RelayCommand(_ => OpenChainLiveVerify());
 
             RunToolOffsetForCardCommand = new RelayCommand(o => RunToolOffsetForCard(o as ArtifactTaskCardVm),
                 o => CanRunToolOffsetForCard(o as ArtifactTaskCardVm));
             PublishCardCommand = new RelayCommand(o => PublishCard(o as ArtifactTaskCardVm),
                 o => CanPublishCard(o as ArtifactTaskCardVm));
             BackToGlobalCommand = new RelayCommand(_ => EnterGlobalScope());
-            CreateCandidatesCommand = new RelayCommand(_ => CreateSelectedCandidates(), _ => HasCheckedCandidates);
-            DismissCandidatesCommand = new RelayCommand(_ =>
-            {
-                CandidatesVisible = false;
-                ScopeNoteText = "已忽略批量创建建议 —— 可在左侧手工新建单个方案（自动归属当前工位）。";
-            });
 
             // 2026-09-15：重绑相机/运动卡（修复"按计划创建"出来的方案绑定是占位值、且界面改不掉）
             RebindDevicesCommand = new RelayCommand(_ => RebindDevices(), _ => SelectedCalibrationProfile != null);
@@ -1157,7 +1090,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             if (existing != null)
             {
                 SelectedCalibrationProfile = existing;
-                CandidatesVisible = false;
                 // 2026-09-11：方案与工位档案口径矛盾时给可操作提示（推荐/历史方案判错的主要表现：
                 // 布局被默认成眼在手上、槽落在 Cam_01、复合工位只建了一条相机槽的方案）
                 var mismatch = DescribeProfileMismatch(existing);
@@ -1189,130 +1121,22 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 ScopeNoteText = string.Empty;
             }
 
-            // 档案 → 标定计划任务卡（★2026-09-12 切换 v2 引擎：H/e 拆分，相机级按槽、工具级按吸嘴）
+            // ★★2026-09-29：范式1「档案标定计划任务卡 → 批量创建 CalibrationProfile」整体退役。
+            //   范式2 唯一入口 = 上方「▶ 开始链标定」（链形状由档案事实推导，产物唯一 = Chain.json）。
+            //   此处只做「档案有没有几何标定需求」的说明，不再往旧方案仓库写任何东西。
             var specs = CalibrationPlanEngineV2.Derive(archive);
             var executable = specs != null
                 ? specs.Where(t => t.Quantity != CalibrationQuantity.LensDistortion).ToList()
                 : new List<CalibrationTaskSpec>();
             if (executable.Count > 0)
             {
-                BuildCandidates(archive);
-                OnPropertyChanged(nameof(CandidatesSummary));
+                ScopeNoteText = $"本工位档案推导出 {executable.Count} 项几何标定需求，"
+                    + "请点上方「▶ 开始链标定」进入链向导完成标定（产物写入 Calib\\Chain.json，生产端同源装载）。";
                 return;
             }
 
             // 档案可推导但无几何标定需求（检测/测量/OCR 类相机仅需模板/当量）
             ScopeNoteText = "按档案推导：本工位无几何标定需求（检测/测量/OCR 类相机仅需模板/当量），无需创建标定方案。";
-        }
-
-        /// <summary>按档案标定计划构建任务卡清单（★2026-09-12 切换 v2 引擎；相机级/工具级拆分；EyeMode 随任务推导）</summary>
-        private void BuildCandidates(StationProfile archive)
-        {
-            Candidates.Clear();
-            var specs = CalibrationPlanEngineV2.Derive(archive);
-            foreach (var spec in specs)
-            {
-                // 畸变预留：不进任务卡
-                if (spec.Quantity == CalibrationQuantity.LensDistortion) continue;
-                string slotKey = string.IsNullOrWhiteSpace(spec.SlotKey) ? "相机" : spec.SlotKey;
-                bool toolLevel = spec.Quantity == CalibrationQuantity.ToolRotation
-                                 || spec.Quantity == CalibrationQuantity.ToolOffset;
-                string chip = toolLevel ? "吸嘴" + spec.NozzleKey : slotKey;
-                string suggestion = spec.Suggestion ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(spec.Note))
-                {
-                    suggestion += "\n⚠ " + spec.Note;
-                }
-                // v2 物理量显示名（用 CalibrationCardText 统一文案）
-                Candidates.Add(new CalibrationCandidate
-                {
-                    Task = spec,
-                    KindBadge = QuantityBadge(spec.Quantity, spec.PrimaryPath),
-                    ChipText = chip,
-                    SlotKey = spec.SlotKey,
-                    NozzleKey = spec.NozzleKey ?? "1",
-                    IsToolLevel = toolLevel,
-                    TagText = spec.DisplayName ?? slotKey,
-                    TypeDisplay = GetQuantityDisplayName(spec.Quantity),
-                    EyeMode = spec.Layout,
-                    Suggestion = suggestion,
-                    Note = spec.Note,
-                    Quantity = spec.Quantity,
-                    PrimaryPath = spec.PrimaryPath,
-                    IsSelected = spec.IsRequired // 主线必做默认勾选
-                });
-            }
-            CandidatesVisible = Candidates.Count > 0;
-            OnPropertyChanged(nameof(CandidatesSummary));
-            CreateCandidatesCommand?.RaiseCanExecuteChanged();
-        }
-
-        /// <summary>按任务卡勾选批量创建（不覆盖已有方案；相机/轴绑定留待标定向导第1步）</summary>
-        private void CreateSelectedCandidates()
-        {
-            var chosen = Candidates.Where(c => c.IsSelected).ToList();
-            if (chosen.Count == 0)
-            {
-                ScopeNoteText = "未勾选任何任务 —— 未创建方案。";
-                return;
-            }
-
-            var createdNames = new System.Collections.Generic.List<string>();
-            CalibrationProfile first = null;
-            foreach (var cand in chosen)
-            {
-                var t = cand.Task;
-                bool toolLevel = cand.IsToolLevel;
-                string slotTok = (cand.SlotKey ?? string.Empty).Trim();
-                bool slotKnown = slotTok.Length > 0 && slotTok != "相机";
-                string cameraId = slotKnown ? slotTok : "Cam_01";
-                // ★★2026-09-15 修正：工具级（e/t）名字必须带槽。旧式 `吸嘴{n}_{类型}` 对复合工位的
-                //   【Cam_A 的 e】与【Cam_C 的 e】生成**完全相同的名字**（同为"吸嘴1_旋转中心 e"），
-                //   两份档案只有 Id 后缀不同 ⇒ 人工分不清、且 SaveProfile 的 GetByName 回退会互相命中
-                //   （同工位继承/删除定位都可能张冠李戴）。槽已知就写进名字，缺槽时保持旧式并留提示。
-                string namePart = toolLevel
-                    ? (slotKnown ? $"{slotTok}_吸嘴{cand.NozzleKey}_{cand.TypeDisplay}" : $"吸嘴{cand.NozzleKey}_{cand.TypeDisplay}")
-                    : $"{cameraId}_{cand.TypeDisplay}";
-                string fullName = $"{_scopeStationName}_{namePart}";
-                // 同名防重（同一工位重名会让"按名找档案"的回退路径失去鉴别力）：撞名则加序号后缀并留痕
-                if (CalibrationProfiles.Any(x => x != null
-                        && string.Equals(x.Name, fullName, StringComparison.OrdinalIgnoreCase)))
-                {
-                    int n = 2;
-                    while (CalibrationProfiles.Any(x => x != null
-                           && string.Equals(x.Name, fullName + "#" + n, StringComparison.OrdinalIgnoreCase))) n++;
-                    AppendLog($"[新建] 方案名「{fullName}」已存在 → 本次改用「{fullName}#{n}」（同名档案会让按名定位失去鉴别力）。");
-                    fullName = fullName + "#" + n;
-                }
-                var np = new CalibrationProfile
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    Name = fullName,
-                    Quantity = cand.Quantity,           // ★v2 物理量（唯一权威语义）
-                    PrimaryPath = cand.PrimaryPath,     // ★v2 采集路径（含下相机专属）
-                    EyeMode = cand.EyeMode,
-                    NozzleKey = cand.NozzleKey ?? "1", // 双吸嘴：每吸嘴独立旋转/偏心标定
-                    CameraId = cameraId,               // 物理设备占位；向导第 1 步按实际设备覆盖
-                    // 2026-09-11：槽独立存（CameraId 会被设备名覆盖→旧逻辑恒猜 Cam_01，上下相机撞槽）
-                    CameraSlotKey = cameraId,
-                    AxisId = "Axis_X",
-                    BoundStationCode = _scopeStationCode,
-                    BindingInfo = $"工位: {_scopeStationName} ({_scopeStationCode}) · {cand.TagText}"
-                                  + (toolLevel ? $" · 吸嘴{cand.NozzleKey}" : string.Empty),
-                    UpdatedAt = DateTime.Now
-                };
-                CalibrationProfiles.Add(np);
-                VisibleProfiles.Add(np);
-                SaveProfileToRepository(np);
-                createdNames.Add(cand.ChipText + "(" + cand.TypeDisplay + ")");
-                first = first ?? np;
-            }
-
-            if (first != null) SelectedCalibrationProfile = first;
-            CandidatesVisible = false;
-            ScopeNoteText = $"已按档案标定计划创建 {createdNames.Count} 条方案（{string.Join("、", createdNames)}）。\n"
-                            + "建议执行顺序：先完成相机 H（九点/吸放式），再做工具偏心 e（旋转段依赖 H 提供坐标系）；"
-                            + "点选左侧方案 → 右上「开始标定」进入向导绑定相机/轴。";
         }
 
         /// <summary>退出定位态回全库浏览</summary>
@@ -1321,8 +1145,6 @@ namespace Grayson.Vision.WpfUI.ViewModel
             _scopeStationCode = string.Empty;
             _scopeStationName = string.Empty;
             ScopeNoteText = string.Empty;
-            CandidatesVisible = false;
-            Candidates.Clear();
             RaiseScopeChanged();
             RebuildVisibleProfiles();
             RefreshCameraSlotOptions();
@@ -1683,16 +1505,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 }
             }
 
+            // ★★2026-09-29：原此处硬编码一条「工位1_Top相机九点标定 / 工位: ST_01 / 平台1」的假方案——
+            //   它没有任何"示例"标识，用户编辑即真实落库，且会把空库伪装成"已有一条标定"。
+            //   现改为诚实的空状态：不注入任何假数据，由 EmptyProfilesHint 引导用户走链标定主线。
             if (CalibrationProfiles.Count == 0)
             {
-                CalibrationProfiles.Add(new CalibrationProfile
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    Name = "工位1_Top相机九点标定",
-                    Quantity = CalibrationQuantity.HandEye,
-                    BindingInfo = "工位: ST_01 / 平台1",
-                    IsCalibrated = false
-                });
+                ScopeNoteText = "本机尚无任何标定方案。新版标定流程不再需要预先建方案——"
+                    + "点上方「▶ 开始链标定」进链向导即可（产物写入工位目录 Calib\\Chain.json）。";
             }
 
             SelectedCalibrationProfile = CalibrationProfiles.FirstOrDefault();
@@ -2109,15 +1928,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// <summary>
         /// 打开链向导（范式2，R3）：采集点对 → ChainFitter 拟合 → 组装 StationCalibGraph →
         /// G0~G4 校验 → 写 Recipes\Workstations\{工位}\Calib\Chain.json。
-        /// 工位码取当前定位工位（未定位时回落 ST_002——原生范式2 首站）。
+        /// 工位码取当前定位工位；★2026-09-29 起未定位时不再静默回落 ST_002（会把标定写到别的工位），
+        /// 改为明确提示先定位工位。
         /// 独立窗口、模态：落盘前必须走完校验，避免半成品链图被生产端 fail-closed 拒收后无处排查。
         /// </summary>
         private void OpenChainWizard()
         {
             try
             {
-                var win = new ChainWizardWindow(
-                    string.IsNullOrWhiteSpace(_scopeStationCode) ? "ST_002" : _scopeStationCode)
+                if (string.IsNullOrWhiteSpace(_scopeStationCode))
+                {
+                    MessageBox.Show(
+                        "链标定必须绑定一个具体工位（产物要写进该工位的 Calib\\Chain.json）。\n\n"
+                        + "请先从工位工作台进入本页，或在左侧选择一个已绑定工位的方案后再试。",
+                        "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                var win = new ChainWizardWindow(_scopeStationCode)
                 {
                     Owner = Application.Current.MainWindow
                 };
@@ -2131,15 +1958,22 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>
         /// 打开链校验台（范式2 L1/L2，只读）：审计 Recipes\Workstations\{工位}\Calib\Chain.json——
-        /// 门禁可视（与生产端同尺）+ 数学校验（形状/条件数/像素当量/CalibZ/DeltaRef 自洽）。
+        /// 门禁可视（与生产端同尺）+ 数学校验。真机动作归 L3【OpenChainLiveVerify】，本台不驱动机器。
         /// 未落盘 ≠ 报错：明确提示"fail-closed 待补链"（指向链向导）。
         /// </summary>
         private void OpenChainVerify()
         {
             try
             {
-                var win = new ChainVerifyWindow(
-                    string.IsNullOrWhiteSpace(_scopeStationCode) ? "ST_002" : _scopeStationCode)
+                if (string.IsNullOrWhiteSpace(_scopeStationCode))
+                {
+                    MessageBox.Show(
+                        "链校验台需要一个具体工位（要审的 Chain.json 就放在该工位目录下）。\n\n"
+                        + "请先从工位工作台进入本页，或在左侧选择一个已绑定工位的方案后再试。",
+                        "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                var win = new ChainVerifyWindow(_scopeStationCode)
                 {
                     Owner = Application.Current.MainWindow
                 };
@@ -2148,6 +1982,35 @@ namespace Grayson.Vision.WpfUI.ViewModel
             catch (Exception ex)
             {
                 MessageBox.Show("打开链校验台失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 打开 L3 真机验证台（★2026-09-29 新建）：用真机走「相机看到点 → 链求值 → 逆解 → 到位 → 复测」
+        /// 的完整闭环，在世界域量偏差，给出"能不能投产"的放行/拦截结论。
+        /// 这是 L1（门禁可视）/L2（数学校验）之外唯一能证明"标定真的能打准"的环节。
+        /// </summary>
+        private void OpenChainLiveVerify()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_scopeStationCode))
+                {
+                    MessageBox.Show(
+                        "真机验证需要一个具体工位（验证的是该工位 Calib\\Chain.json 的产物）。\n\n"
+                        + "请先从工位工作台进入本页，或在左侧选择一个已绑定工位的方案后再试。",
+                        "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                var win = new ChainLiveVerifyWindow(_scopeStationCode)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+                win.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("打开真机验证台失败：" + ex.Message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

@@ -1,0 +1,188 @@
+<Window x:Class="Grayson.Vision.WpfUI.View.ChainLiveVerifyWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="真机指哪打哪验证（L3）" Height="820" Width="1320"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
+    <Window.Resources>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="Margin" Value="2,0"/>
+        </Style>
+        <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBoxStyle}">
+            <Setter Property="Margin" Value="2,0"/>
+        </Style>
+        <Style TargetType="DataGrid" BasedOn="{StaticResource ModernDataGridStyle}"/>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupBox">
+                        <Border Background="{DynamicResource BackgroundLightBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="{TemplateBinding Header}"
+                                           FontWeight="SemiBold" Margin="0,0,0,6"
+                                           Foreground="{DynamicResource AccentLightBrush}"/>
+                                <ContentPresenter/>
+                            </DockPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="6">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ── 第 0 行：会话头部（链状态 + 容差 + 结论） ── -->
+        <GroupBox Grid.Row="0" Header="会话（真机闭环：相机看到点 → 链求值 → 逆解 → 到位 → 复测）">
+            <StackPanel>
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Verdict}" FontWeight="Bold"
+                               VerticalAlignment="Center" Margin="16,0,0,0"
+                               Foreground="{DynamicResource AccentLightBrush}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="放行容差 (mm)：" VerticalAlignment="Center"/>
+                        <TextBox Width="70" Text="{Binding ToleranceMm, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Text="到位 U 角 (°)：" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        <TextBox Width="60" Text="{Binding UFinalDeg, UpdateSourceTrigger=LostFocus}"
+                                 ToolTip="逆解与复测都用这个 U。同心工位 U≡0；带角度抓取填实际放料角。"/>
+                        <TextBlock Text="安全 Z (mm)：" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                        <TextBox Width="60" Text="{Binding SafeZ, UpdateSourceTrigger=LostFocus}"
+                                 ToolTip="任何 XY 平移前必须抬到的高度。低位平移 = 撞机。"/>
+                    </StackPanel>
+                </DockPanel>
+                <TextBlock Text="{Binding ChainSummary}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                <TextBlock Text="{Binding Log}" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"
+                           Foreground="{DynamicResource InfoBrush}"/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- ── 第 1 行：左＝图像点选 / 右＝点位表 ── -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左：取图 + 点选 -->
+            <GroupBox Grid.Column="0" Header="① 取图并点选特征点（「指」的输入）">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <Button Content="📷 取图" Command="{Binding CaptureAndPickCommand}" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding PickedText}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                   FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                    <Border DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="＋ 规划为验证点" Command="{Binding PlanCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"/>
+                            <Button Content="▶ 执行全部（真机走位+复测）" Command="{Binding ExecuteAllCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}" Padding="14,4" FontWeight="Bold"
+                                    ToolTip="逐点：抬安全 Z → 低速平移到法兰目标 → 读到位反馈 → 反推实际世界点 → 与世界目标比差"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#22000000" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            CornerRadius="4" MinHeight="260">
+                        <Grid>
+                            <Image x:Name="PickImage" Source="{Binding FrameImage}" Stretch="Uniform"
+                                   MouseLeftButtonDown="PickImage_MouseLeftButtonDown"
+                                   Cursor="Cross"/>
+                            <TextBlock Text="（未取图 · 点上方「📷 取图」；也可在右侧表格手工改像素后规划）"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextDisabledBrush}" FontSize="12"/>
+                        </Grid>
+                    </Border>
+                </DockPanel>
+            </GroupBox>
+
+            <!-- 右：点位表 -->
+            <GroupBox Grid.Column="1" Header="② 验证点（「指」→「打」→ 偏差）">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock Text="说明：偏差 = 实际达成世界点 − 链解世界目标；" FontSize="10.5"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource TextDisabledBrush}"/>
+                        <TextBlock Text="左「指」右「打」，都落在世界域才可比。" FontSize="10.5"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource TextDisabledBrush}"/>
+                        <Button Content="清空" Command="{Binding ClearCommand}" HorizontalAlignment="Right"
+                                Style="{StaticResource SecondaryButtonStyle}"/>
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding Points}" AutoGenerateColumns="False" CanUserAddRows="False"
+                              HeadersVisibility="Column" Margin="0,2">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="34" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="像素 u" Binding="{Binding PixelU, StringFormat=F1}" Width="70"/>
+                            <DataGridTextColumn Header="像素 v" Binding="{Binding PixelV, StringFormat=F1}" Width="70"/>
+                            <DataGridTextColumn Header="世界目标 (mm)" Binding="{Binding TargetText}" Width="150" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="实际达成 (mm)" Binding="{Binding ActualText}" Width="150" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="标定偏差 mm" Binding="{Binding ErrorText}" Width="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="分量 (Δx / Δy)" Binding="{Binding ErrorXYText}" Width="160" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="到位误差" Binding="{Binding ArrivalErrorText}" Width="80" IsReadOnly="True">
+                                <DataGridTextColumn.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="到位误差" ToolTip="法兰反馈 − 法兰目标：伺服/机械跟随能力，不算标定的错"/>
+                                    </DataTemplate>
+                                </DataGridTextColumn.HeaderTemplate>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="判定" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="9" Height="9" VerticalAlignment="Center" Fill="{Binding StateBrush}"/>
+                                            <TextBlock Text="{Binding StateText}" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                       FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </GroupBox>
+        </Grid>
+
+        <!-- ── 第 2 行：汇总 ── -->
+        <GroupBox Grid.Row="2" Header="③ 汇总（能否投产）">
+            <UniformGrid Columns="4">
+                <StackPanel>
+                    <TextBlock Text="实测点数" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Report.MeasuredCount}" FontSize="16" FontWeight="Bold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="达标点数" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Report.PassedCount}" FontSize="16" FontWeight="Bold" Foreground="#FF107C41"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="最大偏差 (mm)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Report.MaxErrorMm, StringFormat={}{0:F4}, FallbackValue='—', TargetNullValue='—'}"
+                               FontSize="16" FontWeight="Bold" Foreground="#FFFF8C00"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="平均偏差 (mm)" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Report.MeanErrorMm, StringFormat={}{0:F4}, FallbackValue='—', TargetNullValue='—'}"
+                               FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </StackPanel>
+            </UniformGrid>
+        </GroupBox>
+
+        <!-- ── 第 3 行：纪律说明（现场必须知道的事） ── -->
+        <GroupBox Grid.Row="3" Header="说明">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                       Text="L3 与 L1/L2 的分工：L1=门禁可视（G0~G4 与生产端同源）；L2=数学校验（形状门/条件数/像素当量/CalibZ/DeltaRef 自洽）；L3=真机指哪打哪（本窗）——只有它能回答「标定完能不能投产」。判定在世界域做：法兰到位残差 ≠ 标定误差（伺服跟随误差不该算进标定）。复测必须重新软触发取新帧，绝不沿用旧图（走位后旧帧 = 上一位置的坐标）。降 Z 后必须抬回安全 Z 再平移。" />
+        </GroupBox>
+    </Grid>
+</Window>

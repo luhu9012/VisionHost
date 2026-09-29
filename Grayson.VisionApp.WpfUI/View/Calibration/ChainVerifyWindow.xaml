@@ -89,7 +89,7 @@
 
         <GroupBox Grid.Row="2" Header="说明">
             <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
-                       Text="L1=门禁可视（G0~G4 与生产端同源 fail-closed）；L2=数学校验（形状门复验/条件数/像素当量量级/EIH 平移量级/DeltaRef 自洽提示）。RMS 重算复验（重喂点对）与指哪打哪属 L3 真机页——需重新采集，不在本台。"/>
+                       Text="L1=门禁可视（G0~G4 与生产端同源 fail-closed）；L2=数学校验（形状门复验/条件数/像素当量量级/EIH 平移量级/DeltaRef 自洽提示）。★真机「指哪打哪」已实现为独立的【🎯 真机验证】台（L3）——标定中心主线卡第三个按钮，在那里走「相机看点 → 链求值 → 逆解 → 真机到位 → 复测」闭环并给放行结论；本台保持只读审计，不驱动机器。"/>
         </GroupBox>
     </Grid>
 </Window>

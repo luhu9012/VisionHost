@@ -209,7 +209,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     : (p.PrimaryPath == CalibrationAcquirePath.PickPlaceReturn
                         ? "；吸放式 H 真值已吸收偏距——对针 t 仅当已有结果时出现"
                         : string.Empty);
-                return $"该方案拆 {DerivedCards.Count} 张任务卡，动作直接挂在卡上（引导/校验/对针/发布/重标），不再有全局平行按钮{tNote}。依赖缺位或已过期会置灰并给原因。";
+                return $"该方案拆 {DerivedCards.Count} 张任务卡，动作直接挂在卡上（引导/校验/对针/发布/重标），不再有全局平行按钮{tNote}。依赖缺位或已过期会置灰并给原因。"
+                     + "★几何标定进度以页头「链状态」为准（链标定产物 = Chain.json，不回写本卡片状态）——本区卡片承担发布留痕与矩阵分发。";
             }
         }
 
@@ -1172,8 +1173,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     var rep = ChainAuditor.AuditStation(_scopeStationCode);
                     if (!rep.Loaded) return "🔗 链：未落盘（fail-closed 待补链）";
                     int bad = rep.GlobalIssues.Count + rep.Rows.Count(r => !r.Ok);
-                    return bad == 0 ? "🔗 链：✓ 就绪（" + rep.EdgeCount + " 边）"
-                                    : "🔗 链：✗ " + bad + " 项问题";
+                    string text = bad == 0 ? "🔗 链：✓ 就绪（" + rep.EdgeCount + " 边）"
+                                           : "🔗 链：✗ " + bad + " 项问题";
+                    // ★2026-09-29 台账轻量版（P0-3 配套）：拼上最近一次 L3 留痕——
+                    //   "上次验证什么时候、过没过、偏差多少"不用开窗就能看到
+                    //   （此前验证结论关窗即丢，页面上更是无处可见）。
+                    var last = ChainLiveVerifier.ReadLastHistory(_scopeStationCode);
+                    if (last != null)
+                    {
+                        string ts = last.Timestamp;
+                        DateTime t;
+                        if (DateTime.TryParse(last.Timestamp, out t)) ts = t.ToString("MM-dd HH:mm");
+                        string errTxt = last.MaxErrorMm.HasValue
+                            ? last.MaxErrorMm.Value.ToString("F3") + "mm" : "—";
+                        text += " · 上次验证 " + ts + " " + (last.Passed ? "✓" : "✗")
+                              + " maxErr " + errTxt;
+                    }
+                    return text;
                 }
                 catch { return "🔗 链：—"; }
             }
@@ -1949,6 +1965,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     Owner = Application.Current.MainWindow
                 };
                 win.ShowDialog();
+                // ★2026-09-29 P0-2：向导可能刚落盘/改链——关窗即重算页头 chip，不再要求操作员退出重进页面
+                RaiseScopeChanged();
             }
             catch (Exception ex)
             {
@@ -1978,6 +1996,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     Owner = Application.Current.MainWindow
                 };
                 win.ShowDialog();
+                // ★2026-09-29 P0-2：校验台只读，但关窗后同步刷新一次（口径统一：任何链窗口关闭都重算）
+                RaiseScopeChanged();
             }
             catch (Exception ex)
             {
@@ -2007,6 +2027,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     Owner = Application.Current.MainWindow
                 };
                 win.ShowDialog();
+                // ★2026-09-29 P0-2/P0-3：真机验证可能刚写了留痕（LiveVerify_History.json）——
+                //   关窗即重算 chip（chip 会拼上"上次验证"摘要，见 ChainStatusText）
+                RaiseScopeChanged();
             }
             catch (Exception ex)
             {

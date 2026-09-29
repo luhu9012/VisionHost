@@ -39,7 +39,7 @@
                         </Border>
                         <Button Content="{Binding ChainStatusText}" Command="{Binding OpenChainVerifyCommand}"
                                 FontSize="11" Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
-                                ToolTip="当前定位工位的 Chain.json 审计摘要（范式2 链状态；点击打开链校验台）。"/>
+                                ToolTip="当前定位工位的链审计摘要 + 最近一次真机验证留痕（几何标定进度以此为准；点击打开链校验台）。"/>
                     </StackPanel>
                 </DockPanel>
                 <StackPanel Grid.Row="1" Margin="0,6,0,0">
@@ -290,6 +290,7 @@
 												<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
 													
 													
+													<Button Content="▶ 链标定" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0" Command="{Binding DataContext.OpenChainWizardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTip="几何标定唯一入口：链向导按档案事实推导链形状 → 采集拟合 → 写 Chain.json。链标定不回写卡片状态——做完看页头链状态。"/>
 													<Button Content="🎯 对针" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0"
                                                             Command="{Binding DataContext.RunToolOffsetForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"

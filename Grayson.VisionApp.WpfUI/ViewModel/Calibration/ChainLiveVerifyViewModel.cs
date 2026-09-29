@@ -215,6 +215,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private LiveVerifyReport _report = new LiveVerifyReport();
         public LiveVerifyReport Report { get { return _report; } }
 
+        private bool _historySaved;
+        /// <summary>本次会话结论是否已落盘（防重；窗口 Closed 兜底据此决定是否补写）</summary>
+        public bool HistorySaved { get { return _historySaved; } }
+
         private BitmapSource _frameImage;
         public BitmapSource FrameImage { get { return _frameImage; } private set { Set(ref _frameImage, value); } }
 
@@ -378,6 +382,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 ToolId = _toolId,
                 ToleranceMm = ToleranceMm,
             };
+            _historySaved = false; // 新一轮会话 ⇒ 留痕重新计
 
             int moved = 0, failed = 0, degraded = 0;
             foreach (var vm in Points)
@@ -436,7 +441,31 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 + " 最大偏差 " + (_report.MaxErrorMm.HasValue ? _report.MaxErrorMm.Value.ToString("F4") : "—") + " mm；"
                 + " 平均 " + (_report.MeanErrorMm.HasValue ? _report.MeanErrorMm.Value.ToString("F4") : "—") + " mm。"
                 + (degraded > 0 ? "★注意：降级点未计标定误差，结论不完整。" : string.Empty);
+            TrySaveHistory(); // ★P0-3：结论即落盘，不依赖操作员记得手动留痕
             RefreshAll();
+        }
+
+        /// <summary>
+        /// ★★P0-3（2026-09-29）：把本次验证结论落盘到工位 Calib\LiveVerify_History.json。
+        /// 此前结论只在会话内存、关窗即丢——"能不能投产"的答案必须留得下来。
+        /// Try 语义：失败只写日志不弹窗（留痕不能变成新故障点）；已写过则跳过（防重）。
+        /// 窗口 Closed 兜底也会调本方法（中途关窗同样留痕）。
+        /// </summary>
+        public void TrySaveHistory()
+        {
+            if (_historySaved) return;
+            if (_report == null || _report.Points.Count == 0) return;
+            string err;
+            if (ChainLiveVerifier.AppendHistory(StationCode, _report, UFinalDeg, out err))
+            {
+                _historySaved = true;
+                Log += "\n留痕：结论已写入 Calib\\" + ChainLiveVerifier.HistoryFileName
+                     + "（标定中心页头链状态 chip 会显示上次验证摘要）。";
+            }
+            else
+            {
+                Log += "\n⚠ 留痕失败：" + err + "（不影响本次验证结论）";
+            }
         }
 
         /// <summary>

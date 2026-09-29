@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using Newtonsoft.Json;
 using Grayson.Vision.Contracts.Calibration.Services;
 
 namespace Grayson.Vision.Contracts.Calibration.Chain
@@ -244,6 +247,118 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
             if (l1 < 0) l1 = 0;
             if (l2 < 0) l2 = 0;
             return (Math.Sqrt(l1) + Math.Sqrt(l2)) / 2.0;
+        }
+
+        //---------------------------------------------------------------------
+        // ★★P0-3（2026-09-29）：L3 结论留痕——此前 Verdict/Report 只在会话内存，
+        //   关窗即丢，"能不能投产"的答案留不下来。落盘位置与 Chain.json 同目录
+        //   （Recipes\Workstations\{工位}\Calib\LiveVerify_History.json），随链走。
+        //---------------------------------------------------------------------
+
+        /// <summary>留痕文件名（与 Chain.json 同目录）</summary>
+        public const string HistoryFileName = "LiveVerify_History.json";
+
+        /// <summary>最多保留条数（防无限膨胀；最旧的先丢）</summary>
+        public const int HistoryMaxEntries = 20;
+
+        private static readonly JsonSerializerSettings HistoryJsonSettings = new JsonSerializerSettings
+        {
+            Formatting = Formatting.Indented,
+            NullValueHandling = NullValueHandling.Ignore,
+            Culture = CultureInfo.InvariantCulture,
+        };
+
+        /// <summary>一次 L3 验证会话的留痕条目（摘要 + 逐点明细）</summary>
+        public sealed class LiveVerifyHistoryEntry
+        {
+            public string Timestamp { get; set; }        // ISO 8601 本地时间
+            public string StationCode { get; set; }
+            public string CameraId { get; set; }
+            public string ToolId { get; set; }
+            public double ToleranceMm { get; set; }
+            public double UFinalDeg { get; set; }
+            public int PointCount { get; set; }
+            public int MeasuredCount { get; set; }
+            public int PassedCount { get; set; }
+            public double? MaxErrorMm { get; set; }
+            public double? MeanErrorMm { get; set; }
+            public bool Passed { get; set; }
+            public string Verdict { get; set; }
+            public List<LiveVerifyPointResult> Points { get; set; }
+        }
+
+        /// <summary>
+        /// 把一次 L3 验证会话追加进工位留痕文件。Try 语义：失败返回 false + error，
+        /// **绝不抛异常、绝不影响验证本身**——留痕是留证，不能变成新的故障点。
+        /// 无实测点也允许写（"跑过但没测成"同样有诊断价值）。保留最近 HistoryMaxEntries 条。
+        /// </summary>
+        public static bool AppendHistory(string stationCode, LiveVerifyReport report,
+                                         double uFinalDeg, out string error)
+        {
+            error = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(stationCode)) { error = "工位码为空，不留痕"; return false; }
+                if (report == null) { error = "报告为空，不留痕"; return false; }
+
+                string dir = CalibrationMatrixStore.GetStationCalibDir(stationCode);
+                string path = Path.Combine(dir, HistoryFileName);
+
+                var entries = new List<LiveVerifyHistoryEntry>();
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        entries = JsonConvert.DeserializeObject<List<LiveVerifyHistoryEntry>>(
+                            File.ReadAllText(path), HistoryJsonSettings) ?? new List<LiveVerifyHistoryEntry>();
+                    }
+                    catch { entries = new List<LiveVerifyHistoryEntry>(); } // 旧文件损坏：从头记，不阻断
+                }
+
+                entries.Add(new LiveVerifyHistoryEntry
+                {
+                    Timestamp = DateTime.Now.ToString("o", CultureInfo.InvariantCulture),
+                    StationCode = stationCode,
+                    CameraId = report.CameraId,
+                    ToolId = report.ToolId,
+                    ToleranceMm = report.ToleranceMm,
+                    UFinalDeg = uFinalDeg,
+                    PointCount = report.Points.Count,
+                    MeasuredCount = report.MeasuredCount,
+                    PassedCount = report.PassedCount,
+                    MaxErrorMm = report.MaxErrorMm,
+                    MeanErrorMm = report.MeanErrorMm,
+                    Passed = report.Passed,
+                    Verdict = report.VerdictText,
+                    Points = new List<LiveVerifyPointResult>(report.Points),
+                });
+
+                while (entries.Count > HistoryMaxEntries)
+                    entries.RemoveAt(0);
+
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllText(path, JsonConvert.SerializeObject(entries, HistoryJsonSettings));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "L3 留痕写入失败: " + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>读最近一次 L3 留痕（chip/台账显示用）；无文件/损坏/为空返回 null。</summary>
+        public static LiveVerifyHistoryEntry ReadLastHistory(string stationCode)
+        {
+            try
+            {
+                string path = Path.Combine(CalibrationMatrixStore.GetStationCalibDir(stationCode), HistoryFileName);
+                if (!File.Exists(path)) return null;
+                var entries = JsonConvert.DeserializeObject<List<LiveVerifyHistoryEntry>>(
+                    File.ReadAllText(path), HistoryJsonSettings);
+                return (entries != null && entries.Count > 0) ? entries[entries.Count - 1] : null;
+            }
+            catch { return null; }
         }
     }
 }

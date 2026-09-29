@@ -1302,9 +1302,34 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 profile != null && profile.AssetSuggestions != null && profile.AssetSuggestions.Any(a => a.Contains("模板"))
                     ? "向导建议：" + string.Join("；", profile.AssetSuggestions.Where(a => a.Contains("模板")))
                     : "按需（本工位任务如不需要模板可跳过）—— 点击直达模板工作台");
+            // ★2026-09-29 P0-1：第 7 步不再恒"未完成"——按链图落盘状态判定（与标定中心 chip 同一把尺 ChainAuditor）：
+            //   链就绪=完成；链有问题=进行中（列问题数）；未落盘=保留档案槽引导并加前缀。审计异常不阻塞旅程渲染。
+            string calibDetail = BuildCalibrationStepHint(profile);
+            bool calibDone = false;
+            try
+            {
+                var chainRep = Grayson.Vision.Contracts.Calibration.Chain.ChainAuditor.AuditStation(s.StationCode);
+                if (chainRep.Loaded)
+                {
+                    int chainBad = chainRep.GlobalIssues.Count + chainRep.Rows.Count(r => !r.Ok);
+                    if (chainBad == 0)
+                    {
+                        calibDone = true;
+                        calibDetail = $"链就绪（{chainRep.EdgeCount} 边）——重标/真机验证进标定中心";
+                    }
+                    else
+                    {
+                        calibDetail = $"链已落盘但有 {chainBad} 项问题（生产端 fail-closed 会拒载）——进标定中心开链校验台逐项看";
+                    }
+                }
+                else
+                {
+                    calibDetail = "链未落盘（fail-closed 待补链）· " + calibDetail;
+                }
+            }
+            catch { /* 审计失败保持原引导文案，旅程渲染不因链状态中断 */ }
             AddStep(steps, 7, "📐", "标定与示教", "建立 图像↔机械 关系：九点/手眼/旋转中心/示教点（独立标定中心承接）。",
-                "标定中心页", 0, 3, false, false,
-                BuildCalibrationStepHint(profile));
+                "标定中心页", 0, 3, false, calibDone, calibDetail);
             AddStep(steps, 8, "💾", "保存并同步 Runtime", "保存工位配置到库并同步 Core Runtime（单工位监控据此连接/运行）。",
                 "顶栏保存按钮", -1, 1, true, synced || !s.IsEnabled,
                 !s.IsEnabled ? "工位禁用：无需同步 Runtime（启用后需保存同步）" : (synced ? "已同步 Runtime Client" : "尚未保存/同步"));

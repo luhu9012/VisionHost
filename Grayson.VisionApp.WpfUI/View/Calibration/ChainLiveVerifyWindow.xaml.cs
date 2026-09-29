@@ -25,6 +25,18 @@ namespace Grayson.Vision.WpfUI.View
             InitializeComponent();
             _vm = new ChainLiveVerifyViewModel(stationCode);
             DataContext = _vm;
+
+            // ★2026-09-29 P0-3 兜底：正常跑完 ExecuteAll 时 VM 已落盘留痕（防重跳过）；
+            //   但操作员可能跑到一半直接关窗——那也是一次真实验证，必须留痕，不能凭空消失。
+            Closed += (s, e) =>
+            {
+                try
+                {
+                    if (!_vm.HistorySaved && _vm.Report != null && _vm.Report.Points.Count > 0)
+                        _vm.TrySaveHistory();
+                }
+                catch { /* 关窗兜底绝不反向阻塞关闭流程 */ }
+            };
         }
 
         private void PickImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

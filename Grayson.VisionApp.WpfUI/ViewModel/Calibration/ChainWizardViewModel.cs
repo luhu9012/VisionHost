@@ -27,7 +27,9 @@ using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Models;
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
+using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
+using Plugins.Robot.Epson;   // 标定走位须用 EpsonRobot.MoveToLinear（CP 直线；PTP 弧线会被形状门拦）
 
 namespace Grayson.Vision.WpfUI.ViewModel
 {
@@ -137,6 +139,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             Points = new ObservableCollection<ChainPointRow>();
             for (int i = 0; i < 9; i++)
                 Points.Add(new ChainPointRow { Note = "P" + (i + 1) });
+            RefreshGridStatus();
         }
 
         public string Title { get; private set; }
@@ -241,6 +244,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             FitResult = "已回填第 " + (Points.IndexOf(SelectedRow) + 1) + " 行像素 ("
                         + SelectedRow.PixelCol.ToString("F1", CultureInfo.InvariantCulture)
                         + ", " + SelectedRow.PixelRow.ToString("F1", CultureInfo.InvariantCulture) + ")";
+            RefreshGridStatus();
         }
 
         /// <summary>下相机专属：图像点选写入差分基准像素 DeltaRefPixel（右键）</summary>
@@ -262,6 +266,144 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public void RemovePoint(ChainPointRow row)
         {
             if (row != null) Points.Remove(row);
+        }
+
+        //---------------------------------------------------------------------
+        // 九点网格采集：点位规划 + 步长（2026-09-30 补）
+        //   旧范式向导（CalibrationWizardViewModel，R4/R5 已删）本有完整采集闭环——
+        //   「网格中心基准 + 步长 → 自动生成 9 点目标 → 自动走位 → HALCON 特征提取」；
+        //   范式2 重写时只迁了"记录/拟合/落盘"，没迁"驱动采集"，链向导于是退化成
+        //   "走一步、点一下、手抄一格"。本段把点位规划与步长接回来（走位见 ChainWizardViewModel）。
+        //
+        //   ★ 几何不另起一套：直接调 ReachMapGeometry.BuildGrid（机械手调试台可达图同源），
+        //     其符号规则 eyeInHand ? -o : +o 与旧向导 TryGetNinePointTarget 逐字一致。
+        //   ★ 落字段分型（写错则拟合语义变）：
+        //       ETH（相机固定、平台带工件走） ⇒ 目标 = 世界坐标 → WorldX/WorldY；
+        //       EIH（相机随动、机械手走位）   ⇒ 目标 = 拍照机位 → PhotoX/PhotoY
+        //                                     （WorldX/WorldY 是工件世界坐标，由操作员另填）。
+        //---------------------------------------------------------------------
+
+        private double _gridBaseX, _gridBaseY;
+        private bool _gridBaseSet;
+        private double _gridStepX = 10, _gridStepY = 10;
+        private bool _gridInvertX, _gridInvertY;
+        private int _traverseModeIndex;
+
+        /// <summary>本相机段是否支持九点网格：下相机纠偏段只需一次右键点选 DeltaRefPixel</summary>
+        public bool SupportsGrid { get { return !IsDownCorrect; } }
+
+        /// <summary>网格中心基准 X（机械坐标）——由「设当前轴位置为基准」写入</summary>
+        public double GridBaseX { get { return _gridBaseX; } set { Set(ref _gridBaseX, value); RefreshGridStatus(); } }
+        /// <summary>网格中心基准 Y（机械坐标）</summary>
+        public double GridBaseY { get { return _gridBaseY; } set { Set(ref _gridBaseY, value); RefreshGridStatus(); } }
+
+        /// <summary>基准是否已设（0 是合法坐标，故用显式标志，不判零）</summary>
+        public bool HasGridBase { get { return _gridBaseSet; } private set { Set(ref _gridBaseSet, value); } }
+
+        /// <summary>网格步长 X（mm）= 九点相邻点间距</summary>
+        public double GridStepX { get { return _gridStepX; } set { Set(ref _gridStepX, value); RefreshGridStatus(); } }
+        /// <summary>网格步长 Y（mm）= 九点相邻点间距</summary>
+        public double GridStepY { get { return _gridStepY; } set { Set(ref _gridStepY, value); RefreshGridStatus(); } }
+
+        public bool GridInvertX { get { return _gridInvertX; } set { Set(ref _gridInvertX, value); } }
+        public bool GridInvertY { get { return _gridInvertY; } set { Set(ref _gridInvertY, value); } }
+
+        /// <summary>走位次序：0=中心优先螺旋（推荐）1=传统逐行扫描</summary>
+        public int TraverseModeIndex
+        {
+            get { return _traverseModeIndex; }
+            set { if (Set(ref _traverseModeIndex, value)) RefreshGridStatus(); }
+        }
+        public string[] TraverseModeOptions { get { return new[] { "中心优先螺旋（推荐）", "逐行扫描" }; } }
+        public string TraverseModeText
+        {
+            get { return _traverseModeIndex == 1 ? "逐行 1→2→…→9" : "螺旋 5→6→3→2→1→4→7→8→9"; }
+        }
+
+        private string _gridStatus = "";
+        /// <summary>网格状态/进度（常驻可读）</summary>
+        public string GridStatus { get { return _gridStatus; } private set { Set(ref _gridStatus, value); } }
+
+        /// <summary>设网格中心基准（走位到网格中心后调用）</summary>
+        public void SetGridBase(double x, double y)
+        {
+            _gridBaseX = x; _gridBaseY = y;
+            OnPropertyChanged(nameof(GridBaseX));
+            OnPropertyChanged(nameof(GridBaseY));
+            HasGridBase = true;
+            RefreshGridStatus();
+        }
+
+        /// <summary>该行是否已采（判据=像素已填）</summary>
+        public bool IsCaptured(ChainPointRow r)
+        {
+            return r != null && (Math.Abs(r.PixelCol) > 1e-9 || Math.Abs(r.PixelRow) > 1e-9);
+        }
+
+        /// <summary>生成 9 点目标（基准 + 步长，按眼型定符号）。只写坐标、不动像素。</summary>
+        public int BuildGridTargets()
+        {
+            if (!SupportsGrid) { GridStatus = "本段为下相机纠偏：只需一次右键点选 DeltaRefPixel，无九点网格。"; return 0; }
+            if (!HasGridBase) { GridStatus = "⚠ 先设网格中心基准：走位到网格中心 →『设当前轴位置为基准』。"; return 0; }
+            if (GridStepX <= 0 || GridStepY <= 0) { GridStatus = "⚠ 步长必须为正数。"; return 0; }
+
+            var pts = ReachMapGeometry.BuildGrid(_gridBaseX, _gridBaseY, GridStepX, GridStepY,
+                                                _gridInvertX, _gridInvertY, IsEih);
+            while (Points.Count < 9) Points.Add(new ChainPointRow { Note = "P" + (Points.Count + 1) });
+
+            for (int i = 0; i < 9; i++)
+            {
+                var r = Points[i];
+                if (IsEih) { r.PhotoX = Math.Round(pts[i].X, 3); r.PhotoY = Math.Round(pts[i].Y, 3); }
+                else { r.WorldX = Math.Round(pts[i].X, 3); r.WorldY = Math.Round(pts[i].Y, 3); }
+            }
+            RefreshGridStatus();
+            return 9;
+        }
+
+        /// <summary>取该行的走位目标（ETH=世界坐标 / EIH=拍照机位）</summary>
+        public bool TryGetMoveTarget(ChainPointRow r, out double x, out double y)
+        {
+            x = 0; y = 0;
+            if (r == null) return false;
+            if (IsEih) { x = r.PhotoX; y = r.PhotoY; }
+            else { x = r.WorldX; y = r.WorldY; }
+            return Math.Abs(x) > 1e-9 || Math.Abs(y) > 1e-9;
+        }
+
+        /// <summary>按走位次序取下一个未采集行；全采完返回 null</summary>
+        public ChainPointRow NextUncapturedRow(out int orderPos)
+        {
+            orderPos = -1;
+            var mode = _traverseModeIndex == 1 ? NinePointTraverseMode.RowScan : NinePointTraverseMode.SpiralCenterFirst;
+            var order = NinePointTraverseOrder.GetOrder(mode);
+            for (int k = 0; k < order.Length; k++)
+            {
+                int idx = order[k] - 1;                     // Index 1~9 → 行 0~8
+                if (idx < 0 || idx >= Points.Count) continue;
+                if (!IsCaptured(Points[idx])) { orderPos = k; return Points[idx]; }
+            }
+            return null;
+        }
+
+        /// <summary>刷新网格状态文案（基准 / 步长 / 次序 / 进度）</summary>
+        public void RefreshGridStatus()
+        {
+            if (!SupportsGrid)
+            {
+                GridStatus = "本段为下相机纠偏：只需一次右键点选 DeltaRefPixel，无九点网格。";
+                return;
+            }
+            int done = Points.Count(IsCaptured);
+            if (!HasGridBase)
+            {
+                GridStatus = "① 走位到网格中心 →『设基准』｜② 填步长｜③『生成 9 点目标』（当前已采 "
+                             + done + "/" + Points.Count + "）";
+                return;
+            }
+            GridStatus = string.Format(CultureInfo.InvariantCulture,
+                "基准=({0:F2},{1:F2}) 步长=({2:F1},{3:F1})mm ｜ {4} ｜ 已采 {5}/{6}",
+                GridBaseX, GridBaseY, GridStepX, GridStepY, TraverseModeText, done, Points.Count);
         }
 
         /// <summary>
@@ -876,6 +1018,238 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
 
         //---------------------------------------------------------------------
+        // 九点网格采集与走位（2026-09-30 补）
+        //   链向导原有能力只有"方向键点动 + 回读位姿 + 手填表格"——一个九点要人工走位 9 次、
+        //   手抄 9 次坐标。本段接成：设基准 → 生成目标 → 逐点走位 → 自动取图 → 人点选回填。
+        //   ★ 只做【逐点触发】，不做全自动循环：真机上操作员必须全程可见、可急停。
+        //   ★ Epson 必须走 CP 直线（MoveToLinear→LMOVE）：PTP(Go) 在关节空间插补、末端走弧线，
+        //     会让"沿世界 X / 沿世界 Y"的像素当量不等（现场实测差 13.78%、夹角偏 15.3°），
+        //     九点矩阵各向异性 σ1/σ2≈1.49 直接被形状门拦下。LMOVE 是【同步】的（到位才回 DONE），
+        //     返回即可采图；PTP 是异步的，不能直接拿返回值当到位。
+        //---------------------------------------------------------------------
+
+        private double _safeZ;
+        /// <summary>安全高度 Z（mm）：平移前先抬到此高度（低位横穿会刮碰，血泪项）</summary>
+        public double SafeZ { get { return _safeZ; } set { Set(ref _safeZ, value); } }
+
+        private double _wizardMoveSpeed = 30.0;
+        /// <summary>标定走位速度</summary>
+        public double WizardMoveSpeed { get { return _wizardMoveSpeed; } set { Set(ref _wizardMoveSpeed, value); } }
+
+        private int _axisZ = 2;
+        /// <summary>Z 轴槽位（安全高度用）。★ 轴槽撞车会让 MoveAbsolute 写到别的轴且不报错</summary>
+        public int AxisZ
+        {
+            get { return _axisZ; }
+            set { if (Set(ref _axisZ, value)) OnPropertyChanged(nameof(GridAxisHint)); }
+        }
+
+        /// <summary>网格面板是否可用（当前为相机步 + 该相机段支持九点）</summary>
+        public bool CanUseGrid
+        {
+            get { return IsCameraStepSelected && SelectedSection != null && SelectedSection.SupportsGrid; }
+        }
+
+        public string GridAxisHint
+        {
+            get
+            {
+                return "轴槽位：X=" + AxisX + " Y=" + AxisY + " Z=" + AxisZ + " U=" + AxisU
+                     + "（EPSON SCARA 为 X0/Y1/Z2/U3；槽位须两两不同）";
+            }
+        }
+
+        /// <summary>把当前回读位姿设为网格中心基准（须先『回读位姿』）</summary>
+        public void SetGridBaseFromPose()
+        {
+            var sec = SelectedSection;
+            if (sec == null) { MotionLog = "⚠ 请先选择相机 Tab。"; return; }
+            if (!sec.SupportsGrid) { MotionLog = "本段为下相机纠偏段，无九点网格。"; return; }
+            double x, y;
+            if (!TryGetLastPose(out x, out y))
+            {
+                MotionLog = "⚠ 尚无有效位姿——请先『回读位姿』（或示教器手抄后在右栏录入），再设基准。";
+                return;
+            }
+            sec.SetGridBase(x, y);
+            MotionLog = string.Format(CultureInfo.InvariantCulture,
+                "网格中心基准已设为 ({0:F3}, {1:F3})——接着填步长、点『生成 9 点目标』。", x, y);
+        }
+
+        /// <summary>按基准 + 步长生成 9 点目标</summary>
+        public void BuildGridTargets()
+        {
+            var sec = SelectedSection;
+            if (sec == null) { MotionLog = "⚠ 请先选择相机 Tab。"; return; }
+            int n = sec.BuildGridTargets();
+            MotionLog = n > 0
+                ? "已生成 " + n + " 个网格目标（" + (sec.IsEih ? "EIH：写入拍照机位 PhotoX/Y" : "ETH：写入世界坐标 WorldX/Y") + "）。"
+                : sec.GridStatus;
+        }
+
+        /// <summary>走位到下一个未采集点 → 取图（人点选回填）</summary>
+        public void MoveToNextPoint()
+        {
+            var sec = SelectedSection;
+            if (sec == null) { MotionLog = "⚠ 请先选择相机 Tab。"; return; }
+            if (!sec.SupportsGrid) { MotionLog = "本段为下相机纠偏段，无九点网格走位。"; return; }
+            if (!sec.HasGridBase) { MotionLog = "⚠ 请先设网格中心基准，再生成目标。"; return; }
+
+            int orderPos;
+            var row = sec.NextUncapturedRow(out orderPos);
+            if (row == null) { MotionLog = "✓ 9 点均已有像素（已采完），无需再走位。"; return; }
+
+            double tx, ty;
+            if (!sec.TryGetMoveTarget(row, out tx, out ty))
+            {
+                MotionLog = "⚠ 第 " + (sec.Points.IndexOf(row) + 1) + " 行无目标坐标——请先『生成 9 点目标』。";
+                return;
+            }
+
+            if (!MoveToPointWithSafeZ(tx, ty)) return;
+
+            // ★ 走位后用【实际反馈】替代指令值回填（旧向导血泪：World 记指令值 = 把到位误差算进矩阵）
+            double ax = tx, ay = ty;
+            try
+            {
+                var m = _selectedMotionDevice;
+                var fx = m?.GetFeedbackPosition(AxisX);
+                var fy = m?.GetFeedbackPosition(AxisY);
+                if (fx != null && fx.Success) ax = fx.Data;
+                if (fy != null && fy.Success) ay = fy.Data;
+            }
+            catch { /* 反馈读不到就沿用指令值，不阻断采样 */ }
+            if (sec.IsEih) { row.PhotoX = Math.Round(ax, 3); row.PhotoY = Math.Round(ay, 3); }
+            else { row.WorldX = Math.Round(ax, 3); row.WorldY = Math.Round(ay, 3); }
+
+            // 取图（软触发新帧；走位后旧帧 = 上一位置的坐标，绝不沿用）
+            var frame = CaptureOnce();
+            if (frame != null)
+            {
+                var bmp = FrameToBitmap(frame);
+                if (bmp != null) sec.Image = bmp;
+            }
+
+            sec.SelectedRow = row;          // 预选该行，点选即回填
+            sec.RefreshGridStatus();
+            MotionLog = frame != null
+                ? string.Format(CultureInfo.InvariantCulture,
+                    "已走到第 {0} 点（次序 {1}/9；目标 {2:F3},{3:F3} → 实际 {4:F3},{5:F3}）并取图，请在图上点选该点像素。",
+                    sec.Points.IndexOf(row) + 1, orderPos + 1, tx, ty, ax, ay)
+                : string.Format(CultureInfo.InvariantCulture,
+                    "已走到第 {0} 点（次序 {1}/9）但取图失败——请检查相机后重新『走到下一点』。",
+                    sec.Points.IndexOf(row) + 1, orderPos + 1);
+        }
+
+        /// <summary>走到指定行（表格里逐点补采用）</summary>
+        public void MoveToRow(ChainPointRow row)
+        {
+            var sec = SelectedSection;
+            if (sec == null || row == null) return;
+            double tx, ty;
+            if (!sec.TryGetMoveTarget(row, out tx, out ty))
+            {
+                MotionLog = "⚠ 该行无目标坐标——请先『生成 9 点目标』。";
+                return;
+            }
+            if (!MoveToPointWithSafeZ(tx, ty)) return;
+            sec.SelectedRow = row;
+            var frame = CaptureOnce();
+            if (frame != null) { var bmp = FrameToBitmap(frame); if (bmp != null) sec.Image = bmp; }
+            MotionLog = string.Format(CultureInfo.InvariantCulture,
+                "已走到第 {0} 点 ({1:F3}, {2:F3}) 并取图，请在图上点选像素。", sec.Points.IndexOf(row) + 1, tx, ty);
+        }
+
+        /// <summary>抬 SafeZ → 直线走位到 (x,y)。无运动设备=演示模式（不阻塞，提示人工走位）</summary>
+        private bool MoveToPointWithSafeZ(double x, double y)
+        {
+            var m = _selectedMotionDevice;
+            if (m == null)
+            {
+                MotionLog = string.Format(CultureInfo.InvariantCulture,
+                    "⚠ 未绑定运动设备（演示模式）——未走位；请人工走到 ({0:F3}, {1:F3}) 后『单帧取图』再点选。", x, y);
+                return true;
+            }
+            if (m.State != DeviceState.Connected)
+            {
+                var conn = m.Connect();
+                if (conn != null && !conn.Success) { MotionLog = "⚠ 运动设备连接失败：" + conn.Message; return false; }
+            }
+
+            // 1) 先抬安全 Z（低位横穿 = 刮碰风险）
+            try
+            {
+                var cz = m.GetFeedbackPosition(AxisZ);
+                if (cz != null && cz.Success && Math.Abs(cz.Data - SafeZ) > 1e-6)
+                {
+                    var rz = m.MoveAbsolute(AxisZ, (float)SafeZ, (float)WizardMoveSpeed);
+                    if (rz != null && !rz.Success)
+                    {
+                        MotionLog = "⚠ 抬安全 Z 到 " + SafeZ.ToString("F1") + " 失败：" + rz.Message + "——已中止走位。";
+                        return false;
+                    }
+                    WaitAxesIdle(AxisZ);
+                }
+            }
+            catch (Exception ex) { MotionLog = "抬安全 Z 异常（继续尝试平移）：" + ex.Message; }
+
+            // 2) 直线平移：Epson 必走 LMOVE
+            if (m is EpsonRobot epson)
+            {
+                var cur = epson.GetPositionsAll();
+                if (cur == null || !cur.Success)
+                {
+                    MotionLog = "⚠ 读取 Epson 当前 Z/U 失败：" + (cur?.Message ?? "无应答") + "——已中止走位。";
+                    return false;
+                }
+                var rl = epson.MoveToLinear((float)x, (float)y,
+                                            cur.Data[EpsonRobot.AxisZ], cur.Data[EpsonRobot.AxisU],
+                                            (float)WizardMoveSpeed);
+                if (rl != null && !rl.Success)
+                {
+                    MotionLog = "⚠ Epson 直线走位被拒：" + rl.Message
+                              + "——该点可能在可达域外（4001 内圈空洞 / 4007 够不着 / 4041 背面禁区）；"
+                              + "请检查基准与步长，或改小步长，不要反复重试同一点。";
+                    return false;
+                }
+                // LMOVE 同步语义（到位才回 DONE）⇒ 返回即可采图，无需再等到位
+                MotionLog = string.Format(CultureInfo.InvariantCulture, "已直线走到 ({0:F3}, {1:F3})。", x, y);
+                return true;
+            }
+
+            var rx = m.MoveAbsolute(AxisX, (float)x, (float)WizardMoveSpeed);
+            var ry = m.MoveAbsolute(AxisY, (float)y, (float)WizardMoveSpeed);
+            if ((rx != null && !rx.Success) || (ry != null && !ry.Success))
+            {
+                MotionLog = "⚠ 走位被拒：" + (rx != null && !rx.Success ? rx.Message : "")
+                          + (ry != null && !ry.Success ? " / " + ry.Message : "");
+                return false;
+            }
+            WaitAxesIdle(AxisX, AxisY);
+            MotionLog = string.Format(CultureInfo.InvariantCulture, "已走到 ({0:F3}, {1:F3})。", x, y);
+            return true;
+        }
+
+        /// <summary>等待轴空闲（超时 15s 不抛异常，仅放弃等待）</summary>
+        private void WaitAxesIdle(params int[] axes)
+        {
+            var m = _selectedMotionDevice;
+            if (m == null) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < 15000)
+            {
+                bool all = true;
+                foreach (var a in axes)
+                {
+                    try { var r = m.IsAxisIdle(a); if (r != null && r.Success && !r.Data) { all = false; break; } }
+                    catch { }
+                }
+                if (all) return;
+                System.Threading.Thread.Sleep(50);
+            }
+        }
+
+        //---------------------------------------------------------------------
         // 工具 TCP 采集（T14，2026-09-28）：针尖对点 pivoting——多角度扎点 → 最小二乘 → 残差门禁 → 写入
         //   行业标准工作面：每工具一组对针点（U 散开 ≥90°），解出 e=(ex,ey) 与残差，
         //   残差=对针重复精度即验收门；解出 |e|≈0 ⇒ 引导勾『同心』显式落 (0,0)（§6.4 三态）。
@@ -1224,6 +1598,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     OnPropertyChanged(nameof(StepGuide));
                     OnPropertyChanged(nameof(IsToolStepSelected));
                     OnPropertyChanged(nameof(IsCameraStepSelected));
+                    OnPropertyChanged(nameof(CanUseGrid));
                 }
             }
         }
@@ -1272,7 +1647,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public ChainCameraSectionViewModel SelectedSection
         {
             get { return _selectedSection; }
-            set { Set(ref _selectedSection, value); }
+            set
+            {
+                if (Set(ref _selectedSection, value))
+                {
+                    OnPropertyChanged(nameof(CanUseGrid));
+                    if (_selectedSection != null) _selectedSection.RefreshGridStatus();
+                }
+            }
         }
 
         /// <summary>按当前采集完成度刷新步骤状态</summary>

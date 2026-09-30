@@ -213,6 +213,21 @@ namespace Grayson.Vision.WpfUI.View
 
         private void ReadPose_Click(object sender, RoutedEventArgs e) { _vm.ReadPose(); }
 
+        //---------------------------------------------------------------------
+        // 九点网格采集（2026-09-30 补）：设基准 → 生成目标 → 逐点走位取图
+        //   走位只做逐点触发，不做全自动循环（真机上须全程可见、可急停）。
+        //---------------------------------------------------------------------
+
+        private void SetGridBase_Click(object sender, RoutedEventArgs e) { _vm.SetGridBaseFromPose(); }
+
+        private void BuildGrid_Click(object sender, RoutedEventArgs e) { _vm.BuildGridTargets(); }
+
+        private void MoveNextPoint_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.MoveToNextPoint();
+            _vm.RefreshSteps();
+        }
+
         /// <summary>把刚回读的位姿写入当前相机【选中点行】的 WorldX/WorldY</summary>
         private void FillPose_Click(object sender, RoutedEventArgs e)
         {

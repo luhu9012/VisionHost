@@ -179,6 +179,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <!-- 采集工具栏 -->
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
@@ -233,6 +234,40 @@
                                 </DataTemplate>
                             </TabControl.ContentTemplate>
                         </TabControl>
+
+                        <!-- 九点网格采集（2026-09-30 补）：点位规划 + 步长 + 逐点走位
+                             旧向导（范式1，已删）本有「基准+步长 → 生成 9 点 → 自动走位 → 特征提取」闭环，
+                             范式2 只迁了记录/拟合/落盘，没迁采集；本面板把点位规划接回来。
+                             走位=逐点触发（不做全自动循环），真机上操作员全程可见、可急停。 -->
+                        <GroupBox Grid.Row="2" Margin="0,4,0,0"
+                                  Visibility="{Binding CanUseGrid, Converter={StaticResource BoolToVis}}"
+                                  Header="九点网格采集（点位规划 · 步长 · 逐点走位）">
+                            <StackPanel>
+                                <WrapPanel>
+                                    <TextBlock Text="① 网格中心基准" VerticalAlignment="Center" FontWeight="Bold"/>
+                                    <TextBlock VerticalAlignment="Center" FontFamily="Consolas" Margin="6,0,0,0"
+                                               Text="{Binding SelectedSection.GridBaseX, StringFormat='X={0:F3}'}"/>
+                                    <TextBlock VerticalAlignment="Center" FontFamily="Consolas" Margin="6,0,0,0"
+                                               Text="{Binding SelectedSection.GridBaseY, StringFormat='Y={0:F3}'}"/>
+                                    <Button Content="设当前轴位置为基准" Click="SetGridBase_Click" Margin="8,0,0,0"/>
+                                </WrapPanel>
+                                <WrapPanel Margin="0,3,0,0">
+                                    <TextBlock Text="② 步长 X / Y (mm)" VerticalAlignment="Center" FontWeight="Bold"/>
+                                    <TextBox Width="60" Margin="6,0,0,0" Text="{Binding SelectedSection.GridStepX}"/>
+                                    <TextBox Width="60" Margin="6,0,0,0" Text="{Binding SelectedSection.GridStepY}"/>
+                                    <TextBlock Text="③ 走位次序" VerticalAlignment="Center" FontWeight="Bold" Margin="14,0,0,0"/>
+                                    <ComboBox Width="180" Margin="6,0,0,0"
+                                              ItemsSource="{Binding SelectedSection.TraverseModeOptions}"
+                                              SelectedIndex="{Binding SelectedSection.TraverseModeIndex, Mode=TwoWay}"/>
+                                    <Button Content="生成 9 点目标" Click="BuildGrid_Click" Margin="10,0,0,0" FontWeight="Bold"/>
+                                    <Button Content="▶ 走到下一点" Click="MoveNextPoint_Click" Margin="6,0,0,0" FontWeight="Bold"/>
+                                </WrapPanel>
+                                <TextBlock Text="{Binding SelectedSection.GridStatus}" TextWrapping="Wrap" FontSize="11"
+                                           Margin="0,3,0,0" Foreground="{DynamicResource InfoBrush}"/>
+                                <TextBlock Text="{Binding GridAxisHint}" FontSize="10" Margin="0,1,0,0"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                        </GroupBox>
                     </Grid>
                     </GroupBox>
 

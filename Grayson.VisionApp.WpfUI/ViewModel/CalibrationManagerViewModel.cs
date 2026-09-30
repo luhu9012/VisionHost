@@ -81,7 +81,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>页头副标题：当前模式的一句话说明</summary>
         public string ScopeHintText => IsStationScope
-            ? $"以下展示/新建的方案自动归属工位 [{_scopeStationCode}]；新建会按本工位命名。点右上角「回全库」浏览全部方案。"
+            ? $"已定位工位 [{_scopeStationCode}]。范式2 标定：直接点上方【▶ 开始链标定】（产物 = Calib\\Chain.json，生产端自动装载）。左侧历史方案仅供范式1 流程维护；点右上角「回全库」浏览全部方案。"
             : "全局标定方案中心：从工位装配旅程第 7 步进入会自动按该工位需求档案建议合适的标定方案并钉住定位。";
 
         /// <summary>定位操作后的瞬时说明（如"已按档案自动创建 XX 方案"）</summary>
@@ -102,6 +102,37 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>是否全库态（页头「定位工位」下拉仅全库态可见）</summary>
         public bool IsGlobalScope => !IsStationScope;
+
+        //---------------------------------------------------------------------
+        // ★2026-09-30 空态引导（范式2：标定不依赖「方案」）
+        //   删除本工位全部方案后左侧列表为空——此前页面像"缺了东西没法开工"。
+        //   实际范式2 唯一入口 = ▶ 开始链标定（产物 = Chain.json），方案只是范式1 遗留载体。
+        //---------------------------------------------------------------------
+
+        /// <summary>左侧可见方案数大于 0（决定 列表/空态引导 二选一显示）</summary>
+        public bool HasVisibleProfiles => VisibleProfiles.Count > 0;
+
+        /// <summary>左侧可见方案数为空 ⇒ 显示空态引导卡</summary>
+        public bool IsProfilesEmpty => VisibleProfiles.Count == 0;
+
+        /// <summary>是否有选中方案（无 ⇒ 右侧范式1 详情编辑区整体隐藏，避免满屏空字段误导）</summary>
+        public bool IsProfileSelected => SelectedCalibrationProfile != null;
+
+        /// <summary>空态引导标题（区分工位态/全库态）</summary>
+        public string EmptyGuideTitle => IsStationScope ? "本工位暂无历史方案" : "库内暂无标定方案";
+
+        /// <summary>空态引导正文（把"接下来该干什么"一句话说清）</summary>
+        public string EmptyGuideText => IsStationScope
+            ? "范式2 标定不需要先建方案：链形状由工位档案 [" + _scopeStationCode + "] 直接推导。点下方按钮进链向导，"
+              + "采集拟合后产物写入本工位 Calib\\Chain.json，生产/示教自动装载——「+ 新建」仅用于维护范式1 遗留方案。"
+            : "范式2 标定不需要先建方案：先用页头「定位工位」下拉选定工位（或从工位工作台跳入），再点「▶ 开始链标定」。";
+
+        private void NotifyProfileListChanged()
+        {
+            OnPropertyChanged(nameof(HasVisibleProfiles));
+            OnPropertyChanged(nameof(IsProfilesEmpty));
+            OnPropertyChanged(nameof(IsProfileSelected));
+        }
 
         //---------------------------------------------------------------------
         // 页头「定位工位」下拉（2026-09-30 补）
@@ -255,7 +286,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             get
             {
                 var p = SelectedCalibrationProfile;
-                if (p == null) return "在左侧选择标定方案查看其按物理量拆分的任务卡。";
+                if (p == null) return "暂无选中方案。★范式2 标定不依赖方案：请直接点上方【▶ 开始链标定】（产物 = Calib\\Chain.json，生产端自动装载）。选中历史（范式1）方案后，本区显示其按物理量拆分的任务卡，仅用于发布留痕与矩阵分发。";
                 if (DerivedCards.Count == 0)
                 {
                     return "该方案无可派生任务（棋盘/畸变占位不可执行；或旧档案类型未知且无矩阵）。";
@@ -374,6 +405,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     ExecuteTestMap();
                     (OpenToolOffsetCommand as RelayCommand)?.RaiseCanExecuteChanged();
                     RebuildDerivedCards();
+                    OnPropertyChanged(nameof(IsProfileSelected));
                 }
             }
         }
@@ -506,6 +538,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     VisibleProfiles.Add(np);
                 }
+                NotifyProfileListChanged();
                 SaveProfileToRepository(np);
                 SelectedCalibrationProfile = np; // 触发 RebuildDerivedCards → 派生卡（含 e）整体切到吸嘴N
                 ScopeNoteText = $"已为 吸嘴{nozzle} 新建独立方案【{newName}】——请单独执行 H/e 向导（数据与吸嘴{old} 独立）。";
@@ -1227,6 +1260,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(ScopeChipText));
             OnPropertyChanged(nameof(ScopeHintText));
             OnPropertyChanged(nameof(ChainStatusText));
+            OnPropertyChanged(nameof(EmptyGuideTitle));
+            OnPropertyChanged(nameof(EmptyGuideText));
         }
 
         /// <summary>
@@ -1520,6 +1555,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             CalibrationProfiles.Add(newProfile);
             SelectedCalibrationProfile = newProfile;
             VisibleProfiles.Add(newProfile);
+            NotifyProfileListChanged();
             SaveProfileToRepository(newProfile);
             return newProfile;
         }
@@ -1532,6 +1568,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 ? CalibrationProfiles.Where(p => string.Equals(p.BoundStationCode, _scopeStationCode, StringComparison.OrdinalIgnoreCase))
                 : CalibrationProfiles;
             foreach (var p in source) VisibleProfiles.Add(p);
+            NotifyProfileListChanged();
 
             if (SelectedCalibrationProfile == null || !VisibleProfiles.Contains(SelectedCalibrationProfile))
             {
@@ -1683,6 +1720,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             CalibrationProfiles.Add(newProfile);
             SelectedCalibrationProfile = newProfile;
             VisibleProfiles.Add(newProfile);
+            NotifyProfileListChanged();
             SaveProfileToRepository(newProfile);
         }
 

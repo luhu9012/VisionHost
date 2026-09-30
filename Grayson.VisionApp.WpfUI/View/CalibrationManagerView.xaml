@@ -90,11 +90,8 @@
                     <TextBlock Text="🔗 范式2 标定主线（新流程走这条）" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
                 </DockPanel>
                 <TextBlock Margin="0,6,0,0" FontSize="11.5" TextWrapping="Wrap"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           Text="① 工位档案填【相机槽事实】——安装方式/用途/轴跟随/是否启用，双吸嘴则工具头数填 2（链的形状完全由这些事实推导）；② 链向导逐相机采集点对并拟合（九点 / 延伸杆 / 针尖 / Mark 旋转 / 底拍，按工位实际条件），再填标定高度 Z、拍照基准位（眼在手上）、下相机差分基准；③ 链校验台核查（与生产端同一把尺）；④ 真机验证（指哪打哪）确认能投产；生产与示教自动消费，无需再发布。"/>
-                <TextBlock Margin="0,4,0,0" FontSize="11.5" TextWrapping="Wrap"
-                           Foreground="{DynamicResource TextDisabledBrush}"
-                           Text="人工只需两处裁决：指派【主工具】、相机取舍。所有标定量的落盘出口只有一个 —— 工位目录下的 Calib\Chain.json（生产/示教/校验同源装载，缺链即 fail-closed 拒绝求值）。"/>
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="流程：① 工位档案填「相机槽事实」（链形状由它推导，人工只裁两处：主工具指派、相机取舍） → ② ▶ 开始链标定（采集拟合，产物唯一 = 本工位 Calib\Chain.json） → ③ ✅ 链校验台 → ④ 🎯 真机验证 → 投产。生产/示教自动消费，无需发布。"/>
             </StackPanel>
         </Border>
 
@@ -119,12 +116,15 @@
 
                 <!-- 在左侧列表头部新增组合按钮 -->
                 <Grid Grid.Row="0">
-                    <TextBlock Text="标定配置方案" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="历史方案" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <TextBlock Text="（范式1 遗留）" FontSize="10.5" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="6,1,0,0"/>
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <!-- 1. 修改新增按钮：挂载 Click 事件，菜单项由 code-behind 按 CalibrationTypeOptions
                              统一数据源动态生成（与右侧类型下拉完全一致；开发中(TODO)项灰显禁用） -->
                         <Button Content="+ 新建 ▾" Style="{StaticResource PrimaryButtonStyle}"
-							Height="28" Padding="8,0" Click="BtnNewProfile_Click">
+							Height="28" Padding="8,0" Click="BtnNewProfile_Click" ToolTip="范式1 遗留入口：仅用于维护历史方案（发布留痕 / 矩阵分发）。范式2 标定不需要新建方案——直接点上方【▶ 开始链标定】，产物 = Calib\Chain.json。">
                             <Button.ContextMenu>
                                 <ContextMenu x:Name="NewProfileMenu"/>
                             </Button.ContextMenu>
@@ -134,7 +134,7 @@
 							Command="{Binding DeleteProfileCommand}" Height="28" Padding="8,0" Margin="4,0,0,0"/>
                     </StackPanel>
                 </Grid>
-                <ListBox Grid.Row="2" ItemsSource="{Binding VisibleProfiles}"
+                <ListBox Grid.Row="2" ItemsSource="{Binding VisibleProfiles}" Visibility="{Binding HasVisibleProfiles, Converter={StaticResource BoolToVis}}"
                          SelectedItem="{Binding SelectedCalibrationProfile}"
                          Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -224,15 +224,24 @@
 					</ListBox.ItemTemplate>
 				</ListBox>
 
+				<!-- ★2026-09-30 空态引导：范式2 标定不依赖方案——空列表 ≠ 缺了东西没法开工 -->
+				<Border Grid.Row="2" Background="{DynamicResource BackgroundCardBrush}" CornerRadius="4" Padding="14,12"
+					Visibility="{Binding IsProfilesEmpty, Converter={StaticResource BoolToVis}}">
+					<StackPanel>
+						<TextBlock Text="{Binding EmptyGuideTitle}" FontWeight="Bold" FontSize="13.5"
+							Foreground="{DynamicResource TextPrimaryBrush}"/>
+						<TextBlock Text="{Binding EmptyGuideText}" FontSize="11.5" TextWrapping="Wrap" Margin="0,7,0,0"
+							Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<Button Content="▶ 开始链标定（唯一入口）" Style="{StaticResource PrimaryButtonStyle}"
+							Margin="0,12,0,0" HorizontalAlignment="Left" Padding="14,6"
+							Command="{Binding OpenChainWizardCommand}"
+							ToolTip="链标定向导：按工位档案推导坐标系传导链 → 逐相机采集点对 → 拟合 → 门禁 → 写 Chain.json。生产/示教同源装载——不需要建方案，也不需要发布。"/>
+					</StackPanel>
+				</Border>
+
 				<StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
 					<Button Content="导入" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ImportCommand}" Width="auto" Height="auto"/>
 					<Button Content="导出" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ExportCommand}" Width="auto" Height="auto" Margin="6,0,0,0"/>
-					<Button Content="🔗 链向导" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainWizardCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
-					        ToolTip="范式2 链向导：采集点对 → 拟合（真奇异值形状硬拦） → 组装链图 → G0~G4 校验 → 写 Chain.json（生产端 fail-closed 唯一真源）。"/>
-					<Button Content="✅ 链校验台" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainVerifyCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
-					        ToolTip="范式2 链校验台（只读）：L1 门禁可视 + L2 数学校验（形状/条件数/像素当量/CalibZ/DeltaRef 自洽）。"/>
-					<Button Content="🎯 真机验证" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenChainLiveVerifyCommand}" Width="auto" Height="auto" Margin="6,0,0,0"
-					        ToolTip="L3 真机「指哪打哪」：相机看点 → 链求值 → 逆解 → 真机到位 → 复测，在世界域量偏差，回答『能不能投产』。"/>
 				</StackPanel>
 			</Grid>
 		</Border>
@@ -264,7 +273,7 @@
 					</Grid>
 
 					<!-- P3：本方案 → 0..N 张任务卡（H/e/t/s 按量拆分），动作直接挂在卡上 -->
-					<Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="4" Padding="10" Margin="0,8,0,0"
+					<Border Background="{DynamicResource BackgroundCardBrush}" CornerRadius="4" Padding="10" Margin="0,8,0,0"
                             Visibility="{Binding HasDerivedCards, Converter={StaticResource BoolToVis}}">
 						<StackPanel>
 							<DockPanel>
@@ -337,7 +346,8 @@
 				</StackPanel>
 
 			<!-- 核心指标评估 KPI Dashboard 卡片 -->
-			<Border Grid.Row="2" Background="{DynamicResource CardBackgroundBrush}" CornerRadius="4" Padding="12">
+			<Border Grid.Row="2" Background="{DynamicResource BackgroundCardBrush}" CornerRadius="4" Padding="12"
+				Visibility="{Binding IsProfileSelected, Converter={StaticResource BoolToVis}}">
 				<StackPanel>
 					<UniformGrid Columns="4">
 						<StackPanel>
@@ -491,7 +501,9 @@
 			</Border>
 
 				<!-- 下部：发布设置与在线转换验证 -->
-				<Grid Grid.Row="4">
+				<Expander Grid.Row="4" Header="范式1 遗留：矩阵发布 / 在线坐标校验（链标定产物自动生效，一般无需展开）"
+				IsExpanded="False" Foreground="{DynamicResource TextPrimaryBrush}">
+				<Grid>
 					<Grid.RowDefinitions>
 						<RowDefinition Height="Auto"/>
 						<RowDefinition Height="12"/>
@@ -584,6 +596,7 @@
 						</Grid>
 					</GroupBox>
 				</Grid>
+				</Expander>
 			</Grid>
 		</Border>
 	</Grid>

@@ -117,6 +117,82 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
     }
 
+    /// <summary>
+    /// 旋转中心 e 采样行（2026-09-30）：EIH 法兰绕 U 转、相机始终看同一固定特征
+    /// ⇒ 特征在【法兰系】里画圆，圆心就是工具尖相对法兰的偏心 e。
+    /// 采样量是**像素**（圆拟合在像素域做，与范式1 RotCircle 同口径），圆心再由相机矩阵 H_FC 映到法兰系。
+    /// 与 pivoting（针尖接触法）是同一物理量的两条独立路径——两者可交叉校验。
+    /// </summary>
+    public class ChainRotationRow : ViewModelBase
+    {
+        private double _uDeg;
+        private double _pixelCol;
+        private double _pixelRow;
+        private double _residualPx = double.NaN;
+        private bool _residualHigh;
+        private string _note;
+
+        public ChainRotationRow(string note) { _note = note; }
+        public string Note { get { return _note; } }
+        /// <summary>拍照时的法兰 U 角（度）——须覆盖 ≥90°（行业惯例 0/90/180/270）</summary>
+        public double UDeg { get { return _uDeg; } set { Set(ref _uDeg, value); } }
+        /// <summary>特征像素列（col）</summary>
+        public double PixelCol
+        {
+            get { return _pixelCol; }
+            set { if (Set(ref _pixelCol, value)) OnPropertyChanged(nameof(PixelText)); }
+        }
+        /// <summary>特征像素行（row）</summary>
+        public double PixelRow
+        {
+            get { return _pixelRow; }
+            set { if (Set(ref _pixelRow, value)) OnPropertyChanged(nameof(PixelText)); }
+        }
+        /// <summary>有效采样（有像素）——同一行的判据用「像素非零」，U 角可以为 0</summary>
+        public bool HasPixel { get { return !(_pixelCol == 0 && _pixelRow == 0); } }
+        public string PixelText
+        {
+            get { return HasPixel ? string.Format(CultureInfo.InvariantCulture, "{0:F1},{1:F1}", _pixelCol, _pixelRow) : ""; }
+        }
+        /// <summary>该点到拟合圆心的半径偏差（px）</summary>
+        public double ResidualPx
+        {
+            get { return _residualPx; }
+            set { if (Set(ref _residualPx, value)) OnPropertyChanged(nameof(ResidualText)); }
+        }
+        public string ResidualText
+        {
+            get { return double.IsNaN(_residualPx) ? "" : _residualPx.ToString("F2", CultureInfo.InvariantCulture); }
+        }
+        public bool ResidualHigh
+        {
+            get { return _residualHigh; }
+            set { Set(ref _residualHigh, value); }
+        }
+    }
+
+    /// <summary>
+    /// pivoting 可视化的一个散点（2026-09-30）：坐标已换算到 XAML Canvas 的像素域。
+    /// 靶心 = P_ref，点到靶心的距离 = 该角的残差（预测针尖位置对 P_ref 的偏差）。
+    /// </summary>
+    public class PivotVizDot
+    {
+        /// <summary>画布 X（px，左上原点）——该角预测针尖位置</summary>
+        public double CanvasX { get; set; }
+        /// <summary>画布 Y（px，已做世界Y→屏幕Y 翻转）</summary>
+        public double CanvasY { get; set; }
+        /// <summary>靶心画布 X（= 画布中心；残差射线起点）</summary>
+        public double CenterX { get; set; }
+        /// <summary>靶心画布 Y（= 画布中心；残差射线起点）</summary>
+        public double CenterY { get; set; }
+        /// <summary>超出验收门 0.5mm ⇒ 该角"扎歪"（画红点）</summary>
+        public bool IsOutlier { get; set; }
+        /// <summary>行号标签（"1".."8"）</summary>
+        public string Label { get; set; }
+        /// <summary>悬停提示（U 角与残差）</summary>
+        public string Tip { get; set; }
+    }
+
     /// <summary>一个相机节点的采集与拟合（数量/挂链由骨架决定，向导动态生成）</summary>
     public class ChainCameraSectionViewModel : ViewModelBase
     {
@@ -780,6 +856,44 @@ namespace Grayson.Vision.WpfUI.ViewModel
             set { if (Set(ref _isConcentric, value)) NotifyReady(); }
         }
 
+        // ---- 2026-09-30 新增：旋转中心（视觉路径）与 U0 基准角 ----
+
+        private double? _rotationCenterDx;
+        private double? _rotationCenterDy;
+        private double _offsetBaseUDeg;
+
+        /// <summary>
+        /// 旋转中心（法兰系，mm）——由「旋转中心 e 采集步」的像素圆拟合经 H_FC 映射得到，
+        /// 落 ChainTcpNode.URotationCenter。null = 未走视觉路径（此时由 pivoting 的 Offset 单独承担）。
+        /// </summary>
+        public double? RotationCenterDx
+        {
+            get { return _rotationCenterDx; }
+            set { if (Set(ref _rotationCenterDx, value)) OnPropertyChanged(nameof(HasRotationCenter)); }
+        }
+        public double? RotationCenterDy
+        {
+            get { return _rotationCenterDy; }
+            set { if (Set(ref _rotationCenterDy, value)) OnPropertyChanged(nameof(HasRotationCenter)); }
+        }
+        public bool HasRotationCenter { get { return _rotationCenterDx.HasValue && _rotationCenterDy.HasValue; } }
+
+        /// <summary>
+        /// Offset 的基准法兰角 U0（度）——落 ChainCalibMeta.OffsetBaseU。
+        /// 0 = 标定在 U=0 完成（pivoting 解出的 e 本就是法兰系矢量，这是常态，不用改）；
+        /// 非零时逆解用 R(U_final − U0)，供「Offset 由姿态相关的直量路径给出」时声明参考姿态
+        /// （旧档迁移 / ETH 直量），避免那段旋转被丢掉后生产端系统性偏。
+        /// </summary>
+        public double OffsetBaseUDeg
+        {
+            get { return _offsetBaseUDeg; }
+            set { if (Set(ref _offsetBaseUDeg, value)) OnPropertyChanged(nameof(OffsetBaseUText)); }
+        }
+        public string OffsetBaseUText
+        {
+            get { return _offsetBaseUDeg == 0 ? "0°（法兰系内蕴）" : _offsetBaseUDeg.ToString("F2", CultureInfo.InvariantCulture) + "°"; }
+        }
+
         /// <summary>三态口径：勾同心 或 填了非零偏移 ⇒ 已测可落盘；否则视为未测（fail-closed）</summary>
         public bool OffsetFilled { get { return _isConcentric || _offsetDx != 0 || _offsetDy != 0; } }
 
@@ -834,7 +948,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
     }
 
     /// <summary>步骤对应的操作区（用于"点步骤 → 切区域"）</summary>
-    public enum StepZone { Camera, Tool, Gate }
+    public enum StepZone { Camera, Tool, Rotation, Gate }
 
     /// <summary>
     /// 链向导 v2 主 VM：档案→推导器→骨架→步骤清单→采集回填→校验→落盘。
@@ -860,7 +974,15 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private volatile bool _captureWaitActive;
         private int _triggerMode = -1;
 
-        public ChainWizardViewModel(string stationCode)
+        public ChainWizardViewModel(string stationCode) : this(stationCode, null)
+        {
+        }
+
+        /// <summary>
+        /// 带「任务卡直达」的构造（#5，2026-09-30）：focusCard = 卡型键（H/E/T/S），
+        /// 打开即把步骤清单定位到该卡对应的第一步——点哪张卡就落在哪个工作面，不用再自己找。
+        /// </summary>
+        public ChainWizardViewModel(string stationCode, string focusCard)
         {
             _stationCode = stationCode;
             var plan = PlanFromProfile(stationCode);
@@ -880,6 +1002,41 @@ namespace Grayson.Vision.WpfUI.ViewModel
             LoadMotionDevices();
             if (_draft != null)
                 BuildUiFromDraft();
+            SelectStepByCard(focusCard);
+        }
+
+        /// <summary>
+        /// 按任务卡型把步骤清单定位到对应工作面（#5）。键沿用卡的量名首字母：
+        /// H/S（手眼/像素当量）→ 相机九点步；E（旋转中心）→ 旋转采样步（缺则该工具的对针步）；T（对针）→ 工具步。
+        /// 认不出的键不猜——保持默认（第一步），宁可多点一下也不要跳错工作面。
+        /// </summary>
+        private void SelectStepByCard(string focusCard)
+        {
+            if (string.IsNullOrWhiteSpace(focusCard)) return;
+            string k = focusCard.Trim().ToUpperInvariant();
+            ChainStepRow target;
+            switch (k)
+            {
+                case "H":
+                case "HANDEYE":
+                case "S":
+                case "PIXELSCALE":
+                    target = Steps.FirstOrDefault(s => s.Zone == StepZone.Camera);
+                    break;
+                case "E":
+                case "TOOLROTATION":
+                case "ROTATION":
+                    target = Steps.FirstOrDefault(s => s.Zone == StepZone.Rotation)
+                          ?? Steps.FirstOrDefault(s => s.Zone == StepZone.Tool);
+                    break;
+                case "T":
+                case "TOOLOFFSET":
+                    target = Steps.FirstOrDefault(s => s.Zone == StepZone.Tool);
+                    break;
+                default:
+                    return;
+            }
+            if (target != null) SelectStep(target);
         }
 
         //---------------------------------------------------------------------
@@ -1672,6 +1829,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                             _pivotStore[t.ToolId] = list;
                         }
                         PivotRows = list;
+                        ClearPivotViz();      // 切工具即清图：旧工具的散点留在屏上会被当成新结论
                         PivotResultText = "工具 " + t.ToolId + "：" + t.Ready
                             + (t.IsConcentric ? "（已勾同心，无需再对针）" : "——把法兰转到不同 U 角扎同一针尖，每角回填一次读数");
                     }
@@ -1734,6 +1892,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public void SolvePivoting()
         {
             PivotHasResult = false;
+            ClearPivotViz();
             if (_pivotTool == null) { PivotResultText = "⚠ 请先选择工具。"; return; }
             if (_pivotTool.IsConcentric) { PivotResultText = "该工具已勾『同心』，无需对针求解。"; return; }
 
@@ -1781,6 +1940,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 worstIdx >= 0 ? filled[worstIdx].Note : "-",
                 worst,
                 concentricHint);
+            BuildPivotViz(filled, r);
         }
 
         /// <summary>把解出的 e 写入当前工具（OffsetDx/Dy），完成 WF-03</summary>
@@ -1794,6 +1954,340 @@ namespace Grayson.Vision.WpfUI.ViewModel
             OnPropertyChanged(nameof(PivotReadyText));
             return string.Format(CultureInfo.InvariantCulture,
                 "已写入 {0}：dx={1:F4}, dy={2:F4}（主=对针直量；副=相对主 Δ）", _pivotTool.ToolId, _pivotEx, _pivotEy);
+        }
+
+        //---------------------------------------------------------------------
+        // 旋转中心 e 采集（2026-09-30，WF-05）：EIH 法兰绕 U 转、相机始终看同一固定特征
+        //   ⇒ 特征在【法兰系】里画圆，圆心即工具尖相对法兰的偏心 e —— 与 pivoting 是同一物理量的
+        //     第二条独立路径（不碰针尖/不需工装，代价是需要相机已标 H_FC）。
+        //   圆心像素经 H_FC 映到法兰系落 ChainTcpNode.URotationCenter；与 pivoting 的 Offset 交叉校验。
+        //---------------------------------------------------------------------
+
+        private readonly Dictionary<string, ObservableCollection<ChainRotationRow>> _rotationStore
+            = new Dictionary<string, ObservableCollection<ChainRotationRow>>(StringComparer.OrdinalIgnoreCase);
+
+        private ObservableCollection<ChainRotationRow> _rotationRows = new ObservableCollection<ChainRotationRow>();
+        /// <summary>当前工具的旋转采样表（切工具自动换表；数据按 ToolId 保留）</summary>
+        public ObservableCollection<ChainRotationRow> RotationRows
+        {
+            get { return _rotationRows; }
+            private set { Set(ref _rotationRows, value); }
+        }
+
+        private ChainToolRowViewModel _rotationTool;
+        /// <summary>旋转中心面板当前操作的工具</summary>
+        public ChainToolRowViewModel RotationTool
+        {
+            get { return _rotationTool; }
+            set
+            {
+                if (!Set(ref _rotationTool, value)) return;
+                var t = _rotationTool;
+                if (t != null)
+                {
+                    ObservableCollection<ChainRotationRow> list;
+                    if (!_rotationStore.TryGetValue(t.ToolId, out list))
+                    {
+                        list = new ObservableCollection<ChainRotationRow>();
+                        var def = new[] { 0.0, 90.0, 180.0, 270.0 };   // 行业惯例四点（天然满足 ≥30° 跨度门）
+                        for (int i = 0; i < def.Length; i++)
+                            list.Add(new ChainRotationRow("R" + (i + 1)) { UDeg = def[i] });
+                        _rotationStore[t.ToolId] = list;
+                    }
+                    RotationRows = list;
+                    RotationResultText = "工具 " + t.ToolId
+                        + "——按表内 U 角逐角转到位、每角拍同一固定特征，凑够 ≥3 角（推荐 0/90/180/270）后『圆拟合求 e』";
+                }
+                OnPropertyChanged(nameof(RotationReadyText));
+            }
+        }
+
+        private ChainRotationRow _selectedRotationRow;
+        /// <summary>旋转采样表选中行（『识别回填』/『点选回填』的写入目标）</summary>
+        public ChainRotationRow SelectedRotationRow
+        {
+            get { return _selectedRotationRow; }
+            set { Set(ref _selectedRotationRow, value); }
+        }
+
+        public string RotationReadyText
+        {
+            get
+            {
+                if (_rotationTool == null) return "";
+                return _rotationTool.HasRotationCenter
+                    ? string.Format(CultureInfo.InvariantCulture, "✓ 已测 e=({0:F4},{1:F4})",
+                                    _rotationTool.RotationCenterDx.Value, _rotationTool.RotationCenterDy.Value)
+                    : "待测";
+            }
+        }
+
+        private string _rotationResultText = "选工具 → 逐角转 U 拍特征 → 回填像素 → 圆拟合 → 写入旋转中心";
+        public string RotationResultText
+        {
+            get { return _rotationResultText; }
+            private set { Set(ref _rotationResultText, value); }
+        }
+
+        /// <summary>最近一次圆拟合有效（供『写入旋转中心』闸门）</summary>
+        public bool RotationHasResult { get; private set; }
+        private double _rotEx, _rotEy;
+
+        public void AddRotationPoint()
+        {
+            RotationRows.Add(new ChainRotationRow("R" + (RotationRows.Count + 1)));
+        }
+
+        public void RemoveRotationPoint(ChainRotationRow row)
+        {
+            if (row != null) RotationRows.Remove(row);
+        }
+
+        /// <summary>统一像素落点（识别与图点选共用同一入口，避免两套口径）</summary>
+        public void SetRotationPixel(ChainRotationRow row, double col, double rowPx)
+        {
+            if (row == null) row = _selectedRotationRow;
+            if (row == null) { RotationResultText = "⚠ 请先在旋转采样表里选中一行（回填目标）。"; return; }
+            row.PixelCol = col;
+            row.PixelRow = rowPx;
+            RotationResultText = string.Format(CultureInfo.InvariantCulture,
+                "已回填 {0} 第 {1} 行（U={2:F1}°）：像素=({3:F1},{4:F1})——转下一角继续；凑够 ≥3 角后『圆拟合求 e』",
+                _rotationTool == null ? "?" : _rotationTool.ToolId, RotationRows.IndexOf(row) + 1, row.UDeg, col, rowPx);
+        }
+
+        /// <summary>识别当前相机图像的特征并回填选中采样行（EIH 间接对针：免人工点选）</summary>
+        public void RecognizeForRotation()
+        {
+            var sec = SelectedSection;
+            if (sec == null) { RotationResultText = "⚠ 请先在相机页选中一台相机（旋转采样要用它的图）。"; return; }
+            var msg = RecognizeFeature(sec);
+            if (!sec.HasRecognized) { RotationResultText = msg; return; }
+            SetRotationPixel(_selectedRotationRow, sec.RecognizedCol, sec.RecognizedRow);
+            RotationResultText = msg + " ｜ " + RotationResultText;
+        }
+
+        /// <summary>
+        /// 圆拟合求 e：像素域圆拟合（RotationResidualCalculator.Compute）→ 圆心经相机矩阵 H_FC 映到法兰系。
+        /// 相机未拟合时只给像素结论并点名缺什么——像素与物理量之间没有桥，不猜。
+        /// </summary>
+        public void SolveRotationCircle()
+        {
+            RotationHasResult = false;
+            if (_rotationTool == null) { RotationResultText = "⚠ 请先选择工具。"; return; }
+
+            var filled = RotationRows.Where(p => p.HasPixel).ToList();
+            foreach (var p in RotationRows) { p.ResidualPx = double.NaN; p.ResidualHigh = false; }
+            if (filled.Count < 3)
+            {
+                RotationResultText = "❌ 有效采样不足（≥3 可解，推荐 0/90/180/270 四点；当前 " + filled.Count + " 行填了像素）。";
+                return;
+            }
+            // U 跨度门与 pivoting 同尺：角度没散开时圆心解病态（外圈噪声被放大成圆心抖动）
+            double uMin = filled.Min(p => p.UDeg), uMax = filled.Max(p => p.UDeg);
+            if (uMax - uMin < 30.0)
+            {
+                RotationResultText = string.Format(CultureInfo.InvariantCulture,
+                    "❌ U 角跨度仅 {0:F1}°（<30°）——角度未散开时圆心解病态，请把法兰转过更大范围再采样。", uMax - uMin);
+                return;
+            }
+
+            var pts = filled.Select(p => new RotationResidualPoint { AngleDeg = p.UDeg, X = p.PixelCol, Y = p.PixelRow }).ToList();
+            var rep = RotationResidualCalculator.Compute(pts);
+            if (rep.PointCount == 0) { RotationResultText = "❌ 圆拟合失败（点退化/共线，检查各行像素是否填错）。"; return; }
+
+            double centerCol = rep.CenterX, centerRow = rep.CenterY;
+            double radiusPx = rep.MeanRadius, rmsPx = rep.RmsResidual;
+            double hiGate = Math.Max(rep.RmsResidual * 2.5, 0.5);
+            foreach (var r in rep.Rows)
+            {
+                int k = r.Index - 1;                     // Rows.Index 是 1 基
+                if (k < 0 || k >= filled.Count) continue;
+                filled[k].ResidualPx = r.Residual;
+                filled[k].ResidualHigh = r.Residual > hiGate;
+            }
+
+            var sec = SelectedSection;
+            var node = sec == null ? null : sec.ToNode();
+            if (node == null || node.Matrix == null || node.Matrix.Length != 6)
+            {
+                RotationResultText = string.Format(CultureInfo.InvariantCulture,
+                    "圆心像素=({0:F2},{1:F2})，半径={2:F1}px，残差RMS={3:F2}px（最差点 U={4:F1}°={5:F2}px）"
+                    + "｜⚠ 相机未拟合（缺 H_FC）⇒ 像素映不到法兰系，请先完成相机步再写入旋转中心。",
+                    centerCol, centerRow, radiusPx, rmsPx, rep.MaxResidualAngleDeg, rep.MaxResidual);
+                return;
+            }
+
+            var mm = node.Matrix;
+            var h = HomMat2D.FromElements(mm[0], mm[1], mm[2], mm[3], mm[4], mm[5]);
+            double ex, ey;
+            h.Map(centerCol, centerRow, out ex, out ey);
+            _rotEx = ex; _rotEy = ey;
+            RotationHasResult = true;
+
+            string cross = "";
+            if (_rotationTool.OffsetFilled && !_rotationTool.IsConcentric)
+            {
+                double ddx = ex - _rotationTool.OffsetDx, ddy = ey - _rotationTool.OffsetDy;
+                double dev = Math.Sqrt(ddx * ddx + ddy * ddy);
+                cross = string.Format(CultureInfo.InvariantCulture,
+                    "｜交叉校验：与 pivoting 的 Offset=({0:F4},{1:F4}) 相差 {2:F4}mm{3}",
+                    _rotationTool.OffsetDx, _rotationTool.OffsetDy, dev,
+                    dev <= 0.1 ? "（两条独立路径一致 ✓）" : "（⚠ >0.1mm：两法结论不一致，先查针尖是否扎稳 / 特征是否真固定）");
+            }
+            RotationResultText = string.Format(CultureInfo.InvariantCulture,
+                "✓ {0} 圆心像素=({1:F2},{2:F2})，半径={3:F1}px，残差RMS={4:F2}px（最差点 U={5:F1}°={6:F2}px）"
+                + "⇒ e=({7:F4},{8:F4})mm（相机 {9} 的 H_FC 映射）{10}——点『写入旋转中心』落 URotationCenter",
+                _rotationTool.ToolId, centerCol, centerRow, radiusPx, rmsPx,
+                rep.MaxResidualAngleDeg, rep.MaxResidual, ex, ey, node.CameraId, cross);
+        }
+
+        /// <summary>把解出的 e 写入当前工具的 URotationCenter（WF-05 收口）</summary>
+        public string ApplyRotationToTool()
+        {
+            if (_rotationTool == null) return "⚠ 请先选择工具。";
+            if (!RotationHasResult) return "⚠ 尚无有效圆拟合结果——请先『圆拟合求 e』（相机须已拟合）。";
+            _rotationTool.RotationCenterDx = _rotEx;
+            _rotationTool.RotationCenterDy = _rotEy;
+            RefreshSteps();
+            OnPropertyChanged(nameof(RotationReadyText));
+            return string.Format(CultureInfo.InvariantCulture,
+                "已写入 {0} 旋转中心：e=({1:F4}, {2:F4})mm（落 ChainTcpNode.URotationCenter）",
+                _rotationTool.ToolId, _rotEx, _rotEy);
+        }
+
+        //---------------------------------------------------------------------
+        // pivoting 可视化（#3，2026-09-30）：把 SolvePivoting 的结果画出来——
+        //   靶心 = P_ref，每个采样角一个点；点到靶心的距离就是该角的残差，
+        //   验收门（0.5mm）画成一个圈。原来只有一行长文本，哪个角扎歪要自己在数字堆里找。
+        //---------------------------------------------------------------------
+
+        public ObservableCollection<PivotVizDot> PivotVizDots { get; } = new ObservableCollection<PivotVizDot>();
+
+        private bool _hasPivotViz;
+        public bool HasPivotViz { get { return _hasPivotViz; } private set { Set(ref _hasPivotViz, value); } }
+
+        private double _pivotVizMaxDevMm;
+        /// <summary>本组点的最大偏差（mm）——可视化的满量程参考</summary>
+        public double PivotVizMaxDevMm
+        {
+            get { return _pivotVizMaxDevMm; }
+            private set { if (Set(ref _pivotVizMaxDevMm, value)) OnPropertyChanged(nameof(PivotVizMaxDevText)); }
+        }
+        /// <summary>最大偏差的人读文本（在 VM 里格式化：XAML 的 StringFormat 遇 { 要转义，绕开这个坑）</summary>
+        public string PivotVizMaxDevText
+        {
+            get { return string.Format(CultureInfo.InvariantCulture, "最大偏差 {0:F4} mm", _pivotVizMaxDevMm); }
+        }
+
+        private double _pivotVizGateRadius;
+        /// <summary>验收门（0.5mm）在画布上的半径（px）</summary>
+        public double PivotVizGateRadius { get { return _pivotVizGateRadius; } private set { Set(ref _pivotVizGateRadius, value); } }
+        /// <summary>验收门直径（px）——XAML 里 Ellipse 的 Width/Height 直接绑它</summary>
+        public double PivotVizGateDiameter { get { return _pivotVizGateRadius * 2.0; } }
+
+        private string _pivotVizScaleText = "";
+        public string PivotVizScaleText { get { return _pivotVizScaleText; } private set { Set(ref _pivotVizScaleText, value); } }
+
+        /// <summary>画布内切半径（px）——与 XAML 里 Canvas 的边长保持同一口径（边长 = 2×本值）</summary>
+        public const double PivotVizHalfExtent = 78.0;
+        /// <summary>画布中心（= P_ref 落点）</summary>
+        public double PivotVizCenter { get { return PivotVizHalfExtent; } }
+
+        /// <summary>清空可视化（切工具 / 求解失败时调，避免旧图当作新结论看）</summary>
+        private void ClearPivotViz()
+        {
+            PivotVizDots.Clear();
+            HasPivotViz = false;
+            PivotVizScaleText = "";
+        }
+
+        /// <summary>
+        /// 由求解结果生成散点：预测针尖位置（tᵢ + R(Uᵢ)·e）相对 P_ref 的偏差即残差。
+        /// 尺度取「最大偏差占内切半径 82%」与「门圈占内切半径 90%」的较小者——两者都要看得见。
+        /// </summary>
+        private void BuildPivotViz(List<ChainPivotRow> filled, ChainPivotResult r)
+        {
+            ClearPivotViz();
+            if (filled == null || filled.Count == 0 || r == null || !r.Ok) return;
+
+            int n = filled.Count;
+            var axs = new double[n];
+            var ays = new double[n];
+            var dev = new double[n];
+            double maxAbs = 0.05;                       // 兜底正尺度，避免全零时除零
+            for (int i = 0; i < n; i++)
+            {
+                double rad = filled[i].UDeg * Math.PI / 180.0;
+                double c = Math.Cos(rad), s = Math.Sin(rad);
+                double px = filled[i].FlangeX + c * r.Ex - s * r.Ey;
+                double py = filled[i].FlangeY + s * r.Ex + c * r.Ey;
+                axs[i] = px - r.RefX;
+                ays[i] = py - r.RefY;
+                dev[i] = Math.Sqrt(axs[i] * axs[i] + ays[i] * ays[i]);
+                if (dev[i] > maxAbs) maxAbs = dev[i];
+            }
+
+            double scale = Math.Min(PivotVizHalfExtent * 0.82 / maxAbs,
+                                    PivotVizHalfExtent * 0.90 / ChainFitter.PivotRmsGateMm);
+
+            for (int i = 0; i < n; i++)
+            {
+                PivotVizDots.Add(new PivotVizDot
+                {
+                    CanvasX = PivotVizHalfExtent + axs[i] * scale,
+                    CanvasY = PivotVizHalfExtent - ays[i] * scale,      // 屏幕 Y 向下、世界 Y 向上 ⇒ 翻转
+                    CenterX = PivotVizHalfExtent,
+                    CenterY = PivotVizHalfExtent,
+                    IsOutlier = dev[i] > ChainFitter.PivotRmsGateMm,
+                    Label = (i + 1).ToString(CultureInfo.InvariantCulture),
+                    Tip = string.Format(CultureInfo.InvariantCulture,
+                        "第 {0} 行：U={1:F1}°，残差 {2:F4}mm{3}",
+                        i + 1, filled[i].UDeg, dev[i],
+                        dev[i] > ChainFitter.PivotRmsGateMm ? "（超门 0.5mm，建议重扎该角）" : ""),
+                });
+            }
+            PivotVizMaxDevMm = maxAbs;
+            PivotVizGateRadius = ChainFitter.PivotRmsGateMm * scale;
+            PivotVizScaleText = string.Format(CultureInfo.InvariantCulture,
+                "靶心=P_ref；虚线圈=验收门 {0:F2}mm；满量程≈{1:F2}mm（点越靠靶心越准）",
+                ChainFitter.PivotRmsGateMm, PivotVizHalfExtent / scale);
+            HasPivotViz = true;
+        }
+
+        //---------------------------------------------------------------------
+        // 角度流程化（#4，2026-09-30）：行业惯例 0/90/180/270，一键把法兰转到下一采样角。
+        //   ★ 用【相对移动】而不是绝对定位：现场 U 轴零点约定不一，相对 +90° 不依赖零点口径。
+        //   ★ 只下发不闭环：运动是异步的，到位与否由操作员看机器人，随后『回读位姿』『回填对针点』。
+        //---------------------------------------------------------------------
+
+        private double _pivotAngleStepDeg = 90.0;
+        /// <summary>一键转角步进（度）——默认 90（行业惯例 0/90/180/270）</summary>
+        public double PivotAngleStepDeg { get { return _pivotAngleStepDeg; } set { Set(ref _pivotAngleStepDeg, value); } }
+
+        public void PivotStepNextAngle()
+        {
+            var m = _selectedMotionDevice;
+            if (m == null) { MotionLog = "⚠ 未选择运动设备。"; return; }
+            if (_pivotTool == null) { PivotResultText = "⚠ 请先选择要标定的工具。"; return; }
+
+            var r = m.MoveRelative(AxisU, (float)_pivotAngleStepDeg, (float)JogSpeed);
+            if (r == null || !r.Success)
+            {
+                string err = "⚠ 转到下一采样角失败：" + (r == null ? "无应答" : r.Message);
+                MotionLog = err; PivotResultText = err;
+                return;
+            }
+            // 顺带把选中行切到"下一个还没填的行"——到位后『回读位姿』+『回填对针点』直接落位，省一次手动选行
+            var target = PivotRows.FirstOrDefault(p => !IsPivotRowFilled(p)) ?? PivotRows.LastOrDefault();
+            if (target != null) SelectedPivotRow = target;
+            PivotResultText = string.Format(CultureInfo.InvariantCulture,
+                "U 轴 +{0:F1}° 已下发（相对移动）——等机器人到位后点『回读位姿』→『回填对针点』，会落到第 {1} 行。",
+                _pivotAngleStepDeg, target == null ? 0 : PivotRows.IndexOf(target) + 1);
+        }
+
+        private static bool IsPivotRowFilled(ChainPivotRow p)
+        {
+            return p != null && (p.UDeg != 0 || p.FlangeX != 0 || p.FlangeY != 0);
         }
 
         /// <summary>完成即推进：选中第一个待办步骤（行业向导惯例——做完一步自动带到位）</summary>
@@ -1951,6 +2445,23 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     Hint = "所有吸嘴伸到下相机上方一拍取各嘴中心两两差；同轴工具实测=(0,0)——中区面板填数或勾『同心』",
                 });
             }
+            // WF-05 旋转中心 e（2026-09-30）：EIH 专用——法兰绕 U 转时特征在图像上画圆，圆心即偏心。
+            // ETH 下相机固定、特征固定 ⇒ 图像不动，此法不成立，故只在链上有 EIH 相机时才生成该步。
+            if (Sections.Any(s => s.IsEih))
+            {
+                foreach (var t in ToolRows)
+                {
+                    Steps.Add(new ChainStepRow
+                    {
+                        StepNo = no++,
+                        Target = t.ToolId,
+                        Zone = StepZone.Rotation,
+                        Workflow = "WF-05 旋转中心 e（EIH 绕 U 圆拟合）",
+                        Hint = "物料：固定特征 Mark（不用针尖）；法兰按 0/90/180/270 逐角转到位、每角拍同一特征 → 圆拟合圆心 → 写入 URotationCenter。"
+                             + "可选步：与 pivoting 的 Offset 交叉校验（两条独立路径应一致）",
+                    });
+                }
+            }
             Steps.Add(new ChainStepRow
             {
                 StepNo = no,
@@ -1984,6 +2495,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     OnPropertyChanged(nameof(StepGuide));
                     OnPropertyChanged(nameof(IsToolStepSelected));
                     OnPropertyChanged(nameof(IsCameraStepSelected));
+                    OnPropertyChanged(nameof(IsRotationStepSelected));
+                    OnPropertyChanged(nameof(ShowCameraWorkArea));
                     OnPropertyChanged(nameof(CanUseGrid));
                 }
             }
@@ -1998,6 +2511,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
         }
         public bool IsToolStepSelected { get { return FocusZone == StepZone.Tool; } }
         public bool IsCameraStepSelected { get { return FocusZone == StepZone.Camera; } }
+        /// <summary>旋转中心步（EIH 绕 U 圆拟合）——中区切到旋转采样面板</summary>
+        public bool IsRotationStepSelected { get { return FocusZone == StepZone.Rotation; } }
+        /// <summary>
+        /// 相机工作区（相机步与旋转中心步都显示）：旋转采样必须能看见图——
+        /// 要点选像素、要看识别叠加标记，把视图藏掉这一步就没法做。
+        /// </summary>
+        public bool ShowCameraWorkArea
+        {
+            get { return FocusZone == StepZone.Camera || FocusZone == StepZone.Rotation; }
+        }
 
         /// <summary>选中步骤的操作指引（中区顶部"当前该做什么"栏）</summary>
         public string StepGuide
@@ -2006,8 +2529,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 if (_selectedStep == null) return "请在上方步骤清单点选一步开始。";
                 string where = _selectedStep.Zone == StepZone.Tool
-                    ? "操作面：右栏『工具偏移』"
-                    : "操作面：中间相机区（Tab=" + _selectedStep.Target + "）";
+                    ? "操作面：中区『工具 TCP 标定』面板"
+                    : _selectedStep.Zone == StepZone.Rotation
+                        ? "操作面：中区『旋转中心 e』面板（EIH 绕 U 圆拟合）"
+                        : "操作面：中间相机区（Tab=" + _selectedStep.Target + "）";
                 return "第 " + _selectedStep.StepNo + " 步 · " + _selectedStep.Workflow
                        + "\n" + where + "　目标：" + _selectedStep.Target + "　状态：" + _selectedStep.Status
                        + "\n" + _selectedStep.Hint;
@@ -2023,6 +2548,16 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 var sec = Sections.FirstOrDefault(x => x.CameraId == step.Target);
                 if (sec != null) SelectedSection = sec;
+            }
+            // 工具/旋转步：把中区面板的「当前工具」切到该步目标（与相机步同待遇，点一步即到位）
+            if (step != null && (step.Zone == StepZone.Tool || step.Zone == StepZone.Rotation))
+            {
+                var row = ToolRows.FirstOrDefault(x => x.ToolId == step.Target);
+                if (row != null)
+                {
+                    PivotTool = row;
+                    RotationTool = row;
+                }
             }
             RefreshSteps();
             OnPropertyChanged(nameof(StepGuide));
@@ -2062,6 +2597,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     var row = ToolRows.FirstOrDefault(x => x.ToolId == st.Target);
                     st.Status = (row != null && row.OffsetFilled) ? "✓ 完成" : "待办";
+                }
+                else if (st.Workflow.StartsWith("WF-05"))
+                {
+                    // 旋转中心 e 是「交叉校验」性质的增强步：不做也能落盘（主线由 pivoting 的 Offset 承担），
+                    // 做了就是两条独立路径互相印证。故待办态写作「○ 可选」而不是「待办」——不阻塞推进。
+                    var row = ToolRows.FirstOrDefault(x => x.ToolId == st.Target);
+                    st.Status = (row != null && row.HasRotationCenter) ? "✓ 完成" : "○ 可选";
                 }
                 else
                 {
@@ -2197,6 +2739,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
             }
 
             string masterId = null;
+            // 基准角 U0 统一取主工具：副工具 Δ 与主工具同基准定义（引擎侧按此校验，不一致直接拒解）
+            double baseUDeg = ToolRows.Where(x => x.IsMaster).Select(x => x.OffsetBaseUDeg).FirstOrDefault();
             foreach (var row in ToolRows)
             {
                 if (row.IsMaster) masterId = row.ToolId;
@@ -2206,6 +2750,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
                     IsMaster = row.IsMaster,
                     BindMasterToolId = row.IsMaster ? null : row.BindMasterToolId,
                     Offset = row.OffsetFilled ? new[] { row.OffsetDx, row.OffsetDy } : null,
+                    // 旋转中心 e（视觉路径，可选步）：未做则 null（生产端不消费该字段，仅留档 + 与 Offset 交叉校验）
+                    URotationCenter = row.HasRotationCenter
+                        ? new[] { row.RotationCenterDx.Value, row.RotationCenterDy.Value } : null,
                     Meta = new ChainCalibMeta
                     {
                         Method = row.IsConcentric ? "ChainWizard-已测同心"
@@ -2213,8 +2760,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         Version = 1,
                         CapturedAt = DateTime.Now.ToString("o", CultureInfo.InvariantCulture),
                         Operator = "ChainWizardV2",
+                        // 0 基准 = 历史形态，写 null 保持旧档案等价（引擎 ReadOffsetBaseU 视 null 为 0）
+                        OffsetBaseU = baseUDeg == 0 ? (double?)null : baseUDeg,
                         Note = row.IsConcentric ? "已测同心：显式 (0,0)（§6.4 三态口径，非『未测』）"
-                             : row.IsMaster ? "Offset=对针直量 T_TCP→Flange（U=0 基准，符号内蕴）"
+                             : row.IsMaster ? "Offset=对针直量 T_TCP→Flange（法兰系，符号内蕴）"
                                             : "相对主工具的 Δ（法兰系）；同轴工具=(0,0) 特例",
                     },
                 });

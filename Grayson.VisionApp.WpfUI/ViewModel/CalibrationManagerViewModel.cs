@@ -1025,6 +1025,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
 
         /// <summary>链向导（范式2 Chain.json）入口 —— 2026-09-27 R3</summary>
         public ICommand OpenChainWizardCommand { get; }
+
+        /// <summary>
+        /// 任务卡 → 链向导「直达对应工作面」（#5，2026-09-30）：CommandParameter = ArtifactTaskCardVm。
+        /// 卡型决定落点（H/S→相机步、E→旋转中心步、T→工具步）——点哪张卡就落在哪个工作面，省掉"进去再找步"。
+        /// </summary>
+        public ICommand OpenChainWizardForCardCommand { get; }
+
         public ICommand OpenChainVerifyCommand { get; }
 
         /// <summary>★L3 真机「指哪打哪」验证台入口 —— 2026-09-29（回答"标定完能不能投产"）</summary>
@@ -1076,6 +1083,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             ImportCommand = new RelayCommand(_ => ImportMatrixFile(), _ => SelectedCalibrationProfile != null);
             ExportCommand = new RelayCommand(_ => ExportMatrixFile(), _ => SelectedCalibrationProfile != null);
             OpenChainWizardCommand = new RelayCommand(_ => OpenChainWizard());
+            OpenChainWizardForCardCommand = new RelayCommand(o => OpenChainWizardForCard(o as ArtifactTaskCardVm));
             OpenChainVerifyCommand = new RelayCommand(_ => OpenChainVerify());
             OpenChainLiveVerifyCommand = new RelayCommand(_ => OpenChainLiveVerify());
 
@@ -2012,6 +2020,35 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// </summary>
         private void OpenChainWizard()
         {
+            OpenChainWizardCore(null);
+        }
+
+        /// <summary>任务卡直达（#5，2026-09-30）：按卡型落到向导的对应工作面</summary>
+        private void OpenChainWizardForCard(ArtifactTaskCardVm card)
+        {
+            OpenChainWizardCore(FocusKeyOfCard(card));
+        }
+
+        /// <summary>
+        /// 卡型 → 向导工作面键（向导侧只认 H/E/T/S；认不出返 null = 不定位，落在第一步）。
+        /// 宁可停默认也不猜错工作面——跳错比不跳更费操作员的时间。
+        /// </summary>
+        private static string FocusKeyOfCard(ArtifactTaskCardVm card)
+        {
+            if (card == null) return null;
+            switch (card.Card.Quantity)
+            {
+                case CalibrationQuantity.HandEye: return "H";
+                case CalibrationQuantity.ToolRotation: return "E";
+                case CalibrationQuantity.ToolOffset: return "T";
+                case CalibrationQuantity.PixelScale: return "S";
+                default: return null;
+            }
+        }
+
+        /// <summary>链向导公共开窗路径（focusCard != null 时打开即定位到该卡的工作面）</summary>
+        private void OpenChainWizardCore(string focusCard)
+        {
             try
             {
                 if (string.IsNullOrWhiteSpace(_scopeStationCode))
@@ -2022,7 +2059,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
-                var win = new ChainWizardWindow(_scopeStationCode)
+                var win = new ChainWizardWindow(_scopeStationCode, focusCard)
                 {
                     Owner = Application.Current.MainWindow
                 };

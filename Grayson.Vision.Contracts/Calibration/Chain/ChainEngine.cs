@@ -183,7 +183,18 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
                 dy = my + sy;
             }
 
-            double radF = uFinalDeg * Math.PI / 180.0;
+            // ★U0 基准角（2026-09-30）：Offset 是在法兰角 U0 上实测的，逆解必须复现该姿态——
+            //   否则现场在非零基准角下标定后，生产端用 R(U_final) 会系统性偏（差一个常量旋转）。
+            //   旧档案无此字段 ⇒ ReadOffsetBaseU 取 0 ⇒ R(U−0)=R(U)，与 R6 之前逐字等价。
+            double baseU = OffsetBaseUOf(graph, tool);
+            if (!tool.IsMaster && tool.Meta != null && tool.Meta.OffsetBaseU.HasValue
+                && Math.Abs(tool.Meta.OffsetBaseU.Value - baseU) > 1e-6)
+                throw new ChainResolveException("工具 " + tool.ToolId + " 的自声明基准角 U0="
+                    + tool.Meta.OffsetBaseU.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
+                    + "° 与主工具 " + baseU.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)
+                    + "° 不一致——副工具 Δ 必须与主工具同基准（fail-closed）");
+
+            double radF = (uFinalDeg - baseU) * Math.PI / 180.0;
             double cf = Math.Cos(radF), sf = Math.Sin(radF);
             fx = wx - (dx * cf - dy * sf);
             fy = wy - (dx * sf + dy * cf);
@@ -199,6 +210,25 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
                 throw new ChainResolveException("工具 " + tool.ToolId + " 偏移矢量缺失/非法，拒绝逆解");
             dx = tool.Offset[0];
             dy = tool.Offset[1];
+        }
+
+        /// <summary>
+        /// 读工具偏移的基准法兰角 U0（度）：跟随主工具（副工具 Δ 与主工具同基准定义），
+        /// 缺省/null = 0（标定在 U=0 完成，历史行为）。
+        /// 逆解与正推共用本函数——保证 ChainEngine.ResolveFlangeTarget 与
+        /// ChainLiveVerifier.FlangeToWorld 严格互逆（两处基准角不一致 ⇒ 多出常量旋转的系统偏差）。
+        /// </summary>
+        public static double OffsetBaseUOf(StationCalibGraph graph, ChainTcpNode tool)
+        {
+            if (tool == null) return 0.0;
+            var baseTool = tool;
+            if (!tool.IsMaster && graph != null)
+            {
+                var master = graph.FindTool(tool.BindMasterToolId);
+                if (master != null) baseTool = master;
+            }
+            return (baseTool.Meta != null && baseTool.Meta.OffsetBaseU.HasValue)
+                ? baseTool.Meta.OffsetBaseU.Value : 0.0;
         }
 
         private static bool IsFinite(double d) { return !double.IsNaN(d) && !double.IsInfinity(d); }

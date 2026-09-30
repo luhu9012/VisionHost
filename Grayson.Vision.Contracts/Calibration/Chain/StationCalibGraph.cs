@@ -52,6 +52,12 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
         public double? CalibZHeightMm { get; set; }
         /// <summary>标定所用 Mark/工装标识（V2.1 CalibToolTag：残差可解释性的溯源锚点）。</summary>
         public string CalibToolTag { get; set; }
+        /// <summary>
+        /// 工具偏移 Offset 的基准法兰角 U0（度）。逆解用 R(U_final − U0)·Offset 复现标定时的姿态。
+        /// null 或 0 = 标定在 U=0 完成（历史行为，与旧档案等价）。非零基准角若丢失 ⇒ 生产端系统性偏，
+        /// 故向导落盘时必写实测基准角，且主/副工具必须一致（副工具 Δ 与主工具同基准定义）。
+        /// </summary>
+        public double? OffsetBaseU { get; set; }
         /// <summary>链模型版本（结构演进时区分旧档案）。</summary>
         public int Version { get; set; }                // 当前 = 1
         public string CapturedAt { get; set; }          // ISO 8601

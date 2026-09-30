@@ -174,12 +174,13 @@
 
                 <!-- 相机视图（相机步） / pivoting 采集面板（工具步）——互斥显示 -->
                 <Grid Grid.Row="1">
-                    <GroupBox Header="相机视图（Tab=链上相机）"
-                              Visibility="{Binding IsCameraStepSelected, Converter={StaticResource BoolToVis}}">
+                    <GroupBox Header="相机视图（Tab=链上相机；相机步 / 旋转中心步共用）"
+                              Visibility="{Binding ShowCameraWorkArea, Converter={StaticResource BoolToVis}}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <!-- 采集工具栏 -->
@@ -344,6 +345,79 @@
                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </StackPanel>
                         </GroupBox>
+
+                        <!-- ★旋转中心 e 采集面板（#1, 2026-09-30）：EIH 法兰绕 U 转、相机始终看同一固定特征
+                             ⇒ 特征在【法兰系】里画圆，圆心即工具尖相对法兰的偏心 e。
+                             与 pivoting（针尖接触法）是同一物理量的两条独立路径，可交叉校验。
+                             采样量是像素（圆拟合在像素域做），圆心再由相机 H_FC 映到法兰系。 -->
+                        <GroupBox Grid.Row="3" Margin="0,4,0,0"
+                                  Visibility="{Binding IsRotationStepSelected, Converter={StaticResource BoolToVis}}"
+                                  Header="旋转中心 e 采集（EIH 绕 U 圆拟合 → 写 URotationCenter）——可选步：与对针 Offset 交叉校验">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- 工具选择 + 当前图源相机 -->
+                                <WrapPanel Grid.Row="0" Margin="0,0,0,4">
+                                    <TextBlock Text="工具：" VerticalAlignment="Center"/>
+                                    <ComboBox Width="140" ItemsSource="{Binding ToolRows}"
+                                              SelectedItem="{Binding RotationTool, Mode=TwoWay}"
+                                              DisplayMemberPath="ToolId"/>
+                                    <TextBlock Text="{Binding RotationReadyText}" FontWeight="Bold" Margin="10,0,0,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource InfoBrush}"/>
+                                    <TextBlock Text="　图源相机：" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding SelectedSection.CameraId}" VerticalAlignment="Center"
+                                               FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBlock Text="（图像取自上方相机 Tab；请先『载入图像…』或『单帧取图』）"
+                                               FontSize="10" VerticalAlignment="Center" Margin="4,0,0,0"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </WrapPanel>
+
+                                <!-- 逐角采样表：U 角 + 特征像素（识别或点选回填） -->
+                                <DataGrid Grid.Row="1" ItemsSource="{Binding RotationRows}"
+                                          SelectedItem="{Binding SelectedRotationRow, Mode=TwoWay}"
+                                          AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column"
+                                          MaxHeight="150">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="#" Binding="{Binding Note}" Width="44" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="U°" Binding="{Binding UDeg}" Width="*"/>
+                                        <DataGridTextColumn Header="像素Col" Binding="{Binding PixelCol}" Width="*"/>
+                                        <DataGridTextColumn Header="像素Row" Binding="{Binding PixelRow}" Width="*"/>
+                                        <DataGridTextColumn Header="残差px" Binding="{Binding ResidualText}" Width="*" IsReadOnly="True"/>
+                                    </DataGrid.Columns>
+                                    <DataGrid.RowStyle>
+                                        <Style TargetType="DataGridRow">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ResidualHigh}" Value="True">
+                                                    <Setter Property="Background" Value="#26D03A3A"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.RowStyle>
+                                </DataGrid>
+
+                                <!-- 操作按钮 -->
+                                <WrapPanel Grid.Row="2" Margin="0,4,0,0">
+                                    <Button Content="添加角" Click="AddRotationPoint_Click"/>
+                                    <Button Content="删除选中" Click="RemoveRotationPoint_Click"/>
+                                    <Button Content="🎯 识别特征回填" Click="RecognizeForRotation_Click"
+                                            ToolTip="用当前相机图像做特征/模板识别（与相机页同一套算子），把像素自动填进选中行——EIH 间接对针免人工点选。"/>
+                                    <Button Content="圆拟合求 e" Click="SolveRotationCircle_Click" FontWeight="Bold"/>
+                                    <Button Content="写入旋转中心" Click="ApplyRotation_Click"/>
+                                    <TextBlock Text="　也可直接在图上左键点选像素（落选中行）" FontSize="10"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </WrapPanel>
+
+                                <!-- 求解结果 -->
+                                <TextBlock Grid.Row="3" Text="{Binding RotationResultText}" TextWrapping="Wrap"
+                                           FontSize="11" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            </Grid>
+                        </GroupBox>
                     </Grid>
                     </GroupBox>
 
@@ -354,6 +428,8 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
@@ -394,21 +470,130 @@
                                 </DataGrid.RowStyle>
                             </DataGrid>
 
-                            <!-- 操作按钮 -->
-                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                            <!-- 操作按钮（WrapPanel：按钮变多后不再横向溢出） -->
+                            <WrapPanel Grid.Row="2" Margin="0,4,0,0">
                                 <Button Content="添加点" Click="AddPivotPoint_Click"/>
                                 <Button Content="删除选中" Click="RemovePivotPoint_Click"/>
                                 <Button Content="回填对针点(U,X,Y)" Click="FillPivotPose_Click" FontWeight="Bold"/>
+                                <Button Content="+90° 转下一角" Click="PivotNextAngle_Click"
+                                        ToolTip="一键把法兰【相对】转动到下一个采样角（行业惯例 0→90→180→270），并把选中行切到下一个待填行；等机器人到位后点『回读位姿』→『回填对针点』即可。用相对移动是为了不依赖现场 U 轴零点约定。"/>
                                 <Button Content="求解 pivoting" Click="SolvePivoting_Click" FontWeight="Bold"/>
                                 <Button Content="写入工具偏移" Click="ApplyPivot_Click"/>
+                            </WrapPanel>
+                            <WrapPanel Grid.Row="3" Margin="0,2,0,0">
+                                <TextBlock Text="转角步进(°)" VerticalAlignment="Center" FontSize="11"/>
+                                <TextBox Width="46" Margin="4,0,0,0"
+                                         Text="{Binding PivotAngleStepDeg, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="　基准角 U0(°)" VerticalAlignment="Center" FontSize="11"/>
+                                <TextBox Width="46" Margin="4,0,0,0"
+                                         Text="{Binding PivotTool.OffsetBaseUDeg, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Offset 的基准法兰角（度）。0 = 标定在 U=0 完成（pivoting 解出的 e 本就是法兰系矢量，常态不用改）；非零时生产端逆解用 R(U_final − U0)，用于旧档迁移 / ETH 直量这类姿态相关的偏移。"/>
+                                <TextBlock Text="{Binding PivotTool.OffsetBaseUText}" VerticalAlignment="Center" Margin="6,0,0,0"
+                                           FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
                                 <TextBlock Text="　提示：先在右栏『回读位姿』（须读到 U），或示教器手抄后直接改表" FontSize="10"
                                            VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"/>
-                            </StackPanel>
+                            </WrapPanel>
 
                             <!-- 求解结果 -->
-                            <TextBlock Grid.Row="3" Text="{Binding PivotResultText}" TextWrapping="Wrap"
+                            <TextBlock Grid.Row="4" Text="{Binding PivotResultText}" TextWrapping="Wrap"
                                        FontSize="11" Margin="0,4,0,0"
                                        Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+                            <!-- ★pivoting 可视化（#3, 2026-09-30）：靶心=P_ref，每角一点；
+                                 点到靶心的距离=该角残差。原来只有一行长文本，哪个角扎歪要自己在数字堆里找。 -->
+                            <Grid Grid.Row="5" Margin="0,6,0,0"
+                                  Visibility="{Binding HasPivotViz, Converter={StaticResource BoolToVis}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="162" Height="162" CornerRadius="3"
+                                        Background="{DynamicResource BackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                                    <Grid Width="156" Height="156">
+                                        <!-- 验收门圈（0.5mm） -->
+                                        <Ellipse Width="{Binding PivotVizGateDiameter}" Height="{Binding PivotVizGateDiameter}"
+                                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                 Stroke="{DynamicResource WarningBrush}" StrokeThickness="1" StrokeDashArray="3 2"/>
+                                        <!-- 残差射线：靶心 → 各角预测位置 -->
+                                        <ItemsControl ItemsSource="{Binding PivotVizDots}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><Canvas Width="156" Height="156"/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Line X1="{Binding CenterX}" Y1="{Binding CenterY}"
+                                                          X2="{Binding CanvasX}" Y2="{Binding CanvasY}"
+                                                          Stroke="{DynamicResource TextSecondaryBrush}"
+                                                          StrokeThickness="1" Opacity="0.55"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- 靶心（P_ref） -->
+                                        <Ellipse Width="7" Height="7" Fill="{DynamicResource SuccessBrush}"
+                                                 HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <!-- 各角散点：Margin 负半宽 ⇒ 让绑定坐标落在圆心而不是左上角 -->
+                                        <ItemsControl ItemsSource="{Binding PivotVizDots}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><Canvas Width="156" Height="156"/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemContainerStyle>
+                                                <Style TargetType="ContentPresenter">
+                                                    <Setter Property="Canvas.Left" Value="{Binding CanvasX}"/>
+                                                    <Setter Property="Canvas.Top" Value="{Binding CanvasY}"/>
+                                                </Style>
+                                            </ItemsControl.ItemContainerStyle>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Ellipse Width="9" Height="9" Margin="-4.5,-4.5,0,0"
+                                                             Stroke="{DynamicResource BackgroundCardBrush}" StrokeThickness="1"
+                                                             ToolTip="{Binding Tip}">
+                                                        <Ellipse.Style>
+                                                            <Style TargetType="Ellipse">
+                                                                <Setter Property="Fill" Value="{DynamicResource InfoBrush}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsOutlier}" Value="True">
+                                                                        <Setter Property="Fill" Value="{DynamicResource DangerBrush}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Ellipse.Style>
+                                                    </Ellipse>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- 行号标签 -->
+                                        <ItemsControl ItemsSource="{Binding PivotVizDots}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><Canvas Width="156" Height="156"/></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemContainerStyle>
+                                                <Style TargetType="ContentPresenter">
+                                                    <Setter Property="Canvas.Left" Value="{Binding CanvasX}"/>
+                                                    <Setter Property="Canvas.Top" Value="{Binding CanvasY}"/>
+                                                </Style>
+                                            </ItemsControl.ItemContainerStyle>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Label}" FontSize="8" Margin="5,-11,0,0"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="pivoting 可视化" FontWeight="Bold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="{Binding PivotVizScaleText}" TextWrapping="Wrap" FontSize="10"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBlock Text="{Binding PivotVizMaxDevText}" FontSize="10"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    <TextBlock Text="绿点=靶心 P_ref；蓝点=各角扎针后算出的针尖位置；红点=超门 0.5mm（该角没扎稳，建议重扎该角再求解）"
+                                               TextWrapping="Wrap" FontSize="10" Margin="0,4,0,0" MaxWidth="320"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </GroupBox>
                 </Grid>

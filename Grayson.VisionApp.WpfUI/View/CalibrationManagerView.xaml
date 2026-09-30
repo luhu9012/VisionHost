@@ -312,9 +312,9 @@
 												<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
 													
 													
-													<Button Content="▶ 链标定" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0" Command="{Binding DataContext.OpenChainWizardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTip="几何标定唯一入口：链向导按档案事实推导链形状 → 采集拟合 → 写 Chain.json。链标定不回写卡片状态——做完看页头链状态。"/>
-													<Button Content="🎯 对针" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0"
-                                                            Command="{Binding DataContext.RunToolOffsetForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+													<Button Content="▶ 链标定" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0" Command="{Binding DataContext.OpenChainWizardForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" ToolTip="几何标定唯一入口（含对针）：链向导按档案事实推导链形状 → 采集拟合 → 写 Chain.json。★按本卡量直达对应工作面：H/s→相机九点步，e→旋转中心步，t→工具对针步。链标定不回写卡片状态——做完看页头链状态。"/>
+													<Button Content="🎯 对针（旧窗·ETH）" Style="{StaticResource SecondaryButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0"
+                                                            Command="{Binding DataContext.RunToolOffsetForCardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" ToolTip="范式1 遗留的 ETH 图像对针【独立窗】：读图对针 → 写旧标定档案，★不写 Chain.json。范式2 起请优先用左侧『▶ 链标定』（链向导工具步，产物落 Chain.json——生产端认的就是它）。本按钮保留给既有 ETH 流程。"
                                                             CommandParameter="{Binding}"
                                                             Visibility="{Binding ShowAlignAction, Converter={StaticResource BoolToVis}}"/>
 													<Button Content="📌 发布" Style="{StaticResource SuccessButtonStyle}" Height="24" Padding="10,0" Margin="4,0,0,0"

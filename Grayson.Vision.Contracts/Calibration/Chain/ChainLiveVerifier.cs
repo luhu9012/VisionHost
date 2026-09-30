@@ -222,7 +222,9 @@ namespace Grayson.Vision.Contracts.Calibration.Chain
                 dy = master.Offset[1] + tool.Offset[1];
             }
 
-            double rad = uFinalDeg * Math.PI / 180.0;
+            // ★U0 基准角（2026-09-30）：与 ChainEngine.ResolveFlangeTarget 共用同一解析——
+            //   正推/逆解一旦用了不同基准角，"指哪打哪"的残差里会混进一份算法自身的常量旋转偏差。
+            double rad = (uFinalDeg - ChainEngine.OffsetBaseUOf(graph, tool)) * Math.PI / 180.0;
             double c = Math.Cos(rad), s = Math.Sin(rad);
             worldX = flangeX + (dx * c - dy * s);
             worldY = flangeY + (dx * s + dy * c);

@@ -23,10 +23,10 @@ namespace Grayson.Vision.WpfUI.View
     {
         private readonly ChainWizardViewModel _vm;
 
-        public ChainWizardWindow(string stationCode = null)
+        public ChainWizardWindow(string stationCode = null, string focusCard = null)
         {
             InitializeComponent();
-            _vm = new ChainWizardViewModel(string.IsNullOrWhiteSpace(stationCode) ? "ST_002" : stationCode);
+            _vm = new ChainWizardViewModel(string.IsNullOrWhiteSpace(stationCode) ? "ST_002" : stationCode, focusCard);
             DataContext = _vm;
         }
 
@@ -168,7 +168,11 @@ namespace Grayson.Vision.WpfUI.View
             if (host == null || sec == null) return;
             double row, col;
             if (!host.TryGetImagePointAtHost(e.GetPosition(host), out row, out col)) return;
-            sec.SetPixelFromClick(col, row);
+            // ★旋转中心步：同一次点选语义不同——要落到【旋转采样行】，不是相机点对表
+            if (_vm.IsRotationStepSelected)
+                _vm.SetRotationPixel(_vm.SelectedRotationRow, col, row);
+            else
+                sec.SetPixelFromClick(col, row);
             _vm.RefreshSteps();
         }
 
@@ -360,6 +364,50 @@ namespace Grayson.Vision.WpfUI.View
                 msg.StartsWith("⚠") ? MessageBoxImage.Warning : MessageBoxImage.Information);
             // 写入成功即完成本步 → 推进
             if (!msg.StartsWith("⚠")) _vm.AdvanceToNextPendingStep();
+        }
+
+        // ★2026-09-30 补（#4）：一键把法兰【相对】转到下一个采样角（0→90→180→270）
+        private void PivotNextAngle_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.PivotStepNextAngle();
+        }
+
+        //---------------------------------------------------------------------
+        // 旋转中心 e 采集（#1 / #6, 2026-09-30）：EIH 绕 U 转、相机看同一固定特征
+        //   识别与图上点选两条入口都汇到 VM.SetRotationPixel —— 单一落点，避免两套口径打架。
+        //---------------------------------------------------------------------
+
+        private void AddRotationPoint_Click(object sender, RoutedEventArgs e) { _vm.AddRotationPoint(); }
+
+        private void RemoveRotationPoint_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.RemoveRotationPoint(_vm.SelectedRotationRow);
+        }
+
+        /// <summary>识别当前相机图像特征 → 回填选中采样行的像素（EIH 间接对针免人工点选）</summary>
+        private void RecognizeForRotation_Click(object sender, RoutedEventArgs e)
+        {
+            var host = FindRealizedHost();
+            if (host != null) host.ClearMarkers();
+            _vm.RecognizeForRotation();
+            var sec = _vm.SelectedSection;
+            if (sec != null && sec.HasRecognized && host != null)
+            {
+                string label = string.Format(CultureInfo.InvariantCulture,
+                    "u={0:F2} v={1:F2} · {2:F0}/100", sec.RecognizedCol, sec.RecognizedRow, sec.MatchScore);
+                host.AddMarkerCross(sec.RecognizedRow, sec.RecognizedCol, 60,
+                    sec.MatchScore >= 70 ? "green" : "yellow", label);
+            }
+        }
+
+        private void SolveRotationCircle_Click(object sender, RoutedEventArgs e) { _vm.SolveRotationCircle(); }
+
+        private void ApplyRotation_Click(object sender, RoutedEventArgs e)
+        {
+            string msg = _vm.ApplyRotationToTool();
+            _vm.RefreshSteps();
+            MessageBox.Show(this, msg, "链向导·写入旋转中心", MessageBoxButton.OK,
+                msg.StartsWith("⚠") ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
     }
 }

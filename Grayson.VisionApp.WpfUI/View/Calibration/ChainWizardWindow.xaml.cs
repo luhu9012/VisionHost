@@ -1,9 +1,12 @@
 using System;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Grayson.Vision.Contracts.Devices;
+using Grayson.Vision.HalconWrapper.Wpf.Controls;
 using Grayson.Vision.WpfUI.ViewModel;
 
 namespace Grayson.Vision.WpfUI.View
@@ -52,19 +55,31 @@ namespace Grayson.Vision.WpfUI.View
             return dlg.ShowDialog(this) == true ? dlg.FileName : null;
         }
 
-        /// <summary>点击处 → 原图像素（按显示区/位图宽高比换算，与位图 DPI 无关）</summary>
-        private static void ToPixel(Image img, Point p, out double col, out double row)
+        //---------------------------------------------------------------------
+        // Halcon 视窗定位（2026-09-30）
+        //   ★ 同一时刻只有一个 Tab 内容被实例化（TabControl 只有一个 ContentPresenter），
+        //     所以"从窗口向下找第一个 HalconImageDisplayHost"就是当前可见的那个视窗。
+        //     点选换算与识别标记都打在它上面。
+        //---------------------------------------------------------------------
+
+        private static T FindDescendant<T>(DependencyObject d) where T : DependencyObject
         {
-            var bmp = img.Source as BitmapSource;
-            if (bmp == null)
+            if (d == null) return null;
+            int n = VisualTreeHelper.GetChildrenCount(d);
+            for (int i = 0; i < n; i++)
             {
-                col = row = 0;
-                return;
+                var c = VisualTreeHelper.GetChild(d, i);
+                var t = c as T;
+                if (t != null) return t;
+                var r = FindDescendant<T>(c);
+                if (r != null) return r;
             }
-            double sx = img.ActualWidth > 0 ? bmp.PixelWidth / img.ActualWidth : 1.0;
-            double sy = img.ActualHeight > 0 ? bmp.PixelHeight / img.ActualHeight : 1.0;
-            col = p.X * sx;
-            row = p.Y * sy;
+            return null;
+        }
+
+        private HalconImageDisplayHost FindRealizedHost()
+        {
+            return FindDescendant<HalconImageDisplayHost>(this);
         }
 
         private ChainCameraSectionViewModel SectionOf(object sender)
@@ -84,12 +99,29 @@ namespace Grayson.Vision.WpfUI.View
             if (row != null) _vm.SelectStep(row);
         }
 
+        /// <summary>
+        /// ★2026-09-30 修复（Bug「载入图像…」点击无反应）：
+        /// 采集工具栏在 TabControl 之外，其 DataContext 是窗口级 ChainWizardViewModel，
+        /// 不是 ChainCameraSectionViewModel ⇒ SectionOf(sender) 恒为 null ⇒ 老代码直接 return，
+        /// 按钮看起来"点了没反应"。此处统一回退到当前选中的相机 Tab。
+        /// </summary>
+        private ChainCameraSectionViewModel ResolveSection(object sender)
+        {
+            return SectionOf(sender) ?? _vm.SelectedSection;
+        }
+
         private void LoadImage_Click(object sender, RoutedEventArgs e)
         {
-            var sec = SectionOf(sender);
-            if (sec == null) return;
+            var sec = ResolveSection(sender);
+            if (sec == null)
+            {
+                MessageBox.Show(this, "当前没有可用的相机 Tab（本工位档案未派生相机段）。",
+                    "链向导", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             string path = PickImageFile();
-            if (path != null) sec.Image = LoadBitmap(path);
+            if (path == null) return;
+            _vm.LoadImageIntoSection(sec, path);
         }
 
         /// <summary>连接设备池中的当前相机（T10）</summary>
@@ -101,19 +133,21 @@ namespace Grayson.Vision.WpfUI.View
         /// <summary>单帧取图（软触发）：把相机当前帧送入该相机 Section 的图像区（T10）</summary>
         private void SnapFromCamera_Click(object sender, RoutedEventArgs e)
         {
-            var sec = SectionOf(sender);
-            FrameEventArgs frame = _vm.CaptureOnce();
-            if (frame == null) return;
-            var bmp = ChainWizardViewModel.FrameToBitmap(frame);
-            if (bmp == null)
+            var sec = ResolveSection(sender);
+            if (sec == null)
             {
-                MessageBox.Show(this,
-                    "帧格式暂不支持显示（PixelFormat=" + (frame.PixelFormat ?? "?") + "）。\n" +
-                    "当前仅支持 Mono8 / RGB8；请改用『载入图像…』离线选图。",
-                    "链向导", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, "当前没有可用的相机 Tab（本工位档案未派生相机段）。",
+                    "链向导", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            if (sec != null) sec.Image = bmp;
+            FrameEventArgs frame = _vm.CaptureOnce();
+            if (frame == null)
+            {
+                MessageBox.Show(this, "取图失败：" + _vm.CameraLog, "链向导",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            _vm.ShowFrameInSection(sec, frame);
         }
 
         private void RefreshCameras_Click(object sender, RoutedEventArgs e)
@@ -121,31 +155,85 @@ namespace Grayson.Vision.WpfUI.View
             _vm.LoadCameraDevices();
         }
 
-        private void CameraImage_Click(object sender, MouseButtonEventArgs e)
+        //---------------------------------------------------------------------
+        // 图像点选（覆盖层）：宿主坐标 → 图像坐标
+        //   TryGetImagePointAtHost 内部扣掉工具栏高度（ShowToolbar=True 时），
+        //   避免"点十字落在点击点下方"。点在工具栏/留白区返回 false，忽略。
+        //---------------------------------------------------------------------
+
+        private void CameraOverlay_Pick(object sender, MouseButtonEventArgs e)
         {
-            var img = sender as Image;
-            var sec = SectionOf(sender);
-            if (img == null || sec == null) return;
-            double col, row;
-            ToPixel(img, e.GetPosition(img), out col, out row);
+            var host = FindRealizedHost();
+            var sec = ResolveSection(sender);
+            if (host == null || sec == null) return;
+            double row, col;
+            if (!host.TryGetImagePointAtHost(e.GetPosition(host), out row, out col)) return;
             sec.SetPixelFromClick(col, row);
+            _vm.RefreshSteps();
         }
 
-        private void CameraImage_RightClick(object sender, MouseButtonEventArgs e)
+        private void CameraOverlay_RightPick(object sender, MouseButtonEventArgs e)
         {
-            var img = sender as Image;
-            var sec = SectionOf(sender);
-            if (img == null || sec == null) return;
+            var sec = ResolveSection(sender);
+            if (sec == null) return;
             if (!sec.IsDownCorrect)
             {
                 MessageBox.Show(this, "该相机无下相机纠偏边（DownCameraCorrect），不需要 DeltaRefPixel。",
                     "链向导", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            double col, row;
-            ToPixel(img, e.GetPosition(img), out col, out row);
+            var host = FindRealizedHost();
+            if (host == null) return;
+            double row, col;
+            if (!host.TryGetImagePointAtHost(e.GetPosition(host), out row, out col)) return;
             sec.SetDeltaRefFromClick(col, row);
             _vm.RefreshSteps();
+        }
+
+        //---------------------------------------------------------------------
+        // 特征 / 模板识别（2026-09-30 补）：识别 → 视窗叠加标记 → 回填点对表
+        //   算法在 HalconWrapper 的 CalibrationService（圆/十字/模板三路，与生产同源）；
+        //   本层只负责把结果画到视窗 + 提示。
+        //---------------------------------------------------------------------
+
+        /// <summary>识别当前段图像上的特征点，并在视窗上打十字 + 分数标签</summary>
+        private void Recognize_Click(object sender, RoutedEventArgs e)
+        {
+            var sec = ResolveSection(sender);
+            var host = FindRealizedHost();
+            if (host != null) host.ClearMarkers();
+
+            string msg = _vm.RecognizeFeature(sec);
+            bool ok = sec != null && sec.HasRecognized;
+            if (ok && host != null)
+            {
+                string label = string.Format(CultureInfo.InvariantCulture,
+                    "u={0:F2} v={1:F2} · {2:F0}/100", sec.RecognizedCol, sec.RecognizedRow, sec.MatchScore);
+                // AddMarkerCross(row=像素Y, col=像素X, 半尺寸, 颜色, 标签)；标记层在底图之上、随场景重放
+                host.AddMarkerCross(sec.RecognizedRow, sec.RecognizedCol, 60,
+                    sec.MatchScore >= 70 ? "green" : "yellow", label);
+            }
+            MessageBox.Show(this, msg, "链向导·特征识别", MessageBoxButton.OK,
+                ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+
+        /// <summary>把识别到的像素回填点对表当前选中行（替代肉眼点选）</summary>
+        private void ApplyRecognized_Click(object sender, RoutedEventArgs e)
+        {
+            var sec = ResolveSection(sender);
+            string msg = _vm.ApplyRecognizedToSelectedRow(sec);
+            _vm.RefreshSteps();
+            MessageBox.Show(this, msg, "链向导·回填识别像素", MessageBoxButton.OK,
+                msg.StartsWith("✓") ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+
+        private void ReloadTemplates_Click(object sender, RoutedEventArgs e)
+        {
+            var sec = ResolveSection(sender);
+            if (sec == null) return;
+            sec.ReloadTemplates();
+            MessageBox.Show(this, "模板库已刷新：" + sec.AvailableTemplates.Count + " 个模板。",
+                "链向导", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         //---------------------------------------------------------------------
@@ -210,6 +298,11 @@ namespace Grayson.Vision.WpfUI.View
         private void JogXm_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisX, -1); }
         private void JogYp_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisY, +1); }
         private void JogYm_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisY, -1); }
+        // ★2026-09-30 补：Z / U 点动（此前只有 X/Y）
+        private void JogZp_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisZ, +1); }
+        private void JogZm_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisZ, -1); }
+        private void JogUp_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisU, +1); }
+        private void JogUm_Click(object sender, RoutedEventArgs e) { _vm.Jog(_vm.AxisU, -1); }
 
         private void ReadPose_Click(object sender, RoutedEventArgs e) { _vm.ReadPose(); }
 

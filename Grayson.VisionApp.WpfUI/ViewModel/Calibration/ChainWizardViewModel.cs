@@ -26,7 +26,13 @@ using Grayson.Vision.Contracts.Devices.Enums;
 using Grayson.Vision.Contracts.Devices.Services;
 using Grayson.Vision.Contracts.Infrastructure.Mvvm;
 using Grayson.Vision.Contracts.Station.Models;
+using Grayson.Vision.Contracts.Calibration.Models;   // CalibrationFeatureType（圆/十字/模板）
+using Grayson.Vision.Contracts.Imaging;              // IRenderImage
+using Grayson.Vision.Contracts.Templates.Models;     // TemplateInfo（全局模板库）
+using Grayson.Vision.HalconWrapper.Calibration;      // CalibrationService / FeatureMatchReport（识别算子）
+using Grayson.Vision.HalconWrapper.Templates;        // TemplateManager（模板库枚举）
 using Grayson.Vision.HalconWrapper.Wpf.Imaging;
+using Grayson.Vision.HalconWrapper.Wpf.ViewModels;   // ImageDisplayVm（Halcon 视窗数据源）
 using Grayson.Vision.WpfUI.Common;
 using Grayson.Vision.WpfUI.Service;
 using Plugins.Robot.Epson;   // 标定走位须用 EpsonRobot.MoveToLinear（CP 直线；PTP 弧线会被形状门拦）
@@ -128,7 +134,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private double _rmsMm, _sigma1, _sigma2, _shapeDev;
         private int _pointCount;
 
-        public ChainCameraSectionViewModel(ChainCameraNode draftNode, bool isDownCorrect, int pickEdgeCount)
+        public ChainCameraSectionViewModel(ChainCameraNode draftNode, bool isDownCorrect, int pickEdgeCount,
+                                           HalconImageRenderService renderService)
         {
             _isEih = draftNode.Mount == ChainCameraMount.EyeInHand;
             _isDownCorrect = isDownCorrect;
@@ -136,10 +143,13 @@ namespace Grayson.Vision.WpfUI.ViewModel
             // 边数决定标题语义：引导相机显示服务几个工具，纠偏相机显示纠偏角色
             Title = CameraId + (isDownCorrect ? " ｜ 下相机纠偏（ETH·固定）"
                                               : " ｜ 吸点引导 ×" + pickEdgeCount + (IsEih ? "（EIH·随动）" : "（ETH·固定）"));
+            ImageDisplay = new ImageDisplayVm(renderService);
             Points = new ObservableCollection<ChainPointRow>();
             for (int i = 0; i < 9; i++)
                 Points.Add(new ChainPointRow { Note = "P" + (i + 1) });
             RefreshGridStatus();
+            ClearRecognition();
+            ReloadTemplates();
         }
 
         public string Title { get; private set; }
@@ -256,6 +266,211 @@ namespace Grayson.Vision.WpfUI.ViewModel
                         + DeltaRefCol.ToString("F1", CultureInfo.InvariantCulture)
                         + ", " + DeltaRefRow.ToString("F1", CultureInfo.InvariantCulture)
                         + ")（= 吸嘴 U 轴图像投影 R_cdown，向导实测）";
+        }
+
+        //---------------------------------------------------------------------
+        // 特征 / 模板识别（2026-09-30 补，照搬范式1 向导 Step1「算法特征配置」）
+        //   旧向导（CalibrationWizardViewModel，R4/R5 已删）本有完整识别闭环：
+        //     特征类型（圆 / 十字 / 模板）→ 模板库下拉 + MinScore + 角度范围 →
+        //     识别 → HALCON 把过程与结果叠加到视窗 → 匹配分卡片 → 回填像素。
+        //   范式2 重写时丢掉，链向导只剩"肉眼点选"。本段把识别状态接回来；
+        //   ★ 算法本体不另写——由父 VM 调 HalconWrapper 的 CalibrationService.ExtractFeaturePreview
+        //     （圆=阈值+圆度+亚像素圆拟合 / 十字=骨架+直线交叉 / 模板=全局模板库 Shape·NCC，
+        //      与生产 ShapeMatch 节点同源），识别结论经 ApplyMatchReport 落到本段。
+        //---------------------------------------------------------------------
+
+        private WpfImageRenderContext _imageContext;
+        private CalibrationFeatureType _featureType = CalibrationFeatureType.CircleMark;
+        private string _featureTemplateName = "";
+        private double _templateMinScore = 0.5;
+        private double _templateAngleStart = -180;
+        private double _templateAngleEnd = 180;
+        private bool _hasRecognized;
+        private double _recognizedCol, _recognizedRow;
+        private double _matchScore;
+        private string _matchScoreText = "尚未提取";
+        private string _matchScoreDetail = "";
+        private string _matchCandidateSummary = "";
+        private SolidColorBrush _matchScoreBrush = new SolidColorBrush(Color.FromRgb(120, 120, 120));
+
+        /// <summary>Halcon 视窗数据源（XAML：HalconImageDisplayHost 的 DataContext）</summary>
+        public ImageDisplayVm ImageDisplay { get; private set; }
+
+        /// <summary>当前图像渲染上下文（显示与识别共用；换图时旧上下文由 ImageDisplayVm 统一释放）</summary>
+        public WpfImageRenderContext ImageContext
+        {
+            get { return _imageContext; }
+            private set { Set(ref _imageContext, value); OnPropertyChanged(nameof(HasImageForRecognize)); }
+        }
+
+        /// <summary>当前是否有可用于识别的图像</summary>
+        public bool HasImageForRecognize
+        {
+            get { return _imageContext != null && _imageContext.Image != null; }
+        }
+
+        /// <summary>识别用图像句柄（CalibrationService 认 IRenderImage）</summary>
+        public object RecognitionImage
+        {
+            get { return _imageContext != null ? (object)_imageContext.Image : null; }
+        }
+
+        /// <summary>把新图像交给本段视窗（同时作废上一次识别结论——防止把上一张图的像素当成这张的）</summary>
+        public void SetImageContext(WpfImageRenderContext ctx)
+        {
+            if (ctx == null) return;
+            ImageDisplay.AddOrUpdateImageContext(ctx);
+            ImageContext = ctx;
+            ClearRecognition();
+        }
+
+        /// <summary>特征类型（圆 / 十字 / 模板）</summary>
+        public CalibrationFeatureType FeatureType
+        {
+            get { return _featureType; }
+            set
+            {
+                if (Set(ref _featureType, value))
+                {
+                    OnPropertyChanged(nameof(FeatureTypeIndex));
+                    OnPropertyChanged(nameof(IsCircleFeature));
+                    OnPropertyChanged(nameof(IsCrossFeature));
+                    OnPropertyChanged(nameof(IsTemplateFeature));
+                    ClearRecognition();
+                }
+            }
+        }
+
+        /// <summary>特征类型下拉（枚举序 = CalibrationFeatureType：圆0 / 十字1 / 模板2）</summary>
+        public string[] FeatureTypeOptions
+        {
+            get { return new[] { "圆形 Mark（圆心）", "十字 Mark（形状匹配）", "模板匹配（Shape/NCC）" }; }
+        }
+
+        public int FeatureTypeIndex
+        {
+            get { return (int)_featureType; }
+            set { FeatureType = (CalibrationFeatureType)Math.Max(0, Math.Min(2, value)); }
+        }
+
+        public bool IsCircleFeature { get { return _featureType == CalibrationFeatureType.CircleMark; } }
+        public bool IsCrossFeature { get { return _featureType == CalibrationFeatureType.CrossMark; } }
+        public bool IsTemplateFeature { get { return _featureType == CalibrationFeatureType.TemplateMatch; } }
+
+        /// <summary>全局模板库（模板管理页创建，与生产 ShapeMatch 同源）</summary>
+        public ObservableCollection<TemplateInfo> AvailableTemplates { get; } = new ObservableCollection<TemplateInfo>();
+
+        /// <summary>重新枚举全局模板库</summary>
+        public void ReloadTemplates()
+        {
+            AvailableTemplates.Clear();
+            try
+            {
+                var res = new TemplateManager().GetAll();
+                if (res != null && res.Success && res.Data != null)
+                    foreach (var t in res.Data) AvailableTemplates.Add(t);
+            }
+            catch { /* 模板库不可用不阻塞向导（圆/十字特征无需模板） */ }
+            MatchScoreDetail = HasImageForRecognize
+                ? "暂无提取结果——点『🎯 识别特征』。"
+                : "当前无图像——请先『单帧取图』或『载入图像…』。";
+        }
+
+        /// <summary>模板名（模板匹配特征用；须与模板库中的名字一致）</summary>
+        public string FeatureTemplateName
+        {
+            get { return _featureTemplateName; }
+            set { Set(ref _featureTemplateName, value); }
+        }
+
+        /// <summary>模板匹配最低分门（0~1，低于则判未识别）</summary>
+        public double TemplateMinScore
+        {
+            get { return _templateMinScore; }
+            set { Set(ref _templateMinScore, value); }
+        }
+
+        /// <summary>模板搜索角度下限（度）</summary>
+        public double TemplateAngleStart
+        {
+            get { return _templateAngleStart; }
+            set { Set(ref _templateAngleStart, value); }
+        }
+
+        /// <summary>模板搜索角度上限（度）</summary>
+        public double TemplateAngleEnd
+        {
+            get { return _templateAngleEnd; }
+            set { Set(ref _templateAngleEnd, value); }
+        }
+
+        public double MatchScore { get { return _matchScore; } private set { Set(ref _matchScore, value); } }
+        public string MatchScoreText { get { return _matchScoreText; } private set { Set(ref _matchScoreText, value); } }
+        public string MatchScoreDetail { get { return _matchScoreDetail; } private set { Set(ref _matchScoreDetail, value); } }
+        public string MatchCandidateSummary { get { return _matchCandidateSummary; } private set { Set(ref _matchCandidateSummary, value); } }
+        public SolidColorBrush MatchScoreBrush { get { return _matchScoreBrush; } private set { Set(ref _matchScoreBrush, value); } }
+
+        /// <summary>本次图像上是否已识别到特征（HasRecognized=true 才有可信像素可回填）</summary>
+        public bool HasRecognized
+        {
+            get { return _hasRecognized; }
+            private set { Set(ref _hasRecognized, value); OnPropertyChanged(nameof(RecognizedPixelText)); }
+        }
+
+        /// <summary>识别到的像素列（=u=X）</summary>
+        public double RecognizedCol { get { return _recognizedCol; } private set { Set(ref _recognizedCol, value); } }
+        /// <summary>识别到的像素行（=v=Y）</summary>
+        public double RecognizedRow { get { return _recognizedRow; } private set { Set(ref _recognizedRow, value); } }
+
+        public string RecognizedPixelText
+        {
+            get
+            {
+                return HasRecognized
+                    ? string.Format(CultureInfo.InvariantCulture, "识别像素 u={0:F2}, v={1:F2}", _recognizedCol, _recognizedRow)
+                    : "尚未识别";
+            }
+        }
+
+        /// <summary>作废识别结论（换图 / 换特征类型时调用，防串帧）</summary>
+        public void ClearRecognition()
+        {
+            HasRecognized = false;
+            MatchScore = 0;
+            MatchScoreText = "尚未提取";
+            MatchScoreBrush = new SolidColorBrush(Color.FromRgb(120, 120, 120));
+            MatchCandidateSummary = "";
+            MatchScoreDetail = HasImageForRecognize ? "暂无提取结果。" : "当前无图像——请先『单帧取图』或『载入图像…』。";
+        }
+
+        /// <summary>把识别报告落到 UI（分数 / 等级 / 明细 / 中心像素）。失败时明确降为未识别。</summary>
+        public void ApplyMatchReport(FeatureMatchReport report)
+        {
+            if (report == null) { ClearRecognition(); return; }
+            MatchScore = report.Success ? Math.Max(0, Math.Min(100, report.Score)) : 0;
+            if (!report.Success)
+            {
+                MatchScoreText = "✗ 未识别 0/100";
+                MatchScoreBrush = new SolidColorBrush(Color.FromRgb(200, 60, 60));
+                HasRecognized = false;
+            }
+            else
+            {
+                MatchScoreText = string.Format(CultureInfo.InvariantCulture, "{0:F0}/100 · {1}", MatchScore, report.Verdict);
+                MatchScoreBrush = MatchScore >= 85 ? new SolidColorBrush(Color.FromRgb(46, 160, 90))
+                    : MatchScore >= 70 ? new SolidColorBrush(Color.FromRgb(200, 160, 40))
+                    : MatchScore >= 55 ? new SolidColorBrush(Color.FromRgb(230, 120, 40))
+                    : new SolidColorBrush(Color.FromRgb(200, 60, 60));
+                RecognizedCol = report.PixelX;
+                RecognizedRow = report.PixelY;
+                HasRecognized = true;
+            }
+            string detail = report.Detail ?? "";
+            if (report.Success && report.UsedFallback)
+                detail = "（走了降级兜底路径，分数已打折）" + detail;
+            MatchScoreDetail = string.IsNullOrWhiteSpace(detail) ? "—" : detail;
+            MatchCandidateSummary = report.CandidateCount <= 0 ? "无候选" : ("候选 " + report.CandidateCount + " 个");
+            OnPropertyChanged(nameof(RecognizedPixelText));
         }
 
         public void AddPoint()
@@ -638,6 +853,8 @@ namespace Grayson.Vision.WpfUI.ViewModel
         //---------------------------------------------------------------------
         private readonly IDevicePool _devicePool;
         private readonly HalconImageRenderService _renderService = new HalconImageRenderService();
+        // 特征识别算子宿主（圆/十字/模板 三路），照搬范式1：算法本体在 HalconWrapper，别在 UI 层重写
+        private readonly CalibrationService _calibService = new CalibrationService();
         private readonly System.Threading.AutoResetEvent _frameArrivedEvent = new System.Threading.AutoResetEvent(false);
         private volatile FrameEventArgs _latestFrame;
         private volatile bool _captureWaitActive;
@@ -699,7 +916,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             get
             {
                 if (_selectedCameraDevice == null) return "未选择相机";
-                return _selectedCameraDevice.DeviceName + "　" + (IsCameraConnected ? "● 已连接" : "○ 未连接");
+                return _selectedCameraDevice.DeviceKey + "　" + (IsCameraConnected ? "● 已连接" : "○ 未连接");
             }
         }
 
@@ -740,10 +957,10 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             var cam = _selectedCameraDevice;
             if (cam == null) { CameraLog = "⚠ 未选择相机。"; return; }
-            if (cam.State == DeviceState.Connected) { CameraLog = "相机已连接：" + cam.DeviceName; return; }
+            if (cam.State == DeviceState.Connected) { CameraLog = "相机已连接：" + cam.DeviceKey; return; }
             var r = cam.Connect();
             if (r == null || !r.Success) { CameraLog = "⚠ 连接失败：" + (r?.Message ?? "无应答"); }
-            else { CameraLog = "相机已连接：" + cam.DeviceName; }
+            else { CameraLog = "相机已连接：" + cam.DeviceKey; }
             OnPropertyChanged(nameof(IsCameraConnected));
             OnPropertyChanged(nameof(CameraConnectedText));
             OnPropertyChanged(nameof(CameraAccessHint));
@@ -810,6 +1027,142 @@ namespace Grayson.Vision.WpfUI.ViewModel
             _frameArrivedEvent.Set();
         }
 
+        //---------------------------------------------------------------------
+        // 图像入段（2026-09-30）：相机帧 / 本地文件 → 指定相机段的图像区
+        //   ★ Bug 修复：『载入图像…』『单帧取图』两个按钮在采集工具栏里（TabControl 之外），
+        //     它们的 DataContext 是窗口 VM，不是 ChainCameraSectionViewModel ⇒ 由视图显式
+        //     传 sec 进来，不能靠 sender.DataContext 推断。
+        //---------------------------------------------------------------------
+
+        /// <summary>把本地图像文件载入指定相机段（离线选图：无相机时也能练流程）</summary>
+        public void LoadImageIntoSection(ChainCameraSectionViewModel sec, string path)
+        {
+            if (sec == null || string.IsNullOrWhiteSpace(path)) return;
+            try
+            {
+                sec.Image = LoadBitmapFromFile(path);
+                // 本地文件 → Halcon 视窗 + 识别上下文：WrapImage 直接认文件路径（无需先转帧）
+                var ctx = CreateContextFromFile(path, sec.CameraId);
+                if (ctx != null) sec.SetImageContext(ctx);
+                CameraLog = "已载入本地图像：" + System.IO.Path.GetFileName(path)
+                    + (ctx == null ? "（⚠ 该格式无法转入特征识别视窗，仅预览）" : "");
+            }
+            catch (Exception ex)
+            {
+                CameraLog = "⚠ 载入图像失败：" + ex.Message;
+            }
+        }
+
+        /// <summary>把相机新帧送入指定相机段（走位 → 软触发 → 本点新帧）</summary>
+        public void ShowFrameInSection(ChainCameraSectionViewModel sec, FrameEventArgs frame)
+        {
+            if (sec == null || frame == null) return;
+            var bmp = FrameToBitmap(frame);
+            if (bmp == null)
+            {
+                CameraLog = "⚠ 帧格式暂不支持显示（PixelFormat=" + (frame.PixelFormat ?? "?") + "）；当前仅支持 Mono8 / RGB8。";
+                return;
+            }
+            sec.Image = bmp;
+            var ctx = _renderService.CreateRenderContextFromFrame(frame, "ChainWizard-" + sec.CameraId, "ChainWiz_" + sec.CameraId);
+            if (ctx != null) sec.SetImageContext(ctx);
+        }
+
+        /// <summary>
+        /// 识别指定相机段图像上的特征点（圆 / 十字 / 模板匹配）：结果叠加到视窗 + 刷新匹配分卡片。
+        /// ★ 不另写算法：直接把图像交给 HalconWrapper 的 CalibrationService.ExtractFeaturePreview
+        ///   （与生产 ShapeMatch 节点 / 九点采样同一套算子）。识别结论写回 sec（供回填点对表）。
+        /// </summary>
+        public string RecognizeFeature(ChainCameraSectionViewModel sec)
+        {
+            if (sec == null) return "\u26a0 请先选择相机 Tab。";
+            var img = sec.RecognitionImage;
+            if (img == null) return "\u26a0 当前无图像——请先『单帧取图』或『载入图像…』。";
+
+            SyncExtractOptions(sec);
+            string name = sec.IsTemplateFeature
+                ? "模板匹配（" + (string.IsNullOrWhiteSpace(sec.FeatureTemplateName) ? "未选模板" : sec.FeatureTemplateName) + "）"
+                : sec.IsCrossFeature ? "十字 Mark" : "圆形 Mark";
+            try
+            {
+                var res = _calibService.ExtractFeaturePreview(img, sec.FeatureType);
+                sec.ApplyMatchReport(_calibService.LastMatchReport);
+                if (res != null && res.Success)
+                {
+                    return "\u2713 " + name + " 识别成功：像素 u="
+                         + res.Data.PixelX.ToString("F2", CultureInfo.InvariantCulture)
+                         + ", v=" + res.Data.PixelY.ToString("F2", CultureInfo.InvariantCulture)
+                         + "（已在视窗叠加标记）";
+                }
+                return "\u2717 " + name + " 未识别：" + (res == null ? "无结果" : res.Message);
+            }
+            catch (Exception ex)
+            {
+                ClearRecognition(sec);
+                return "\u26a0 识别异常：" + ex.Message;
+            }
+        }
+
+        /// <summary>把本段模板参数同步进算子（每次识别前调，避免跨段串参数）</summary>
+        private void SyncExtractOptions(ChainCameraSectionViewModel sec)
+        {
+            var o = _calibService.ExtractOptions;
+            if (o == null) return;
+            o.TemplateName = sec.FeatureTemplateName;
+            o.TemplateMinScore = sec.TemplateMinScore;
+            o.TemplateAngleStart = sec.TemplateAngleStart;
+            o.TemplateAngleEnd = sec.TemplateAngleEnd;
+        }
+
+        private static void ClearRecognition(ChainCameraSectionViewModel sec)
+        {
+            if (sec != null) sec.ClearRecognition();
+        }
+
+        /// <summary>把识别到的像素回填到该段当前选中行（识别 → 点对表 的落点）</summary>
+        public string ApplyRecognizedToSelectedRow(ChainCameraSectionViewModel sec)
+        {
+            if (sec == null) return "\u26a0 请先选择相机 Tab。";
+            if (!sec.HasRecognized) return "\u26a0 尚未识别到特征——先点『\ud83c\udfaf 识别特征』。";
+            if (sec.SelectedRow == null) return "\u26a0 请先在点对表格中选中要回填的那一行。";
+            sec.SetPixelFromClick(sec.RecognizedCol, sec.RecognizedRow);
+            return "\u2713 已把识别像素回填到第 " + (sec.Points.IndexOf(sec.SelectedRow) + 1) + " 行。";
+        }
+
+        /// <summary>本地文件 → 渲染上下文（WrapImage 直接认文件路径；HImage 生命周期归上下文）</summary>
+        private WpfImageRenderContext CreateContextFromFile(string path, string cameraId)
+        {
+            try
+            {
+                var renderImage = _renderService.WrapImage(path);
+                if (renderImage == null) return null;
+                return new WpfImageRenderContext
+                {
+                    NodeId = "ChainWiz_" + cameraId,
+                    NodeName = "ChainWizard-" + cameraId,
+                    Image = renderImage,
+                    Thumbnail = _renderService.CreateThumbnail(renderImage),
+                };
+            }
+            catch (Exception ex)
+            {
+                CameraLog = "⚠ 转 Halcon 视窗失败：" + ex.Message;
+                return null;
+            }
+        }
+
+        /// <summary>本地图像读取（缓存到内存，释放文件句柄——现场要反复重拍）</summary>
+        private static System.Windows.Media.Imaging.BitmapSource LoadBitmapFromFile(string path)
+        {
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(path);
+            bmp.EndInit();
+            bmp.Freeze();
+            return bmp;
+        }
+
         /// <summary>帧 → BitmapSource（Mono8 灰度 / RGB8，紧致缓冲直拷；其它格式返回 null 并提示）</summary>
         public static System.Windows.Media.Imaging.BitmapSource FrameToBitmap(FrameEventArgs f)
         {
@@ -861,7 +1214,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             get
             {
                 if (_selectedMotionDevice == null) return "未选择运动设备";
-                return _selectedMotionDevice.DeviceName + "　" + (IsMotionConnected ? "● 已连接" : "○ 未连接");
+                return _selectedMotionDevice.DeviceKey + "　" + (IsMotionConnected ? "● 已连接" : "○ 未连接");
             }
         }
 
@@ -886,11 +1239,44 @@ namespace Grayson.Vision.WpfUI.ViewModel
         private double _jogSpeed = 30.0;
         public double JogSpeed { get { return _jogSpeed; } set { Set(ref _jogSpeed, value); } }
 
-        /// <summary>轴映射：X=0,Y=1,U=2（默认；EPSON 经示教器手抄时不用）</summary>
-        public int AxisX { get { return _axisX; } set { Set(ref _axisX, value); } }
-        public int AxisY { get { return _axisY; } set { Set(ref _axisY, value); } }
-        public int AxisU { get { return _axisU; } set { Set(ref _axisU, value); } }
-        private int _axisX = 0, _axisY = 1, _axisU = 2;
+        /// <summary>
+        /// 轴槽位映射。★默认按 EPSON SCARA = X0 / Y1 / Z2 / U3。
+        /// ★2026-09-30 修正：原默认 U=2 与 Z=2 **撞车**——撞车时 MoveAbsolute 会把位移写到
+        /// 重复的那根轴上且**零报错**（"没下 Z 却动了 U"），是血泪项，故默认值改为互不相同。
+        /// </summary>
+        public int AxisX { get { return _axisX; } set { if (Set(ref _axisX, value)) RaiseAxisSlotChanged(); } }
+        public int AxisY { get { return _axisY; } set { if (Set(ref _axisY, value)) RaiseAxisSlotChanged(); } }
+        public int AxisU { get { return _axisU; } set { if (Set(ref _axisU, value)) RaiseAxisSlotChanged(); } }
+        private int _axisX = 0, _axisY = 1, _axisU = 3;
+
+        private void RaiseAxisSlotChanged()
+        {
+            OnPropertyChanged(nameof(AxisSlotCollisionText));
+            OnPropertyChanged(nameof(HasAxisSlotCollision));
+            OnPropertyChanged(nameof(GridAxisHint));
+        }
+
+        /// <summary>轴槽位是否撞车（任意两轴同槽位）</summary>
+        public bool HasAxisSlotCollision
+        {
+            get
+            {
+                var s = new[] { AxisX, AxisY, AxisZ, AxisU };
+                return s.Distinct().Count() != s.Length;
+            }
+        }
+
+        /// <summary>轴槽位撞车告警（无撞车为空串，UI 用 BoolToVis 控制显隐）</summary>
+        public string AxisSlotCollisionText
+        {
+            get
+            {
+                if (!HasAxisSlotCollision) return string.Empty;
+                return "⚠ 轴槽位撞车：X=" + AxisX + " Y=" + AxisY + " Z=" + AxisZ + " U=" + AxisU
+                     + " 存在重复槽位。撞车时点动 Z 会写到重复的那根轴上且不报错——"
+                     + "EPSON SCARA 应为 X0/Y1/Z2/U3，请改为互不相同的槽位后再点动。";
+            }
+        }
 
         /// <summary>回读的当前位姿（板卡编码器）</summary>
         private string _currentPoseText = "—";
@@ -965,9 +1351,9 @@ namespace Grayson.Vision.WpfUI.ViewModel
         {
             var m = _selectedMotionDevice;
             if (m == null) { MotionLog = "⚠ 未选择运动设备。"; return; }
-            if (m.State == DeviceState.Connected) { MotionLog = "运动设备已连接：" + m.DeviceName; return; }
+            if (m.State == DeviceState.Connected) { MotionLog = "运动设备已连接：" + m.DeviceKey; return; }
             var r = m.Connect();
-            MotionLog = (r == null || !r.Success) ? "⚠ 连接失败：" + (r?.Message ?? "无应答") : "运动设备已连接：" + m.DeviceName;
+            MotionLog = (r == null || !r.Success) ? "⚠ 连接失败：" + (r?.Message ?? "无应答") : "运动设备已连接：" + m.DeviceKey;
             OnPropertyChanged(nameof(IsMotionConnected));
             OnPropertyChanged(nameof(MotionConnectedText));
             OnPropertyChanged(nameof(MotionAccessHint));
@@ -1041,7 +1427,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
         public int AxisZ
         {
             get { return _axisZ; }
-            set { if (Set(ref _axisZ, value)) OnPropertyChanged(nameof(GridAxisHint)); }
+            set { if (Set(ref _axisZ, value)) RaiseAxisSlotChanged(); }
         }
 
         /// <summary>网格面板是否可用（当前为相机步 + 该相机段支持九点）</summary>
@@ -1496,7 +1882,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                                                && e.Usage == ChainUsage.DownCameraCorrect);
                 int pickCnt = _draft.Edges.Count(e => e.FromCameraId == cam.CameraId
                                                    && e.Usage == ChainUsage.PickAnchor);
-                Sections.Add(new ChainCameraSectionViewModel(cam, down, pickCnt));
+                Sections.Add(new ChainCameraSectionViewModel(cam, down, pickCnt, _renderService));
             }
             foreach (var t in _draft.Tools)
             {
@@ -1856,7 +2242,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
             {
                 bool down = plan.Draft.Edges.Any(e => e.FromCameraId == cam.CameraId && e.Usage == ChainUsage.DownCameraCorrect);
                 int pickCnt = plan.Draft.Edges.Count(e => e.FromCameraId == cam.CameraId && e.Usage == ChainUsage.PickAnchor);
-                var sec = new ChainCameraSectionViewModel(cam, down, pickCnt);
+                var sec = new ChainCameraSectionViewModel(cam, down, pickCnt, _renderService);
                 ChainCameraSectionViewModel old;
                 if (oldSections.TryGetValue(cam.CameraId, out old))
                 {

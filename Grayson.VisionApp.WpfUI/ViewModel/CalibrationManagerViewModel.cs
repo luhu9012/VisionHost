@@ -100,8 +100,64 @@ namespace Grayson.Vision.WpfUI.ViewModel
         /// <summary>是否有定位操作说明（ScopeNoteText 非空）</summary>
         public bool HasScopeNote => !string.IsNullOrEmpty(_scopeNote);
 
+        /// <summary>是否全库态（页头「定位工位」下拉仅全库态可见）</summary>
+        public bool IsGlobalScope => !IsStationScope;
+
+        //---------------------------------------------------------------------
+        // 页头「定位工位」下拉（2026-09-30 补）
+        //   ★ 修 Bug：直接点侧栏进入本页时是"全库态"，而链向导/链校验台/真机验证台
+        //     都要求绑定具体工位 ⇒ 三个入口全被"请先定位到工位"挡死，只有从工位配置页
+        //     跳进来才能用。这里给一条"就地定位"的路：选一个工位 = 等价于从工位工作台进来。
+        //---------------------------------------------------------------------
+
+        /// <summary>可定位工位清单（来自工位档案 StationProfileRepository）</summary>
+        public ObservableCollection<StationPickItem> StationPickList { get; } = new ObservableCollection<StationPickItem>();
+
+        private StationPickItem _pickedStation;
+        /// <summary>页头选中的工位 → 立即进入定位态（等价于从工位工作台跳入）</summary>
+        public StationPickItem PickedStation
+        {
+            get => _pickedStation;
+            set
+            {
+                if (Set(ref _pickedStation, value) && value != null && !string.IsNullOrWhiteSpace(value.StationCode))
+                    ApplyStationScope(new StationNavigationContext { StationCode = value.StationCode, StationName = value.StationName });
+            }
+        }
+
+        public bool HasStationPicks => StationPickList.Count > 0;
+
+        /// <summary>无工位档案时的提示（下拉换成一句话，不让操作员对着空框发呆）</summary>
+        public bool HasNoStationPickHint => StationPickList.Count == 0;
+
+        /// <summary>重新枚举工位档案（全库态下可点「↻」刷新）</summary>
+        public void ReloadStationPicks()
+        {
+            StationPickList.Clear();
+            try
+            {
+                var repo = new StationProfileRepository();
+                foreach (var pr in repo.ListAll())
+                {
+                    if (pr == null || string.IsNullOrWhiteSpace(pr.StationCode)) continue;
+                    if (StationPickList.Any(x => string.Equals(x.StationCode, pr.StationCode, StringComparison.OrdinalIgnoreCase)))
+                        continue;   // 同工位多档案（多吸嘴）→ 下拉只出现一次
+                    StationPickList.Add(new StationPickItem { StationCode = pr.StationCode, StationName = pr.StationName });
+                }
+            }
+            catch (Exception ex)
+            {
+                ScopeNoteText = "⚠ 枚举工位档案失败：" + ex.Message;
+            }
+            OnPropertyChanged(nameof(HasStationPicks));
+            OnPropertyChanged(nameof(HasNoStationPickHint));
+        }
+
         /// <summary>回全库浏览（解除工位钉）</summary>
         public ICommand BackToGlobalCommand { get; private set; }
+
+        /// <summary>重新枚举页头「定位工位」下拉（在别处新建工位档案后可刷新）</summary>
+        public ICommand ReloadStationPicksCommand { get; private set; }
 
         /// <summary>左侧列表实际展示集（定位态=只显示该工位方案；全库=全部）。主集仍为 CalibrationProfiles。</summary>
         public ObservableCollection<CalibrationProfile> VisibleProfiles { get; } = new ObservableCollection<CalibrationProfile>();
@@ -1028,12 +1084,14 @@ namespace Grayson.Vision.WpfUI.ViewModel
             PublishCardCommand = new RelayCommand(o => PublishCard(o as ArtifactTaskCardVm),
                 o => CanPublishCard(o as ArtifactTaskCardVm));
             BackToGlobalCommand = new RelayCommand(_ => EnterGlobalScope());
+            ReloadStationPicksCommand = new RelayCommand(_ => ReloadStationPicks());
 
             // 2026-09-15：重绑相机/运动卡（修复"按计划创建"出来的方案绑定是占位值、且界面改不掉）
             RebindDevicesCommand = new RelayCommand(_ => RebindDevices(), _ => SelectedCalibrationProfile != null);
 
             LoadProfiles();
             RefreshBindingDeviceOptions();
+            ReloadStationPicks();
         }
 
         #region INavigationAware 接口实现
@@ -1146,14 +1204,18 @@ namespace Grayson.Vision.WpfUI.ViewModel
             _scopeStationCode = string.Empty;
             _scopeStationName = string.Empty;
             ScopeNoteText = string.Empty;
+            // 回全库 ⇒ 清空下拉选择（否则会残留上一次定位，再选同一个不会触发 setter）
+            if (_pickedStation != null) { _pickedStation = null; OnPropertyChanged(nameof(PickedStation)); }
             RaiseScopeChanged();
             RebuildVisibleProfiles();
             RefreshCameraSlotOptions();
+            ReloadStationPicks();
         }
 
         private void RaiseScopeChanged()
         {
             OnPropertyChanged(nameof(IsStationScope));
+            OnPropertyChanged(nameof(IsGlobalScope));
             OnPropertyChanged(nameof(ScopeChipText));
             OnPropertyChanged(nameof(ScopeHintText));
             OnPropertyChanged(nameof(ChainStatusText));
@@ -1956,7 +2018,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     MessageBox.Show(
                         "链标定必须绑定一个具体工位（产物要写进该工位的 Calib\\Chain.json）。\n\n"
-                        + "请先从工位工作台进入本页，或在左侧选择一个已绑定工位的方案后再试。",
+                        + "请用页头「定位工位」下拉先选一个工位（或从工位工作台进入本页），选好后再点本按钮。",
                         "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -1987,7 +2049,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     MessageBox.Show(
                         "链校验台需要一个具体工位（要审的 Chain.json 就放在该工位目录下）。\n\n"
-                        + "请先从工位工作台进入本页，或在左侧选择一个已绑定工位的方案后再试。",
+                        + "请用页头「定位工位」下拉先选一个工位（或从工位工作台进入本页），选好后再点本按钮。",
                         "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -2018,7 +2080,7 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 {
                     MessageBox.Show(
                         "真机验证需要一个具体工位（验证的是该工位 Calib\\Chain.json 的产物）。\n\n"
-                        + "请先从工位工作台进入本页，或在左侧选择一个已绑定工位的方案后再试。",
+                        + "请用页头「定位工位」下拉先选一个工位（或从工位工作台进入本页），选好后再点本按钮。",
                         "请先定位到工位", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -2729,6 +2791,24 @@ namespace Grayson.Vision.WpfUI.ViewModel
             else
             {
                 _profileRepository.Update(po);
+            }
+        }
+    }
+
+    /// <summary>页头「定位工位」下拉项（全库态下就地定位，不必先绕工位工作台）</summary>
+    public class StationPickItem
+    {
+        public string StationCode { get; set; }
+        public string StationName { get; set; }
+
+        public string Display
+        {
+            get
+            {
+                return string.IsNullOrWhiteSpace(StationName)
+                       || string.Equals(StationName, StationCode, StringComparison.OrdinalIgnoreCase)
+                    ? StationCode
+                    : StationCode + "（" + StationName + "）";
             }
         }
     }

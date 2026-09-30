@@ -37,6 +37,28 @@
                                            Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- ★2026-09-30 补：定位工位下拉（仅全库态可见）
+                             直接点侧栏进入本页时是"全库态"，而链向导/链校验台/真机验证台
+                             都要求绑定具体工位——此前只能从工位工作台跳进来才能用。
+                             这里选一个工位 = 等价于从工位工作台进入本页。 -->
+                        <ComboBox Width="210" Margin="8,0,0,0" VerticalAlignment="Center"
+                                  Visibility="{Binding IsGlobalScope, Converter={StaticResource BoolToVis}}"
+                                  ItemsSource="{Binding StationPickList}"
+                                  SelectedItem="{Binding PickedStation, Mode=TwoWay}"
+                                  DisplayMemberPath="Display"
+                                  ToolTip="请先在此选一个工位（= 进入该工位的定位态），链向导 / 链校验台 / 真机验证都要求绑定工位。"/>
+                        <Button Content="↻" Margin="2,0,0,0" Padding="6,2" VerticalAlignment="Center"
+                                Command="{Binding ReloadStationPicksCommand}"
+                                Visibility="{Binding IsGlobalScope, Converter={StaticResource BoolToVis}}"
+                                ToolTip="重新枚举工位档案（在工位工作台新建档案后点一下）"/>
+                        <Border Background="#1EFA8C00" CornerRadius="10" Padding="8,2" Margin="8,0,0,0"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding HasNoStationPickHint, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="尚无工位档案——先到「工位工程工作台」建档" FontSize="11"
+                                       Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                        </Border>
+
                         <Button Content="{Binding ChainStatusText}" Command="{Binding OpenChainVerifyCommand}"
                                 FontSize="11" Padding="8,2" Margin="6,0,0,0" VerticalAlignment="Center"
                                 ToolTip="当前定位工位的链审计摘要 + 最近一次真机验证留痕（几何标定进度以此为准；点击打开链校验台）。"/>

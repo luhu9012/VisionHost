@@ -13,14 +13,34 @@
 
             <DataTemplate DataType="{x:Type local:ReadOCRParam}">
                 <StackPanel Margin="10">
-                    <TextBlock Text="分类器/字体文件 (Font):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBlock Text="分类器 / 字体文件 (.omc):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding FontFileName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
-                    <TextBlock Text="最小笔画宽度 (Stroke Width):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBlock Text="极性 (Polarity):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <ComboBox SelectedValue="{Binding Polarity}" Style="{StaticResource NodeParamComboBoxStyle}" Margin="0 0 0 10">
+                        <local:OcrPolarity>Dark</local:OcrPolarity>
+                        <local:OcrPolarity>Light</local:OcrPolarity>
+                    </ComboBox>
+
+                    <TextBlock Text="膨胀半径 px (Dilation · 填笔画孔洞):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding MinStrokeWidth, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
-                    <TextBlock Text="正则/字符过滤 (Regex Filter):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBlock Text="二值化上限 (Threshold Max):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding ThresholdMax, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="字符面积下限 (Area Min):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding AreaMin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="字符面积上限 (Area Max):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding AreaMax, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="字符过滤 (Filter · 0-9 / * 不过滤):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding ExpressionFilter, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="置信度门限 (Min Confidence · 0=不设门):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding MinConfidence, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <CheckBox Content="按行排序 (多行文本 SortByRow)" IsChecked="{Binding SortByRow}" Margin="0 0 0 10"/>
                 </StackPanel>
             </DataTemplate>
         </ResourceDictionary>

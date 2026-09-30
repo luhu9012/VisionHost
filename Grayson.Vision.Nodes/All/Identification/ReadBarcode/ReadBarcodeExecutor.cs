@@ -43,17 +43,23 @@ namespace Grayson.Vision.Nodes.All.Identification.ReadBarcode
             if (searchRegion != null)
                 Preview?.Add(NodePreviewHelper.CopyForDisplay(searchRegion), "blue", 1);
 
-            var readRes = BarcodeTool.ReadBarcode(inputImg, searchRegion, (int)param.CodeType, param.MaxCount, param.TimeoutMs);
+            // 极性映射（HALCON 标准串；一维码不支持 'any' 也无所谓，HALCON 会忽略该键）
+            string polarity = param.Polarity == BarcodePolarity.DarkOnLight ? "dark_on_light"
+                            : param.Polarity == BarcodePolarity.LightOnDark ? "light_on_dark"
+                            : "any";
+
+            var readRes = BarcodeTool.ReadBarcode(inputImg, searchRegion, (int)param.CodeType,
+                param.MaxCount, param.TimeoutMs, param.ElementSizeMin, polarity);
             if (readRes.Success)
             {
                 context.SetOutputValue(node, PORT_OUT_TEXT, readRes.TextResult);
                 context.SetOutputValue(node, PORT_OUT_REGION, readRes.BarcodeRegion);
-                context.Log($"[{node.DisplayName}] 识别成功: {readRes.TextResult}");
+                context.Log($"[{node.DisplayName}] 识别成功[{readRes.DecodedType}] ×{readRes.Count}: {readRes.TextResult}");
 
                 // 条码区域（品红色）+ 识别结果文本标注
                 if (readRes.BarcodeRegion != null)
                     Preview?.Add(NodePreviewHelper.CopyForDisplay(readRes.BarcodeRegion), "magenta", 2);
-                Preview?.AddText($"✅ [{param.CodeType}] {readRes.TextResult}", 12, 12, "green");
+                Preview?.AddText($"✅ [{readRes.DecodedType}] {readRes.TextResult}", 12, 12, "green");
             }
             else
             {

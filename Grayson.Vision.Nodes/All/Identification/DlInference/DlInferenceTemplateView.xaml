@@ -33,6 +33,12 @@
                     <TextBlock Text="异常热区阈值 (仅异常检测:热力图二值化):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding AnomalyRegionThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
+                    <TextBlock Text="归一化均值 (留空=按任务类型默认; YOLO分类填 0,0,0):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding MeanText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="归一化标准差 (留空=默认; YOLO分类填 255,255,255):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding StdText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
                     <TextBlock Text="NMS IoU 阈值 (仅检测):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding IouThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 

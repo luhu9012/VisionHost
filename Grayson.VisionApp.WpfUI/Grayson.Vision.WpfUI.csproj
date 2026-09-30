@@ -100,13 +100,21 @@
     <Compile Include="Service\TaskTemplateTranslatorService.cs" />
     <Compile Include="Service\TaskTypeIndustryCatalog.cs" />
     <Compile Include="Service\DlDemoTaskFactory.cs" />
+    <Compile Include="Service\OnnxDemoTaskFactory.cs" />
     <Compile Include="Service\MeasurementDemoTaskFactory.cs" />
     <Compile Include="Service\ColorDemoTaskFactory.cs" />
     <Compile Include="Service\BlobDemoTaskFactory.cs" />
+    <Compile Include="Service\BarcodeDemoTaskFactory.cs" />
+    <Compile Include="Service\OcrDemoTaskFactory.cs" />
     <Compile Include="Service\StationStatisticsService.cs" />
     <Compile Include="Service\WpfDialogService.cs" />
     <!-- 内嵌 DL 演示资产（HTH 翻译成品：模型+精选图，随构建输出，运行时自动落地 Config） -->
     <Content Include="Assets\DLDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 ONNX 演示资产（自训练 YOLOv8-cls 镁片 ok/ng 模型 + 独立测试集 10 张，随构建输出，
+         运行时由 OnnxDemoTaskFactory 幂等落地为 模型资产 + 配方 + 任务模板 + 演示工位） -->
+    <Content Include="Assets\OnnxDemo\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- 内嵌 测量演示资产（stage9-3 外观测量族闭环：课堂素材+FitCircle 配方/模板/判据） -->
@@ -122,6 +130,17 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Assets\ScratchDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 条码/二维码读取演示资产（特征识别读取族·HTH 课堂 6一维码/6二维码案例素材） -->
+    <Content Include="Assets\BarcodeDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\QrDemo\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 内嵌 OCR 字符识别演示资产（特征识别读取族·HTH 课堂 6OCR 案例素材+分类器） -->
+    <Content Include="Assets\OcrDemo\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Compile Include="ViewModel\AddDeviceDialogViewModel.cs" />

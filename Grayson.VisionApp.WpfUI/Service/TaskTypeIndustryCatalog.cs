@@ -123,22 +123,27 @@ namespace Grayson.Vision.WpfUI.Service
                 DefaultTemplateName = "颜色识别与分拣模板"
             },
 
-            // ============ 规划中：条码/OCR 等（族已落地，条目待补引擎） ============
+            // ============ 已实现：条码 / OCR（2026-09-28 引擎转正，原为占位实现） ============
             new IndustryTaskType
             {
-                Id = "PLAN-BARCODE", Icon = "〰️", Name = "条码 / 二维码读取",
-                FamilyKind = null, FamilyText = "规划中", IsImplemented = false,
-                Description = "1D/2D 码读取与校验",
-                RoadmapHint = "归入「特征识别读取族」；节点 ReadBarcode 已在、但引擎层仍是占位实现（硬编码假值），待补 HALCON 真算子"
+                Id = "ID-02", Icon = "〰️", Name = "条码 / 二维码读取",
+                FamilyKind = TaskKind.FeatureIdentification, FamilyText = "特征识别读取",
+                IsImplemented = true,
+                Description = "一维码（Code128/39/EAN13/UPC）与二维码（QR/DataMatrix/Aztec/PDF417）读取，" +
+                              "输出码值 + 符号区域，按期望串判 OK-NG（纯软件）",
+                DefaultTemplateName = "条码读取任务模板"
             },
             new IndustryTaskType
             {
-                Id = "PLAN-OCR", Icon = "🔤", Name = "OCR 字符识别",
-                FamilyKind = null, FamilyText = "规划中", IsImplemented = false,
-                Description = "打印字符/批号读取（工业 OCR）",
-                RoadmapHint = "归入「特征识别读取族」；节点 ReadOCR 已在、但引擎层仍是占位实现（硬编码假值）。" +
-                              "另需先定案路线：课程脚本走「分割 + read_ocr_class_mlp 分类器」，现节点参数更偏 text_finder 一体路线"
+                Id = "ID-03", Icon = "🔤", Name = "OCR 字符识别",
+                FamilyKind = TaskKind.FeatureIdentification, FamilyText = "特征识别读取",
+                IsImplemented = true,
+                Description = "打印字符/批号读取：阈值分割 + HALCON MLP 分类器（Industrial/Document/OCRA 等），" +
+                              "输出字符串 + 字符区域，带置信度门（纯软件）",
+                DefaultTemplateName = "OCR 字符识别任务模板"
             },
+
+            // ============ 规划中（族已落地，条目待补） ============
             new IndustryTaskType
             {
                 Id = "PLAN-3D", Icon = "🧊", Name = "3D 定位 / 3D 测量",

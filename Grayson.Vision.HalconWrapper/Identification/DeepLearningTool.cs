@@ -37,6 +37,16 @@ namespace Grayson.Vision.HalconWrapper.Identification
 
         /// <summary>检测输出布局提示（auto / yolov5 / yolov8）</summary>
         public string LayoutHint { get; set; } = "auto";
+
+        /// <summary>
+        /// 归一化均值（RGB 顺序，0~255 值域）；null = 插件按任务类型取默认值。
+        /// 【必须与训练侧一致】YOLOv8-cls 要填 {0,0,0}（配 Std={255,255,255}），
+        /// 否则沿用分类默认的 ImageNet 归一 → 输出与输入无关（全图恒判同类）。
+        /// </summary>
+        public float[] Mean { get; set; }
+
+        /// <summary>归一化标准差（RGB 顺序，0~255 值域）；null = 插件按任务类型取默认值</summary>
+        public float[] Std { get; set; }
     }
 
     /// <summary>
@@ -137,7 +147,10 @@ namespace Grayson.Vision.HalconWrapper.Identification
                 IouThreshold = (float)request.IouThreshold,
                 UseGpu = request.UseGpu,
                 Labels = request.Labels ?? new List<string>(),
-                LayoutHint = string.IsNullOrEmpty(request.LayoutHint) ? "auto" : request.LayoutHint
+                LayoutHint = string.IsNullOrEmpty(request.LayoutHint) ? "auto" : request.LayoutHint,
+                // 归一化：节点侧显式配置优先；留空(null)时由插件按任务类型取默认值
+                Mean = request.Mean,
+                Std = request.Std
             };
 
             var loadResult = provider.Load(options); // 同路径重复调用幂等，只刷新参数

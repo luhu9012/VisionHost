@@ -43,23 +43,32 @@ namespace Grayson.Vision.Nodes.All.Identification.ReadOCR
             if (searchRegion != null)
                 Preview?.Add(NodePreviewHelper.CopyForDisplay(searchRegion), "blue", 1);
 
-            var ocrRes = OCRTool.RecognizeText(inputImg, searchRegion, param.FontFileName, param.MinStrokeWidth, param.ExpressionFilter);
+            var ocrRes = OCRTool.RecognizeText(inputImg, searchRegion, param.FontFileName,
+                param.MinStrokeWidth, param.ExpressionFilter,
+                param.ThresholdMax, param.AreaMin, param.AreaMax,
+                param.Polarity == OcrPolarity.Light ? "light" : "dark",
+                param.SortByRow, param.MinConfidence);
             if (ocrRes.Success)
             {
                 context.SetOutputValue(node, PORT_OUT_TEXT, ocrRes.TextResult);
                 context.SetOutputValue(node, PORT_OUT_CHAR_REGIONS, ocrRes.CharRegions);
-                context.Log($"[{node.DisplayName}] OCR 识别结果: {ocrRes.TextResult}");
+                context.Log($"[{node.DisplayName}] OCR 识别结果: {ocrRes.TextResult}" +
+                            $"（{ocrRes.Count} 字，最低置信度 {ocrRes.MinConfidence:F3}，分类器 {System.IO.Path.GetFileName(ocrRes.ResolvedFontPath)}）");
 
                 // 字符区域（绿色）+ 识别结果文本标注
                 if (ocrRes.CharRegions != null)
                     Preview?.Add(NodePreviewHelper.CopyForDisplay(ocrRes.CharRegions), "green", 2);
-                Preview?.AddText($"✅ OCR: {ocrRes.TextResult}", 12, 12, "green");
+                Preview?.AddText($"✅ OCR: {ocrRes.TextResult}（置信度≥{ocrRes.MinConfidence:F2}）", 12, 12, "green");
             }
             else
             {
                 context.SetOutputValue(node, PORT_OUT_TEXT, string.Empty);
-                context.Log($"[{node.DisplayName}] OCR 识别失败: {ocrRes.Message}");
-                Preview?.AddText($"❌ OCR 识别失败: {ocrRes.Message}", 12, 12, "red");
+                context.SetOutputValue(node, PORT_OUT_CHAR_REGIONS, ocrRes.CharRegions);
+                context.Log($"[{node.DisplayName}] OCR 识别失败/可疑: {ocrRes.Message}");
+                // 仍把分割到的字符区域画出来，便于现场判断是"没分到字"还是"认出但不可信"
+                if (ocrRes.CharRegions != null)
+                    Preview?.Add(NodePreviewHelper.CopyForDisplay(ocrRes.CharRegions), "yellow", 2);
+                Preview?.AddText($"❌ OCR: {ocrRes.Message}", 12, 12, "red");
             }
         }
     }

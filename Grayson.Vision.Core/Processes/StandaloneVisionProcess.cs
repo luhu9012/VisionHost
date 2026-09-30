@@ -73,7 +73,11 @@ namespace Grayson.Vision.Core.Processes
             var measureLines = FindNodes(NodeType.FitLine);
             // 识别读取族（2026-09-26，FeatureIdentification 首批=颜色）：链上 ColorIdentify 输出 AreaRatio(%)，
             // 引擎按模板 ConfidenceThreshold（识别读取族语义=面积占比下限%）判 OK/NG —— 见 ApplyIdentifyVerdict。
+            // 2026-09-28 扩族：条码/二维码（ReadBarcode.BarcodeText）与 OCR（ReadOCR.OcrText）同属本族，
+            // 但判据语义不同（"读到了且匹配期望" vs "颜色占比下限"）⇒ 分流到 ApplyReadVerdict。
             var colorNodes = FindNodes(NodeType.ColorIdentify);
+            var barcodeNodes = FindNodes(NodeType.ReadBarcode);
+            var ocrNodes = FindNodes(NodeType.ReadOCR);
             // Blob 分析族（2026-09-26，梯队 B：计数/有无/异物/划痕）：链上 BlobAnalysis 输出 Count，
             // 判据在节点参数 CountMin/CountMax（引擎反射读取，Nodes 程序集不被 Core 引用）。
             var blobNodes = FindNodes(NodeType.BlobAnalysis);
@@ -82,12 +86,16 @@ namespace Grayson.Vision.Core.Processes
             bool isMeasureTask = dlNode == null && (measureCircles.Count > 0 || measureLines.Count > 0);
             bool isIdentifyTask = dlNode == null && !isMeasureTask && colorNodes.Count > 0;
             bool isBlobTask = dlNode == null && !isMeasureTask && !isIdentifyTask && blobNodes.Count > 0;
-            if (dlNode == null && !isMeasureTask && !isIdentifyTask && !isBlobTask)
+            // 读码/OCR 读取族（2026-09-28）：链上 ReadBarcode / ReadOCR 输出文本，按模板期望串判 OK/NG
+            bool isReadTask = dlNode == null && !isMeasureTask && !isIdentifyTask && !isBlobTask
+                              && (barcodeNodes.Count > 0 || ocrNodes.Count > 0);
+            if (dlNode == null && !isMeasureTask && !isIdentifyTask && !isBlobTask && !isReadTask)
             {
-                // 四族节点都没有：给明确提示
+                // 各族节点都没有：给明确提示
                 throw new InvalidOperationException(
                     "当前独立视觉任务找不到 深度学习推理节点（DlInference / HalconDlInference）、" +
-                    "外观测量节点（FitCircle / FitLine）、识别读取节点（ColorIdentify）、也找不到 Blob 分析节点（BlobAnalysis）。" +
+                    "外观测量节点（FitCircle / FitLine）、识别读取节点（ColorIdentify）、" +
+                    "读码/字符读取节点（ReadBarcode / ReadOCR）、也找不到 Blob 分析节点（BlobAnalysis）。" +
                     "请配置配方链：深度学习族加 DL 节点，测量族加测量节点，识别族加颜色/条码/OCR 节点，计数/划痕族加 Blob 节点。");
             }
             if (readNode == null)
@@ -185,6 +193,57 @@ namespace Grayson.Vision.Core.Processes
                 summary = "Blob计数 " + string.Join("；", parts);
                 ok = blobOk;
                 Log($"[{_cfg.LogTag}] {progressText} → {(ok ? "✅ OK" : "❌ NG")} | 摘要: {summary}");
+            }
+            else if (isReadTask)
+            {
+                // 读码/OCR 读取族（2026-09-28）：逐节点读文本端口，按模板期望串判 OK/NG。
+                // ★ 判据纪律：这里不走 GetOutValue<string>——节点没跑时端口缺值会被读成 null，
+                //   与"识别失败但端口写了空串"无法区分。改为直接查端口 DataValue：
+                //   缺值（null）= 未产出 = 直接 NG，不静默放行。
+                var parts = new List<string>();
+                bool readOk = true;
+                var expectations = TryLoadReadExpectations();
+
+                foreach (var rn in barcodeNodes.Concat(ocrNodes))
+                {
+                    string name = string.IsNullOrWhiteSpace(rn.DisplayName) ? "读取" : rn.DisplayName;
+                    bool isBarcode = rn.Type == NodeType.ReadBarcode;
+                    string portName = isBarcode ? "BarcodeText" : "OcrText";
+                    var port = rn.OutputPorts?.FirstOrDefault(
+                        p => string.Equals(p.PortName, portName, StringComparison.OrdinalIgnoreCase));
+                    string text = port?.DataValue as string;
+
+                    if (port == null || port.DataValue == null)
+                    {
+                        // 未产出：算不出 ≠ 读到空串，响亮 NG
+                        parts.Add($"{name}=未产出");
+                        readOk = false;
+                        continue;
+                    }
+
+                    // 期望串匹配：模板 VerdictRule.OkKeyword 复用为"期望文本"（读码/OCR 族语义）；
+                    // 未配期望 → 只要识别出非空文本即算通过（"能读到"就是目的）
+                    string expect = expectations.Count > 0 ? expectations[0] : null;
+                    if (string.IsNullOrWhiteSpace(expect))
+                    {
+                        bool got = !string.IsNullOrWhiteSpace(text);
+                        if (!got) readOk = false;
+                        parts.Add($"{name}={(got ? text : "空结果")}");
+                    }
+                    else
+                    {
+                        bool hit = text.IndexOf(expect, StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (!hit) readOk = false;
+                        parts.Add($"{name}=\"{text}\"{(hit ? "" : $" ←未匹配期望\"{expect}\"")}");
+                    }
+                }
+
+                string family = barcodeNodes.Count > 0 && ocrNodes.Count > 0 ? "读码+OCR"
+                              : barcodeNodes.Count > 0 ? "条码/二维码读取" : "OCR 字符识别";
+                summary = family + " " + string.Join("；", parts);
+                ok = readOk;
+                Log($"[{_cfg.LogTag}] {progressText} → {(ok ? "✅ OK" : "❌ NG")} | 摘要: {summary}" +
+                    (expectations.Count > 0 ? $"（期望串: {expectations[0]}）" : "（未配期望串，读到即通过）"));
             }
             else
             {
@@ -432,9 +491,34 @@ namespace Grayson.Vision.Core.Processes
             return ok;
         }
 
-        /// <summary>读任务模板占比阈值（ConfidenceThreshold）。读不到/未配 → null（由调用方兜底）。</summary>
-        private double? TryLoadIdentifyRatioThreshold()
+        /// <summary>
+        /// 读任务模板里配置的"期望文本"（读码/OCR 族语义：VerdictRule.OkKeyword 复用为期望串，
+        /// 支持用 " | " 分隔多个候选）。读不到/未配 → 空列表（由调用方走"读到即通过"）。
+        /// </summary>
+        private List<string> TryLoadReadExpectations()
         {
+            var result = new List<string>();
+            try
+            {
+                var code = Worker?.TaskTemplateCode;
+                if (string.IsNullOrWhiteSpace(code)) return result;
+                var file = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "TaskLibrary", code.Trim() + ".json");
+                if (!File.Exists(file)) return result;
+                var tpl = JsonConvert.DeserializeObject<TaskTemplateInfo>(File.ReadAllText(file));
+                var raw = tpl?.VerdictRule?.OkKeyword;
+                if (string.IsNullOrWhiteSpace(raw)) return result;
+                foreach (var seg in raw.Split(new[] { " | " }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var t = seg.Trim();
+                    if (t.Length > 0) result.Add(t);
+                }
+            }
+            catch { /* 模板读不到时按未配期望兜底 */ }
+            return result;
+        }
+
+        /// <summary>读任务模板占比阈值（ConfidenceThreshold）。读不到/未配 → null（由调用方兜底）。</summary>
+        private double? TryLoadIdentifyRatioThreshold()        {
             try
             {
                 var tplFile = Worker?.TaskTemplateCode;

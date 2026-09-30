@@ -21,12 +21,25 @@
                         <local:BarcodeType>EAN13</local:BarcodeType>
                         <local:BarcodeType>QRCode</local:BarcodeType>
                         <local:BarcodeType>DataMatrix</local:BarcodeType>
+                        <local:BarcodeType>UPC</local:BarcodeType>
+                        <local:BarcodeType>Aztec</local:BarcodeType>
+                        <local:BarcodeType>PDF417</local:BarcodeType>
+                    </ComboBox>
+
+                    <TextBlock Text="极性 (Polarity · 二维码适用):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <ComboBox SelectedValue="{Binding Polarity}" Style="{StaticResource NodeParamComboBoxStyle}" Margin="0 0 0 10">
+                        <local:BarcodePolarity>Any</local:BarcodePolarity>
+                        <local:BarcodePolarity>DarkOnLight</local:BarcodePolarity>
+                        <local:BarcodePolarity>LightOnDark</local:BarcodePolarity>
                     </ComboBox>
 
                     <TextBlock Text="最大识别数量 (Max Count):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding MaxCount, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
 
-                    <TextBlock Text="超时限制 (Timeout ms):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBlock Text="条宽下限 px (Element Size Min · 0=默认):" Style="{StaticResource NodeParamHeaderLabel}"/>
+                    <TextBox Text="{Binding ElementSizeMin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
+
+                    <TextBlock Text="超时占位 ms (Timeout · 仅记录):" Style="{StaticResource NodeParamHeaderLabel}"/>
                     <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource NodeParamInputStyle}" Margin="0 0 0 10"/>
                 </StackPanel>
             </DataTemplate>

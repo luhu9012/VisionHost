@@ -82,6 +82,32 @@ namespace Grayson.Vision.Nodes.All.Identification.DlInference
             set => Set(ref _iouThreshold, value);
         }
 
+        private string _meanText = "";
+        /// <summary>
+        /// 归一化均值（RGB 顺序，值域 0~255 意义下），逗号分隔；留空 = 按任务类型取默认值
+        /// （分类 = ImageNet 123.675,116.28,103.53；检测/分割/异常 = 0,0,0 即仅缩放）。
+        /// 【铁律】必须与训练侧一致：YOLOv8-cls 训练侧是 0~1 归一（mean=0/std=255），
+        /// 若沿用分类默认的 ImageNet 归一，输出会与输入无关（全图恒判同一类、置信度恒定）。
+        /// 写成 "0,0,0" 即可对齐 YOLO 分类。
+        /// </summary>
+        public string MeanText
+        {
+            get => _meanText;
+            set => Set(ref _meanText, value);
+        }
+
+        private string _stdText = "";
+        /// <summary>
+        /// 归一化标准差（RGB 顺序，值域 0~255 意义下），逗号分隔；留空 = 按任务类型取默认值
+        /// （分类 = 58.395,57.12,57.375；检测/分割/异常 = 255,255,255 即缩放到 0~1）。
+        /// YOLO 系列（含 v8-cls）统一填 255,255,255。
+        /// </summary>
+        public string StdText
+        {
+            get => _stdText;
+            set => Set(ref _stdText, value);
+        }
+
         private string _layoutHint = "auto";
         /// <summary>检测输出布局提示：auto / yolov5 / yolov8（检测框异常时手工指定）</summary>
         public string LayoutHint

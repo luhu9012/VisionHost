@@ -65,7 +65,11 @@ namespace Grayson.Vision.Nodes.All.Identification.DlInference
                 AnomalyRegionThreshold = param.AnomalyRegionThreshold,
                 UseGpu = param.UseGpu,
                 LayoutHint = param.LayoutHint,
-                Labels = ParseLabels(param.LabelsText)
+                Labels = ParseLabels(param.LabelsText),
+                // 归一化：留空 → null → 插件按任务类型取默认值（分类=ImageNet）；
+                // 填了 → 覆盖（YOLO 系列统一 "0,0,0" / "255,255,255"）
+                Mean = ParseNormalization(param.MeanText, "Mean", context),
+                Std = ParseNormalization(param.StdText, "Std", context)
             };
 
             // ---------- 3) 预览：先铺底图，推理结果出来再叠加 ----------
@@ -122,6 +126,46 @@ namespace Grayson.Vision.Nodes.All.Identification.DlInference
                 .Select(s => s.Trim())
                 .Where(s => s.Length > 0)
                 .ToList();
+        }
+
+        /// <summary>
+        /// 归一化参数文本 → float[]（供插件预处理）。规则：
+        ///   · 留空 → null（不覆盖插件默认值：分类=ImageNet，检测/分割/异常=仅缩放）；
+        ///   · 1 个数值 → 广播成 3 通道（如 "255" → {255,255,255}）；
+        ///   · 3 个数值 → 按 RGB 顺序；
+        ///   · 其他长度/解析失败 → null + 日志告警（宁可回落到默认值，也不猜）。
+        /// 分隔符：半角/全角逗号、分号、空白。
+        /// </summary>
+        private static float[] ParseNormalization(string text, string fieldName, NodeExecutionContext context)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var parts = text
+                .Split(new[] { ',', '，', ';', '；', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0)
+                .ToArray();
+            if (parts.Length == 0) return null;
+
+            var values = new List<float>(parts.Length);
+            foreach (var p in parts)
+            {
+                if (!float.TryParse(p, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out float v))
+                {
+                    context?.Log($"[归一化] {fieldName} 解析失败（\"{p}\" 不是数值），本节点改用插件默认归一化——" +
+                                 "请填如 \"0,0,0\" / \"255,255,255\"");
+                    return null;
+                }
+                values.Add(v);
+            }
+
+            if (values.Count == 1) return new[] { values[0], values[0], values[0] };
+            if (values.Count == 3) return values.ToArray();
+
+            context?.Log($"[归一化] {fieldName} 需要 1 个或 3 个数值，实得 {values.Count} 个（\"{text}\"），" +
+                         "本节点改用插件默认归一化");
+            return null;
         }
 
         /// <summary>生成结果摘要文本（下游逻辑节点用字符串包含判断，如 Contains("scratch")）</summary>

@@ -207,6 +207,19 @@ namespace Grayson.Vision.WpfUI.ViewModel
                 System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] DL 演示包落地种子失败: {ex.Message}");
             }
 
+            // 🌟 2026-09-30 ONNX 通道演示包（自训练 YOLOv8n-cls 镁片 ok/ng）：与上面的 HALCON DL 翻译包
+            // 并列，落地「模型资产(OnnxRuntime) + 演示图 + 配方(DlInference) + 任务模板 + 演示工位」。
+            // 这是本程序 ONNX 导入路径的首个端到端可跑样本（此前只有代码通道、无模型文件）。
+            // 幂等：已存在则跳过；参数过期（缺归一化/路径不符）则按当前包重建。
+            try
+            {
+                Service.OnnxDemoTaskFactory.EnsureDemoTasks();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] ONNX 演示包落地种子失败: {ex.Message}");
+            }
+
             // 🌟 stage9-3 外观测量族闭环（2026-09-10）：内嵌测量素材自动落地，
             // 生成 TPL-AM seed + FitCircle 配方 + MeasurementSpecs 判据；幂等，已存在则跳过。
             try
@@ -238,6 +251,27 @@ namespace Grayson.Vision.WpfUI.ViewModel
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] Blob/划痕演示包落地种子失败: {ex.Message}");
+            }
+
+            // 🌟 2026-09-28 特征识别读取族·读码与字符（条码/二维码 + OCR）：内嵌课堂素材幂等落地，
+            // 生成 ReadImageFile→ReadBarcode / ReadOCR 两节点配方（引擎已扩 isReadTask 分支消费文本端口）；
+            // 幂等，已存在则跳过。
+            try
+            {
+                Service.BarcodeDemoTaskFactory.EnsureDemoTasks();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] 条码/二维码演示包落地种子失败: {ex.Message}");
+            }
+
+            try
+            {
+                Service.OcrDemoTaskFactory.EnsureDemoTasks();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TaskTemplateCenter] OCR 演示包落地种子失败: {ex.Message}");
             }
 
             _all = new ObservableCollection<TaskTemplateInfo>(_library.LoadAll());
